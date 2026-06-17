@@ -933,13 +933,13 @@
             </div>
           </div>
           <template x-if="rangeStats()">
-            <div x-data="{ rc: deviceConfigs[rangeRadioId || activeNodeId] || {} }" class="flex flex-col gap-2">
-              <!-- Antenna info bar -->
+            <div class="flex flex-col gap-2">
+              <!-- Antenna info bar — reactive, no x-data wrapper -->
               <div class="flex items-center gap-3 px-1 text-sm flex-wrap">
-                <span class="font-semibold opacity-70" x-text="rc.antenna_type || 'Unknown antenna'"></span>
-                <span class="badge badge-sm badge-outline" x-show="rc.gain_dbi != null" x-text="rc.gain_dbi + ' dBi'"></span>
-                <span class="badge badge-sm badge-outline badge-warning" x-show="rc.cable_loss_db" x-text="'−' + rc.cable_loss_db + ' dB cable'"></span>
-                <span class="badge badge-sm badge-outline badge-info" x-show="rc.tx_power_dbm != null" x-text="rc.tx_power_dbm + ' dBm TX'"></span>
+                <span class="font-semibold opacity-70" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.antenna_type || 'Unknown antenna'"></span>
+                <span class="badge badge-sm badge-outline" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.gain_dbi != null" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.gain_dbi + ' dBi'"></span>
+                <span class="badge badge-sm badge-outline badge-warning" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.cable_loss_db" x-text="'−' + deviceConfigs[rangeRadioId || activeNodeId]?.cable_loss_db + ' dB cable'"></span>
+                <span class="badge badge-sm badge-outline badge-info" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.tx_power_dbm != null" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.tx_power_dbm + ' dBm TX'"></span>
               </div>
               <!-- Stats panel -->
               <div class="stats stats-horizontal shadow bg-base-100 w-full">
@@ -1042,8 +1042,7 @@
               <div x-show="!availableDevices.length" class="text-sm opacity-50 italic py-2">No radios connected.</div>
               <template x-for="dev in availableDevices" :key="dev.node_id">
                 <div class="border border-base-300 rounded-lg p-3 flex flex-col gap-3"
-                     :class="dev.node_id === activeNodeId && 'border-success/40 bg-success/5'"
-                     x-data="{ nd: nodes.find(n => n.num === parseInt(dev.node_id.slice(1), 16)) }">
+                     :class="dev.node_id === activeNodeId && 'border-success/40 bg-success/5'">
                   <!-- Status row -->
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="font-mono text-xs opacity-50" x-text="dev.node_id"></span>
@@ -1062,39 +1061,39 @@
                     <span x-show="dev.ble_address" x-text="dev.ble_address"></span>
                     <span x-show="dev.tcp_port" x-text="'TCP :' + dev.tcp_port + ' (' + dev.tcp_clients + ' clients)'"></span>
                   </div>
-                  <!-- Device metadata + telemetry -->
+                  <!-- Device metadata + telemetry (reactive via nodeById method) -->
                   <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs border-t border-base-300 pt-2">
                     <div>
                       <div class="opacity-50 mb-0.5">Hardware</div>
-                      <div x-text="nd?.user?.hw_model || '–'"></div>
+                      <div x-text="nodeById(dev.node_id)?.user?.hw_model || '–'"></div>
                     </div>
                     <div>
                       <div class="opacity-50 mb-0.5">Uptime</div>
-                      <div x-text="nd?.device_metrics?.uptime_seconds != null ? fmtUptime(nd.device_metrics.uptime_seconds) : '–'"></div>
+                      <div x-text="nodeById(dev.node_id)?.device_metrics?.uptime_seconds != null ? fmtUptime(nodeById(dev.node_id).device_metrics.uptime_seconds) : '–'"></div>
                     </div>
                     <div>
                       <div class="opacity-50 mb-0.5">Battery</div>
-                      <div x-text="nd?.device_metrics?.battery_level != null ? nd.device_metrics.battery_level + '% / ' + (nd.device_metrics.voltage?.toFixed(2) ?? '–') + ' V' : '–'"></div>
+                      <div x-text="nodeById(dev.node_id)?.device_metrics?.battery_level != null ? nodeById(dev.node_id).device_metrics.battery_level + '% / ' + (nodeById(dev.node_id).device_metrics.voltage?.toFixed(2) ?? '–') + ' V' : '–'"></div>
                     </div>
                     <div>
                       <div class="opacity-50 mb-0.5">Ch util / Air TX</div>
-                      <div x-text="nd?.device_metrics?.channel_utilization != null ? nd.device_metrics.channel_utilization.toFixed(1) + '% / ' + (nd.device_metrics.air_util_tx?.toFixed(2) ?? '–') + '%' : '–'"></div>
+                      <div x-text="nodeById(dev.node_id)?.device_metrics?.channel_utilization != null ? nodeById(dev.node_id).device_metrics.channel_utilization.toFixed(1) + '% / ' + (nodeById(dev.node_id).device_metrics.air_util_tx?.toFixed(2) ?? '–') + '%' : '–'"></div>
                     </div>
-                    <div x-show="nd?.local_stats">
+                    <div x-show="nodeById(dev.node_id)?.local_stats">
                       <div class="opacity-50 mb-0.5">Nodes seen</div>
-                      <div x-text="nd?.local_stats ? nd.local_stats.num_online_nodes + ' online / ' + nd.local_stats.num_total_nodes + ' total' : '–'"></div>
+                      <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_online_nodes + ' online / ' + nodeById(dev.node_id).local_stats.num_total_nodes + ' total' : '–'"></div>
                     </div>
-                    <div x-show="nd?.local_stats">
+                    <div x-show="nodeById(dev.node_id)?.local_stats">
                       <div class="opacity-50 mb-0.5">Packets RX / TX</div>
-                      <div x-text="nd?.local_stats ? nd.local_stats.num_packets_rx + ' / ' + nd.local_stats.num_packets_tx : '–'"></div>
+                      <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_packets_rx + ' / ' + nodeById(dev.node_id).local_stats.num_packets_tx : '–'"></div>
                     </div>
-                    <div x-show="nd?.environment_metrics?.temperature != null">
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null">
                       <div class="opacity-50 mb-0.5">Temperature</div>
-                      <div x-text="nd?.environment_metrics?.temperature?.toFixed(1) + ' °C'"></div>
+                      <div x-text="nodeById(dev.node_id)?.environment_metrics?.temperature?.toFixed(1) + ' °C'"></div>
                     </div>
-                    <div x-show="nd?.environment_metrics?.relative_humidity != null">
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null">
                       <div class="opacity-50 mb-0.5">Humidity</div>
-                      <div x-text="nd?.environment_metrics?.relative_humidity?.toFixed(1) + ' %'"></div>
+                      <div x-text="nodeById(dev.node_id)?.environment_metrics?.relative_humidity?.toFixed(1) + ' %'"></div>
                     </div>
                   </div>
                   <!-- Config row -->

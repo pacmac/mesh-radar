@@ -621,6 +621,12 @@ function dashboard() {
       return bridgeNums.size ? this.nodes.filter(n => !bridgeNums.has(n.num >>> 0)) : this.nodes;
     },
 
+    nodeById(nodeId) {
+      if (!nodeId?.startsWith('!')) return null;
+      const num = parseInt(nodeId.slice(1), 16);
+      return this.nodes.find(n => n.num === num) || null;
+    },
+
     nodeGroupLabel(n) {
       const key = this.nodeSort.key;
       const now = Date.now() / 1000;
@@ -1419,6 +1425,7 @@ function dashboard() {
       if (!this.homePos) return;
       this.refreshRadar();
       this.geocodeNodes();
+      if (this.yagiAz != null) this._animateBeam(this.yagiAz);
     },
 
     refreshRadar() {
