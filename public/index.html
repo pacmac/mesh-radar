@@ -943,20 +943,20 @@
           <div class="card bg-base-100 shadow">
             <div class="card-body py-3">
               <div class="flex items-center justify-between flex-wrap gap-2">
-                <h2 class="card-title text-base">Range test log <span class="badge badge-neutral" x-text="rangeLog.length"></span><span class="loading loading-spinner loading-xs" x-show="rangeLoading"></span></h2>
+                <h2 class="card-title text-base">Range test log <span class="badge badge-neutral" x-text="filteredRangeLog().length"></span><span class="loading loading-spinner loading-xs" x-show="rangeLoading"></span></h2>
                 <div class="flex gap-2">
                   <button class="btn btn-xs btn-outline" @click="loadRangeTest()">Refresh</button>
                   <button class="btn btn-xs btn-outline btn-error" @click="clearRangeTest()" :disabled="!rangeLog.length">Clear</button>
                 </div>
               </div>
-              <div x-show="!rangeLog.length && !rangeLoading" class="text-base-content/40 italic text-sm py-4 text-center">No range test packets received yet.</div>
-              <div x-show="rangeLog.length > 0" class="overflow-x-auto max-h-[60vh]">
+              <div x-show="!filteredRangeLog().length && !rangeLoading" class="text-base-content/40 italic text-sm py-4 text-center">No range test packets received yet.</div>
+              <div x-show="filteredRangeLog().length > 0" class="overflow-x-auto max-h-[60vh]">
                 <table class="table table-zebra table-xs">
                   <thead class="sticky top-0 bg-base-100 z-10">
                     <tr><th>Time</th><th>Node</th><th>Seq</th><th>Dist (km)</th><th>Az (°)</th><th>RSSI (dBm)</th><th>SNR (dB)</th><th>Exp RSSI</th><th>Excess loss</th><th>Hops</th></tr>
                   </thead>
                   <tbody>
-                    <template x-for="(raw, i) in rangeLog" :key="i">
+                    <template x-for="(raw, i) in filteredRangeLog()" :key="i">
                       <tr x-data="{ e: rangeEnrich(raw) }">
                         <td class="font-mono text-xs" x-text="fmtAge(e.ts)"></td>
                         <td x-text="e.nodeName"></td>

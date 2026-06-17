@@ -1345,6 +1345,12 @@ function dashboard() {
       return m + ':' + String(s).padStart(2, '0');
     },
 
+    filteredRangeLog() {
+      const id = this.rangeRadioId || this.activeNodeId;
+      if (!id) return this.rangeLog;
+      return this.rangeLog.filter(e => e.rx_device === id);
+    },
+
     rangeEnrich(e) {
       const node = this.nodes.find(n => n.num === e.from_num);
       const lat = node?.position?.latitude_i != null ? node.position.latitude_i / 1e7 : null;
@@ -1367,7 +1373,7 @@ function dashboard() {
     },
 
     rangeStats() {
-      const enriched = this.rangeLog.map(e => this.rangeEnrich(e)).filter(e => e.rssi != null);
+      const enriched = this.filteredRangeLog().map(e => this.rangeEnrich(e)).filter(e => e.rssi != null);
       if (!enriched.length) return null;
       const rssis  = enriched.map(e => e.rssi).sort((a, b) => a - b);
       const losses = enriched.filter(e => e.excessLoss != null).map(e => e.excessLoss).sort((a, b) => a - b);
