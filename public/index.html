@@ -429,6 +429,11 @@
                     </template>
                   </ul>
                 </div>
+                <div x-show="msgReplyId" class="flex items-center gap-1 text-xs text-base-content/60 bg-base-200 rounded px-2 py-1 mb-1">
+                  <span class="opacity-70">↩ Replying to</span>
+                  <span class="font-semibold" x-text="nodeShortName(msgReplyFrom) || '?'"></span>
+                  <button class="ml-auto btn btn-xs btn-ghost py-0 h-auto min-h-0 opacity-50" @click="msgReplyId = null; msgReplyFrom = null">✕</button>
+                </div>
                 <textarea class="textarea textarea-bordered w-full" rows="3" x-model="msgText" placeholder="Type a message… (@name to mention)"
                   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                   @keydown="handleMsgKeydown($event)"

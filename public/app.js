@@ -27,6 +27,8 @@ function dashboard() {
     msgFrom: localStorage.getItem("msgFrom") || "",
     msgIsDirect: false,
     msgDirectTo: "",
+    msgReplyId: null,
+    msgReplyFrom: null,
     msgInsertNode: null,
     msgInputHistory: JSON.parse(localStorage.getItem('msgInputHistory') || '[]'),
     msgHistoryIdx: -1,
@@ -1057,12 +1059,13 @@ function dashboard() {
       const to = this.msgIsDirect && this.msgDirectTo ? Number(this.msgDirectTo) : 0xFFFFFFFF;
       const body = { text, channel };
       if (this.msgIsDirect && this.msgDirectTo) body.to = to;
+      if (this.msgReplyId) body.reply_id = this.msgReplyId;
       await fetchJSON("/" + fromId + "/messages", "POST", body);
       const fromNum = parseInt(fromId.replace('!', ''), 16) || 0;
       this.messages.unshift({
         fromNum, to: to >>> 0,
         broadcast: to === 0xFFFFFFFF, channel, text, time, direction: 'tx', ackStatus: 'sent',
-        src: fromId,
+        src: fromId, replyId: this.msgReplyId || null,
       });
       if (this.messages.length > 50) this.messages.pop();
       this.msgInputHistory = [text, ...this.msgInputHistory.filter(t => t !== text)].slice(0, 50);
@@ -1070,6 +1073,8 @@ function dashboard() {
       this.msgHistoryIdx = -1;
       this.msgDraft = '';
       this.msgText = "";
+      this.msgReplyId = null;
+      this.msgReplyFrom = null;
       this.msgSent = true;
       setTimeout(() => (this.msgSent = false), 2000);
       if (this.msgIsModal) this.closeMessageModal();
@@ -1097,6 +1102,8 @@ function dashboard() {
         this.msgDirectTo = target;
         this.msgIsDirect = !m.broadcast;
       }
+      this.msgReplyId = m.pktId || null;
+      this.msgReplyFrom = m.fromNum || null;
     },
 
     insertText(val) {
