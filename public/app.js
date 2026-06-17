@@ -1280,7 +1280,19 @@ function dashboard() {
       if (!this.rangeRadioId && this.activeNodeId) this.rangeRadioId = this.activeNodeId;
       this.rangeLoading = true;
       try {
-        const data = await fetchJSON('/range_test/log');
+        const nodeIds = Object.keys(this.deviceConfigs);
+        const [data, ...loraCfgs] = await Promise.all([
+          fetchJSON('/range_test/log'),
+          ...nodeIds.map(id =>
+            fetchJSON(`/${id}/config`).then(r => ({ id, tx_power: r?.config?.lora?.tx_power ?? null })).catch(() => ({ id, tx_power: null }))
+          ),
+        ]);
+        // Merge live tx_power into deviceConfigs (non-reactive, just for rangeEnrich lookup)
+        for (const { id, tx_power } of loraCfgs) {
+          if (tx_power != null && this.deviceConfigs[id]) {
+            this.deviceConfigs[id] = { ...this.deviceConfigs[id], tx_power_dbm: tx_power };
+          }
+        }
         this.rangeLog = (data.log || []).slice().reverse();
       } catch (_) {
       } finally {
@@ -1360,10 +1372,13 @@ function dashboard() {
       let expectedRssi = null, excessLoss = null;
       if (distKm != null && distKm > 0) {
         const fspl = 20 * Math.log10(distKm) + 20 * Math.log10(868) + 32.4;
-        const txPow = 22, txGain = 2; // transmitter: assume mobile node defaults
+        const txNodeId = "!" + (e.from_num >>> 0).toString(16);
+        const txCfg = this.deviceConfigs[txNodeId] || {};
+        const txPow  = txCfg.tx_power_dbm ?? 22;
+        const txEIRP = txPow + (txCfg.gain_dbi ?? 2) - (txCfg.cable_loss_db ?? 0);
         const rxCfg = this.deviceConfigs[e.rx_device] || {};
         const rxGain = (rxCfg.gain_dbi ?? 2) - (rxCfg.cable_loss_db ?? 0);
-        expectedRssi = Math.round(txPow + txGain + rxGain - fspl);
+        expectedRssi = Math.round(txEIRP + rxGain - fspl);
         if (e.rssi != null) excessLoss = parseFloat((expectedRssi - e.rssi).toFixed(1));
       }
       return {
