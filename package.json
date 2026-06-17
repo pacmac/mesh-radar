@@ -2,6 +2,7 @@
   "name": "node-dash",
   "version": "0.1.0",
   "description": "Meshtastic dashboard server — bridge client, SQLite storage, rotator integration",
+  "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
