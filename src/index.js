@@ -148,10 +148,11 @@ let _rangeTimer = { active: false, endsAt: null, nodeId: null };
 let _rangeTimerHandle = null;
 
 async function _bridgePutRangeTest(nodeId, enabled) {
+  const body = enabled ? { enabled: true, sender: 60 } : { enabled: false, sender: 0 };
   await fetch(`${BRIDGE_URL}/${nodeId}/config/range_test`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify(body),
   });
 }
 

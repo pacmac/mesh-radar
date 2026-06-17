@@ -1094,8 +1094,8 @@ function dashboard() {
       const target = m.direction === 'tx' ? m.to : m.fromNum;
       this.msgInsertNode = target;
       if (target && (target >>> 0) !== 0xFFFFFFFF) {
-        this.msgIsDirect = true;
         this.msgDirectTo = target;
+        this.msgIsDirect = !m.broadcast;
       }
     },
 

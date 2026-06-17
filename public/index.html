@@ -372,6 +372,10 @@
                   <option :value="n.num" x-text="(n.user?.short_name || n.num) + ' — ' + (n.user?.long_name || '')"></option>
                 </template>
               </select>
+              <span x-show="!msgIsDirect && msgDirectTo"
+                    class="text-xs text-base-content/50 italic cursor-pointer"
+                    @click="msgIsDirect = true"
+                    x-text="'→ ' + (nodeShortName(msgDirectTo) || msgDirectTo)"></span>
             </div>
 
             <!-- Channel -->
