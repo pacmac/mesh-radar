@@ -479,15 +479,17 @@ function dashboard() {
         if (Array.isArray(rows) && rows.length) {
           this.messages = rows.map(r => ({
             pktId:     r.packet_id,
+            replyId:   r.reply_id || null,
             fromNum:   r.from_num,
             to:        r.to_num >>> 0,
             broadcast: (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
             channel:   r.channel ?? 0,
             text:      r.text,
+            ts:        r.ts,
             time:      new Date(r.ts * 1000).toLocaleTimeString(),
             direction: 'rx',
             ackStatus: null,
-            src:       r.device || null,
+            src:       r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
           }));
           this.messages.forEach(m => { if (m.pktId) this._seenPacketIds.add(m.pktId); });
           try { localStorage.setItem("msgHistory", JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
@@ -495,6 +497,36 @@ function dashboard() {
       } catch (e) {
         console.warn('loadMessages failed', e);
       }
+    },
+
+    displayMessages() {
+      const msgs = this.messages;
+      const byPktId = new Map();
+      for (const m of msgs) { if (m.pktId) byPktId.set(m.pktId, m); }
+
+      // Collect replies that have a known parent in this loaded set
+      const childrenOf = new Map();
+      const orphans = new Set();
+      for (const m of msgs) {
+        if (m.replyId && byPktId.has(m.replyId)) {
+          if (!childrenOf.has(m.replyId)) childrenOf.set(m.replyId, []);
+          childrenOf.get(m.replyId).push(m);
+        } else if (m.replyId) {
+          orphans.add(m);
+        }
+      }
+
+      // Roots: messages that are not a reply to a known message (in chronological order, newest first)
+      const roots = msgs.filter(m => !m.replyId || orphans.has(m));
+
+      // Build threaded flat list: root → its replies (oldest first) → next root …
+      const result = [];
+      for (const root of roots) {
+        result.push({ ...root, isReply: false });
+        const replies = (childrenOf.get(root.pktId) || []).slice().sort((a, b) => a.ts - b.ts);
+        for (const r of replies) result.push({ ...r, isReply: true });
+      }
+      return result;
     },
 
     // -- BLE management -------------------------------------------------------
@@ -804,7 +836,13 @@ function dashboard() {
         if (portnum === "TEXT_MESSAGE_APP" && pkt?.decoded?.payload) {
           try {
             const pktId = pkt.id;
-            if (!pktId || !this._seenPacketIds.has(pktId)) {
+            if (pktId && this._seenPacketIds.has(pktId)) {
+              // Duplicate from second radio — add device badge to existing entry
+              if (ev.device) {
+                const existing = this.messages.find(m => m.pktId === pktId);
+                if (existing && !existing.src.includes(ev.device)) existing.src = [...existing.src, ev.device];
+              }
+            } else {
               if (pktId) {
                 this._seenPacketIds.add(pktId);
                 if (this._seenPacketIds.size > 200) this._seenPacketIds.delete(this._seenPacketIds.values().next().value);
@@ -816,8 +854,8 @@ function dashboard() {
                 broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
                 channel: pkt.channel ?? 0,
                 replyId: pkt.decoded.reply_id || null,
-                text, time, direction: 'rx', ackStatus: null,
-                src: ev.device || null,
+                text, ts: pkt.rx_time || Math.floor(Date.now() / 1000), time, direction: 'rx', ackStatus: null,
+                src: ev.device ? [ev.device] : [],
               });
               if (this.messages.length > 50) this.messages.pop();
               try { localStorage.setItem("msgHistory", JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
@@ -1064,8 +1102,9 @@ function dashboard() {
       const fromNum = parseInt(fromId.replace('!', ''), 16) || 0;
       this.messages.unshift({
         fromNum, to: to >>> 0,
-        broadcast: to === 0xFFFFFFFF, channel, text, time, direction: 'tx', ackStatus: 'sent',
-        src: fromId, replyId: this.msgReplyId || null,
+        broadcast: to === 0xFFFFFFFF, channel, text,
+        ts: Math.floor(Date.now() / 1000), time, direction: 'tx', ackStatus: 'sent',
+        src: fromId ? [fromId] : [], replyId: this.msgReplyId || null,
       });
       if (this.messages.length > 50) this.messages.pop();
       this.msgInputHistory = [text, ...this.msgInputHistory.filter(t => t !== text)].slice(0, 50);

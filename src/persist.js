@@ -32,8 +32,9 @@ function handlePacket(packet, device, ts, replay) {
       hop_limit: packet.hop_limit ?? null,
       snr:       packet.rx_snr   ?? null,
       rssi:      packet.rx_rssi  ?? null,
-      packet_id: packet.id       ?? null,
-      device:    device           ?? null,
+      packet_id: packet.id             ?? null,
+      reply_id:  packet.decoded.reply_id ?? null,
+      device:    device                  ?? null,
       replay:    replay ? 1 : 0,
     });
     return;

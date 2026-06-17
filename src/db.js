@@ -21,6 +21,7 @@ db.exec(`
     snr         REAL,
     rssi        INTEGER,
     packet_id   INTEGER,
+    reply_id    INTEGER,
     device      TEXT,
     replay      INTEGER NOT NULL DEFAULT 0
   );
@@ -96,10 +97,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_nodes_updated   ON nodes(updated_at DESC);
 `);
 
+// Migrations for columns added after initial schema
+const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);
+if (!existingCols.includes('reply_id')) {
+  db.exec(`ALTER TABLE messages ADD COLUMN reply_id INTEGER`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_reply ON messages(reply_id) WHERE reply_id IS NOT NULL`);
+}
+
 export const stmts = {
   insertMessage: db.prepare(`
-    INSERT OR IGNORE INTO messages (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi, packet_id, device, replay)
-    VALUES (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @device, @replay)
+    INSERT OR IGNORE INTO messages (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi, packet_id, reply_id, device, replay)
+    VALUES (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @reply_id, @device, @replay)
   `),
 
   upsertMqttNode: db.prepare(`

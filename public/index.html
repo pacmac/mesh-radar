@@ -990,20 +990,22 @@
             <div class="card-body">
               <h2 class="card-title">Message Feed</h2>
               <div class="overflow-y-auto max-h-[400px] divide-y divide-base-200">
-                <template x-for="(m, i) in messages" :key="i">
+                <template x-for="(m, i) in displayMessages()" :key="i">
                   <div class="flex items-start gap-3 py-2"
-                       :class="m.replyId ? 'ml-6' : ''">
+                       :class="m.isReply ? 'ml-8 border-l-2 border-base-300 pl-2' : ''">
                     <span class="node-avatar cursor-pointer"
                           :style="`background:${avatarColor(m.fromNum)}`"
-                          :title="m.broadcast ? 'Load node info' : 'Reply DM'"
+                          :title="'Reply to ' + nodeShortName(m.fromNum)"
                           @click="replyTo(m)"
                           x-text="nodeShortName(m.fromNum)"></span>
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-1.5 text-xs">
-                        <span x-show="m.replyId" class="text-base-content/40" title="Reply">↩</span>
+                        <span x-show="m.isReply" class="text-base-content/40" title="Reply">↩</span>
                         <span class="font-semibold text-base-content" x-text="nodeLongName(m.fromNum)"></span>
                         <span class="badge badge-xs" :class="m.broadcast ? 'badge-ghost' : 'badge-info'" x-text="m.broadcast ? 'BC' : 'DM'"></span>
-                        <span x-show="m.src" class="badge badge-xs badge-outline font-mono opacity-60" :title="m.src" x-text="deviceLabel(m.src)"></span>
+                        <template x-for="d in (Array.isArray(m.src) ? m.src : (m.src ? [m.src] : []))" :key="d">
+                          <span class="badge badge-xs badge-outline font-mono opacity-60" :title="d" x-text="deviceLabel(d)"></span>
+                        </template>
                         <span class="ml-auto text-base-content/50 shrink-0" x-text="m.time"></span>
                         <span x-show="m.direction==='tx'" class="text-success shrink-0" title="Sent">✓</span>
                       </div>

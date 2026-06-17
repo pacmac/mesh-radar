@@ -19,7 +19,26 @@ export function queryMessages(limit = 100) {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(Math.min(limit, 1000));
 
-  return db.prepare(`SELECT * FROM messages ${where} ORDER BY ts DESC LIMIT ?`).all(...params);
+  return db.prepare(`
+    SELECT
+      MIN(id)                       AS id,
+      MIN(ts)                       AS ts,
+      MIN(from_num)                 AS from_num,
+      MIN(to_num)                   AS to_num,
+      MIN(text)                     AS text,
+      MIN(channel)                  AS channel,
+      MIN(is_dm)                    AS is_dm,
+      MIN(hop_limit)                AS hop_limit,
+      MAX(snr)                      AS snr,
+      MAX(rssi)                     AS rssi,
+      packet_id, reply_id,
+      GROUP_CONCAT(device)          AS rx_devices,
+      MAX(replay)                   AS replay
+    FROM messages
+    ${where}
+    GROUP BY CASE WHEN packet_id IS NOT NULL THEN packet_id ELSE id END
+    ORDER BY ts DESC LIMIT ?
+  `).all(...params);
 }
 
 export function queryNodes() {
