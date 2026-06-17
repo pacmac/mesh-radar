@@ -139,6 +139,7 @@ function dashboard() {
     rangeDuration: 10,
     rangeTimer: { active: false, endsAt: null, nodeId: null, remaining: null },
     _rangeCountdown: null,
+    _rangeAutoSync: null,
 
     msgIsModal: false,
     _composeTa: null,
@@ -151,7 +152,7 @@ function dashboard() {
       this.drawerOpen = false;
       if (t === "radar") this.$nextTick(() => this.initRadar());
       else if (t === "cfg") this.switchCfgTab(c || this.cfgTab || "radio");
-      else if (t === "range") { this.loadRangeTest(); this.loadRangeTimer(); }
+      else if (t === "range") { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
       else if (t === "nodes") this.loadNodes();
       else if (t === "devices") this.loadDevices();
       else if (t === "messages") this.unreadMessages = 0;
@@ -1090,10 +1091,11 @@ function dashboard() {
     },
 
     replyTo(m) {
-      this.msgInsertNode = m.direction === 'tx' ? m.to : m.fromNum;
-      if (!m.broadcast) {
+      const target = m.direction === 'tx' ? m.to : m.fromNum;
+      this.msgInsertNode = target;
+      if (target && (target >>> 0) !== 0xFFFFFFFF) {
         this.msgIsDirect = true;
-        this.msgDirectTo = this.msgInsertNode;
+        this.msgDirectTo = target;
       }
     },
 
@@ -1253,9 +1255,17 @@ function dashboard() {
       } catch (_) {}
     },
 
+    _startRangeAutoSync() {
+      if (this._rangeAutoSync) clearInterval(this._rangeAutoSync);
+      this._rangeAutoSync = setInterval(async () => {
+        if (this.tab !== 'range') { clearInterval(this._rangeAutoSync); this._rangeAutoSync = null; return; }
+        await this.loadRangeTimer();
+      }, 15000);
+    },
+
     _startRangeCountdown() {
       if (this._rangeCountdown) clearInterval(this._rangeCountdown);
-      if (!this.rangeTimer.active) return;
+      if (!this.rangeTimer.active) { clearInterval(this._rangeAutoSync); this._rangeAutoSync = null; return; }
       this._rangeCountdown = setInterval(() => {
         if (!this.rangeTimer.endsAt) { clearInterval(this._rangeCountdown); return; }
         const rem = Math.max(0, Math.round((this.rangeTimer.endsAt - Date.now()) / 1000));
@@ -1273,6 +1283,7 @@ function dashboard() {
       const t = await fetchJSON('/range_test/start', 'POST', { nodeId, durationMin: this.rangeDuration });
       this.rangeTimer = { active: true, endsAt: t.endsAt, nodeId, remaining: this.rangeDuration * 60 };
       this._startRangeCountdown();
+      this._startRangeAutoSync();
       await fetchJSON(`/config/range_test.duration`, 'PUT', { value: this.rangeDuration });
     },
 
