@@ -1784,6 +1784,9 @@ function buildField(field, value, path, opts = {}) {
     } else {
       input.type = (sensitive && field.type !== "bytes") ? "password" : "text";
       input.value = value ?? "";
+      if (sensitive && field.type !== "bytes" && !value) {
+        input.placeholder = "not set";
+      }
     }
     if (sensitive && !opts.readonly) {
       input.disabled = true;
@@ -1791,7 +1794,11 @@ function buildField(field, value, path, opts = {}) {
       unlock.className = "label cursor-pointer gap-1 py-0";
       const cb = document.createElement("input");
       cb.type = "checkbox"; cb.className = "checkbox checkbox-xs";
-      cb.addEventListener("change", () => { input.disabled = !cb.checked; input.type = cb.checked ? "text" : "password"; });
+      cb.addEventListener("change", () => {
+        input.disabled = !cb.checked;
+        input.type = cb.checked ? "text" : "password";
+        if (!cb.checked && !input.value) input.placeholder = "not set";
+      });
       const lbl = document.createElement("span");
       lbl.className = "label-text text-xs text-warning";
       lbl.textContent = "unlock to edit";
