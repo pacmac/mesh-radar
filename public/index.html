@@ -192,6 +192,9 @@
                 <div class="flex justify-between"><span class="text-base-content/60">JSON output</span><span x-text="mqttCfg.json_enabled ? 'on' : 'off'"></span></div>
               </div>
               <div class="divider my-1"></div>
+              <p class="text-xs opacity-60 mb-2">If the proxy failed to connect after changing the password on the radio, click Reconnect to re-read credentials and retry.</p>
+              <button class="btn btn-sm btn-outline" @click="restartMqttProxy()">Reconnect proxy</button>
+              <div class="divider my-1"></div>
               <h3 class="font-semibold text-sm mb-1">Node identity</h3>
               <div class="text-sm flex flex-col gap-2">
                 <div class="flex justify-between"><span class="text-base-content/60">Node ID</span><span class="font-mono" x-text="(nodeSelf.user && nodeSelf.user.id) || '–'"></span></div>

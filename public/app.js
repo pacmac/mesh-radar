@@ -364,7 +364,11 @@ function dashboard() {
         this.bridgeConfigSchema = schema;
         await nextFrame();
         const el = document.getElementById("bridge_cfg_form");
-        if (el) { el.innerHTML = ""; el.appendChild(buildForm(schema.fields, data, [])); }
+        if (el && !el.dataset.dirty) {
+          el.innerHTML = "";
+          el.dataset.formRoot = "1";
+          el.appendChild(buildForm(schema.fields, data, []));
+        }
       } catch (e) {
         console.warn("Failed to load bridge config", e);
       }
@@ -395,6 +399,7 @@ function dashboard() {
         const el = document.getElementById("bridge_cfg_form");
         const payload = collectForm(el, this.bridgeConfigSchema.fields);
         await fetchJSON("/bridge_config", "PUT", payload);
+        el.removeAttribute("data-dirty");
         this.bridgeConfigSaved = true;
         setTimeout(() => { this.bridgeConfigSaved = false; }, 2000);
       } catch (e) {
@@ -453,6 +458,14 @@ function dashboard() {
       const cfg = await fetchJSON(this.d("/config"));
       this.mqttCfg = cfg.module_config?.mqtt || {};
       this.loraCfg = cfg.config?.lora || {};
+    },
+
+    async restartMqttProxy() {
+      try {
+        await fetchJSON('/mqtt_proxy/restart', 'POST', {});
+      } catch (e) {
+        console.error('Failed to restart MQTT proxy', e);
+      }
     },
 
     // /nodes on node-dash applies stored config filters before proxying to bridge
@@ -789,7 +802,11 @@ function dashboard() {
         if (needsSchema) this.rotatorCfgSchema = schema;
         await nextFrame();
         const el = document.getElementById("rotator_cfg_form");
-        if (el) { el.innerHTML = ""; el.appendChild(buildForm(schema.fields, data, [])); }
+        if (el && !el.dataset.dirty) {
+          el.innerHTML = "";
+          el.dataset.formRoot = "1";
+          el.appendChild(buildForm(schema.fields, data, []));
+        }
       } catch (e) {
         console.warn("Failed to load rotator cfg", e);
       }
@@ -802,6 +819,7 @@ function dashboard() {
         const el = document.getElementById("rotator_cfg_form");
         const payload = collectForm(el, this.rotatorCfgSchema.fields);
         await fetchJSON("/rotator/firmware_config", "POST", payload);
+        el.removeAttribute("data-dirty");
         this.rotatorCfgSaved = true;
         setTimeout(() => { this.rotatorCfgSaved = false; }, 2000);
       } catch (e) {
@@ -930,8 +948,11 @@ function dashboard() {
         sec.data = values[sec.name] || values || {};
         await nextFrame();
         const el = document.getElementById("sec_" + sec.name);
-        el.innerHTML = "";
-        el.appendChild(buildForm(schema.fields, sec.data, []));
+        if (!el.dataset.dirty) {
+          el.innerHTML = "";
+          el.dataset.formRoot = "1";
+          el.appendChild(buildForm(schema.fields, sec.data, []));
+        }
         sec.loaded = true;
         if (sec.name === "position" && !this.fixedPosition.loaded) await this.loadFixedPosition();
       } catch (e) {
@@ -1002,6 +1023,7 @@ function dashboard() {
       try {
         const res = await fetchJSON(this.cd(`/config/${sec.name}`), "PUT", payload);
         if (res.error) throw new Error(res.error.message);
+        document.getElementById("sec_" + sec.name)?.removeAttribute("data-dirty");
         sec.saved = true;
         setTimeout(() => (sec.saved = false), 2500);
       } catch (e) {
@@ -1030,10 +1052,14 @@ function dashboard() {
         if (!this.channelSchema) this.channelSchema = await fetchJSON("/schema/channel");
         const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
         ch.data = live || {};
+        const formData = { ...(live?.settings || {}), role: live?.role };
         await nextFrame();
         const el = document.getElementById("ch_" + ch.index);
-        el.innerHTML = "";
-        el.appendChild(buildForm(this.channelSchema.fields, ch.data, []));
+        if (!el.dataset.dirty) {
+          el.innerHTML = "";
+          el.dataset.formRoot = "1";
+          el.appendChild(buildForm(this.channelSchema.fields, formData, []));
+        }
         ch.loaded = true;
       } catch (e) {
         ch.error = "Failed to load: " + e;
@@ -1052,6 +1078,7 @@ function dashboard() {
       try {
         const res = await fetchJSON(this.cd(`/channels/${ch.index}`), "PUT", body);
         if (res.error) throw new Error(res.error.message);
+        document.getElementById("ch_" + ch.index)?.removeAttribute("data-dirty");
         ch.data = { ...ch.data, ...body };
         ch.saved = true;
         setTimeout(() => (ch.saved = false), 2500);
@@ -1691,6 +1718,10 @@ function buildForm(fields, data, path, opts = {}) {
   return wrap;
 }
 
+function _formRoot(el) {
+  return el.closest('[data-form-root]');
+}
+
 function buildField(field, value, path, opts = {}) {
   const fieldPath = path.join(".");
   if (field.type === "object") {
@@ -1709,7 +1740,7 @@ function buildField(field, value, path, opts = {}) {
   labelRow.className = "label py-1";
   const labelText = document.createElement("span");
   labelText.className = "label-text text-xs";
-  labelText.textContent = field.name.replace(/_/g, " ") + (field.repeated ? " (comma separated)" : "");
+  labelText.textContent = (field.label ?? field.name.replace(/_/g, " ")) + (field.repeated ? " (comma separated)" : "");
   labelRow.appendChild(labelText);
   ctl.appendChild(labelRow);
 
@@ -1751,7 +1782,7 @@ function buildField(field, value, path, opts = {}) {
     } else if (field.type === "float") {
       input.type = "number"; input.step = "any"; input.value = value ?? 0;
     } else {
-      input.type = sensitive ? "password" : "text";
+      input.type = (sensitive && field.type !== "bytes") ? "password" : "text";
       input.value = value ?? "";
     }
     if (sensitive && !opts.readonly) {
@@ -1772,6 +1803,12 @@ function buildField(field, value, path, opts = {}) {
     input.disabled = true;
     if (input.tagName === "SELECT") input.classList.add("opacity-60");
   }
+
+  input.addEventListener("focus",  () => { ctl.classList.add("field-focused"); });
+  input.addEventListener("blur",   () => { ctl.classList.remove("field-focused"); });
+  input.addEventListener("input",  () => { _formRoot(input)?.setAttribute("data-dirty", "1"); });
+  input.addEventListener("change", () => { _formRoot(input)?.setAttribute("data-dirty", "1"); });
+
   ctl.appendChild(input);
   return ctl;
 }
