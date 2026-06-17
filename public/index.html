@@ -582,7 +582,7 @@
                 <template x-for="group in groupedNodes()" :key="group.label">
                   <div>
                     <div x-show="group.showHeader"
-                         class="px-1 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-widest opacity-40 select-none"
+                         class="px-1 pt-2 pb-0.5 text-xs font-bold uppercase tracking-wide text-base-content/60 select-none border-b border-base-300 mb-1"
                          x-text="group.label"></div>
                     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                       <template x-for="n in group.nodes" :key="n.num">
@@ -889,6 +889,40 @@
 
         <!-- ===================== RANGE TEST ===================== -->
         <div x-show="tab==='range'" class="flex flex-col gap-4">
+          <!-- Control bar -->
+          <div class="card bg-base-100 shadow">
+            <div class="card-body py-3">
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="text-sm opacity-60 shrink-0">Radio:</span>
+                <select class="select select-bordered select-sm"
+                        x-model="rangeRadioId"
+                        @change="loadRangeTest()">
+                  <template x-for="dev in availableDevices" :key="dev.node_id">
+                    <option :value="dev.node_id"
+                            x-text="deviceLabel(dev.node_id) + ' — ' + (dev.long_name || dev.short_name || dev.node_id)"></option>
+                  </template>
+                </select>
+                <span class="text-sm opacity-60 shrink-0">Duration:</span>
+                <select class="select select-bordered select-sm w-28" x-model.number="rangeDuration">
+                  <option value="5">5 min</option>
+                  <option value="10">10 min</option>
+                  <option value="15">15 min</option>
+                  <option value="30">30 min</option>
+                  <option value="60">60 min</option>
+                </select>
+                <template x-if="!rangeTimer.active">
+                  <button class="btn btn-sm btn-success" @click="startRangeTest()" :disabled="!rangeRadioId && !activeNodeId">Start</button>
+                </template>
+                <template x-if="rangeTimer.active">
+                  <div class="flex items-center gap-2">
+                    <button class="btn btn-sm btn-error" @click="stopRangeTest()">Stop</button>
+                    <span class="text-xs opacity-50">auto-off in</span>
+                    <span class="font-mono text-sm text-warning" x-text="rangeFmtCountdown(rangeTimer.remaining)"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
           <template x-if="rangeStats()">
             <div class="stats stats-horizontal shadow bg-base-100 w-full" x-data="{ s: rangeStats() }">
               <div class="stat"><div class="stat-title">Packets</div><div class="stat-value text-lg" x-text="s.count"></div><div class="stat-desc">range test rx</div></div>

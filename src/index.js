@@ -7,7 +7,7 @@ import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter from './device-config.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig } from './db.js';
+import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog } from './db.js';
 import { rotator } from './rotator.js';
 import { handlePacketForRotator } from './rotator-logic.js';
 import { attachWsRelay } from './ws-relay.js';
@@ -130,6 +130,66 @@ app.get('/schema/rotator_config', (req, res) => res.json(ROTATOR_CONFIG_SCHEMA))
 // node-dash-owned schema endpoints (must be before bridge proxy)
 app.get('/schema/bridge_config', (req, res) => res.json(BRIDGE_CONFIG_SCHEMA));
 
+// -- range test log (SQLite-persisted, survives restarts) --------------------
+
+app.get('/range_test/log', (req, res) => {
+  const limit = parseInt(req.query.limit) || 500;
+  const rows = queryRangeTestLog(limit);
+  res.json({ log: rows, count: rows.length });
+});
+
+app.delete('/range_test/log', (req, res) => {
+  clearRangeTestLog();
+  res.json({ cleared: true });
+});
+
+// -- range test timer ---------------------------------------------------------
+let _rangeTimer = { active: false, endsAt: null, nodeId: null };
+let _rangeTimerHandle = null;
+
+async function _bridgePutRangeTest(nodeId, enabled) {
+  await fetch(`${BRIDGE_URL}/${nodeId}/config/range_test`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+app.get('/range_test/timer', (req, res) => {
+  const remaining = _rangeTimer.endsAt ? Math.max(0, Math.round((_rangeTimer.endsAt - Date.now()) / 1000)) : null;
+  res.json({ ..._rangeTimer, remaining });
+});
+
+app.post('/range_test/start', async (req, res) => {
+  const { nodeId, durationMin } = req.body;
+  if (!nodeId) return res.status(400).json({ error: 'nodeId required' });
+  const duration = Math.max(1, parseInt(durationMin) || 10);
+  if (_rangeTimerHandle) { clearTimeout(_rangeTimerHandle); _rangeTimerHandle = null; }
+  try {
+    await _bridgePutRangeTest(nodeId, true);
+  } catch (err) {
+    return res.status(502).json({ error: 'bridge: ' + err.message });
+  }
+  const endsAt = Date.now() + duration * 60 * 1000;
+  _rangeTimer = { active: true, endsAt, nodeId };
+  _rangeTimerHandle = setTimeout(async () => {
+    try { await _bridgePutRangeTest(nodeId, false); } catch (e) { console.error('[range_test] auto-disable failed:', e.message); }
+    _rangeTimer = { active: false, endsAt: null, nodeId: null };
+    _rangeTimerHandle = null;
+  }, duration * 60 * 1000);
+  res.json({ started: true, endsAt, nodeId, durationMin: duration });
+});
+
+app.post('/range_test/stop', async (req, res) => {
+  const nodeId = _rangeTimer.nodeId || req.body?.nodeId;
+  if (_rangeTimerHandle) { clearTimeout(_rangeTimerHandle); _rangeTimerHandle = null; }
+  _rangeTimer = { active: false, endsAt: null, nodeId: null };
+  if (nodeId) {
+    try { await _bridgePutRangeTest(nodeId, false); } catch (err) { return res.status(502).json({ error: 'bridge: ' + err.message }); }
+  }
+  res.json({ stopped: true });
+});
+
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 
 async function proxyToBridge(req, res) {
@@ -170,7 +230,25 @@ server.listen(PORT, () => {
 // -- event handlers ----------------------------------------------------------
 bridge.on('event', (ev) => {
   handleEvent(ev);
-  if (ev.type === 'packet') handlePacketForRotator(ev);
+  if (ev.type === 'packet') {
+    handlePacketForRotator(ev);
+    const pkt = ev.data?.packet;
+    if (pkt?.decoded?.portnum === 'RANGE_TEST_APP') {
+      const seq = pkt.decoded.payload
+        ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8')
+        : null;
+      const hops = pkt.hop_start != null ? Math.max(0, pkt.hop_start - (pkt.hop_limit ?? 0)) : null;
+      insertRangeTestEntry({
+        ts:        Math.floor(Date.now() / 1000),
+        from_num:  pkt.from     ?? null,
+        rssi:      pkt.rx_rssi  ?? null,
+        snr:       pkt.rx_snr   ?? null,
+        hops,
+        seq,
+        rx_device: ev.device    ?? null,
+      });
+    }
+  }
 });
 
 rotator.on('connected', () => {

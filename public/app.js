@@ -135,6 +135,10 @@ function dashboard() {
     // Range test tab state
     rangeLog: [],
     rangeLoading: false,
+    rangeRadioId: "",
+    rangeDuration: 10,
+    rangeTimer: { active: false, endsAt: null, nodeId: null, remaining: null },
+    _rangeCountdown: null,
 
     msgIsModal: false,
     _composeTa: null,
@@ -147,7 +151,7 @@ function dashboard() {
       this.drawerOpen = false;
       if (t === "radar") this.$nextTick(() => this.initRadar());
       else if (t === "cfg") this.switchCfgTab(c || this.cfgTab || "radio");
-      else if (t === "range") this.loadRangeTest();
+      else if (t === "range") { this.loadRangeTest(); this.loadRangeTimer(); }
       else if (t === "nodes") this.loadNodes();
       else if (t === "devices") this.loadDevices();
       else if (t === "messages") this.unreadMessages = 0;
@@ -160,6 +164,12 @@ function dashboard() {
     // cd() — like d() but uses cfgRadioId for Radio Config tab operations
     cd(path) {
       const id = this.cfgRadioId || this.activeNodeId;
+      return id ? "/" + id + path : path;
+    },
+
+    // rd() — like d() but uses rangeRadioId for Range Test tab operations
+    rd(path) {
+      const id = this.rangeRadioId || this.activeNodeId;
       return id ? "/" + id + path : path;
     },
 
@@ -1219,9 +1229,10 @@ function dashboard() {
 
     // -- Range test -----------------------------------------------------------
     async loadRangeTest() {
+      if (!this.rangeRadioId && this.activeNodeId) this.rangeRadioId = this.activeNodeId;
       this.rangeLoading = true;
       try {
-        const data = await fetchJSON(this.d("/range_test"));
+        const data = await fetchJSON('/range_test/log');
         this.rangeLog = (data.log || []).slice().reverse();
       } catch (_) {
       } finally {
@@ -1230,8 +1241,51 @@ function dashboard() {
     },
 
     async clearRangeTest() {
-      await fetchJSON(this.d("/range_test"), "DELETE");
+      await fetchJSON('/range_test/log', "DELETE");
       this.rangeLog = [];
+    },
+
+    async loadRangeTimer() {
+      try {
+        const t = await fetchJSON('/range_test/timer');
+        this.rangeTimer = t;
+        this._startRangeCountdown();
+      } catch (_) {}
+    },
+
+    _startRangeCountdown() {
+      if (this._rangeCountdown) clearInterval(this._rangeCountdown);
+      if (!this.rangeTimer.active) return;
+      this._rangeCountdown = setInterval(() => {
+        if (!this.rangeTimer.endsAt) { clearInterval(this._rangeCountdown); return; }
+        const rem = Math.max(0, Math.round((this.rangeTimer.endsAt - Date.now()) / 1000));
+        this.rangeTimer = { ...this.rangeTimer, remaining: rem };
+        if (rem === 0) {
+          clearInterval(this._rangeCountdown);
+          this.rangeTimer = { active: false, endsAt: null, nodeId: null, remaining: null };
+        }
+      }, 1000);
+    },
+
+    async startRangeTest() {
+      const nodeId = this.rangeRadioId || this.activeNodeId;
+      if (!nodeId) return;
+      const t = await fetchJSON('/range_test/start', 'POST', { nodeId, durationMin: this.rangeDuration });
+      this.rangeTimer = { active: true, endsAt: t.endsAt, nodeId, remaining: this.rangeDuration * 60 };
+      this._startRangeCountdown();
+      await fetchJSON(`/config/range_test.duration`, 'PUT', { value: this.rangeDuration });
+    },
+
+    async stopRangeTest() {
+      if (this._rangeCountdown) clearInterval(this._rangeCountdown);
+      this.rangeTimer = { active: false, endsAt: null, nodeId: null, remaining: null };
+      await fetchJSON('/range_test/stop', 'POST', {});
+    },
+
+    rangeFmtCountdown(sec) {
+      if (sec == null) return '';
+      const m = Math.floor(sec / 60), s = sec % 60;
+      return m + ':' + String(s).padStart(2, '0');
     },
 
     rangeEnrich(e) {

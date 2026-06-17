@@ -75,6 +75,19 @@ db.exec(`
     updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
+  CREATE TABLE IF NOT EXISTS range_test_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        INTEGER NOT NULL,
+    from_num  INTEGER NOT NULL,
+    rssi      INTEGER,
+    snr       REAL,
+    hops      INTEGER,
+    seq       TEXT,
+    rx_device TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_range_test_ts ON range_test_log(ts DESC);
+
   CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup  ON messages(packet_id, device) WHERE packet_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_messages_ts     ON messages(ts DESC);
   CREATE INDEX IF NOT EXISTS idx_messages_from   ON messages(from_num);
@@ -136,6 +149,18 @@ export const stmts = {
     INSERT INTO events (ts, type, device, data) VALUES (@ts, @type, @device, @data)
   `),
 
+  insertRangeTest: db.prepare(`
+    INSERT INTO range_test_log (ts, from_num, rssi, snr, hops, seq, rx_device)
+    VALUES (@ts, @from_num, @rssi, @snr, @hops, @seq, @rx_device)
+  `),
+
+  queryRangeTest: db.prepare(`
+    SELECT id, ts, from_num, rssi, snr, hops, seq, rx_device
+    FROM range_test_log ORDER BY ts DESC LIMIT ?
+  `),
+
+  clearRangeTest: db.prepare(`DELETE FROM range_test_log`),
+
   getConfig:   db.prepare(`SELECT value FROM config WHERE key = ?`),
   setConfig:   db.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
   getNodePos:  db.prepare(`SELECT lat, lon FROM nodes WHERE num = ? AND lat IS NOT NULL`),
@@ -149,6 +174,18 @@ export function getConfig(key, fallback = null) {
 
 export function setConfig(key, value) {
   stmts.setConfig.run(key, JSON.stringify(value));
+}
+
+export function insertRangeTestEntry(entry) {
+  stmts.insertRangeTest.run(entry);
+}
+
+export function queryRangeTestLog(limit = 500) {
+  return stmts.queryRangeTest.all(limit);
+}
+
+export function clearRangeTestLog() {
+  stmts.clearRangeTest.run();
 }
 
 export function getConfigByPrefix(prefix) {

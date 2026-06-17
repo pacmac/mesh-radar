@@ -20,6 +20,7 @@ const DEFAULTS = {
   'message_filter.channels': [],
   'message_filter.hide_mqtt': false,
   'packet_sources': [],
+  'range_test.duration': 10,
 };
 
 router.get('/', (req, res) => {
