@@ -933,11 +933,11 @@
             </div>
           </div>
           <template x-if="rangeStats()">
-            <div class="stats stats-horizontal shadow bg-base-100 w-full" x-data="{ s: rangeStats() }">
-              <div class="stat"><div class="stat-title">Packets</div><div class="stat-value text-lg" x-text="s.count"></div><div class="stat-desc">range test rx</div></div>
-              <div class="stat"><div class="stat-title">Best RSSI</div><div class="stat-value text-lg text-success" x-text="s.bestRssi != null ? s.bestRssi + ' dBm' : '–'"></div><div class="stat-desc" x-text="'median ' + (s.medianRssi ?? '–') + ' dBm'"></div></div>
-              <div class="stat"><div class="stat-title">Max range</div><div class="stat-value text-lg" x-text="s.maxDistKm != null ? s.maxDistKm + ' km' : '–'"></div><div class="stat-desc">of heard packets with position</div></div>
-              <div class="stat"><div class="stat-title">Median excess loss</div><div class="stat-value text-lg" :class="s.medianExcessLoss != null && s.medianExcessLoss < 0 ? 'text-success' : 'text-warning'" x-text="s.medianExcessLoss != null ? s.medianExcessLoss + ' dB' : '–'"></div><div class="stat-desc">vs free-space link budget (−=better)</div></div>
+            <div class="stats stats-horizontal shadow bg-base-100 w-full">
+              <div class="stat"><div class="stat-title">Packets</div><div class="stat-value text-lg" x-text="rangeStats().count"></div><div class="stat-desc">range test rx</div></div>
+              <div class="stat"><div class="stat-title">Best RSSI</div><div class="stat-value text-lg text-success" x-text="rangeStats().bestRssi != null ? rangeStats().bestRssi + ' dBm' : '–'"></div><div class="stat-desc" x-text="'median ' + (rangeStats().medianRssi ?? '–') + ' dBm'"></div></div>
+              <div class="stat"><div class="stat-title">Max range</div><div class="stat-value text-lg" x-text="rangeStats().maxDistKm != null ? rangeStats().maxDistKm + ' km' : '–'"></div><div class="stat-desc">of heard packets with position</div></div>
+              <div class="stat"><div class="stat-title">Median excess loss</div><div class="stat-value text-lg" :class="rangeStats().medianExcessLoss != null && rangeStats().medianExcessLoss < 0 ? 'text-success' : 'text-warning'" x-text="rangeStats().medianExcessLoss != null ? rangeStats().medianExcessLoss + ' dB' : '–'"></div><div class="stat-desc">vs free-space link budget (−=better)</div></div>
             </div>
           </template>
           <div class="card bg-base-100 shadow">

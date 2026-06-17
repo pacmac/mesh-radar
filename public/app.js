@@ -1358,10 +1358,11 @@ function dashboard() {
       const distKm = (this.homePos && lat != null) ? haversine(this.homePos.lat, this.homePos.lon, lat, lon) : null;
       const az     = (this.homePos && lat != null) ? bearing(this.homePos.lat, this.homePos.lon, lat, lon) : null;
       let expectedRssi = null, excessLoss = null;
-      // Basic FSPL estimate (no antenna config in new system — kept for future)
       if (distKm != null && distKm > 0) {
         const fspl = 20 * Math.log10(distKm) + 20 * Math.log10(868) + 32.4;
-        const txPow = 22, txGain = 2, rxGain = 9.5;
+        const txPow = 22, txGain = 2; // transmitter: assume mobile node defaults
+        const rxCfg = this.deviceConfigs[e.rx_device] || {};
+        const rxGain = (rxCfg.gain_dbi ?? 2) - (rxCfg.cable_loss_db ?? 0);
         expectedRssi = Math.round(txPow + txGain + rxGain - fspl);
         if (e.rssi != null) excessLoss = parseFloat((expectedRssi - e.rssi).toFixed(1));
       }
