@@ -24,5 +24,19 @@ export const BRIDGE_CONFIG_SCHEMA = {
         { name: 'ha_discovery_prefix', type: 'string' },
       ],
     },
+    {
+      name: 'claude_chat',
+      type: 'object',
+      label: 'Claude AI Chat',
+      fields: [
+        { name: 'enabled',          type: 'bool',   label: 'Enable' },
+        { name: 'trigger_word',     type: 'string', label: 'Trigger word', hint: 'e.g. @claude' },
+        { name: 'system_prompt',    type: 'string', label: 'System prompt' },
+        { name: 'max_history',      type: 'int',    label: 'Max history (messages)' },
+        { name: 'max_reply_length', type: 'int',    label: 'Max reply length (chars)' },
+        { name: 'whitelist',        type: 'string', label: 'Whitelist (comma-separated !hex IDs)', hint: 'Empty = my_nodes only' },
+        { name: 'my_nodes',         type: 'string', label: 'My nodes (comma-separated !hex IDs)', hint: 'Always allowed' },
+      ],
+    },
   ],
 };
