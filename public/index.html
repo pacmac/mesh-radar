@@ -1016,7 +1016,7 @@
             <div class="card-body">
               <h2 class="card-title">Message Feed</h2>
               <div class="overflow-y-auto max-h-[400px] divide-y divide-base-200">
-                <template x-for="(m, i) in displayMessages()" :key="i">
+                <template x-for="m in displayMessages()" :key="m.pktId || (m.fromNum + '_' + m.ts + '_' + (m.text||'').slice(0,20))">
                   <div class="flex items-start gap-3 py-2"
                        :style="m.replyDepth > 0 ? `margin-left:${m.replyDepth * 2}rem` : ''"
                        :class="m.isReply ? 'border-l-2 border-base-300 pl-2' : ''"

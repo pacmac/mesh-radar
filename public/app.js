@@ -1671,8 +1671,8 @@ function dashboard() {
             _address: existing?._address,
           };
         });
-      // Clear point target if it no longer exists in the filtered node set
-      if (this.yagiPointTarget && !this.radarNodes.find(n => n.num === this.yagiPointTarget))
+      // Clear point target if it is not in the filtered node set (e.g. a bridge node)
+      if (this.yagiPointTarget && !this.filteredNodes().some(n => n.num === this.yagiPointTarget))
         this.yagiPointTarget = null;
       this.drawRadar();
     },
