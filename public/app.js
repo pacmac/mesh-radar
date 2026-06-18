@@ -109,7 +109,7 @@ function dashboard() {
     get targetNode() {
       if (!this.yagiPointTarget) return null;
       return this.radarNodes.find(n => n.num === this.yagiPointTarget)
-          || this.nodes.find(n => n.num === this.yagiPointTarget)
+          || this.filteredNodes().find(n => n.num === this.yagiPointTarget)
           || null;
     },
     lastHeardNum: null,
@@ -831,7 +831,8 @@ function dashboard() {
         this.rotatorConnected = d.connected ?? false;
         this.rotatorStatus    = d;
         if (d.az != null) this.yagiAz = d.az;
-        this.yagiPointTarget  = d.point_target ?? null;
+        const pt = d.point_target ?? null;
+        this.yagiPointTarget = pt && this.filteredNodes().some(n => n.num === pt) ? pt : null;
       } catch (_) {}
     },
 
@@ -1670,6 +1671,9 @@ function dashboard() {
             _address: existing?._address,
           };
         });
+      // Clear point target if it no longer exists in the filtered node set
+      if (this.yagiPointTarget && !this.radarNodes.find(n => n.num === this.yagiPointTarget))
+        this.yagiPointTarget = null;
       this.drawRadar();
     },
 
