@@ -26,16 +26,13 @@ self.addEventListener('fetch', e => {
     e.respondWith(fetch(e.request).catch(() => caches.match('/')));
     return;
   }
-  // Static shell assets: cache-first, update in background
+  // Static shell assets: network-first so updates land immediately; cache as offline fallback
   if (SHELL.includes(url.pathname)) {
     e.respondWith(
-      caches.match(e.request).then(cached => {
-        const network = fetch(e.request).then(res => {
-          if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
-          return res;
-        });
-        return cached || network;
-      })
+      fetch(e.request).then(res => {
+        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+        return res;
+      }).catch(() => caches.match(e.request))
     );
   }
 });

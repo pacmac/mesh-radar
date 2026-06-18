@@ -719,3 +719,18 @@ footer {
     border-color: var(--border) !important;
   }
 }
+
+/* Signal quality bars widget */
+.sig-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  vertical-align: middle;
+  cursor: default;
+}
+.sig-bars > i {
+  display: block;
+  width: 3px;
+  border-radius: 1px;
+  background: currentColor;
+}

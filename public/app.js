@@ -60,6 +60,8 @@ function dashboard() {
     mqttProxy: false,
     mqttCfg: {},
     loraCfg: {},
+    ble_ready: false,
+    _readbackQueue: [],
     wsConnected: false,
     serverReachable: true,
     yagiAz: null,
@@ -197,18 +199,37 @@ function dashboard() {
       }
     },
 
-    async selectDevice(nodeId) {
-      this.activeNodeId = nodeId;
-      localStorage.setItem("activeNodeId", nodeId);
+    _clearDeviceState() {
+      this.status = {};
+      this.info = { my_info: {}, metadata: {} };
+      this.nodes = [];
+      this.nodeSelf = {};
+      this.nodeTotal = 0;
+      this.nodeCount = 0;
+      this.mqttProxy = false;
+      this.mqttCfg = {};
+      this.loraCfg = {};
       this.allSections = [];
       this.channels = [];
       this.ownerSchema = null;
+      this.ownerData = {};
+      this.fixedPosition = { lat: null, lon: null, alt: null, loaded: false, saved: false, error: "" };
+    },
+
+    async selectDevice(nodeId) {
+      this.activeNodeId = nodeId;
+      localStorage.setItem("activeNodeId", nodeId);
+      this._clearDeviceState();
       this.reconnectWS();
-      await this.refreshStatus();
-      await this.loadInfo();
-      await this.loadNodes();
-      this.updateHomePos();
+      await this.bootstrapDevice();
       if (this.tab === "radar") this.initRadar();
+    },
+
+    async bootstrapDevice() {
+      if (!this.activeNodeId) return;
+      await this.refreshStatus();
+      await Promise.all([this.loadInfo(), this.loadNodes()]);
+      this.updateHomePos();
     },
 
     async disconnectDevice(nodeId) {
@@ -241,17 +262,17 @@ function dashboard() {
       await this.loadBridgeConfig();
 
       if (this.activeNodeId) {
-        await this.refreshStatus();
-        await this.loadInfo();
-        await this.loadNodes();
-        this.updateHomePos();
+        await this.bootstrapDevice();
       }
 
       await this.loadMessages();
       await this.loadRotatorState();
 
       this.connectWS();
-      setInterval(() => { this.refreshStatus(); this.loadDevices(); }, 30000);
+      this.$watch('ble_ready', (ready, wasReady) => {
+        if (ready && !wasReady) this._drainReadbackQueue();
+      });
+      setInterval(() => { this.loadDevices(); }, 60000);
 
       if (this.tab === "radar") this.$nextTick(() => this.initRadar());
       else if (this.tab === "cfg") this.switchCfgTab(this.cfgTab);
@@ -458,6 +479,7 @@ function dashboard() {
       try {
         this.status = await fetchJSON(this.d("/status"));
         this.mqttProxy = this.status.mqtt_proxy_connected;
+        this.ble_ready = !!this.status.ready;
         this.serverReachable = true;
       } catch (_) {
         this.serverReachable = false;
@@ -502,6 +524,11 @@ function dashboard() {
       try {
         const rows = await fetchJSON('/messages?limit=50');
         if (Array.isArray(rows) && rows.length) {
+          const ownNums = new Set(
+            (this.availableDevices || [])
+              .map(d => parseInt((d.node_id || '').replace('!', ''), 16))
+              .filter(Boolean)
+          );
           this.messages = rows.map(r => ({
             pktId:     r.packet_id,
             replyId:   r.reply_id || null,
@@ -512,7 +539,7 @@ function dashboard() {
             text:      r.text,
             ts:        r.ts,
             time:      new Date(r.ts * 1000).toLocaleTimeString(),
-            direction: 'rx',
+            direction: ownNums.has(r.from_num) ? 'tx' : 'rx',
             ackStatus: null,
             src:       r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
           }));
@@ -529,27 +556,36 @@ function dashboard() {
       const byPktId = new Map();
       for (const m of msgs) { if (m.pktId) byPktId.set(m.pktId, m); }
 
-      // Collect replies that have a known parent in this loaded set
+      // Walk a message up its reply chain to find the ultimate root visible in this window.
+      // Stops when the parent is absent (orphan) or has no replyId.
+      const getRoot = (m, visited = new Set()) => {
+        if (!m.replyId || !byPktId.has(m.replyId) || visited.has(m.pktId)) return m;
+        visited.add(m.pktId);
+        return getRoot(byPktId.get(m.replyId), visited);
+      };
+
+      // Bucket every reply under its ultimate root at depth 1 (flat thread)
       const childrenOf = new Map();
-      const orphans = new Set();
+      const knownChildren = new Set();
       for (const m of msgs) {
-        if (m.replyId && byPktId.has(m.replyId)) {
-          if (!childrenOf.has(m.replyId)) childrenOf.set(m.replyId, []);
-          childrenOf.get(m.replyId).push(m);
-        } else if (m.replyId) {
-          orphans.add(m);
-        }
+        if (!m.replyId) continue;
+        const root = getRoot(m);
+        if (root === m) continue; // m is itself a root (orphan whose parent is unknown)
+        if (!childrenOf.has(root.pktId)) childrenOf.set(root.pktId, []);
+        childrenOf.get(root.pktId).push(m);
+        knownChildren.add(m);
       }
 
-      // Roots: messages that are not a reply to a known message (in chronological order, newest first)
-      const roots = msgs.filter(m => !m.replyId || orphans.has(m));
+      // Roots: messages not bucketed under any known ancestor in this window
+      const roots = msgs.filter(m => !knownChildren.has(m));
 
-      // Build threaded flat list: root → its replies (oldest first) → next root …
       const result = [];
       for (const root of roots) {
-        result.push({ ...root, isReply: false });
+        // Orphan roots (their own parent is missing) still get the ↩ indicator
+        const rootIsOrphan = !!(root.replyId && !byPktId.has(root.replyId));
+        result.push({ ...root, isReply: rootIsOrphan, replyDepth: 0 });
         const replies = (childrenOf.get(root.pktId) || []).slice().sort((a, b) => a.ts - b.ts);
-        for (const r of replies) result.push({ ...r, isReply: true });
+        for (const r of replies) result.push({ ...r, isReply: true, replyDepth: 1 });
       }
       return result;
     },
@@ -732,9 +768,14 @@ function dashboard() {
 
     // -- websocket live feed ---------------------------------------------------
     connectWS() {
-      const ws = new WebSocket(location.origin.replace(/^http/, "ws") + "/events");
+      const path = this.activeNodeId ? `/${this.activeNodeId}/events` : '/events';
+      const ws = new WebSocket(location.origin.replace(/^http/, "ws") + path);
       this._ws = ws;
-      ws.onopen  = () => { this.wsConnected = true; };
+      ws.onopen  = () => {
+        const wasDisconnected = !this.wsConnected;
+        this.wsConnected = true;
+        if (wasDisconnected) this.bootstrapDevice();
+      };
       ws.onclose = () => {
         this.wsConnected = false;
         if (ws === this._ws) setTimeout(() => this.connectWS(), 3000);
@@ -851,22 +892,69 @@ function dashboard() {
       }
     },
 
+    _applyStateEvent(ev) {
+      const t = ev.type;
+      // Merge any status fields the event carries into this.status
+      const fields = ["ble_state","ble_address","ble_error","ble_rssi","ble_rssi_pct",
+                      "config_complete","node_count","my_node_num","last_rx_snr","last_rx_rssi",
+                      "has_my_info","has_mqtt_config","mqtt_proxy"];
+      const patch = {};
+      for (const f of fields) if (ev[f] !== undefined) patch[f] = ev[f];
+      if (Object.keys(patch).length) this.status = { ...this.status, ...patch };
+
+      if (t === "snapshot" || t === "ready") {
+        this.ble_ready = true;
+        this.mqttProxy = !!(ev.mqtt_proxy);
+        this.serverReachable = true;
+        if (t === "ready") {
+          this._drainReadbackQueue();
+          this.bootstrapDevice();
+        }
+      } else if (t === "mqtt_proxy_up") {
+        this.mqttProxy = true;
+      } else if (t === "mqtt_proxy_down") {
+        this.mqttProxy = false;
+      } else {
+        // connecting | syncing | sync_progress | reconnecting | error | idle
+        this.ble_ready = false;
+        this.serverReachable = true;
+      }
+    },
+
     handleEvent(ev) {
       if (ev.type === "rotator") { this._onRotatorEvent(ev.data || {}); return; }
 
+      // State-machine events from bridge — device-scoped
+      if (["snapshot", "ready", "connecting", "syncing", "sync_progress",
+           "reconnecting", "error", "idle", "mqtt_proxy_up", "mqtt_proxy_down"].includes(ev.type)) {
+        if (!ev.device || ev.device === this.activeNodeId) {
+          this._applyStateEvent(ev);
+        }
+        return;
+      }
+
+      // Legacy status event — backward compat during transition
       if (ev.type === "status") {
         if (!ev.device || ev.device === this.activeNodeId) {
           this.status = { ...this.status, ...ev.data };
           this.mqttProxy = ev.data.mqtt_proxy_connected;
+          this.ble_ready = !!(ev.data.ready || (ev.data.ble_state === 'ready' && ev.data.config_complete));
           this.serverReachable = true;
         }
         return;
       }
 
-      if (ev.type === "packet") {
-        const portnum = ev.data?.packet?.decoded?.portnum;
-        if (portnum === "POSITION_APP" || portnum === "NODEINFO_APP")
-          this.loadNodes().then(() => { if (this.tab === "radar") this.refreshRadar(); });
+      if (ev.type === "node_update" && ev.data?.num != null) {
+        const upd = ev.data;
+        const idx = this.nodes.findIndex(n => n.num === upd.num);
+        if (idx >= 0) this.nodes[idx] = { ...this.nodes[idx], ...upd };
+        else this.nodes.push(upd);
+        this.updateHomePos();
+        if (this.tab === "radar" && this.homePos) {
+          if (upd.position?.latitude_i) this.refreshRadar();
+          else this.drawRadar();
+        }
+        if (this.tab === "nodes") this.sortNodes(this.nodeSort.key, true);
       }
 
       if (ev.device && this.activeNodeId && ev.device !== this.activeNodeId) return;
@@ -893,18 +981,26 @@ function dashboard() {
                 if (this._seenPacketIds.size > 200) this._seenPacketIds.delete(this._seenPacketIds.values().next().value);
               }
               const text = b64ToUtf8(pkt.decoded.payload);
-              const toNum = pkt.to >>> 0;
-              this.messages.unshift({
-                pktId, fromNum: pkt.from ?? 0, to: toNum,
-                broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
-                channel: pkt.channel ?? 0,
-                replyId: pkt.decoded.reply_id || null,
-                text, ts: pkt.rx_time || Math.floor(Date.now() / 1000), time, direction: 'rx', ackStatus: null,
-                src: ev.device ? [ev.device] : [],
-              });
-              if (this.messages.length > 50) this.messages.pop();
-              try { localStorage.setItem("msgHistory", JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
-              if (this.tab !== 'messages') { this.unreadMessages++; this.playMsgSound(); }
+
+              // Absorb echo of a locally sent TX message: update its pktId so threading works
+              const localTx = this.messages.find(m => m._localTx && m.fromNum === (pkt.from ?? 0) && m.text === text);
+              if (localTx) {
+                localTx.pktId = pktId;
+                delete localTx._localTx;
+              } else {
+                const toNum = pkt.to >>> 0;
+                this.messages.unshift({
+                  pktId, fromNum: pkt.from ?? 0, to: toNum,
+                  broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
+                  channel: pkt.channel ?? 0,
+                  replyId: pkt.decoded.reply_id || null,
+                  text, ts: pkt.rx_time || Math.floor(Date.now() / 1000), time, direction: 'rx', ackStatus: null,
+                  src: ev.device ? [ev.device] : [],
+                });
+                if (this.messages.length > 50) this.messages.pop();
+                try { localStorage.setItem("msgHistory", JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
+                if (this.tab !== 'messages') { this.unreadMessages++; this.playMsgSound(); }
+              }
             }
           } catch (_) {}
         }
@@ -912,10 +1008,9 @@ function dashboard() {
           this.lastHeardNum = pkt.from;
           if (this.tab === "radar") this.drawRadar();
         }
-        if (this.tab === "nodes" && portnum === "TELEMETRY_APP") this.loadNodes();
+        if (this.tab === "nodes" && portnum === "TELEMETRY_APP") this.sortNodes(this.nodeSort.key, true);
         if (portnum === "RANGE_TEST_APP" && this.tab === "range") this.loadRangeTest();
       }
-      // config_complete_id fires _emit_status() server-side (ble_state → active); no poll needed here
       if (ev.type === "mqtt_node" && ev.data) {
         const upd = ev.data;
         const idx = this.nodes.findIndex((n) => n.num === upd.num);
@@ -1036,7 +1131,13 @@ function dashboard() {
       }
     },
 
+    _drainReadbackQueue() {
+      const queue = this._readbackQueue.splice(0);
+      for (const fn of queue) fn();
+    },
+
     async saveSection(sec) {
+      this.ble_ready = false;
       sec.saved = false;
       sec.error = "";
       const el = document.getElementById("sec_" + sec.name);
@@ -1044,10 +1145,21 @@ function dashboard() {
       try {
         const res = await fetchJSON(this.cd(`/config/${sec.name}`), "PUT", payload);
         if (res.error) throw new Error(res.error.message);
-        document.getElementById("sec_" + sec.name)?.removeAttribute("data-dirty");
-        sec.saved = true;
-        setTimeout(() => (sec.saved = false), 2500);
+        this._readbackQueue.push(async () => {
+          try {
+            const values = await fetchJSON(this.cd(`/config/${sec.name}`));
+            sec.data = values[sec.name] || values || {};
+            const formEl = document.getElementById("sec_" + sec.name);
+            if (formEl && !formEl.dataset.dirty) {
+              formEl.innerHTML = "";
+              formEl.appendChild(buildForm(sec.schema.fields, sec.data, []));
+            }
+          } catch (_) {}
+          sec.saved = true;
+          setTimeout(() => (sec.saved = false), 2500);
+        });
       } catch (e) {
+        this.ble_ready = this.status.ble_state === 'active' && !!this.status.config_complete;
         sec.error = "Save failed: " + e;
       }
     },
@@ -1090,6 +1202,7 @@ function dashboard() {
     },
 
     async saveChannel(ch) {
+      this.ble_ready = false;
       ch.saved = false;
       ch.error = "";
       const el = document.getElementById("ch_" + ch.index);
@@ -1099,11 +1212,23 @@ function dashboard() {
       try {
         const res = await fetchJSON(this.cd(`/channels/${ch.index}`), "PUT", body);
         if (res.error) throw new Error(res.error.message);
-        document.getElementById("ch_" + ch.index)?.removeAttribute("data-dirty");
-        ch.data = { ...ch.data, ...body };
-        ch.saved = true;
-        setTimeout(() => (ch.saved = false), 2500);
+        this._readbackQueue.push(async () => {
+          try {
+            const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
+            ch.data = live || {};
+            const formData = { ...(live?.settings || {}), role: live?.role };
+            const formEl = document.getElementById("ch_" + ch.index);
+            if (formEl && !formEl.dataset.dirty) {
+              formEl.innerHTML = "";
+              formEl.dataset.formRoot = "1";
+              formEl.appendChild(buildForm(this.channelSchema.fields, formData, []));
+            }
+          } catch (_) {}
+          ch.saved = true;
+          setTimeout(() => (ch.saved = false), 2500);
+        });
       } catch (e) {
+        this.ble_ready = this.status.ble_state === 'active' && !!this.status.config_complete;
         ch.error = "Save failed: " + e;
       }
     },
@@ -1149,18 +1274,24 @@ function dashboard() {
       const text = this.msgText, channel = Number(this.msgChannel), time = new Date().toLocaleTimeString();
       const fromId = this.msgFrom || this.activeNodeId;
       const to = this.msgIsDirect && this.msgDirectTo ? Number(this.msgDirectTo) : 0xFFFFFFFF;
+      const fromNum = parseInt((fromId || '').replace('!', ''), 16) || 0;
       const body = { text, channel };
       if (this.msgIsDirect && this.msgDirectTo) body.to = to;
       if (this.msgReplyId) body.reply_id = this.msgReplyId;
-      await fetchJSON("/" + fromId + "/messages", "POST", body);
-      const fromNum = parseInt(fromId.replace('!', ''), 16) || 0;
-      this.messages.unshift({
+
+      // Add optimistic TX entry BEFORE the POST so the WS echo (which arrives
+      // almost immediately) can be absorbed rather than creating a duplicate.
+      const txEntry = {
         fromNum, to: to >>> 0,
         broadcast: to === 0xFFFFFFFF, channel, text,
-        ts: Math.floor(Date.now() / 1000), time, direction: 'tx', ackStatus: 'sent',
+        ts: Math.floor(Date.now() / 1000), time, direction: 'tx', ackStatus: 'sending',
         src: fromId ? [fromId] : [], replyId: this.msgReplyId || null,
-      });
+        _localTx: true,
+      };
+      this.messages.unshift(txEntry);
       if (this.messages.length > 50) this.messages.pop();
+
+      // Clear compose immediately
       this.msgInputHistory = [text, ...this.msgInputHistory.filter(t => t !== text)].slice(0, 50);
       try { localStorage.setItem('msgInputHistory', JSON.stringify(this.msgInputHistory)); } catch (_) {}
       this.msgHistoryIdx = -1;
@@ -1168,9 +1299,18 @@ function dashboard() {
       this.msgText = "";
       this.msgReplyId = null;
       this.msgReplyFrom = null;
-      this.msgSent = true;
-      setTimeout(() => (this.msgSent = false), 2000);
       if (this.msgIsModal) this.closeMessageModal();
+
+      try {
+        await fetchJSON("/" + fromId + "/messages", "POST", body);
+        txEntry.ackStatus = 'sent';
+        this.msgSent = true;
+        setTimeout(() => (this.msgSent = false), 2000);
+      } catch (e) {
+        // Remove the optimistic entry so the user can retry
+        const idx = this.messages.indexOf(txEntry);
+        if (idx !== -1) this.messages.splice(idx, 1);
+      }
     },
 
     openMessageModal(mode, node) {
@@ -1467,13 +1607,51 @@ function dashboard() {
       return "oklch(var(--er))";
     },
 
+    signalQuality(rssi, snr) {
+      const hasRssi = rssi != null, hasSnr = snr != null;
+      if (!hasRssi && !hasSnr) return { pct: 0, label: 'No signal', cls: 'text-base-content/30', badgeCls: 'badge-ghost', none: true };
+      const snrScore  = hasSnr  ? Math.max(0, Math.min(1, (snr  + 20) / 30)) : null;
+      const rssiScore = hasRssi ? Math.max(0, Math.min(1, (rssi + 120) / 70)) : null;
+      const pct = Math.round(
+        snrScore != null && rssiScore != null ? (snrScore * 0.6 + rssiScore * 0.4) * 100
+        : (snrScore ?? rssiScore) * 100
+      );
+      const label    = pct >= 76 ? 'Excellent' : pct >= 51 ? 'Good' : pct >= 26 ? 'Fair' : 'Poor';
+      const cls      = pct >= 76 ? 'text-success' : pct >= 51 ? 'text-success' : pct >= 26 ? 'text-warning' : 'text-error';
+      const badgeCls = pct >= 76 ? 'badge-success' : pct >= 51 ? 'badge-success' : pct >= 26 ? 'badge-warning' : 'badge-error';
+      return { pct, label, cls, badgeCls, none: false };
+    },
+
+    sigBars(rssi, snr, scale = 1) {
+      const sq = this.signalQuality(rssi, snr);
+      if (sq.none) return '';
+      const parts = [3, 6, 9, 12].map((h, i) =>
+        `<i style="height:${Math.round(h * scale)}px;opacity:${sq.pct > i * 25 ? 1 : 0.15}"></i>`
+      ).join('');
+      const tip = `${sq.label} (${sq.pct}%) · ${rssi != null ? rssi + ' dBm' : '–'} / ${snr != null ? snr + ' dB' : '–'}`;
+      return `<span class="sig-bars ${sq.cls}" title="${tip}">${parts}</span>`;
+    },
+
+    sigBadge(rssi, snr) {
+      const sq = this.signalQuality(rssi, snr);
+      if (sq.none) return '<span class="badge badge-xs badge-ghost">no RF</span>';
+      const b = (h, on) => `<i style="display:block;width:2px;border-radius:1px;background:currentColor;height:${h}px;opacity:${on?0.85:0.2}"></i>`;
+      const tip = `${sq.label} (${sq.pct}%) · ${rssi != null ? rssi + ' dBm' : '–'} / ${snr != null ? snr + ' dB' : '–'}`;
+      return `<span class="badge badge-xs ${sq.badgeCls} inline-flex items-end gap-px px-1" title="${tip}">${b(4,sq.pct>0)}${b(6,sq.pct>25)}${b(8,sq.pct>50)}${b(10,sq.pct>75)}</span>`;
+    },
+
     // -- Radar ----------------------------------------------------------------
     async initRadar() {
-      await this.loadNodes();
-      if (!this.homePos) return;
-      this.refreshRadar();
-      this.geocodeNodes();
-      if (this.yagiAz != null) this._animateBeam(this.yagiAz);
+      if (this._initRadarRunning) return;
+      this._initRadarRunning = true;
+      try {
+        if (!this.homePos) return;
+        this.refreshRadar();
+        this.geocodeNodes();
+        if (this.yagiAz != null) this._animateBeam(this.yagiAz);
+      } finally {
+        this._initRadarRunning = false;
+      }
     },
 
     refreshRadar() {

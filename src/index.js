@@ -216,7 +216,7 @@ for (const prefix of BRIDGE_PREFIXES) {
 app.use(/^\/![0-9a-f]+/i, proxyToBridge);
 
 // -- static files -----------------------------------------------------------
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0 }));
 
 // -- server + WS relay -------------------------------------------------------
 const server = http.createServer(app);
