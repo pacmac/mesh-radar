@@ -1211,7 +1211,12 @@
                   </div>
                   <!-- OTA firmware update (nRF52 BLE DFU) -->
                   <div class="border-t border-base-300 pt-3"
-                       x-data="{ _fwPath: '', _otaState: null, _otaPct: 0 }"
+                       x-data="{
+                         _fwPath: localStorage.getItem('otaFwPath_' + dev.node_id) || '',
+                         _otaState: null,
+                         _otaPct: 0,
+                         _savePath(v) { localStorage.setItem('otaFwPath_' + dev.node_id, v); }
+                       }"
                        x-effect="$watch('events', evs => {
                          const last = evs.find(e => e.device === dev.node_id && ['ota_progress','ota_complete','ota_error'].includes(e.type));
                          if (!last) return;
@@ -1223,22 +1228,23 @@
                       <span class="text-xs font-semibold opacity-60 uppercase tracking-wide">Firmware OTA</span>
                       <span x-show="_otaState === 'flashing'" class="badge badge-sm badge-warning animate-pulse">Flashing <span x-text="_otaPct + '%'"></span></span>
                       <span x-show="_otaState === 'done'" class="badge badge-sm badge-success">Done</span>
-                      <span x-show="_otaState === 'error'" class="badge badge-sm badge-error">Error</span>
+                      <span x-show="_otaState === 'error'" class="badge badge-sm badge-error">Error — check bridge log</span>
                     </div>
                     <div class="flex gap-2 items-end flex-wrap">
                       <div class="form-control flex-1 min-w-48">
                         <label class="label py-0"><span class="label-text text-xs">Firmware zip path (server-side)</span></label>
                         <input type="text" class="input input-sm input-bordered font-mono text-xs"
                                x-model="_fwPath"
+                               @input="_savePath(_fwPath)"
                                placeholder="/path/to/firmware-rak4631-x.y.z.zip">
                       </div>
                       <button class="btn btn-sm btn-warning"
                               :disabled="_otaState === 'flashing' || !_fwPath.trim()"
-                              @click="fetch('/ota', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({node_id: dev.node_id, firmware: _fwPath.trim()})}).then(r=>r.json()).then(d=>{ if(d.started) { _otaState='flashing'; _otaPct=0; } else alert('OTA start failed: '+JSON.stringify(d)); }).catch(e=>alert('OTA error: '+e))">
+                              @click="fetchJSON('/ota', 'POST', {node_id: dev.node_id, firmware: _fwPath.trim()}).then(d=>{ if(d.started) { _otaState='flashing'; _otaPct=0; } else { _otaState='error'; } }).catch(e=>{ _otaState='error'; })">
                         Flash OTA
                       </button>
                     </div>
-                    <p class="text-xs opacity-40 mt-1">Device will disconnect, reboot into bootloader, and reconnect automatically after flashing.</p>
+                    <p class="text-xs opacity-40 mt-1">Device disconnects, reboots into bootloader, flashes over BLE, reconnects automatically.</p>
                   </div>
                   <!-- Actions -->
                   <div class="flex gap-2 flex-wrap">
