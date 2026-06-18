@@ -938,6 +938,7 @@ function dashboard() {
         // fall through to event log
       }
       if (ev.type === "ota_progress") {
+        if (!this.otaActive) { this.otaActive = true; this.otaBleAddr = ev.ble_addr || ev.device || null; }
         this.otaPct = ev.data?.pct ?? this.otaPct;
         return;
       }

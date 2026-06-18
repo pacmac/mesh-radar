@@ -44,7 +44,7 @@ export function attachWsRelay(server) {
 
     function onEvent(ev) {
       if (ws.readyState !== 1) return;
-      if (!ev.device || ev.device === nodeId) ws.send(JSON.stringify(ev));
+      if (!ev.device || ev.device === nodeId || ev.type?.startsWith('ota_')) ws.send(JSON.stringify(ev));
     }
 
     function onRotator(data) {
