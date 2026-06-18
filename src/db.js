@@ -89,6 +89,20 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_range_test_ts ON range_test_log(ts DESC);
 
+  CREATE TABLE IF NOT EXISTS tilt_history (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts       INTEGER NOT NULL,
+    node_id  TEXT NOT NULL,
+    pitch    REAL NOT NULL,
+    roll     REAL NOT NULL,
+    x_g      REAL,
+    y_g      REAL,
+    z_g      REAL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_tilt_ts   ON tilt_history(ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_tilt_node ON tilt_history(node_id, ts DESC);
+
   CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup  ON messages(packet_id, device) WHERE packet_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_messages_ts     ON messages(ts DESC);
   CREATE INDEX IF NOT EXISTS idx_messages_from   ON messages(from_num);
@@ -102,6 +116,10 @@ const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.
 if (!existingCols.includes('reply_id')) {
   db.exec(`ALTER TABLE messages ADD COLUMN reply_id INTEGER`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_reply ON messages(reply_id) WHERE reply_id IS NOT NULL`);
+}
+const tiltCols = db.prepare(`PRAGMA table_info(tilt_history)`).all().map(r => r.name);
+if (!tiltCols.includes('ncal')) {
+  db.exec(`ALTER TABLE tilt_history ADD COLUMN ncal INTEGER NOT NULL DEFAULT 0`);
 }
 
 export const stmts = {
@@ -173,6 +191,22 @@ export const stmts = {
   setConfig:   db.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
   getNodePos:  db.prepare(`SELECT lat, lon FROM nodes WHERE num = ? AND lat IS NOT NULL`),
 
+  insertTilt: db.prepare(`
+    INSERT INTO tilt_history (ts, node_id, pitch, roll, x_g, y_g, z_g)
+    VALUES (@ts, @node_id, @pitch, @roll, @x_g, @y_g, @z_g)
+  `),
+
+  queryTilt: db.prepare(`
+    SELECT ts, pitch, roll, x_g, y_g, z_g FROM tilt_history
+    WHERE node_id = ? AND ts >= ? AND ncal = 0
+    ORDER BY ts ASC
+  `),
+
+  markNcal: db.prepare(`
+    UPDATE tilt_history SET ncal = 1
+    WHERE node_id = ? AND ts BETWEEN ? AND ?
+  `),
+
 };
 
 export function getConfig(key, fallback = null) {
@@ -194,6 +228,18 @@ export function queryRangeTestLog(limit = 500) {
 
 export function clearRangeTestLog() {
   stmts.clearRangeTest.run();
+}
+
+export function insertTilt(entry) {
+  stmts.insertTilt.run(entry);
+}
+
+export function queryTiltHistory(nodeId, sinceTs) {
+  return stmts.queryTilt.all(nodeId, sinceTs);
+}
+
+export function markTiltNcal(nodeId, tsFrom, tsTo) {
+  return stmts.markNcal.run(nodeId, tsFrom, tsTo).changes;
 }
 
 export function getConfigByPrefix(prefix) {

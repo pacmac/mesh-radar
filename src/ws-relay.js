@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { bridge } from './bridge.js';
 import { rotator } from './rotator.js';
+import { insertTilt } from './db.js';
 
 export function attachWsRelay(server) {
   // Both WSSes use noServer so they never compete on the upgrade event.
@@ -16,7 +17,22 @@ export function attachWsRelay(server) {
     }
   }
 
-  bridge.on('event', (ev) => broadcast(ev));
+  bridge.on('event', (ev) => {
+    if (ev.type === 'tilt_update' && ev.data) {
+      try {
+        insertTilt({
+          ts:      Math.floor(Date.now() / 1000),
+          node_id: ev.device || '?',
+          pitch:   ev.data.pitch ?? 0,
+          roll:    ev.data.roll  ?? 0,
+          x_g:     ev.data.x    ?? null,
+          y_g:     ev.data.y    ?? null,
+          z_g:     ev.data.z    ?? null,
+        });
+      } catch (e) { console.error('[tilt] insert failed:', e.message); }
+    }
+    broadcast(ev);
+  });
   rotator.on('status', (data) => broadcast({ type: 'rotator', data }));
   rotator.on('point_target', (data) => broadcast({ type: 'rotator', data }));
 

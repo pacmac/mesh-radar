@@ -75,6 +75,13 @@ function dashboard() {
     otaPct: 0,
     otaBleAddr: null,
     otaError: null,
+    tiltHistory: [],
+    tiltWindow: 4,
+    tiltPeak: 0,
+    tiltRings: [1, 2, 3, 4],
+    tiltZero:        JSON.parse(localStorage.getItem('tiltZero')        || 'null'),
+    tiltNorthAngle:  localStorage.getItem('tiltNorthAngle') !== null
+                       ? parseFloat(localStorage.getItem('tiltNorthAngle')) : null,
     events: [],
     allSections: [],
     channels: [],
@@ -276,6 +283,15 @@ function dashboard() {
       this.$watch('ble_ready', (ready, wasReady) => {
         if (ready && !wasReady) this._drainReadbackQueue();
       });
+      this.$watch('activeNodeId', () => this.loadTiltHistory());
+      this.$watch('tiltWindow',   () => this.loadTiltHistory());
+      this.$watch('tiltPeak', peak => {
+        const stops = [0.25, 0.5, 1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90];
+        const maxRing = stops.find(v => v >= Math.max(peak * 1.25, 0.5)) ?? 90;
+        const q = maxRing / 4;
+        this.tiltRings = [q, q*2, q*3, maxRing].map(v => +v.toFixed(2));
+      });
+      this.loadTiltHistory();
       setInterval(() => { this.loadDevices(); }, 60000);
 
       if (this.tab === "radar") this.$nextTick(() => this.initRadar());
@@ -971,7 +987,16 @@ function dashboard() {
       if (ev.type === "tilt_update" && ev.from_num != null) {
         const idx = this.nodes.findIndex(n => n.num === ev.from_num);
         if (idx >= 0) this.nodes[idx] = { ...this.nodes[idx], tilt: ev.data };
-        if (this.nodeSelf?.num === ev.from_num) this.nodeSelf = { ...this.nodeSelf, tilt: ev.data };
+        if (this.nodeSelf?.num === ev.from_num) {
+          this.nodeSelf = { ...this.nodeSelf, tilt: ev.data };
+          if (ev.data?.pitch != null && ev.device === this.activeNodeId) {
+            const entry = { ts: Math.floor(Date.now()/1000), pitch: ev.data.pitch, roll: ev.data.roll };
+            this.tiltHistory = [...this.tiltHistory, entry];
+            const z = this.tiltApplyZero(entry.pitch, entry.roll);
+            const t = Math.sqrt(z.pitch**2 + z.roll**2);
+            if (t > this.tiltPeak) this.tiltPeak = t;
+          }
+        }
         return;
       }
 
@@ -1652,6 +1677,156 @@ function dashboard() {
       const badgeCls = pct >= 76 ? 'badge-success' : pct >= 51 ? 'badge-success' : pct >= 26 ? 'badge-warning' : 'badge-error';
       return { pct, label, cls, badgeCls, none: false };
     },
+
+    // -- Tilt radar helpers ---------------------------------------------------
+
+    tiltMaxDeg() { return this.tiltRings[this.tiltRings.length - 1] || 1; },
+
+    tiltApplyZero(pitch, roll) {
+      if (!this.tiltZero) return { pitch, roll };
+      return { pitch: pitch - this.tiltZero.pitch, roll: roll - this.tiltZero.roll };
+    },
+
+    tiltSetZero() {
+      const p = this.nodeSelf?.tilt?.pitch ?? 0;
+      const r = this.nodeSelf?.tilt?.roll  ?? 0;
+      this.tiltZero = { pitch: p, roll: r };
+      localStorage.setItem('tiltZero', JSON.stringify(this.tiltZero));
+      // North angle is a compass rotation offset — independent of vertical zero, preserve it
+      this._tiltRecomputePeak();
+    },
+
+    tiltClearZero() {
+      this.tiltZero = null;
+      this.tiltNorthAngle = null;
+      localStorage.removeItem('tiltZero');
+      localStorage.removeItem('tiltNorthAngle');
+      this._tiltRecomputePeak();
+    },
+
+    async tiltSetNorth() {
+      if (!this.tiltZero) return;
+      const p  = this.nodeSelf?.tilt?.pitch ?? 0;
+      const r  = this.nodeSelf?.tilt?.roll  ?? 0;
+      const dp = p - this.tiltZero.pitch;
+      const dr = r - this.tiltZero.roll;
+      const t  = Math.sqrt(dp * dp + dr * dr);
+      if (t < 0.05) return; // not deflected enough
+      this.tiltNorthAngle = Math.atan2(dr, dp);
+      localStorage.setItem('tiltNorthAngle', this.tiltNorthAngle);
+      // Tag records around this calibration moment as NCAL so they're excluded
+      const now = Math.floor(Date.now() / 1000);
+      try {
+        await fetch('/tilt_history/ncal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ node_id: this.activeNodeId, ts: now, window_sec: 120 }),
+        });
+      } catch (_) {}
+      await this.loadTiltHistory(); // reload without NCAL records → rings rescale
+    },
+
+    tiltClearCal() {
+      this.tiltZero = null;
+      this.tiltNorthAngle = null;
+      localStorage.removeItem('tiltZero');
+      localStorage.removeItem('tiltNorthAngle');
+      this._tiltRecomputePeak();
+    },
+
+    tiltClearNorth() {
+      this.tiltNorthAngle = null;
+      localStorage.removeItem('tiltNorthAngle');
+    },
+
+    _tiltRecomputePeak() {
+      let max = 0;
+      for (const r of this.tiltHistory) {
+        const { pitch, roll } = this.tiltApplyZero(r.pitch, r.roll);
+        const t = Math.sqrt(pitch * pitch + roll * roll);
+        if (t > max) max = t;
+      }
+      this.tiltPeak = max;
+    },
+
+    async loadTiltHistory() {
+      if (!this.activeNodeId) return;
+      try {
+        const rows = await fetchJSON(`/tilt_history?node_id=${encodeURIComponent(this.activeNodeId)}&hours=${this.tiltWindow}`);
+        this.tiltHistory = Array.isArray(rows) ? rows : [];
+        this._tiltRecomputePeak();
+      } catch (_) {}
+    },
+
+    tiltLogPx(deg, maxPx = 130) {
+      if (deg <= 0) return 0;
+      const max = this.tiltMaxDeg();
+      return maxPx * Math.log(1 + Math.min(Math.abs(deg), max)) / Math.log(1 + max);
+    },
+
+    tiltToSvg(pitch, roll, cx = 150, cy = 150, maxPx = 130) {
+      const z = this.tiltApplyZero(pitch, roll);
+      const t = Math.sqrt(z.pitch * z.pitch + z.roll * z.roll);
+      if (t < 0.01) return { x: cx, y: cy };
+      const r = Math.min(this.tiltLogPx(t, maxPx), maxPx);
+      // SVG natural: x=roll(right), y=-pitch(up)
+      let svgX = z.roll, svgY = -z.pitch;
+      if (this.tiltNorthAngle != null) {
+        // Rotate so north points to top of display
+        const a = this.tiltNorthAngle;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const rx =  svgX * ca + svgY * sa;
+        const ry = -svgX * sa + svgY * ca;
+        svgX = rx; svgY = ry;
+      }
+      return { x: cx + r * svgX / t, y: cy + r * svgY / t };
+    },
+
+    tiltPolylinePoints(cx = 150, cy = 150, maxPx = 130) {
+      const h = this.tiltHistory;
+      if (h.length < 2) return '';
+      const step = Math.max(1, Math.floor(h.length / 400));
+      return h.filter((_, i) => i % step === 0).map(p => {
+        const { x, y } = this.tiltToSvg(p.pitch, p.roll, cx, cy, maxPx);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(' ');
+    },
+
+    tiltRecentDots(cx = 150, cy = 150, maxPx = 130) {
+      const h = this.tiltHistory;
+      if (!h.length) return [];
+      const recent = h.slice(-40);
+      return recent.map((p, i) => {
+        const { x, y } = this.tiltToSvg(p.pitch, p.roll, cx, cy, maxPx);
+        return { x, y, opacity: (i + 1) / recent.length };
+      });
+    },
+
+    // Returns SVG path data for compass bearing ticks (no template x-for needed in SVG)
+    tiltTicksMinorPath(maxPx = 130) {
+      const cx = 150, cy = 150;
+      return Array.from({ length: 12 }, (_, i) => {
+        if (i % 3 === 0) return '';
+        const a = i * 30 * Math.PI / 180;
+        const sx = Math.sin(a), cs = Math.cos(a);
+        return `M${(cx+maxPx*0.91*sx).toFixed(1)} ${(cy-maxPx*0.91*cs).toFixed(1)}L${(cx+maxPx*sx).toFixed(1)} ${(cy-maxPx*cs).toFixed(1)}`;
+      }).join(' ');
+    },
+    tiltTicksMajorPath(maxPx = 130) {
+      const cx = 150, cy = 150;
+      return Array.from({ length: 4 }, (_, i) => {
+        const a = i * 90 * Math.PI / 180;
+        const sx = Math.sin(a), cs = Math.cos(a);
+        return `M${(cx+maxPx*0.80*sx).toFixed(1)} ${(cy-maxPx*0.80*cs).toFixed(1)}L${(cx+maxPx*sx).toFixed(1)} ${(cy-maxPx*cs).toFixed(1)}`;
+      }).join(' ');
+    },
+
+    tiltDotColor(pitch, roll) {
+      // Phosphor: always green, full brightness
+      return 'rgba(0,255,80,0.95)';
+    },
+
+    // -------------------------------------------------------------------------
 
     sigBars(rssi, snr, scale = 1) {
       const sq = this.signalQuality(rssi, snr);

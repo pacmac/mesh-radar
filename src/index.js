@@ -7,7 +7,7 @@ import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getPrimaryDeviceId } from './device-config.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog } from './db.js';
+import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal } from './db.js';
 import { rotator } from './rotator.js';
 import { handlePacketForRotator } from './rotator-logic.js';
 import { attachWsRelay } from './ws-relay.js';
@@ -131,6 +131,21 @@ app.get('/schema/rotator_config', (req, res) => res.json(ROTATOR_CONFIG_SCHEMA))
 app.get('/schema/bridge_config', (req, res) => res.json(BRIDGE_CONFIG_SCHEMA));
 
 // -- range test log (SQLite-persisted, survives restarts) --------------------
+
+app.get('/tilt_history', (req, res) => {
+  const nodeId = req.query.node_id || '';
+  const hours  = parseFloat(req.query.hours) || 4;
+  const since  = Math.floor(Date.now() / 1000) - hours * 3600;
+  res.json(queryTiltHistory(nodeId, since));
+});
+
+// Mark records around a calibration event as NCAL (excluded from history/peak)
+app.post('/tilt_history/ncal', (req, res) => {
+  const { node_id, ts, window_sec = 90 } = req.body;
+  if (!node_id || ts == null) return res.status(400).json({ error: 'node_id and ts required' });
+  const changed = markTiltNcal(node_id, ts - window_sec, ts + window_sec);
+  res.json({ marked: changed });
+});
 
 app.get('/range_test/log', (req, res) => {
   const limit = parseInt(req.query.limit) || 500;
