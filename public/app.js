@@ -299,6 +299,18 @@ function dashboard() {
       }
     },
 
+    async saveBleCfg(bleAddress, field, value) {
+      // Update a bridge-side BLE device setting (auto_connect etc.)
+      const dev = this.availableDevices.find(d => d.ble_address === bleAddress);
+      if (dev) dev[field] = value; // optimistic
+      try {
+        await fetchJSON(`/ble_devices/${encodeURIComponent(bleAddress)}`, 'PATCH', { [field]: value });
+      } catch (e) {
+        console.warn('saveBleCfg failed', e);
+        if (dev) dev[field] = !value; // revert
+      }
+    },
+
     async saveDeviceCfg(nodeId, field, value) {
       const existing = this.deviceConfigs[nodeId] || {};
       const updated = { ...existing, [field]: value };

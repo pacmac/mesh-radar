@@ -5,13 +5,14 @@ const router = Router();
 const PREFIX = 'device_cfg.';
 
 const DEFAULT = {
-  label:         null,   // display label: OMNI, YAGI, Y, O, etc.
-  is_rotator:    false,  // this radio is physically on the rotator
-  is_primary:    false,  // this radio drives the Overview tab / status display
-  antenna_type:  null,   // text description e.g. "DL6WU 5el Yagi"
-  beam_deg:      360,    // beam width in degrees (360 = omni)
-  gain_dbi:      0,      // antenna gain in dBi
-  cable_loss_db: 0,      // cable loss in dB
+  label:               null,   // display label: OMNI, YAGI, Y, O, etc.
+  is_rotator:          false,  // this radio is physically on the rotator
+  is_primary:          false,  // this radio drives the Overview tab / status display
+  load_nodes_on_boot:  false,  // pre-load node list when bridge connects (slow; disable for dev)
+  antenna_type:        null,   // text description e.g. "DL6WU 5el Yagi"
+  beam_deg:            360,    // beam width in degrees (360 = omni)
+  gain_dbi:            0,      // antenna gain in dBi
+  cable_loss_db:       0,      // cable loss in dB
 };
 
 export function getDeviceCfg(nodeId) {
@@ -54,10 +55,11 @@ router.put('/:nodeId', (req, res) => {
   const existing = getDeviceCfg(nodeId);
   const updated = { ...existing };
 
-  const { label, is_rotator, is_primary, antenna_type, beam_deg, gain_dbi, cable_loss_db } = req.body;
-  if (label !== undefined)         updated.label         = label || null;
-  if (is_rotator !== undefined)    updated.is_rotator    = !!is_rotator;
-  if (antenna_type !== undefined)  updated.antenna_type  = antenna_type || null;
+  const { label, is_rotator, is_primary, load_nodes_on_boot, antenna_type, beam_deg, gain_dbi, cable_loss_db } = req.body;
+  if (label !== undefined)               updated.label               = label || null;
+  if (is_rotator !== undefined)          updated.is_rotator          = !!is_rotator;
+  if (load_nodes_on_boot !== undefined)  updated.load_nodes_on_boot  = !!load_nodes_on_boot;
+  if (antenna_type !== undefined)        updated.antenna_type        = antenna_type || null;
   if (beam_deg !== undefined)      updated.beam_deg      = Number(beam_deg) || 360;
   if (gain_dbi !== undefined)      updated.gain_dbi      = Number(gain_dbi) || 0;
   if (cable_loss_db !== undefined) updated.cable_loss_db = Number(cable_loss_db) || 0;

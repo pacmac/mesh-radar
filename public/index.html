@@ -1122,6 +1122,18 @@
                                @change="saveDeviceCfg(dev.node_id, 'is_rotator', $event.target.checked)">
                         <span class="text-sm">Rotator radio <span class="opacity-50 text-xs">(YAGI)</span></span>
                       </label>
+                      <label class="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" class="toggle toggle-sm"
+                               :checked="dev.auto_connect !== false"
+                               @change="saveBleCfg(dev.ble_address, 'auto_connect', $event.target.checked)">
+                        <span class="text-sm">Auto-connect <span class="opacity-50 text-xs">(on bridge start)</span></span>
+                      </label>
+                      <label class="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" class="toggle toggle-sm"
+                               :checked="deviceConfigs[dev.node_id]?.load_nodes_on_boot || false"
+                               @change="saveDeviceCfg(dev.node_id, 'load_nodes_on_boot', $event.target.checked)">
+                        <span class="text-sm">Load nodes on boot <span class="opacity-50 text-xs">(slow; off = faster dev)</span></span>
+                      </label>
                     </div>
                   </div>
                   <!-- Actions -->

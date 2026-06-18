@@ -208,7 +208,7 @@ async function proxyToBridge(req, res) {
   }
 }
 
-const BRIDGE_PREFIXES = ['/devices', '/ble', '/sections', '/schema', '/bridge_config', '/node_filter', '/mqtt_publish', '/mqtt_proxy'];
+const BRIDGE_PREFIXES = ['/devices', '/ble', '/ble_devices', '/sections', '/schema', '/bridge_config', '/node_filter', '/mqtt_publish', '/mqtt_proxy'];
 for (const prefix of BRIDGE_PREFIXES) {
   app.use(prefix, proxyToBridge);
 }
