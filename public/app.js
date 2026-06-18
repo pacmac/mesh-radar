@@ -71,6 +71,10 @@ function dashboard() {
     rotatorConnected: false,
     rotatorManualAz: null,
     rotatorMode: 0,
+    otaActive: false,
+    otaPct: 0,
+    otaBleAddr: null,
+    otaError: null,
     events: [],
     allSections: [],
     channels: [],
@@ -917,13 +921,31 @@ function dashboard() {
         this.mqttProxy = false;
       } else {
         // connecting | syncing | sync_progress | reconnecting | error | idle
-        this.ble_ready = false;
+        // Don't collapse the dashboard during OTA — the bridge may reconnect mid-flash
+        if (!this.otaActive) this.ble_ready = false;
         this.serverReachable = true;
       }
     },
 
     handleEvent(ev) {
       if (ev.type === "rotator") { this._onRotatorEvent(ev.data || {}); return; }
+
+      if (ev.type === "ota_start") {
+        this.otaActive = true;
+        this.otaPct = 0;
+        this.otaBleAddr = ev.ble_addr || ev.device || null;
+        this.otaError = null;
+        // fall through to event log
+      }
+      if (ev.type === "ota_progress") {
+        this.otaPct = ev.data?.pct ?? this.otaPct;
+        return;
+      }
+      if (ev.type === "ota_complete" || ev.type === "ota_error") {
+        this.otaActive = false;
+        this.otaError = ev.type === "ota_error" ? (ev.data?.error || "OTA failed") : null;
+        // fall through to event log
+      }
 
       // State-machine events from bridge — device-scoped
       if (["snapshot", "ready", "connecting", "syncing", "sync_progress",
