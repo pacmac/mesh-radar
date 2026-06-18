@@ -176,6 +176,43 @@
             </div>
           </div>
 
+          <div class="card bg-base-100 shadow lg:col-span-1" x-show="nodeSelf.tilt">
+            <div class="card-body p-4">
+              <h2 class="card-title text-sm mb-2">Mast Tilt</h2>
+              <div class="flex items-center gap-4">
+                <div class="relative w-20 h-20 shrink-0">
+                  <svg viewBox="0 0 80 80" class="w-full h-full">
+                    <circle cx="40" cy="40" r="34" fill="none" stroke="currentColor" stroke-opacity="0.15" stroke-width="1.5"/>
+                    <circle cx="40" cy="40" r="22" fill="none" stroke="currentColor" stroke-opacity="0.1" stroke-width="1"/>
+                    <line x1="40" y1="6" x2="40" y2="74" stroke="currentColor" stroke-opacity="0.1" stroke-width="1"/>
+                    <line x1="6" y1="40" x2="74" y2="40" stroke="currentColor" stroke-opacity="0.1" stroke-width="1"/>
+                    <circle
+                      :cx="40 + Math.max(-28, Math.min(28, (nodeSelf.tilt?.pitch ?? 0) * 0.7))"
+                      :cy="40 - Math.max(-28, Math.min(28, (nodeSelf.tilt?.roll ?? 0) * 0.7))"
+                      r="7"
+                      :fill="Math.abs(nodeSelf.tilt?.roll ?? 0) < 3 && Math.abs(nodeSelf.tilt?.pitch ?? 0) < 3 ? 'oklch(var(--su))' : Math.abs(nodeSelf.tilt?.roll ?? 0) < 8 && Math.abs(nodeSelf.tilt?.pitch ?? 0) < 8 ? 'oklch(var(--wa))' : 'oklch(var(--er))'"
+                      class="transition-all duration-700"/>
+                    <circle cx="40" cy="40" r="2" fill="currentColor" fill-opacity="0.3"/>
+                  </svg>
+                </div>
+                <div class="flex flex-col gap-1 text-sm font-mono">
+                  <div class="flex justify-between gap-3">
+                    <span class="opacity-50">Roll</span>
+                    <span x-text="(nodeSelf.tilt?.roll ?? 0).toFixed(1) + '°'"></span>
+                  </div>
+                  <div class="flex justify-between gap-3">
+                    <span class="opacity-50">Pitch</span>
+                    <span x-text="(nodeSelf.tilt?.pitch ?? 0).toFixed(1) + '°'"></span>
+                  </div>
+                  <div class="flex justify-between gap-3 mt-1 opacity-40 text-xs">
+                    <span>x/y/z g</span>
+                    <span x-text="[(nodeSelf.tilt?.x ?? 0).toFixed(2), (nodeSelf.tilt?.y ?? 0).toFixed(2), (nodeSelf.tilt?.z ?? 0).toFixed(2)].join(' ')"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="card bg-base-100 shadow lg:col-span-2">
             <div class="card-body">
               <h2 class="card-title">Live Event Feed</h2>

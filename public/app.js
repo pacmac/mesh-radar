@@ -945,6 +945,13 @@ function dashboard() {
         return;
       }
 
+      if (ev.type === "tilt_update" && ev.from_num != null) {
+        const idx = this.nodes.findIndex(n => n.num === ev.from_num);
+        if (idx >= 0) this.nodes[idx] = { ...this.nodes[idx], tilt: ev.data };
+        if (this.nodeSelf?.num === ev.from_num) this.nodeSelf = { ...this.nodeSelf, tilt: ev.data };
+        return;
+      }
+
       if (ev.type === "node_update" && ev.data?.num != null) {
         const upd = ev.data;
         const idx = this.nodes.findIndex(n => n.num === upd.num);
