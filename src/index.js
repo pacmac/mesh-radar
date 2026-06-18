@@ -5,7 +5,7 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter from './device-config.js';
+import deviceConfigRouter, { getDeviceCfg, getPrimaryDeviceId } from './device-config.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog } from './db.js';
 import { rotator } from './rotator.js';
@@ -258,6 +258,12 @@ rotator.on('connected', () => {
 });
 
 bridge.on('connected', async () => {
+  const primaryId = getPrimaryDeviceId();
+  const cfg = primaryId ? getDeviceCfg(primaryId) : {};
+  if (!cfg.load_nodes_on_boot) {
+    console.log('[node-dash] load_nodes_on_boot=false — skipping bulk node seed');
+    return;
+  }
   try {
     const resp = await bridge.get('/nodes?named_only=true');
     const nodeMap = resp?.nodes ?? {};

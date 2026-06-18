@@ -251,7 +251,7 @@ function dashboard() {
       await this.loadRotatorState();
 
       this.connectWS();
-      setInterval(() => { this.refreshStatus(); this.loadDevices(); }, 5000);
+      setInterval(() => { this.refreshStatus(); this.loadDevices(); }, 30000);
 
       if (this.tab === "radar") this.$nextTick(() => this.initRadar());
       else if (this.tab === "cfg") this.switchCfgTab(this.cfgTab);
@@ -854,6 +854,15 @@ function dashboard() {
     handleEvent(ev) {
       if (ev.type === "rotator") { this._onRotatorEvent(ev.data || {}); return; }
 
+      if (ev.type === "status") {
+        if (!ev.device || ev.device === this.activeNodeId) {
+          this.status = { ...this.status, ...ev.data };
+          this.mqttProxy = ev.data.mqtt_proxy_connected;
+          this.serverReachable = true;
+        }
+        return;
+      }
+
       if (ev.type === "packet") {
         const portnum = ev.data?.packet?.decoded?.portnum;
         if (portnum === "POSITION_APP" || portnum === "NODEINFO_APP")
@@ -906,7 +915,7 @@ function dashboard() {
         if (this.tab === "nodes" && portnum === "TELEMETRY_APP") this.loadNodes();
         if (portnum === "RANGE_TEST_APP" && this.tab === "range") this.loadRangeTest();
       }
-      if (ev.type === "config_complete_id" || ev.type === "node_info") this.refreshStatus();
+      // config_complete_id fires _emit_status() server-side (ble_state → active); no poll needed here
       if (ev.type === "mqtt_node" && ev.data) {
         const upd = ev.data;
         const idx = this.nodes.findIndex((n) => n.num === upd.num);
@@ -945,7 +954,7 @@ function dashboard() {
       this.allSections = [
         ...sec.config.map((name) => ({ name, kind: "config", loaded: false, loading: false, saved: false, error: "" })),
         ...sec.module_config.map((name) => ({ name, kind: "module_config", loaded: false, loading: false, saved: false, error: "" })),
-      ];
+      ].sort((a, b) => a.name.localeCompare(b.name));
     },
 
     async onSectionToggle(sec) {
@@ -1754,6 +1763,12 @@ function buildField(field, value, path, opts = {}) {
   labelText.className = "label-text text-xs";
   labelText.textContent = (field.label ?? field.name.replace(/_/g, " ")) + (field.repeated ? " (comma separated)" : "");
   labelRow.appendChild(labelText);
+  if (field.unit) {
+    const unitSpan = document.createElement("span");
+    unitSpan.className = "label-text-alt text-xs opacity-50";
+    unitSpan.textContent = field.unit;
+    labelRow.appendChild(unitSpan);
+  }
   ctl.appendChild(labelRow);
 
   const sensitive = SENSITIVE_FIELDS.has(field.name);
@@ -1791,8 +1806,10 @@ function buildField(field, value, path, opts = {}) {
       input.value = Array.isArray(value) ? value.join(", ") : "";
     } else if (field.type === "int") {
       input.type = "number"; input.step = "1"; input.value = value ?? 0;
+      if (field.min !== undefined) input.min = field.min;
     } else if (field.type === "float") {
       input.type = "number"; input.step = "any"; input.value = value ?? 0;
+      if (field.min !== undefined) input.min = field.min;
     } else {
       input.type = (sensitive && field.type !== "bytes") ? "password" : "text";
       input.value = value ?? "";
@@ -1829,6 +1846,15 @@ function buildField(field, value, path, opts = {}) {
   input.addEventListener("change", () => { _formRoot(input)?.setAttribute("data-dirty", "1"); });
 
   ctl.appendChild(input);
+  if (field.hint) {
+    const hintRow = document.createElement("div");
+    hintRow.className = "label py-0";
+    const hintSpan = document.createElement("span");
+    hintSpan.className = "label-text-alt text-xs opacity-50";
+    hintSpan.textContent = field.hint;
+    hintRow.appendChild(hintSpan);
+    ctl.appendChild(hintRow);
+  }
   return ctl;
 }
 
