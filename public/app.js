@@ -599,6 +599,13 @@ function dashboard() {
       // Roots: messages not bucketed under any known ancestor in this window
       const roots = msgs.filter(m => !knownChildren.has(m));
 
+      // Sort threads by most recent activity — a reply to an old message brings its thread to the top
+      roots.sort((a, b) => {
+        const latestA = Math.max(a.ts, ...(childrenOf.get(a.pktId) || []).map(r => r.ts));
+        const latestB = Math.max(b.ts, ...(childrenOf.get(b.pktId) || []).map(r => r.ts));
+        return latestB - latestA;
+      });
+
       const result = [];
       for (const root of roots) {
         // Orphan roots (their own parent is missing) still get the ↩ indicator
