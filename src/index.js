@@ -5,7 +5,7 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter, { getDeviceCfg, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
+import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal } from './db.js';
 import { rotator } from './rotator.js';
@@ -100,6 +100,15 @@ app.post('/rotator/calibrate', (req, res) => {
   if (!ALLOWED.includes(procedure)) return res.status(400).json({ error: 'unknown procedure' });
   rotator.sendAction(procedure);
   res.json({ sent: procedure });
+});
+
+app.post('/rotator/offset', (req, res) => {
+  let { offset } = req.body;
+  offset = parseFloat(offset);
+  if (isNaN(offset)) return res.status(400).json({ error: 'offset must be a number' });
+  offset = ((offset % 360) + 360) % 360;
+  rotator.sendAction('setOffset', [String(offset)]);
+  res.json({ sent: true, offset });
 });
 
 app.get('/rotator/firmware_config', (req, res) => {
@@ -248,27 +257,29 @@ server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);
   bridge.start();
   rotator.start();
+  // Resume scan if it was active before restart
+  const savedScan = getConfig('scan_state', {});
+  if (savedScan.active) {
+    console.log(`[node-dash] resuming scan from az=${savedScan.az}`);
+    const savedNodes = getConfig('scan_nodes', []);  // read BEFORE setScanActive clears cache
+    nodeList.setScanActive(true, false);  // clear in-memory cache but keep SQLite scan_nodes intact
+    if (savedNodes.length) nodeList.restoreScanNodes(savedNodes);
+    // Wait for rotator to connect before resuming movement
+    rotator.once('status', () => scanner.resume(savedScan));
+  }
 });
 
 onHomePosChange(() => nodeList.refilter());
 
 // -- scanner lifecycle -------------------------------------------------------
-scanner.on('start', async () => {
+scanner.on('start', () => {
   setConfig('rotator.dash_mode', 2);
-  nodeList.setScanActive(true);  // clears cache, schedules emit (150ms debounce)
-  // Re-seed from YAGI's bridge node list so GPS positions survive the cache clear.
-  // If this resolves within 150ms the first emit already has data; if not, a second
-  // emit fires after seeding — either way the radar populates quickly.
+  nodeList.setScanActive(true);
+});
+scanner.on('contact', (contact) => {
   const rotatorId = getRotatorDeviceId();
-  if (rotatorId) {
-    try {
-      const resp = await bridge.get(`/${rotatorId}/nodes`);
-      const nodes = Object.values(resp?.nodes ?? {});
-      if (nodes.length) nodeList.seed(nodes, rotatorId);
-    } catch (e) {
-      console.warn('[scanner] reseed failed:', e.message);
-    }
-  }
+  if (contact.from && rotatorId)
+    nodeList.confirmScanContact(contact.from, rotatorId, contact.az, contact.rssi, contact.snr);
 });
 scanner.on('end',   () => {
   const mode = scanner._preMode;
@@ -305,7 +316,7 @@ bridge.on('event', (ev) => {
 
 rotator.on('connected', () => {
   const savedMode = getConfig('rotator.mode', 0);
-  if (savedMode) rotator.setMode(savedMode);
+  if (savedMode != null) rotator.setMode(savedMode);
 });
 
 bridge.on('connected', async () => {
@@ -322,6 +333,14 @@ bridge.on('connected', async () => {
       const yagiResp = await bridge.get(`/${rotatorId}/nodes`);
       const yagiNodes = Object.values(yagiResp?.nodes ?? {});
       nodeList.seed(yagiNodes, rotatorId);
+    }
+    // Seed own-device cache for each known BLE device so Devices tab has metadata immediately
+    const allDeviceCfgs = getAllDeviceCfgs();
+    for (const deviceId of Object.keys(allDeviceCfgs)) {
+      if (!deviceId.startsWith('!')) continue;
+      const devNum = parseInt(deviceId.slice(1), 16);
+      const devNode = allNodes.find(n => n.num === devNum);
+      if (devNode) nodeList.seedOwnDevice(devNode, deviceId);
     }
     console.log(`[node-list] seeded ${allNodes.length} nodes`);
   } catch (err) {
