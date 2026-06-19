@@ -37,6 +37,7 @@ class RotatorClient extends EventEmitter {
   setMode(mode) {
     this._mode = mode;
     this._send({ action: 'mode', args: [mode] });
+    this.emit('mode', { _mode: mode });
   }
 
   sendAction(action, args) {

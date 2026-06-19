@@ -4,6 +4,9 @@ import { getConfig, setConfig, getConfigByPrefix } from './db.js';
 const router = Router();
 const PREFIX = 'device_cfg.';
 
+let _onHomePosChange = null;
+export function onHomePosChange(cb) { _onHomePosChange = cb; }
+
 const DEFAULT = {
   label:               null,   // display label: OMNI, YAGI, Y, O, etc.
   is_rotator:          false,  // this radio is physically on the rotator
@@ -13,6 +16,9 @@ const DEFAULT = {
   beam_deg:            360,    // beam width in degrees (360 = omni)
   gain_dbi:            0,      // antenna gain in dBi
   cable_loss_db:       0,      // cable loss in dB
+  fixed_lat:           null,   // fallback home position latitude (decimal degrees)
+  fixed_lon:           null,   // fallback home position longitude (decimal degrees)
+  color:               null,   // DaisyUI theme color for badges/radar (primary|secondary|accent|info|success|warning|error)
 };
 
 export function getDeviceCfg(nodeId) {
@@ -55,7 +61,7 @@ router.put('/:nodeId', (req, res) => {
   const existing = getDeviceCfg(nodeId);
   const updated = { ...existing };
 
-  const { label, is_rotator, is_primary, load_nodes_on_boot, antenna_type, beam_deg, gain_dbi, cable_loss_db } = req.body;
+  const { label, is_rotator, is_primary, load_nodes_on_boot, antenna_type, beam_deg, gain_dbi, cable_loss_db, fixed_lat, fixed_lon, color } = req.body;
   if (label !== undefined)               updated.label               = label || null;
   if (is_rotator !== undefined)          updated.is_rotator          = !!is_rotator;
   if (load_nodes_on_boot !== undefined)  updated.load_nodes_on_boot  = !!load_nodes_on_boot;
@@ -63,6 +69,10 @@ router.put('/:nodeId', (req, res) => {
   if (beam_deg !== undefined)      updated.beam_deg      = Number(beam_deg) || 360;
   if (gain_dbi !== undefined)      updated.gain_dbi      = Number(gain_dbi) || 0;
   if (cable_loss_db !== undefined) updated.cable_loss_db = Number(cable_loss_db) || 0;
+  const homePosChanged = (fixed_lat !== undefined || fixed_lon !== undefined);
+  if (fixed_lat !== undefined)     updated.fixed_lat     = fixed_lat != null && fixed_lat !== '' ? Number(fixed_lat) : null;
+  if (fixed_lon !== undefined)     updated.fixed_lon     = fixed_lon != null && fixed_lon !== '' ? Number(fixed_lon) : null;
+  if (color !== undefined)         updated.color         = color || null;
 
   if (is_primary !== undefined) {
     if (is_primary) {
@@ -78,6 +88,7 @@ router.put('/:nodeId', (req, res) => {
   }
 
   setConfig(PREFIX + nodeId, updated);
+  if (homePosChanged && updated.is_primary) _onHomePosChange?.();
   res.json(updated);
 });
 

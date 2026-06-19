@@ -1,6 +1,8 @@
 import { WebSocketServer } from 'ws';
 import { bridge } from './bridge.js';
 import { rotator } from './rotator.js';
+import { scanner } from './scanner.js';
+import { nodeList } from './node-list.js';
 import { insertTilt } from './db.js';
 
 export function attachWsRelay(server) {
@@ -35,11 +37,25 @@ export function attachWsRelay(server) {
   });
   rotator.on('status', (data) => broadcast({ type: 'rotator', data }));
   rotator.on('point_target', (data) => broadcast({ type: 'rotator', data }));
+  rotator.on('mode', (data) => broadcast({ type: 'rotator', data }));
+
+  scanner.on('start',    (data) => broadcast({ type: 'scan_start',    data }));
+  scanner.on('progress', (data) => broadcast({ type: 'scan_progress', data }));
+  scanner.on('contact',  (data) => broadcast({ type: 'scan_contact',  data }));
+  scanner.on('end',      (data) => broadcast({ type: 'scan_end',      data }));
+  nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
 
   wss.on('connection', (ws) => {
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
-      ws.send(JSON.stringify({ type: 'rotator', data: rotator.status }));
+      ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: rotator.mode } }));
     }
+    if (scanner.active) {
+      ws.send(JSON.stringify({ type: 'scan_start', data: {
+        resumed: true, az: scanner.az, dwell_az: scanner.dwellAz,
+        contacts: scanner.contacts,
+      }}));
+    }
+    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
   });
 
   // -- Per-device /!{nodeId}/events — snapshot first, pre-filtered -----------
@@ -55,8 +71,16 @@ export function attachWsRelay(server) {
 
     // Rotator status
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
-      ws.send(JSON.stringify({ type: 'rotator', data: rotator.status }));
+      ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: rotator.mode } }));
     }
+    // Scan state resume
+    if (scanner.active) {
+      ws.send(JSON.stringify({ type: 'scan_start', data: {
+        resumed: true, az: scanner.az, dwell_az: scanner.dwellAz, contacts: scanner.contacts,
+      }}));
+    }
+    // Node list snapshot
+    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
 
     function onEvent(ev) {
       if (ws.readyState !== 1) return;
@@ -67,14 +91,38 @@ export function attachWsRelay(server) {
       if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
     }
 
+    function onScan(type) {
+      return (data) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type, data })); };
+    }
+    const onScanStart    = onScan('scan_start');
+    const onScanProgress = onScan('scan_progress');
+    const onScanContact  = onScan('scan_contact');
+    const onScanEnd      = onScan('scan_end');
+
+    function onNodeList(nodes) {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'node_list', nodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
+    }
+
     bridge.on('event', onEvent);
     rotator.on('status', onRotator);
     rotator.on('point_target', onRotator);
+    rotator.on('mode', onRotator);
+    scanner.on('start',    onScanStart);
+    scanner.on('progress', onScanProgress);
+    scanner.on('contact',  onScanContact);
+    scanner.on('end',      onScanEnd);
+    nodeList.on('change',  onNodeList);
 
     ws.on('close', () => {
       bridge.off('event', onEvent);
       rotator.off('status', onRotator);
       rotator.off('point_target', onRotator);
+      rotator.off('mode', onRotator);
+      scanner.off('start',    onScanStart);
+      scanner.off('progress', onScanProgress);
+      scanner.off('contact',  onScanContact);
+      scanner.off('end',      onScanEnd);
+      nodeList.off('change',  onNodeList);
     });
   }
 

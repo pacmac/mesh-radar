@@ -5,11 +5,13 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter, { getDeviceCfg, getPrimaryDeviceId } from './device-config.js';
+import deviceConfigRouter, { getDeviceCfg, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal } from './db.js';
 import { rotator } from './rotator.js';
 import { handlePacketForRotator } from './rotator-logic.js';
+import { scanner } from './scanner.js';
+import { nodeList } from './node-list.js';
 import { attachWsRelay } from './ws-relay.js';
 import { BRIDGE_CONFIG_SCHEMA } from './bridge-config-schema.js';
 import { ROTATOR_CONFIG_SCHEMA } from './rotator-config-schema.js';
@@ -39,33 +41,11 @@ app.get('/messages', (req, res) => {
   res.json(queryMessages(limit));
 });
 
-app.get('/nodes', async (req, res) => {
-  try {
-    const maxAge    = getConfig('node_filters.max_age',    0);
-    const maxHops   = getConfig('node_filters.max_hops',   99);
-    const namedOnly = getConfig('node_filters.named_only', false);
-    const hasPos    = getConfig('node_filters.has_pos',    false);
-    const hideMqtt  = getConfig('node_filters.hide_mqtt',  false);
-    const hasSignal = getConfig('node_filters.has_signal', false);
-    const hasTelem  = getConfig('node_filters.has_telem',  false);
-    const roles     = getConfig('node_filters.roles',      []);
-
-    const params = new URLSearchParams();
-    if (maxAge > 0)   params.set('max_age',       maxAge);
-    if (maxHops < 99) params.set('max_hops',      maxHops);
-    if (namedOnly)    params.set('named_only',    'true');
-    if (hasPos)       params.set('has_position',  'true');
-    if (hideMqtt)     params.set('hide_mqtt',     'true');
-    if (hasSignal)    params.set('has_signal',    'true');
-    if (hasTelem)     params.set('has_telemetry', 'true');
-    if (roles.length) roles.forEach(r => params.append('node_roles', r));
-
-    const qs = params.toString();
-    const data = await bridge.get(`/nodes${qs ? '?' + qs : ''}`);
-    res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
+app.get('/nodes', (req, res) => {
+  const nodes = nodeList.nodes;
+  const nodeMap = {};
+  for (const n of nodes) nodeMap[String(n.num)] = n;
+  res.json({ nodes: nodeMap, count: nodes.length, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null });
 });
 
 app.use('/config', configRouter);
@@ -73,7 +53,16 @@ app.use('/device-config', deviceConfigRouter);
 
 app.get('/rotator/status', (req, res) => {
   const { mode: _fw, ...fwStatus } = rotator.status; // exclude firmware string 'mode' field
-  res.json({ connected: rotator.connected, mode: rotator.mode, ...fwStatus });
+  res.json({
+    connected:     rotator.connected,
+    mode:          rotator.mode,
+    dash_mode:     getConfig('rotator.dash_mode', rotator.mode),
+    scan_active:   scanner.active,
+    scan_az:       scanner.active ? scanner.az : null,
+    scan_dwell_az: scanner.active ? scanner.dwellAz : null,
+    scan_contacts: scanner.contacts,
+    ...fwStatus,
+  });
 });
 
 app.post('/rotator/move', (req, res) => {
@@ -86,9 +75,23 @@ app.post('/rotator/move', (req, res) => {
 app.post('/rotator/mode', (req, res) => {
   const { mode } = req.body;
   if (mode == null) return res.status(400).json({ error: 'mode required' });
-  rotator.setMode(mode);
-  setConfig('rotator.mode', mode);
+  // firmware only understands 0/1; dash_mode tracks full 3-state (0=PASV,1=ACTV,2=SCAN)
+  const fwMode = Math.min(mode, 1);
+  rotator.setMode(fwMode);
+  setConfig('rotator.dash_mode', mode);
+  if (mode < 2) setConfig('rotator.mode', fwMode);
   res.json({ mode });
+});
+
+app.post('/rotator/scan/start', (req, res) => {
+  if (scanner.active) return res.json({ started: false, reason: 'already scanning' });
+  scanner.start();
+  res.json({ started: true });
+});
+
+app.post('/rotator/scan/abort', (req, res) => {
+  scanner.abort();
+  res.json({ aborted: true });
 });
 
 app.post('/rotator/calibrate', (req, res) => {
@@ -101,6 +104,7 @@ app.post('/rotator/calibrate', (req, res) => {
 
 app.get('/rotator/firmware_config', (req, res) => {
   const s = rotator.status;
+  const savedScan = getConfig('scan_config', {});
   res.json({
     motor: {
       pwm_min:        s.pwmMin  ?? null,
@@ -108,8 +112,8 @@ app.get('/rotator/firmware_config', (req, res) => {
       pulses_per_deg: s.ppd     ?? null,
     },
     scan: {
-      step_deg:  s.scanStep  ?? null,
-      dwell_sec: s.scanDwell != null ? s.scanDwell / 1000 : null,
+      step_deg:  savedScan.step_deg  ?? s.scanStep  ?? 5,
+      dwell_sec: savedScan.dwell_sec ?? (s.scanDwell != null ? s.scanDwell / 1000 : 60),
     },
   });
 });
@@ -119,8 +123,11 @@ app.post('/rotator/firmware_config', (req, res) => {
   if (motor.pwm_min        != null) rotator.sendAction('pwmMin', [Math.round(motor.pwm_min)]);
   if (motor.pwm_run        != null) rotator.sendAction('pwmRun', [Math.round(motor.pwm_run)]);
   if (motor.pulses_per_deg != null) rotator.sendAction('ppd',    [Number(motor.pulses_per_deg)]);
-  if (scan.step_deg  != null && scan.dwell_sec != null) {
-    rotator.sendAction('scanCfg', [Math.round(scan.step_deg), Math.round(scan.dwell_sec * 1000)]);
+  if (scan.step_deg != null || scan.dwell_sec != null) {
+    const current = getConfig('scan_config', {});
+    if (scan.step_deg  != null) current.step_deg  = Number(scan.step_deg);
+    if (scan.dwell_sec != null) current.dwell_sec = Number(scan.dwell_sec);
+    setConfig('scan_config', current);
   }
   res.json({ sent: true });
 });
@@ -243,11 +250,40 @@ server.listen(PORT, () => {
   rotator.start();
 });
 
+onHomePosChange(() => nodeList.refilter());
+
+// -- scanner lifecycle -------------------------------------------------------
+scanner.on('start', async () => {
+  setConfig('rotator.dash_mode', 2);
+  nodeList.setScanActive(true);  // clears cache, schedules emit (150ms debounce)
+  // Re-seed from YAGI's bridge node list so GPS positions survive the cache clear.
+  // If this resolves within 150ms the first emit already has data; if not, a second
+  // emit fires after seeding — either way the radar populates quickly.
+  const rotatorId = getRotatorDeviceId();
+  if (rotatorId) {
+    try {
+      const resp = await bridge.get(`/${rotatorId}/nodes`);
+      const nodes = Object.values(resp?.nodes ?? {});
+      if (nodes.length) nodeList.seed(nodes, rotatorId);
+    } catch (e) {
+      console.warn('[scanner] reseed failed:', e.message);
+    }
+  }
+});
+scanner.on('end',   () => {
+  const mode = scanner._preMode;
+  setConfig('rotator.dash_mode', mode);
+  if (mode < 2) setConfig('rotator.mode', mode);
+  nodeList.setScanActive(false);
+});
+
 // -- event handlers ----------------------------------------------------------
 bridge.on('event', (ev) => {
   handleEvent(ev);
+  if (ev.type === 'node_update' || ev.type === 'node_info') nodeList.handleNodeUpdate(ev);
   if (ev.type === 'packet') {
     handlePacketForRotator(ev);
+    scanner.handlePacket(ev);
     const pkt = ev.data?.packet;
     if (pkt?.decoded?.portnum === 'RANGE_TEST_APP') {
       const seq = pkt.decoded.payload
@@ -275,8 +311,25 @@ rotator.on('connected', () => {
 bridge.on('connected', async () => {
   const primaryId = getPrimaryDeviceId();
   const cfg = primaryId ? getDeviceCfg(primaryId) : {};
+
+  // Seed NodeList: all nodes first (device unknown), then YAGI nodes with device tag
+  try {
+    const rotatorId = getRotatorDeviceId();
+    const allResp = await bridge.get('/nodes');
+    const allNodes = Object.values(allResp?.nodes ?? {});
+    nodeList.seed(allNodes, null);
+    if (rotatorId) {
+      const yagiResp = await bridge.get(`/${rotatorId}/nodes`);
+      const yagiNodes = Object.values(yagiResp?.nodes ?? {});
+      nodeList.seed(yagiNodes, rotatorId);
+    }
+    console.log(`[node-list] seeded ${allNodes.length} nodes`);
+  } catch (err) {
+    console.error(`[node-list] seed failed: ${err.message}`);
+  }
+
   if (!cfg.load_nodes_on_boot) {
-    console.log('[node-dash] load_nodes_on_boot=false — skipping bulk node seed');
+    console.log('[node-dash] load_nodes_on_boot=false — skipping persist seed');
     return;
   }
   try {
@@ -286,8 +339,8 @@ bridge.on('connected', async () => {
     for (const n of entries) {
       handleEvent({ type: 'node_info', data: n, device: null });
     }
-    console.log(`[node-dash] seeded ${entries.length} named nodes from bridge`);
+    console.log(`[node-dash] seeded ${entries.length} named nodes into persist`);
   } catch (err) {
-    console.error(`[node-dash] seed failed: ${err.message}`);
+    console.error(`[node-dash] persist seed failed: ${err.message}`);
   }
 });

@@ -15,6 +15,7 @@ const FILTER_CFG_KEY = {
   hasSignal: 'node_filters.has_signal',
   hasTelem:  'node_filters.has_telem',
   nodeRoles: 'node_filters.roles',
+  nodeSource: 'node_filters.node_source',
 };
 
 function dashboard() {
@@ -47,6 +48,7 @@ function dashboard() {
     nodeTotal: 0,
     nodeCount: 0,
     nodeSort: { key: "last_heard", dir: -1 },
+    nodeSource: 'both',
     nodeFilters: {
       maxHops:   99,
       namedOnly: false,
@@ -75,6 +77,12 @@ function dashboard() {
     otaPct: 0,
     otaBleAddr: null,
     otaError: null,
+    scanMode:      false,
+    scanStep:      5,
+    scanDwell:     60,
+    scanData:      {},   // { az: { from, snr, rssi, ts } } — best packet per az bucket
+    scanProgress:  null,
+    scanCurrentAz: null,
     tiltHistory: [],
     tiltWindow: 4,
     tiltPeak: 0,
@@ -134,6 +142,8 @@ function dashboard() {
     // Antenna config state (per radio, within Radio cfg tab)
     antennaSaved: false,
     antennaError: "",
+    homePosSaved: false,
+    homePosError: "",
 
     // Bridge Config tab state
     bridgeConfigSchema: null,
@@ -168,7 +178,7 @@ function dashboard() {
       if (t === "radar") this.$nextTick(() => this.initRadar());
       else if (t === "cfg") this.switchCfgTab(c || this.cfgTab || "radio");
       else if (t === "range") { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
-      else if (t === "nodes") this.loadNodes();
+      // nodes tab: no reload needed — node_list WS events keep this.nodes current
       else if (t === "devices") this.loadDevices();
       else if (t === "messages") this.unreadMessages = 0;
     },
@@ -240,7 +250,6 @@ function dashboard() {
       if (!this.activeNodeId) return;
       await this.refreshStatus();
       await Promise.all([this.loadInfo(), this.loadNodes()]);
-      this.updateHomePos();
     },
 
     async disconnectDevice(nodeId) {
@@ -313,6 +322,7 @@ function dashboard() {
           hasTelem:  cfg['node_filters.has_telem']  ?? false,
           nodeRoles: cfg['node_filters.roles']      ?? [],
         };
+        this.nodeSource     = cfg['node_filters.node_source'] ?? 'both';
         this.radarRange     = String(cfg['radar.max_range_km'] ?? 50);
         this.radarLogScale  = cfg['radar.log_scale']  ?? false;
         this.radarCrosshair = cfg['radar.crosshair']  ?? true;
@@ -397,6 +407,26 @@ function dashboard() {
       }
     },
 
+    async saveHomePosCfg() {
+      this.homePosSaved = false;
+      this.homePosError = "";
+      const nodeId = this.cfgRadioId;
+      if (!nodeId) return;
+      const cfg = this.deviceConfigs[nodeId] || {};
+      try {
+        const updated = await fetchJSON(`/device-config/${encodeURIComponent(nodeId)}`, 'PUT', {
+          fixed_lat: cfg.fixed_lat ?? null,
+          fixed_lon: cfg.fixed_lon ?? null,
+        });
+        this.deviceConfigs = { ...this.deviceConfigs, [nodeId]: { ...cfg, ...updated } };
+        this.homePosSaved = true;
+        setTimeout(() => { this.homePosSaved = false; }, 2000);
+        // Backend will push updated node_list with new homePos via WS after refilter
+      } catch (e) {
+        this.homePosError = String(e);
+      }
+    },
+
     togglePacketSource(nodeId, checked) {
       let sources = [...this.packetSources];
       if (checked && !sources.includes(nodeId)) sources.push(nodeId);
@@ -427,22 +457,35 @@ function dashboard() {
       }
     },
 
+    activeFilterCount() {
+      const f = this.nodeFilters;
+      return [
+        this.nodeSource !== 'both',
+        f.maxHops !== 99,
+        f.maxAge  !== 0,
+        f.namedOnly, f.hasPos, f.hideMqtt, f.hasSignal, f.hasTelem,
+        f.nodeRoles?.length > 0,
+      ].filter(Boolean).length;
+    },
+
     resetNodeFilters() {
+      this.nodeSource = 'both';
       this.nodeFilters = {
         maxHops: 99, maxAge: 0, namedOnly: false, hasPos: false,
         hideMqtt: false, hasSignal: false, hasTelem: false, nodeRoles: [],
       };
       fetchJSON('/config', 'PUT', {
-        'node_filters.max_hops':   99,
-        'node_filters.max_age':    0,
-        'node_filters.named_only': false,
-        'node_filters.has_pos':    false,
-        'node_filters.hide_mqtt':  false,
-        'node_filters.has_signal': false,
-        'node_filters.has_telem':  false,
-        'node_filters.roles':      [],
+        'node_filters.node_source': 'both',
+        'node_filters.max_hops':    99,
+        'node_filters.max_age':     0,
+        'node_filters.named_only':  false,
+        'node_filters.has_pos':     false,
+        'node_filters.hide_mqtt':   false,
+        'node_filters.has_signal':  false,
+        'node_filters.has_telem':   false,
+        'node_filters.roles':       [],
       }).catch(() => {});
-      this.loadNodes();
+      // server refilters and pushes node_list automatically
     },
 
     async saveBridgeConfig() {
@@ -473,24 +516,11 @@ function dashboard() {
 
     // -- home position --------------------------------------------------------
     updateHomePos() {
-      const selfNum = this.info.my_info?.my_node_num;
-      const self = selfNum != null ? this.nodes.find((n) => n.num === selfNum) : null;
-      if (self?.position?.latitude_i) {
-        this.homePos = {
-          lat: self.position.latitude_i / 1e7,
-          lon: self.position.longitude_i / 1e7,
-        };
-      }
+      // homePos is now set by the server via node_list WS events; this is a no-op
     },
 
-    nodeKm(n) {
-      if (!this.homePos || !n.position?.latitude_i || !n.position?.longitude_i) return null;
-      return haversine(this.homePos.lat, this.homePos.lon, n.position.latitude_i / 1e7, n.position.longitude_i / 1e7);
-    },
-    nodeAz(n) {
-      if (!this.homePos || !n.position?.latitude_i || !n.position?.longitude_i) return null;
-      return bearing(this.homePos.lat, this.homePos.lon, n.position.latitude_i / 1e7, n.position.longitude_i / 1e7);
-    },
+    nodeKm(n) { return n._km ?? null; },
+    nodeAz(n) { return n._az ?? null; },
     rssiPercent(rssi) { return rssiPercent(rssi); },
 
     // -- polling / status -----------------------------------------------------
@@ -530,7 +560,7 @@ function dashboard() {
         this.nodeTotal = data.total ?? Object.keys(data.nodes || {}).length;
         this.nodeCount = data.count ?? this.nodeTotal;
         this.nodes = Object.values(data.nodes || {});
-        this.updateHomePos();
+        this.homePos = data.hasHomePos ? true : null;
         this.sortNodes(this.nodeSort.key, true);
         if (this.info.my_info?.my_node_num != null) {
           this.nodeSelf = data.nodes?.[String(this.info.my_info.my_node_num)] || {};
@@ -690,7 +720,7 @@ function dashboard() {
       this.nodeFilters[key] = val;
       const cfgKey = FILTER_CFG_KEY[key];
       if (cfgKey) fetchJSON(`/config/${cfgKey}`, 'PUT', { value: val }).catch(() => {});
-      this.loadNodes();
+      // server refilters and pushes node_list automatically via config-api
     },
 
     toggleNodeRole(role, checked) {
@@ -700,13 +730,14 @@ function dashboard() {
       this.saveNodeFilter('nodeRoles', cur.length === ALL.length ? [] : cur);
     },
 
+    // Server applies all filters; this is a passthrough for callers
     filteredNodes() {
-      const bridgeNums = new Set(
-        this.availableDevices
-          .map(d => d.node_id?.startsWith('!') ? parseInt(d.node_id.slice(1), 16) : null)
-          .filter(n => n != null && !isNaN(n))
-      );
-      return bridgeNums.size ? this.nodes.filter(n => !bridgeNums.has(n.num >>> 0)) : this.nodes;
+      return this.nodes;
+    },
+
+    setNodeSource(src) {
+      this.nodeSource = src;
+      fetchJSON('/config/node_filters.node_source', 'PUT', { value: src }).catch(() => {});
     },
 
     nodeById(nodeId) {
@@ -823,11 +854,13 @@ function dashboard() {
     _onRotatorEvent(data) {
       this.rotatorConnected = true;
       this.rotatorStatus = { ...this.rotatorStatus, ...data };
+      if (data._mode != null) this.rotatorMode = data._mode;
       if (data.az != null) {
         const azChanged = this.yagiAz !== data.az;
         this.yagiAz = data.az;
         if (azChanged && this.tab === "radar") this._animateBeam(data.az);
       }
+      if ('target' in data && this.tab === 'radar') this._drawTargetArm();
       if ('point_target' in data) {
         this.yagiPointTarget = data.point_target;
         if (this.tab === "radar") this.drawRadar();
@@ -854,12 +887,25 @@ function dashboard() {
     async loadRotatorState() {
       try {
         const d = await fetchJSON("/rotator/status");
-        this.rotatorMode      = d.mode ?? 0;
         this.rotatorConnected = d.connected ?? false;
         this.rotatorStatus    = d;
         if (d.az != null) this.yagiAz = d.az;
         const pt = d.point_target ?? null;
         this.yagiPointTarget = pt && this.filteredNodes().some(n => n.num === pt) ? pt : null;
+        if (d.scan_active) {
+          this.scanMode     = true;
+          this.rotatorMode  = 0;
+          this.scanProgress = d.scan_az ?? null;
+          this.scanCurrentAz = d.scan_dwell_az ?? null;
+          this.scanData     = d.scan_contacts ?? {};
+        } else {
+          this.rotatorMode  = Math.min(d.dash_mode ?? d.mode ?? 0, 1);
+        }
+      } catch (_) {}
+      try {
+        const cfg = await fetchJSON("/rotator/firmware_config");
+        if (cfg?.scan?.step_deg  != null) this.scanStep  = Number(cfg.scan.step_deg);
+        if (cfg?.scan?.dwell_sec != null) this.scanDwell = Number(cfg.scan.dwell_sec);
       } catch (_) {}
     },
 
@@ -870,7 +916,17 @@ function dashboard() {
 
     async moveRotator(az) {
       if (az == null) return;
+      this.rotatorStatus = { ...this.rotatorStatus, target: Number(az) };
+      if (this.tab === 'radar') this._drawTargetArm();
       await fetchJSON("/rotator/move", "POST", { az: Number(az) });
+    },
+
+    startScan() {
+      fetchJSON('/rotator/scan/start', 'POST').catch(() => {});
+    },
+
+    abortScan() {
+      fetchJSON('/rotator/scan/abort', 'POST').catch(() => {});
     },
 
     async loadRotatorCfg() {
@@ -881,6 +937,9 @@ function dashboard() {
           fetchJSON("/rotator/firmware_config"),
         ]);
         if (needsSchema) this.rotatorCfgSchema = schema;
+        // Sync scan params from firmware config so startScan uses the rotator page values
+        if (data?.scan?.step_deg  != null) this.scanStep  = Number(data.scan.step_deg);
+        if (data?.scan?.dwell_sec != null) this.scanDwell = Number(data.scan.dwell_sec);
         await nextFrame();
         const el = document.getElementById("rotator_cfg_form");
         if (el && !el.dataset.dirty) {
@@ -901,6 +960,8 @@ function dashboard() {
         const payload = collectForm(el, this.rotatorCfgSchema.fields);
         await fetchJSON("/rotator/firmware_config", "POST", payload);
         el.removeAttribute("data-dirty");
+        if (payload?.scan?.step_deg  != null) this.scanStep  = Number(payload.scan.step_deg);
+        if (payload?.scan?.dwell_sec != null) this.scanDwell = Number(payload.scan.dwell_sec);
         this.rotatorCfgSaved = true;
         setTimeout(() => { this.rotatorCfgSaved = false; }, 2000);
       } catch (e) {
@@ -1007,17 +1068,19 @@ function dashboard() {
         return;
       }
 
-      if (ev.type === "node_update" && ev.data?.num != null) {
-        const upd = ev.data;
-        const idx = this.nodes.findIndex(n => n.num === upd.num);
-        if (idx >= 0) this.nodes[idx] = { ...this.nodes[idx], ...upd };
-        else this.nodes.push(upd);
-        this.updateHomePos();
-        if (this.tab === "radar" && this.homePos) {
-          if (upd.position?.latitude_i) this.refreshRadar();
+      if (ev.type === 'node_list') {
+        this.nodes = ev.nodes ?? [];
+        this.nodeCount = this.nodes.length;
+        this.nodeTotal = ev.total ?? this.nodes.length;
+        this.homePos = ev.hasHomePos ? true : null;
+        const myNum = this.info?.my_info?.my_node_num;
+        if (myNum) this.nodeSelf = this.nodes.find(n => n.num === myNum) ?? this.nodeSelf;
+        this.sortNodes(this.nodeSort.key, true);
+        if (this.tab === 'radar') {
+          if (this.homePos) this.refreshRadar();
           else this.drawRadar();
         }
-        if (this.tab === "nodes") this.sortNodes(this.nodeSort.key, true);
+        return;
       }
 
       if (ev.device && this.activeNodeId && ev.device !== this.activeNodeId) return;
@@ -1025,6 +1088,39 @@ function dashboard() {
       const summary = summarizeEvent(ev);
       this.events.unshift({ type: ev.type, time, summary, device: ev.device || null });
       if (this.events.length > 80) this.events.pop();
+
+      if (ev.type === 'scan_start') {
+        this.scanMode      = true;
+        this.scanProgress  = ev.data.az ?? 0;
+        this.scanCurrentAz = ev.data.dwell_az ?? null;
+        if (!ev.data.resumed) { this.scanData = {}; this.nodes = []; }
+        else { this.scanData = ev.data.contacts ?? {}; }
+        if (this.tab === 'radar') this.drawRadar();
+        return;
+      }
+      if (ev.type === 'scan_progress') {
+        this.scanProgress  = ev.data.az;
+        this.scanCurrentAz = ev.data.dwell_az ?? null;
+        this.rotatorStatus = { ...this.rotatorStatus, target: ev.data.az };
+        if (this.tab === 'radar') this.drawRadar();
+        return;
+      }
+      if (ev.type === 'scan_contact') {
+        const d = ev.data;
+        const existing = this.scanData[d.az];
+        if (!existing || d.snr > (existing.snr ?? -Infinity)) {
+          this.scanData[d.az] = { from: d.from, snr: d.snr, rssi: d.rssi, ts: d.ts };
+        }
+        if (this.tab === 'radar') this.drawRadar();
+        return;
+      }
+      if (ev.type === 'scan_end') {
+        this.scanMode      = false;
+        this.scanProgress  = null;
+        this.scanCurrentAz = null;
+        if (this.tab === 'radar') this.drawRadar();
+        return;
+      }
 
       if (ev.type === "packet") {
         const pkt = ev.data?.packet;
@@ -1074,7 +1170,7 @@ function dashboard() {
         if (this.tab === "nodes" && portnum === "TELEMETRY_APP") this.sortNodes(this.nodeSort.key, true);
         if (portnum === "RANGE_TEST_APP" && this.tab === "range") this.loadRangeTest();
       }
-      if (ev.type === "mqtt_node" && ev.data) {
+      if (ev.type === "mqtt_node" && ev.data && !this.scanMode) {
         const upd = ev.data;
         const idx = this.nodes.findIndex((n) => n.num === upd.num);
         if (idx >= 0) this.nodes[idx] = { ...this.nodes[idx], ...upd };
@@ -1414,11 +1510,8 @@ function dashboard() {
     insertNodeMeta() {
       if (!this.msgInsertNode) return null;
       const node = this.nodes.find(n => n.num === this.msgInsertNode);
-      const lat = node?.position?.latitude_i != null ? node.position.latitude_i / 1e7 : null;
-      const lon = node?.position?.longitude_i != null ? node.position.longitude_i / 1e7 : null;
-      const hp = this.homePos;
-      const dist = (hp && lat != null) ? haversine(hp.lat, hp.lon, lat, lon).toFixed(1) : null;
-      const az   = (hp && lat != null) ? Math.round(bearing(hp.lat, hp.lon, lat, lon)) : null;
+      const dist = node?._km != null ? node._km.toFixed(1) : null;
+      const az   = node?._az != null ? Math.round(node._az) : null;
       return { shortName: this.nodeShortName(this.msgInsertNode), longName: this.nodeLongName(this.msgInsertNode), dist, az };
     },
 
@@ -1498,6 +1591,21 @@ function dashboard() {
         g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
         o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.35);
       } catch (_) {}
+    },
+
+    scanNodeList() {
+      const byNode = {};
+      for (const [azStr, d] of Object.entries(this.scanData)) {
+        if (d.from == null) continue;
+        const num = d.from;
+        if (!byNode[num] || d.snr > byNode[num].snr) {
+          byNode[num] = { num, az: Number(azStr), snr: d.snr, rssi: d.rssi ?? null, ts: d.ts ?? null };
+        }
+      }
+      return Object.values(byNode).sort((a, b) => b.snr - a.snr).map(n => {
+        const rn = this.radarNodes.find(r => r.num === n.num);
+        return { ...n, km: rn?._km ?? null };
+      });
     },
 
     nodeShortName(num) {
@@ -1622,10 +1730,8 @@ function dashboard() {
 
     rangeEnrich(e) {
       const node = this.nodes.find(n => n.num === e.from_num);
-      const lat = node?.position?.latitude_i != null ? node.position.latitude_i / 1e7 : null;
-      const lon = node?.position?.longitude_i != null ? node.position.longitude_i / 1e7 : null;
-      const distKm = (this.homePos && lat != null) ? haversine(this.homePos.lat, this.homePos.lon, lat, lon) : null;
-      const az     = (this.homePos && lat != null) ? bearing(this.homePos.lat, this.homePos.lon, lat, lon) : null;
+      const distKm = node?._km ?? null;
+      const az     = node?._az ?? null;
       let expectedRssi = null, excessLoss = null;
       if (distKm != null && distKm > 0) {
         const fspl = 20 * Math.log10(distKm) + 20 * Math.log10(868) + 32.4;
@@ -1835,6 +1941,17 @@ function dashboard() {
 
     // -------------------------------------------------------------------------
 
+    // Compact 3-bar icon for radar overlay — radar green palette, no CSS class dependency
+    sig3(rssi, snr) {
+      const sq = this.signalQuality(rssi, snr);
+      if (sq.none) return '<span style="display:inline-flex;align-items:flex-end;gap:2px;opacity:0.25"><i style="display:block;width:3px;height:4px;border-radius:1px;background:rgba(0,255,80,1)"></i><i style="display:block;width:3px;height:7px;border-radius:1px;background:rgba(0,255,80,1)"></i><i style="display:block;width:3px;height:10px;border-radius:1px;background:rgba(0,255,80,1)"></i></span>';
+      const col = sq.pct >= 51 ? 'rgba(0,255,80,1)' : sq.pct >= 26 ? 'rgba(255,200,40,1)' : 'rgba(255,80,60,1)';
+      const lit  = sq.pct >= 76 ? 3 : sq.pct >= 26 ? 2 : 1;
+      const tip  = `${sq.label} (${sq.pct}%) · ${rssi != null ? rssi + ' dBm' : '–'} / ${snr != null ? snr + ' dB' : '–'}`;
+      const bar  = (h, on) => `<i style="display:block;width:3px;height:${h}px;border-radius:1px;background:${col};opacity:${on ? 0.9 : 0.15}"></i>`;
+      return `<span style="display:inline-flex;align-items:flex-end;gap:2px" title="${tip}">${bar(4,lit>=1)}${bar(7,lit>=2)}${bar(10,lit>=3)}</span>`;
+    },
+
     sigBars(rssi, snr, scale = 1) {
       const sq = this.signalQuality(rssi, snr);
       if (sq.none) return '';
@@ -1870,16 +1987,13 @@ function dashboard() {
     refreshRadar() {
       if (!this.homePos) return;
       this.radarNodes = this.filteredNodes()
-        .filter((n) => n.position?.latitude_i && n.position?.longitude_i)
+        .filter((n) => n._km != null && n._az != null)
         .map((n) => {
-          const lat = n.position.latitude_i / 1e7;
-          const lon = n.position.longitude_i / 1e7;
           const existing = this.radarNodes.find((r) => r.num === n.num);
           return {
             ...n,
-            _km: haversine(this.homePos.lat, this.homePos.lon, lat, lon),
-            _az: bearing(this.homePos.lat, this.homePos.lon, lat, lon),
-            _lat: lat, _lon: lon,
+            _lat: n.position?.latitude_i != null ? n.position.latitude_i / 1e7 : null,
+            _lon: n.position?.longitude_i != null ? n.position.longitude_i / 1e7 : null,
             _address: existing?._address,
           };
         });
@@ -1895,8 +2009,28 @@ function dashboard() {
         ? (this.radarNodes.length ? Math.max(...this.radarNodes.map((n) => n._km)) * 1.15 : 50)
         : Number(this.radarRange);
       this._drawRadarBg(maxKm);
+      this._drawTargetArm();
       this._drawRadarBeam();
       this._drawRadarNodes(maxKm);
+    },
+
+    _drawTargetArm() {
+      const ag = document.getElementById('radar-scan-arm-g');
+      if (!ag) return;
+      ag.innerHTML = '';
+      const target = this.rotatorStatus?.target;
+      if (target == null) return;
+      const CX = 300, CY = 300, MAX_R = 230;
+      const rad = (target - 90) * Math.PI / 180;
+      const ns = 'http://www.w3.org/2000/svg';
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', CX); line.setAttribute('y1', CY);
+      line.setAttribute('x2', (CX + MAX_R * 1.05 * Math.cos(rad)).toFixed(1));
+      line.setAttribute('y2', (CY + MAX_R * 1.05 * Math.sin(rad)).toFixed(1));
+      line.setAttribute('stroke', 'rgba(255,160,0,0.75)');
+      line.setAttribute('stroke-width', '1.5');
+      line.setAttribute('stroke-dasharray', '6,4');
+      ag.appendChild(line);
     },
 
     _radarNorm(km, maxKm) {
@@ -2002,7 +2136,11 @@ function dashboard() {
       nodes.forEach((node, ni) => {
         const { x, y, diagLen } = npos[ni];
         const isRight = npos[ni].isRight !== null ? npos[ni].isRight : x >= CX;
-        const dotColor = ageColor(node.last_heard, this.heatmapMaxAge);
+        const devColor = this.deviceConfigs[node._device]?.color;
+        const dotColor = devColor ? `var(--color-${devColor})` : ageColor(node.last_heard, this.heatmapMaxAge);
+        const devices = node._devices || (node._device ? [node._device] : []);
+        const dot2Color = devices.length >= 2 ? (this.deviceConfigs[devices[0]]?.color ? `var(--color-${this.deviceConfigs[devices[0]].color})` : null) : null;
+        const dot1Color = devices.length >= 2 ? (this.deviceConfigs[devices[1]]?.color ? `var(--color-${this.deviceConfigs[devices[1]].color})` : dotColor) : dotColor;
         const isSelected = node.num === selectedNum;
         const isLastHeard = node.num === lastHeardNum;
         const g = svgElem('g', { class: 'radar-node' + (isSelected ? ' radar-node-selected' : ''), style: 'cursor:pointer' });
@@ -2024,7 +2162,14 @@ function dashboard() {
         }
         if (isSelected)
           g.appendChild(svgElem('circle', { cx: x, cy: y, r: 12, style: `fill:none;stroke:${G4};stroke-width:1.5;stroke-dasharray:4 3` }));
-        g.appendChild(svgElem('circle', { cx: x, cy: y, r: isSelected ? 5 : 4, style: `fill:${dotColor};filter:url(#blipGlow)` }));
+        const r = isSelected ? 5 : 4;
+        if (dot2Color) {
+          // Split dot: left half = devices[0] color, right half = devices[1] color
+          g.appendChild(svgElem('path', { d: `M${x},${y-r} A${r},${r},0,0,0,${x},${y+r} Z`, style: `fill:${dot2Color};filter:url(#blipGlow)` }));
+          g.appendChild(svgElem('path', { d: `M${x},${y-r} A${r},${r},0,0,1,${x},${y+r} Z`, style: `fill:${dot1Color};filter:url(#blipGlow)` }));
+        } else {
+          g.appendChild(svgElem('circle', { cx: x, cy: y, r, style: `fill:${dotColor};filter:url(#blipGlow)` }));
+        }
         const title = svgElem('title');
         title.textContent = node.user?.long_name || node.user?.id || ('!' + (node.num ?? 0).toString(16).slice(-4));
         g.appendChild(title);
@@ -2053,7 +2198,7 @@ function dashboard() {
       const radarNode = this.radarNodes.find((r) => r.num === node.num);
       const lat = node.position?.latitude_i  != null ? node.position.latitude_i  / 1e7 : null;
       const lon = node.position?.longitude_i != null ? node.position.longitude_i / 1e7 : null;
-      this.nodeInfo = radarNode || { ...node, _km: this.nodeKm(node), _az: this.nodeAz(node), _lat: lat, _lon: lon };
+      this.nodeInfo = radarNode || { ...node, _lat: lat, _lon: lon };
       this.$nextTick(() => this.$refs.nodeInfoDialog?.showModal());
       if (!this.nodeInfo._address && this.nodeInfo._lat != null && this.nodeInfo._lon != null) {
         geocodeLatLon(this.nodeInfo._lat, this.nodeInfo._lon).then((addr) => {
@@ -2305,20 +2450,6 @@ function nextFrame() { return new Promise((resolve) => requestAnimationFrame(res
 // Radar helpers
 // ============================================================================
 
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(a));
-}
-
-function bearing(lat1, lon1, lat2, lon2) {
-  const y = Math.sin((lon2 - lon1) * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180);
-  const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
-    Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos((lon2 - lon1) * Math.PI / 180);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
 
 function rssiPercent(rssi) {
   if (rssi == null) return null;

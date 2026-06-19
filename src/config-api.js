@@ -1,26 +1,28 @@
 import { Router } from 'express';
 import { getConfig, setConfig } from './db.js';
+import { nodeList } from './node-list.js';
 
 const router = Router();
 
 const DEFAULTS = {
-  'node_filters.max_age':    0,
-  'node_filters.max_hops':   99,
-  'node_filters.named_only': false,
-  'node_filters.has_pos':    false,
-  'node_filters.hide_mqtt':  false,
-  'node_filters.has_signal': false,
-  'node_filters.has_telem':  false,
-  'node_filters.roles':      [],
-  'node_sort.field':         'last_heard',
-  'node_sort.dir':           -1,
-  'radar.max_range_km':      50,
-  'radar.log_scale':         false,
-  'radar.crosshair':         false,
-  'message_filter.channels': [],
+  'node_filters.max_age':     0,
+  'node_filters.max_hops':    99,
+  'node_filters.named_only':  false,
+  'node_filters.has_pos':     false,
+  'node_filters.hide_mqtt':   false,
+  'node_filters.has_signal':  false,
+  'node_filters.has_telem':   false,
+  'node_filters.roles':       [],
+  'node_filters.node_source': 'both',
+  'node_sort.field':          'last_heard',
+  'node_sort.dir':            -1,
+  'radar.max_range_km':       50,
+  'radar.log_scale':          false,
+  'radar.crosshair':          false,
+  'message_filter.channels':  [],
   'message_filter.hide_mqtt': false,
-  'packet_sources': [],
-  'range_test.duration': 10,
+  'packet_sources':           [],
+  'range_test.duration':      10,
 };
 
 router.get('/', (req, res) => {
@@ -37,12 +39,15 @@ router.get('/:key', (req, res) => {
   res.json({ key, value: getConfig(key, DEFAULTS[key]) });
 });
 
+const NODE_FILTER_KEYS = new Set(Object.keys(DEFAULTS).filter(k => k.startsWith('node_filters.')));
+
 router.put('/:key', (req, res) => {
   const { key } = req.params;
   if (!(key in DEFAULTS)) return res.status(404).json({ error: 'Unknown config key' });
   const { value } = req.body;
   if (value === undefined) return res.status(400).json({ error: 'value required' });
   setConfig(key, value);
+  if (NODE_FILTER_KEYS.has(key)) nodeList.refilter();
   res.json({ key, value });
 });
 
@@ -54,6 +59,7 @@ router.put('/', (req, res) => {
   const unknown = Object.keys(updates).filter(k => !(k in DEFAULTS));
   if (unknown.length) return res.status(400).json({ error: `Unknown keys: ${unknown.join(', ')}` });
   for (const [key, value] of Object.entries(updates)) setConfig(key, value);
+  if (Object.keys(updates).some(k => NODE_FILTER_KEYS.has(k))) nodeList.refilter();
   res.json(updates);
 });
 

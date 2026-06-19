@@ -84,24 +84,53 @@
 
     <!-- Top navbar -->
     <div class="navbar min-h-0 py-1.5 bg-base-100 shadow-md sticky top-0 z-50 px-3">
-      <!-- Mobile hamburger (always shown on mobile) -->
-      <div class="flex-none lg:hidden">
-        <label for="nav-drawer" class="btn btn-square btn-ghost">
+
+      <!-- LEFT: sidebar toggle + rotator mode buttons -->
+      <div class="flex-none flex items-center gap-2">
+        <!-- Mobile hamburger -->
+        <label for="nav-drawer" class="btn btn-square btn-ghost lg:hidden">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
         </label>
-      </div>
-      <!-- Desktop expand button (shown only when sidebar is collapsed) -->
-      <div class="flex-none hidden" :class="!sidebarPinned && 'lg:flex'">
-        <button class="btn btn-square btn-ghost" @click="sidebarPinned = true; localStorage.setItem('sidebarPinned', 'true')" title="Expand sidebar">
+        <!-- Desktop expand (only when sidebar collapsed) -->
+        <button class="btn btn-square btn-ghost hidden" :class="!sidebarPinned && 'lg:flex'"
+                @click="sidebarPinned = true; localStorage.setItem('sidebarPinned', 'true')" title="Expand sidebar">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
         </button>
+        <!-- Rotator mode buttons (always visible when rotator known) -->
+        <div class="flex items-center gap-1.5 pl-1" x-show="rotatorConnected || scanMode">
+          <span class="inline-block w-1.5 h-1.5 rounded-full shrink-0"
+                :class="rotatorConnected ? 'bg-success animate-pulse' : 'bg-error opacity-60'"></span>
+          <div class="flex gap-0.5">
+            <button class="btn btn-xs font-mono tracking-widest px-2"
+                    :class="rotatorMode === 0 && !scanMode ? 'btn-outline btn-info' : 'btn-ghost opacity-40'"
+                    :disabled="scanMode"
+                    @click="setRotatorMode(0)">PASV</button>
+            <button class="btn btn-xs font-mono tracking-widest px-2"
+                    :class="rotatorMode === 1 && !scanMode ? 'btn-error' : 'btn-ghost opacity-40'"
+                    :disabled="scanMode"
+                    @click="setRotatorMode(1)">ACTV</button>
+            <button class="btn btn-xs font-mono tracking-widest px-2"
+                    :class="scanMode ? 'btn-warning btn-outline' : 'btn-ghost opacity-40'"
+                    :disabled="!rotatorConnected || !rotatorDeviceId()"
+                    @click="scanMode ? abortScan() : startScan()"
+                    x-text="scanMode ? 'ABORT' : 'SCAN'"></button>
+          </div>
+        </div>
       </div>
-      <div class="flex-1 flex items-center gap-3 lg:hidden">
-        <span class="text-base font-bold tracking-wide">mesh radar</span>
-        <span class="font-mono text-xs text-success opacity-70" x-show="activeNodeId" x-text="activeNodeId"></span>
+
+      <!-- Mobile title + permanent spacer -->
+      <div class="flex-1 flex items-center justify-center gap-3">
+        <span class="text-base font-bold tracking-wide lg:hidden">mesh radar</span>
       </div>
-      <!-- Status indicators (right side) -->
-      <div class="flex-none flex items-center gap-2 ml-auto">
+
+      <!-- RIGHT: az readout + status badges -->
+      <div class="flex-none flex items-center gap-2">
+        <!-- Az readout -->
+        <span class="font-mono text-xs tabular-nums hidden sm:inline"
+              style="color:rgba(80,200,255,0.85)"
+              x-show="rotatorStatus.az != null"
+              x-text="Number(rotatorStatus.az).toFixed(1) + '°'"></span>
+        <!-- BLE signal -->
         <div class="tooltip tooltip-bottom" :data-tip="signalQuality(status.last_rx_rssi, status.last_rx_snr).label + ' · SNR ' + (status.last_rx_snr != null ? status.last_rx_snr.toFixed(1) + ' dB' : 'n/a') + (status.ble_rssi != null ? ' · BLE ' + status.ble_rssi + ' dBm' : '')">
           <div class="flex items-center gap-1.5 px-2 py-1 rounded border" :class="status.ble_connected ? 'border-success/40' : 'border-error/40'">
             <svg width="16" height="13" viewBox="0 0 16 13" class="shrink-0">
@@ -371,57 +400,180 @@
              style="box-shadow:0 0 0 1px rgba(0,255,80,0.10),0 8px 40px rgba(0,0,0,0.6)">
           <div class="flex flex-wrap gap-3 items-center shrink-0 px-4 py-2"
                style="background:#0a1a0a;border-bottom:1px solid rgba(0,255,80,0.12)">
-            <div class="flex items-center gap-2 text-sm">
-              <span class="text-xs font-mono opacity-50 tracking-widest uppercase">Range</span>
-              <select class="select select-bordered select-xs font-mono" x-model="radarRange" @change="saveRadarPref('max_range_km', Number(radarRange)); drawRadar()">
-                <option value="25">25 km</option>
-                <option value="50">50 km</option>
-                <option value="100">100 km</option>
-                <option value="250">250 km</option>
-                <option value="0">Auto</option>
-              </select>
-            </div>
-            <div class="flex items-center gap-2 text-sm">
-              <span class="text-xs font-mono opacity-50 tracking-widest uppercase">Home</span>
-              <span class="font-mono text-xs" style="color:rgba(0,255,80,0.7)" x-text="homePos ? homePos.lat.toFixed(4)+', '+homePos.lon.toFixed(4) : 'no fix'"></span>
-            </div>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <span class="text-xs font-mono opacity-50 tracking-widest uppercase">XHair</span>
-              <input type="checkbox" class="toggle toggle-xs toggle-primary" :checked="radarCrosshair" @change="toggleRadarCrosshair()">
-            </label>
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-mono opacity-50 tracking-widest uppercase">Scale</span>
-              <button class="btn btn-xs font-mono tracking-widest"
-                      :class="radarLogScale ? 'btn-outline btn-success' : 'btn-ghost opacity-40'"
-                      @click="radarLogScale = !radarLogScale; saveRadarPref('log_scale', radarLogScale); drawRadar()"
-                      x-text="radarLogScale ? 'LOG' : 'LIN'"></button>
-            </div>
+
+            <!-- Status badges -->
             <span class="font-mono text-xs px-2 py-0.5 rounded" style="color:rgba(0,255,80,0.6);border:1px solid rgba(0,255,80,0.2)" x-text="radarNodes.length + ' plotted'"></span>
+            <span class="font-mono text-xs" style="color:rgba(0,255,80,0.45)" x-text="homePos ? homePos.lat.toFixed(4)+', '+homePos.lon.toFixed(4) : 'no fix'"></span>
             <span class="font-mono text-xs animate-pulse" style="color:rgba(0,255,80,0.5)" x-show="geocoding">geocoding…</span>
+
+            <!-- Radar prefs gear dropdown -->
+            <details class="dropdown">
+              <summary class="btn btn-xs btn-ghost gap-1 font-mono opacity-60 hover:opacity-100">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+                Radar
+              </summary>
+              <ul class="dropdown-content z-20 p-3 shadow-lg rounded-box text-xs flex flex-col gap-3"
+                  style="background:#0d1f0d;border:1px solid rgba(0,255,80,0.18);min-width:11rem;margin-top:0.25rem">
+                <li class="flex items-center justify-between gap-3">
+                  <span class="font-mono opacity-60 uppercase tracking-wider">Range</span>
+                  <select class="select select-bordered select-xs font-mono" x-model="radarRange" @change="saveRadarPref('max_range_km', Number(radarRange)); drawRadar()">
+                    <option value="25">25 km</option>
+                    <option value="50">50 km</option>
+                    <option value="100">100 km</option>
+                    <option value="250">250 km</option>
+                    <option value="0">Auto</option>
+                  </select>
+                </li>
+                <li class="flex items-center justify-between gap-3">
+                  <span class="font-mono opacity-60 uppercase tracking-wider">Scale</span>
+                  <button class="btn btn-xs font-mono tracking-widest"
+                          :class="radarLogScale ? 'btn-outline btn-success' : 'btn-ghost opacity-40'"
+                          @click="radarLogScale = !radarLogScale; saveRadarPref('log_scale', radarLogScale); drawRadar()"
+                          x-text="radarLogScale ? 'LOG' : 'LIN'"></button>
+                </li>
+                <li class="flex items-center justify-between gap-3">
+                  <span class="font-mono opacity-60 uppercase tracking-wider">XHair</span>
+                  <input type="checkbox" class="toggle toggle-xs toggle-success" :checked="radarCrosshair" @change="toggleRadarCrosshair()">
+                </li>
+              </ul>
+            </details>
+
+            <!-- Shared Filters dropdown (same state as node table) -->
+            <details class="dropdown">
+              <summary class="btn btn-xs btn-ghost gap-1.5 font-mono opacity-70 hover:opacity-100">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4-2A1 1 0 018 15v-4.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd"/></svg>
+                Filters
+                <span class="badge badge-sm badge-primary" x-show="activeFilterCount() > 0" x-text="activeFilterCount()"></span>
+              </summary>
+              <div class="dropdown-content z-20 p-3 shadow-lg rounded-box flex flex-col gap-2.5"
+                   style="background:#0d1f0d;border:1px solid rgba(0,255,80,0.18);min-width:14rem;margin-top:0.25rem">
+                <!-- Source -->
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-mono opacity-60 uppercase tracking-wide">Source</span>
+                  <div class="join">
+                    <button class="join-item btn btn-xs" :class="nodeSource==='both' ? 'btn-primary' : 'btn-ghost opacity-50'" @click="setNodeSource('both')">Both</button>
+                    <button class="join-item btn btn-xs" :class="nodeSource==='yagi' ? 'btn-warning' : 'btn-ghost opacity-50'" @click="setNodeSource('yagi')">YAGI</button>
+                    <button class="join-item btn btn-xs" :class="nodeSource==='omni' ? 'btn-info' : 'btn-ghost opacity-50'" @click="setNodeSource('omni')">OMNI</button>
+                  </div>
+                </div>
+                <div class="divider my-0"></div>
+                <!-- Max hops -->
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-mono opacity-60">Max hops</span>
+                  <select class="select select-xs select-bordered" :value="nodeFilters.maxHops" @change="saveNodeFilter('maxHops', parseInt($event.target.value))">
+                    <option value="99">Any</option>
+                    <option value="0">Direct (0)</option>
+                    <option value="1">≤ 1</option>
+                    <option value="2">≤ 2</option>
+                  </select>
+                </div>
+                <!-- Last heard -->
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-mono opacity-60">Last heard</span>
+                  <select class="select select-xs select-bordered" :value="nodeFilters.maxAge" @change="saveNodeFilter('maxAge', parseInt($event.target.value))">
+                    <option value="0">Any</option>
+                    <option value="1800">30 m</option>
+                    <option value="3600">1 h</option>
+                    <option value="21600">6 h</option>
+                    <option value="86400">24 h</option>
+                  </select>
+                </div>
+                <!-- Checkboxes -->
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.namedOnly" @change="saveNodeFilter('namedOnly', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Named only</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasPos" @change="saveNodeFilter('hasPos', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Has position</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs checkbox-error" :checked="nodeFilters.hideMqtt" @change="saveNodeFilter('hideMqtt', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Hide MQTT</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasSignal" @change="saveNodeFilter('hasSignal', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">RF signal</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasTelem" @change="saveNodeFilter('hasTelem', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Telemetry</span>
+                </label>
+                <!-- Role sub-dropdown -->
+                <details class="dropdown dropdown-right">
+                  <summary class="btn btn-xs btn-ghost w-full justify-between font-mono font-normal">
+                    <span class="text-xs" x-text="nodeFilters.nodeRoles?.length ? 'Role: ' + nodeFilters.nodeRoles.length + ' selected' : 'Role: All'"></span>
+                    <svg class="w-3 h-3 opacity-50" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+                  </summary>
+                  <ul class="dropdown-content z-30 menu p-2 shadow bg-base-200 rounded-box w-44 text-xs gap-0.5" style="margin-left:0.25rem">
+                    <template x-for="role in ['CLIENT','CLIENT_BASE','CLIENT_MUTE','ROUTER','ROUTER_CLIENT','ROUTER_LATE','TRACKER','SENSOR','REPEATER']" :key="role">
+                      <li>
+                        <label class="flex items-center gap-2 cursor-pointer py-1">
+                          <input type="checkbox" class="checkbox checkbox-xs"
+                                 :checked="!nodeFilters.nodeRoles?.length || nodeFilters.nodeRoles.includes(role)"
+                                 @change="toggleNodeRole(role, $event.target.checked)">
+                          <span x-text="role.replace(/_/g,' ')"></span>
+                        </label>
+                      </li>
+                    </template>
+                  </ul>
+                </details>
+                <div class="divider my-0"></div>
+                <button class="btn btn-xs btn-ghost opacity-50 w-full font-mono" @click="resetNodeFilters()">Reset all</button>
+              </div>
+            </details>
+
             <!-- Rotator strip -->
             <div class="flex items-center gap-3 ml-auto pl-3"
                  style="border-left:1px solid rgba(0,255,80,0.15)">
-              <div class="flex items-center gap-1.5">
-                <span class="text-xs font-mono tracking-widest uppercase" style="color:rgba(0,255,80,0.45)">Rotr</span>
-                <span class="inline-block w-1.5 h-1.5 rounded-full"
-                      :class="rotatorConnected ? 'bg-success animate-pulse' : 'bg-error opacity-60'"></span>
-              </div>
-              <!-- Mode selector: PASV / ACTV -->
+              <!-- Rotator connection dot -->
+              <span class="inline-block w-1.5 h-1.5 rounded-full"
+                    :class="rotatorConnected ? 'bg-success animate-pulse' : 'bg-error opacity-60'"
+                    :title="rotatorConnected ? 'Rotator connected' : 'Rotator offline'"></span>
+
+              <!-- Mode buttons: PASV / ACTV / SCAN -->
               <div class="flex gap-1">
                 <button class="btn btn-xs font-mono tracking-widest"
-                        :class="rotatorMode === 0 ? 'btn-outline btn-info' : 'btn-ghost opacity-50'"
+                        :class="rotatorMode === 0 && !scanMode ? 'btn-outline btn-info' : 'btn-ghost opacity-50'"
+                        :disabled="scanMode"
                         @click="setRotatorMode(0)" title="Passive — manual Point only">PASV</button>
                 <button class="btn btn-xs font-mono tracking-widest"
-                        :class="rotatorMode === 1 ? 'btn-error' : 'btn-ghost opacity-50'"
+                        :class="rotatorMode === 1 && !scanMode ? 'btn-error' : 'btn-ghost opacity-50'"
+                        :disabled="scanMode"
                         @click="setRotatorMode(1)" title="Active — follow last heard node">ACTV</button>
+                <button class="btn btn-xs font-mono tracking-widest"
+                        :class="scanMode ? 'btn-warning btn-outline' : 'btn-ghost opacity-50'"
+                        :disabled="!rotatorConnected || !rotatorDeviceId()"
+                        @click="scanMode ? abortScan() : startScan()"
+                        x-text="scanMode ? 'ABORT' : 'SCAN'"
+                        title="360° polar SNR sweep — YAGI radio only"></button>
               </div>
+
+              <!-- Scan step/dwell badge -->
+              <span class="text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode"
+                    style="color:rgba(0,255,80,0.30)"
+                    x-text="scanStep + '°/' + scanDwell + 's'"></span>
+
+              <!-- Scan progress -->
+              <div class="flex items-center gap-2" x-show="scanMode">
+                <span class="text-xs font-mono animate-pulse" style="color:rgba(255,200,40,0.85)"
+                      x-text="'SCAN ' + (scanProgress ?? 0) + '°'"></span>
+                <div class="rounded-full overflow-hidden" style="width:56px;height:4px;background:rgba(255,200,40,0.15)">
+                  <div class="h-full rounded-full" style="background:rgba(255,200,40,0.70);transition:width 0.4s"
+                       :style="'width:' + ((scanProgress ?? 0) / 360 * 100).toFixed(0) + '%'"></div>
+                </div>
+              </div>
+
+              <!-- Current az -->
               <span class="font-mono text-sm font-bold tabular-nums"
-                    style="color:rgba(80,200,255,0.90);min-width:4rem;text-align:right"
-                    x-text="rotatorStatus.az != null ? Number(rotatorStatus.az).toFixed(1) + '°' : '– °'"></span>
-              <span x-show="rotatorStatus.busy"
+                    style="color:rgba(80,200,255,0.90);min-width:3.5rem;text-align:right"
+                    x-text="rotatorStatus.az != null ? Number(rotatorStatus.az).toFixed(1) + '°' : '–°'"></span>
+              <span x-show="rotatorStatus.busy && !scanMode"
                     class="text-xs font-mono animate-pulse"
                     style="color:rgba(255,200,40,0.85)">moving</span>
-              <div class="flex items-center gap-1.5" x-show="rotatorConnected && rotatorMode === 0">
+
+              <!-- Manual point input (PASV only) -->
+              <div class="flex items-center gap-1.5" x-show="rotatorConnected && rotatorMode === 0 && !scanMode">
                 <input type="number" min="0" max="360" step="1" placeholder="0–360"
                        class="input input-xs w-20 font-mono text-center"
                        style="background:rgba(80,200,255,0.07);border:1px solid rgba(80,200,255,0.25);color:rgba(80,200,255,0.9);border-radius:0.25rem"
@@ -458,8 +610,31 @@
               </defs>
               <g id="radar-bg-g"></g>
               <g id="radar-beam-g" style="transform-box:view-box;transform-origin:300px 300px;transition:transform 1.2s ease"></g>
+              <g id="radar-scan-arm-g" clip-path="url(#radarClip)"></g>
               <g id="radar-nodes-g"></g>
             </svg>
+
+            <!-- Scan node list — top-left, visible when scan data exists -->
+            <div x-show="Object.keys(scanData).length > 0" x-transition
+                 style="position:absolute;top:0.75rem;left:0.75rem;z-index:10;
+                        background:rgba(4,10,4,0.88);
+                        border:1px solid rgba(0,255,80,0.18);
+                        border-radius:0.5rem;
+                        backdrop-filter:blur(6px);
+                        padding:0.4rem 0.55rem;
+                        pointer-events:none;
+                        min-width:14rem;max-width:20rem">
+              <div style="font-family:'Oxanium',monospace;font-size:12px;letter-spacing:0.08em;color:rgba(0,255,80,0.40);margin-bottom:0.3rem">SCAN CONTACTS</div>
+              <template x-for="n in scanNodeList()" :key="n.num">
+                <div style="display:flex;align-items:center;gap:0.45rem;padding:0.15rem 0;border-top:1px solid rgba(0,255,80,0.07);font-family:'Oxanium',monospace;font-size:12px">
+                  <span style="color:rgba(0,255,80,0.90);font-weight:600;min-width:3rem;flex-shrink:0" x-text="nodeShortName(n.num)"></span>
+                  <span style="color:rgba(0,255,80,0.55);min-width:2.8rem;flex-shrink:0" x-text="n.az + '°'"></span>
+                  <span style="color:rgba(0,255,80,0.55);min-width:2.8rem;flex-shrink:0" x-text="n.km != null ? n.km.toFixed(1)+'km' : '–'"></span>
+                  <span style="color:rgba(0,255,80,0.30);flex:1" x-text="n.ts ? new Date(n.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''"></span>
+                  <span x-html="sig3(n.rssi, n.snr)" style="flex-shrink:0"></span>
+                </div>
+              </template>
+            </div>
 
             <!-- Tilt overlay — top-right, visible when active device has tilt data -->
             <div x-show="nodeSelf.tilt" x-transition
@@ -707,13 +882,13 @@
         <!-- ===================== NODES ===================== -->
         <div x-show="tab==='nodes'" class="card bg-base-100 shadow">
           <div class="card-body">
-            <div class="flex items-center justify-between flex-wrap gap-2">
+            <div class="flex items-center gap-3 flex-wrap">
               <h2 class="card-title">
                 NodeDB
                 <span class="badge badge-neutral" x-text="nodeCount"></span>
                 <span class="text-xs font-normal opacity-50" x-show="nodeCount !== nodeTotal" x-text="'of ' + nodeTotal"></span>
               </h2>
-              <select class="select select-xs select-bordered"
+              <select class="select select-xs select-bordered ml-auto"
                       @change="nodeSort.dir = parseInt($event.target.selectedOptions[0].dataset.dir); sortNodes($event.target.value, true)">
                 <option value="last_heard" data-dir="-1">Most recent</option>
                 <option value="snr"        data-dir="-1">Best signal</option>
@@ -721,68 +896,90 @@
                 <option value="km"         data-dir="1">Nearest</option>
                 <option value="long_name"  data-dir="1">Name A–Z</option>
               </select>
-            </div>
-            <div class="flex flex-wrap gap-x-4 gap-y-1 items-center text-sm py-1 border-b border-base-300">
-              <span class="font-semibold text-xs uppercase opacity-50 tracking-wide">Filters</span>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <span class="text-xs">Max hops</span>
-                <select class="select select-xs select-bordered" :value="nodeFilters.maxHops" @change="saveNodeFilter('maxHops', parseInt($event.target.value))">
-                  <option value="99">Any</option>
-                  <option value="0">Direct (0)</option>
-                  <option value="1">≤ 1</option>
-                  <option value="2">≤ 2</option>
-                </select>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <span class="text-xs">Last heard</span>
-                <select class="select select-xs select-bordered" :value="nodeFilters.maxAge" @change="saveNodeFilter('maxAge', parseInt($event.target.value))">
-                  <option value="0">Any</option>
-                  <option value="1800">30 m</option>
-                  <option value="3600">1 h</option>
-                  <option value="21600">6 h</option>
-                  <option value="86400">24 h</option>
-                </select>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.namedOnly" @change="saveNodeFilter('namedOnly', $event.target.checked)">
-                <span class="text-xs">Named</span>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasPos" @change="saveNodeFilter('hasPos', $event.target.checked)">
-                <span class="text-xs">Has position</span>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" class="checkbox checkbox-xs checkbox-error" :checked="nodeFilters.hideMqtt" @change="saveNodeFilter('hideMqtt', $event.target.checked)">
-                <span class="text-xs">Hide MQTT</span>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasSignal" @change="saveNodeFilter('hasSignal', $event.target.checked)">
-                <span class="text-xs">RF signal</span>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasTelem" @change="saveNodeFilter('hasTelem', $event.target.checked)">
-                <span class="text-xs">Telemetry</span>
-              </label>
-              <!-- Role filter -->
-              <details class="dropdown">
-                <summary class="btn btn-xs btn-ghost gap-1 font-normal">
-                  <span class="text-xs" x-text="nodeFilters.nodeRoles?.length ? 'Role: ' + nodeFilters.nodeRoles.length : 'Role: All'"></span>
-                  <svg class="w-3 h-3 opacity-50" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+              <!-- Filters dropdown -->
+              <details class="dropdown dropdown-end">
+                <summary class="btn btn-xs btn-ghost gap-1.5 font-mono opacity-70 hover:opacity-100">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4-2A1 1 0 018 15v-4.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd"/></svg>
+                  Filters
+                  <span class="badge badge-sm badge-primary" x-show="activeFilterCount() > 0" x-text="activeFilterCount()"></span>
                 </summary>
-                <ul class="dropdown-content z-[1] menu p-2 shadow bg-base-200 rounded-box w-44 text-xs gap-0.5">
-                  <template x-for="role in ['CLIENT','CLIENT_BASE','CLIENT_MUTE','ROUTER','ROUTER_CLIENT','ROUTER_LATE','TRACKER','SENSOR','REPEATER']" :key="role">
-                    <li>
-                      <label class="flex items-center gap-2 cursor-pointer py-1">
-                        <input type="checkbox" class="checkbox checkbox-xs"
-                               :checked="!nodeFilters.nodeRoles?.length || nodeFilters.nodeRoles.includes(role)"
-                               @change="toggleNodeRole(role, $event.target.checked)">
-                        <span x-text="role.replace('_', ' ')"></span>
-                      </label>
-                    </li>
-                  </template>
-                </ul>
+                <div class="dropdown-content z-20 p-3 shadow-lg rounded-box flex flex-col gap-2.5"
+                     style="background:var(--fallback-b2,oklch(var(--b2)));border:1px solid var(--fallback-bc,oklch(var(--bc)/.15));min-width:14rem;margin-top:0.25rem">
+                  <!-- Source -->
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs opacity-60 font-semibold uppercase tracking-wide">Source</span>
+                    <div class="join">
+                      <button class="join-item btn btn-xs" :class="nodeSource==='both' ? 'btn-primary' : 'btn-ghost opacity-50'" @click="setNodeSource('both')">Both</button>
+                      <button class="join-item btn btn-xs" :class="nodeSource==='yagi' ? 'btn-warning' : 'btn-ghost opacity-50'" @click="setNodeSource('yagi')">YAGI</button>
+                      <button class="join-item btn btn-xs" :class="nodeSource==='omni' ? 'btn-info' : 'btn-ghost opacity-50'" @click="setNodeSource('omni')">OMNI</button>
+                    </div>
+                  </div>
+                  <div class="divider my-0"></div>
+                  <!-- Max hops -->
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs opacity-60">Max hops</span>
+                    <select class="select select-xs select-bordered" :value="nodeFilters.maxHops" @change="saveNodeFilter('maxHops', parseInt($event.target.value))">
+                      <option value="99">Any</option>
+                      <option value="0">Direct (0)</option>
+                      <option value="1">≤ 1</option>
+                      <option value="2">≤ 2</option>
+                    </select>
+                  </div>
+                  <!-- Last heard -->
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs opacity-60">Last heard</span>
+                    <select class="select select-xs select-bordered" :value="nodeFilters.maxAge" @change="saveNodeFilter('maxAge', parseInt($event.target.value))">
+                      <option value="0">Any</option>
+                      <option value="1800">30 m</option>
+                      <option value="3600">1 h</option>
+                      <option value="21600">6 h</option>
+                      <option value="86400">24 h</option>
+                    </select>
+                  </div>
+                  <!-- Checkboxes -->
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.namedOnly" @change="saveNodeFilter('namedOnly', $event.target.checked)">
+                    <span class="text-xs">Named only</span>
+                  </label>
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasPos" @change="saveNodeFilter('hasPos', $event.target.checked)">
+                    <span class="text-xs">Has position</span>
+                  </label>
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" class="checkbox checkbox-xs checkbox-error" :checked="nodeFilters.hideMqtt" @change="saveNodeFilter('hideMqtt', $event.target.checked)">
+                    <span class="text-xs">Hide MQTT</span>
+                  </label>
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasSignal" @change="saveNodeFilter('hasSignal', $event.target.checked)">
+                    <span class="text-xs">RF signal</span>
+                  </label>
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasTelem" @change="saveNodeFilter('hasTelem', $event.target.checked)">
+                    <span class="text-xs">Telemetry</span>
+                  </label>
+                  <!-- Role sub-dropdown -->
+                  <details class="dropdown dropdown-right">
+                    <summary class="btn btn-xs btn-ghost w-full justify-between font-normal">
+                      <span class="text-xs" x-text="nodeFilters.nodeRoles?.length ? 'Role: ' + nodeFilters.nodeRoles.length + ' selected' : 'Role: All'"></span>
+                      <svg class="w-3 h-3 opacity-50" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+                    </summary>
+                    <ul class="dropdown-content z-30 menu p-2 shadow bg-base-200 rounded-box w-44 text-xs gap-0.5" style="margin-left:0.25rem">
+                      <template x-for="role in ['CLIENT','CLIENT_BASE','CLIENT_MUTE','ROUTER','ROUTER_CLIENT','ROUTER_LATE','TRACKER','SENSOR','REPEATER']" :key="role">
+                        <li>
+                          <label class="flex items-center gap-2 cursor-pointer py-1">
+                            <input type="checkbox" class="checkbox checkbox-xs"
+                                   :checked="!nodeFilters.nodeRoles?.length || nodeFilters.nodeRoles.includes(role)"
+                                   @change="toggleNodeRole(role, $event.target.checked)">
+                            <span x-text="role.replace(/_/g,' ')"></span>
+                          </label>
+                        </li>
+                      </template>
+                    </ul>
+                  </details>
+                  <div class="divider my-0"></div>
+                  <button class="btn btn-xs btn-ghost opacity-50 w-full" @click="resetNodeFilters()">Reset all</button>
+                </div>
               </details>
-              <button class="btn btn-xs btn-ghost opacity-50" @click="resetNodeFilters()">Reset</button>
             </div>
             <div class="overflow-y-auto max-h-[65vh]">
               <div class="flex flex-col gap-1 pt-1">
@@ -823,9 +1020,11 @@
                               <span x-show="nodeKm(n) != null"
                                     class="badge badge-xs badge-ghost"
                                     x-text="nodeKm(n)?.toFixed(1) + ' km'"></span>
-                              <span x-show="n.device && availableDevices.length > 1"
-                                    class="badge badge-xs badge-outline font-mono opacity-70"
-                                    x-text="deviceLabel(n.device)"></span>
+                              <template x-for="devId in (n._devices || (n._device ? [n._device] : []))" :key="devId">
+                                <span class="badge badge-xs badge-ghost font-mono"
+                                      :style="deviceConfigs[devId]?.color ? `color:var(--color-${deviceConfigs[devId].color})` : ''"
+                                      x-text="deviceConfigs[devId]?.label || deviceLabel(devId)"></span>
+                              </template>
                             </div>
                           </div>
                         </div>
@@ -908,6 +1107,33 @@
                     <span class="text-success text-sm" x-show="antennaSaved" x-transition>Saved ✓</span>
                     <span class="text-error text-sm" x-show="antennaError" x-text="antennaError"></span>
                   </div>
+                  <!-- Home position — only relevant for the primary device -->
+                  <template x-if="deviceConfigs[cfgRadioId]?.is_primary">
+                    <div>
+                      <div class="divider my-2 text-xs opacity-50">Home Position</div>
+                      <div class="grid grid-cols-2 gap-3">
+                        <label class="form-control w-full">
+                          <div class="label py-1"><span class="label-text text-xs">Latitude</span></div>
+                          <input type="number" step="0.000001" class="input input-bordered input-sm w-full font-mono"
+                                 placeholder="e.g. 51.5074"
+                                 :value="deviceConfigs[cfgRadioId]?.fixed_lat ?? ''"
+                                 @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], fixed_lat: $event.target.value !== '' ? Number($event.target.value) : null }">
+                        </label>
+                        <label class="form-control w-full">
+                          <div class="label py-1"><span class="label-text text-xs">Longitude</span></div>
+                          <input type="number" step="0.000001" class="input input-bordered input-sm w-full font-mono"
+                                 placeholder="e.g. -0.1278"
+                                 :value="deviceConfigs[cfgRadioId]?.fixed_lon ?? ''"
+                                 @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], fixed_lon: $event.target.value !== '' ? Number($event.target.value) : null }">
+                        </label>
+                      </div>
+                      <div class="flex items-center gap-2 mt-2">
+                        <button class="btn btn-sm btn-primary" @click="saveHomePosCfg()">Save</button>
+                        <span class="text-success text-sm" x-show="homePosSaved" x-transition>Saved ✓</span>
+                        <span class="text-error text-sm" x-show="homePosError" x-text="homePosError"></span>
+                      </div>
+                    </div>
+                  </template>
                   <!-- Tilt calibration (only shown when the selected radio is the tilt-sensor device) -->
                   <template x-if="nodeSelf.tilt && cfgRadioId === activeNodeId">
                     <div>
@@ -1323,29 +1549,48 @@
                     </div>
                   </div>
                   <!-- Config row -->
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-base-300"
+                  <div class="flex flex-col gap-3 pt-2 border-t border-base-300"
                        x-data="{ _labelVal: deviceConfigs[dev.node_id]?.label || '', _tcpVal: dev.tcp_port || '' }">
-                    <div class="form-control">
-                      <label class="label py-0.5"><span class="label-text text-xs">Label / ID tag</span></label>
-                      <input type="text" maxlength="8"
-                             class="input input-sm input-bordered font-mono"
-                             x-model="_labelVal"
-                             placeholder="e.g. OMNI or YAGI"
-                             @keydown.enter.prevent="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">
+                    <!-- Identity: alias + colour grouped together -->
+                    <div class="flex items-end gap-2">
+                      <div class="form-control flex-1">
+                        <label class="label py-0.5"><span class="label-text text-xs">Alias</span></label>
+                        <input type="text" maxlength="8"
+                               class="input input-sm input-bordered font-mono"
+                               x-model="_labelVal"
+                               placeholder="e.g. OMNI or YAGI"
+                               @keydown.enter.prevent="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">
+                      </div>
+                      <div class="form-control w-36">
+                        <label class="label py-0.5"><span class="label-text text-xs">Colour</span></label>
+                        <select class="select select-sm select-bordered"
+                                :value="deviceConfigs[dev.node_id]?.color || ''"
+                                @change="saveDeviceCfg(dev.node_id, 'color', $event.target.value || null)">
+                          <option value="">— none —</option>
+                          <option value="primary">Primary</option>
+                          <option value="secondary">Secondary</option>
+                          <option value="accent">Accent</option>
+                          <option value="info">Info</option>
+                          <option value="success">Success</option>
+                          <option value="warning">Warning</option>
+                          <option value="error">Error</option>
+                        </select>
+                      </div>
+                      <button class="btn btn-xs btn-primary mb-0.5"
+                              @click="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">Save</button>
                     </div>
-                    <div class="form-control">
-                      <label class="label py-0.5"><span class="label-text text-xs">TCP port <span class="opacity-50">(Meshtastic client bridge)</span></span></label>
-                      <input type="number" min="1024" max="65535"
-                             class="input input-sm input-bordered font-mono"
-                             x-model="_tcpVal"
-                             placeholder="e.g. 4403"
-                             @keydown.enter.prevent="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">
-                    </div>
-                    <div class="sm:col-span-2 flex justify-end">
-                      <button class="btn btn-xs btn-primary"
-                              @click="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null); saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">
-                        Save
-                      </button>
+                    <!-- Connection -->
+                    <div class="flex items-end gap-2">
+                      <div class="form-control flex-1">
+                        <label class="label py-0.5"><span class="label-text text-xs">TCP port <span class="opacity-50">(Meshtastic client bridge)</span></span></label>
+                        <input type="number" min="1024" max="65535"
+                               class="input input-sm input-bordered font-mono"
+                               x-model="_tcpVal"
+                               placeholder="e.g. 4403"
+                               @keydown.enter.prevent="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">
+                      </div>
+                      <button class="btn btn-xs btn-primary mb-0.5"
+                              @click="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">Save</button>
                     </div>
                     <div class="flex flex-col gap-2 justify-end">
                       <label class="flex items-center gap-3 cursor-pointer">
