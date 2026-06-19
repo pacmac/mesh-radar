@@ -9,6 +9,7 @@ import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId,
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal } from './db.js';
 import { rotator } from './rotator.js';
+import { dashMode } from './dash-mode.js';
 import { handlePacketForRotator } from './rotator-logic.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
@@ -55,8 +56,8 @@ app.get('/rotator/status', (req, res) => {
   const { mode: _fw, ...fwStatus } = rotator.status; // exclude firmware string 'mode' field
   res.json({
     connected:     rotator.connected,
-    mode:          rotator.mode,
-    dash_mode:     getConfig('rotator.dash_mode', rotator.mode),
+    mode:          dashMode.value,
+    dash_mode:     dashMode.value,
     scan_active:   scanner.active,
     scan_az:       scanner.active ? scanner.az : null,
     scan_dwell_az: scanner.active ? scanner.dwellAz : null,
@@ -75,11 +76,7 @@ app.post('/rotator/move', (req, res) => {
 app.post('/rotator/mode', (req, res) => {
   const { mode } = req.body;
   if (mode == null) return res.status(400).json({ error: 'mode required' });
-  // firmware only understands 0/1; dash_mode tracks full 3-state (0=PASV,1=ACTV,2=SCAN)
-  const fwMode = Math.min(mode, 1);
-  rotator.setMode(fwMode);
-  setConfig('rotator.dash_mode', mode);
-  if (mode < 2) setConfig('rotator.mode', fwMode);
+  dashMode.set(mode);
   res.json({ mode });
 });
 
@@ -100,6 +97,15 @@ app.post('/rotator/calibrate', (req, res) => {
   if (!ALLOWED.includes(procedure)) return res.status(400).json({ error: 'unknown procedure' });
   rotator.sendAction(procedure);
   res.json({ sent: procedure });
+});
+
+app.post('/rotator/setvar', (req, res) => {
+  const ALLOWED_VARS = ['setPwmRunPct', 'setPwmFreq', 'setNorthOffset'];
+  const { action, val } = req.body;
+  if (!ALLOWED_VARS.includes(action)) return res.status(400).json({ error: 'unknown var' });
+  if (val == null) return res.status(400).json({ error: 'val required' });
+  rotator.sendAction(action, [String(val)]);
+  res.json({ sent: action, val });
 });
 
 app.post('/rotator/offset', (req, res) => {
@@ -273,7 +279,7 @@ onHomePosChange(() => nodeList.refilter());
 
 // -- scanner lifecycle -------------------------------------------------------
 scanner.on('start', () => {
-  setConfig('rotator.dash_mode', 2);
+  dashMode.set(2);
   nodeList.setScanActive(true);
 });
 scanner.on('contact', (contact) => {
@@ -281,10 +287,8 @@ scanner.on('contact', (contact) => {
   if (contact.from && rotatorId)
     nodeList.confirmScanContact(contact.from, rotatorId, contact.az, contact.rssi, contact.snr);
 });
-scanner.on('end',   () => {
-  const mode = scanner._preMode;
-  setConfig('rotator.dash_mode', mode);
-  if (mode < 2) setConfig('rotator.mode', mode);
+scanner.on('end', () => {
+  dashMode.set(scanner._preMode);
   nodeList.setScanActive(false);
 });
 
@@ -296,6 +300,7 @@ bridge.on('event', (ev) => {
     handlePacketForRotator(ev);
     scanner.handlePacket(ev);
     const pkt = ev.data?.packet;
+    if (pkt?.from) nodeList.touchLastHeard(pkt.from, pkt.rx_time, ev.device ?? null);
     if (pkt?.decoded?.portnum === 'RANGE_TEST_APP') {
       const seq = pkt.decoded.payload
         ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8')
@@ -315,8 +320,6 @@ bridge.on('event', (ev) => {
 });
 
 rotator.on('connected', () => {
-  const savedMode = getConfig('rotator.mode', 0);
-  if (savedMode != null) rotator.setMode(savedMode);
 });
 
 bridge.on('connected', async () => {
@@ -329,11 +332,6 @@ bridge.on('connected', async () => {
     const allResp = await bridge.get('/nodes');
     const allNodes = Object.values(allResp?.nodes ?? {});
     nodeList.seed(allNodes, null);
-    if (rotatorId) {
-      const yagiResp = await bridge.get(`/${rotatorId}/nodes`);
-      const yagiNodes = Object.values(yagiResp?.nodes ?? {});
-      nodeList.seed(yagiNodes, rotatorId);
-    }
     // Seed own-device cache for each known BLE device so Devices tab has metadata immediately
     const allDeviceCfgs = getAllDeviceCfgs();
     for (const deviceId of Object.keys(allDeviceCfgs)) {

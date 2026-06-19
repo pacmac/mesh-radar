@@ -1,5 +1,29 @@
 import { stmts } from './db.js';
 
+function _validCoord(lat, lon) {
+  return lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+}
+
+function _upsertCache(num, nodeId, u, pos) {
+  if (!num || (!u?.short_name && !u?.long_name)) return;
+  const node_id = nodeId || u?.id || `!${num.toString(16).padStart(8, '0')}`;
+  const lat = pos?.latitude_i  != null ? pos.latitude_i  / 1e7 : null;
+  const lon = pos?.longitude_i != null ? pos.longitude_i / 1e7 : null;
+  const validPos = _validCoord(lat, lon);
+  stmts.upsertNodeinfo.run({
+    node_id,
+    num,
+    short_name: u.short_name ?? null,
+    long_name:  u.long_name  ?? null,
+    hw_model:   u.hw_model   ?? null,
+    role:       u.role       ?? null,
+    lat:  validPos ? lat        : null,
+    lon:  validPos ? lon        : null,
+    alt:  validPos ? (pos?.altitude ?? null) : null,
+    topic: null,
+  });
+}
+
 const BROADCAST_NUM = 0xffffffff;
 
 export function handleEvent(event) {
@@ -92,6 +116,7 @@ function handlePacket(packet, device, ts, replay) {
       uptime_seconds: null,
       device,
     });
+    _upsertCache(packet.from, u.id, u, null);
     return;
   }
 
@@ -149,4 +174,5 @@ function handleNodeInfo(data, device) {
     uptime_seconds: m.uptime_seconds ?? null,
     device,
   });
+  _upsertCache(node.num, u.id, u, pos);
 }

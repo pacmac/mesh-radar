@@ -5,6 +5,16 @@
 
 const SENSITIVE_FIELDS = new Set(["psk", "macaddr", "public_key", "private_key", "password"]);
 
+// DaisyUI v4 uses short oklch channel vars (--p, --su, --er, etc.) — NOT --color-*
+// Resolve at call time so SVG fill gets a concrete value, not an unresolvable var()
+const DAISY_COLOR_VAR = { primary:'--p', secondary:'--s', accent:'--a', neutral:'--n', info:'--in', success:'--su', warning:'--wa', error:'--er' };
+function themeColor(name) {
+  const v = DAISY_COLOR_VAR[name];
+  if (!v) return null;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  return raw ? `oklch(${raw})` : null;
+}
+
 // Map from Alpine nodeFilters keys to /config API keys
 const FILTER_CFG_KEY = {
   maxHops:   'node_filters.max_hops',
@@ -73,6 +83,8 @@ function dashboard() {
     rotatorConnected: false,
     rotatorManualAz: null,
     rotatorMode: 0,
+    pwmRunPctInput: null,
+    pwmFreqInput: null,
     otaActive: false,
     otaPct: 0,
     otaBleAddr: null,
@@ -80,7 +92,8 @@ function dashboard() {
     scanMode:      false,
     scanStep:      5,
     scanDwell:     60,
-    scanData:      {},   // { az: { from, snr, rssi, ts } } — best packet per az bucket
+    scanData:      {},   // kept for WS resume compat only — display uses this.nodes
+    deviceNodes:   {},   // own-device self-telemetry keyed by !nodeId — never scan-filtered, Devices tab only
     scanProgress:  null,
     scanCurrentAz: null,
     tiltHistory: [],
@@ -156,6 +169,7 @@ function dashboard() {
     rotatorCfgError: "",
     rotatorCalSent: false,
     rotatorCalError: "",
+    rotatorOffsetInput: "",
 
     // Range test tab state
     rangeLog: [],
@@ -743,7 +757,8 @@ function dashboard() {
     nodeById(nodeId) {
       if (!nodeId?.startsWith('!')) return null;
       const num = parseInt(nodeId.slice(1), 16);
-      return this.nodes.find(n => n.num === num) || null;
+      // deviceNodes is never scan-filtered — always has own-device telemetry for Devices tab
+      return this.deviceNodes[nodeId] ?? this.nodes.find(n => n.num === num) ?? null;
     },
 
     nodeGroupLabel(n) {
@@ -892,7 +907,7 @@ function dashboard() {
         if (d.az != null) this.yagiAz = d.az;
         const pt = d.point_target ?? null;
         this.yagiPointTarget = pt && this.filteredNodes().some(n => n.num === pt) ? pt : null;
-        if (d.scan_active) {
+        if (d.scan_active || d.dash_mode === 2) {
           this.scanMode     = true;
           this.rotatorMode  = 0;
           this.scanProgress = d.scan_az ?? null;
@@ -911,7 +926,7 @@ function dashboard() {
 
     async setRotatorMode(m) {
       this.rotatorMode = m;
-      try { await fetchJSON("/rotator/mode", "POST", { mode: m }); } catch (_) {}
+      await fetchJSON("/rotator/mode", "POST", { mode: m });
     },
 
     async moveRotator(az) {
@@ -919,6 +934,18 @@ function dashboard() {
       this.rotatorStatus = { ...this.rotatorStatus, target: Number(az) };
       if (this.tab === 'radar') this._drawTargetArm();
       await fetchJSON("/rotator/move", "POST", { az: Number(az) });
+    },
+
+    async applyPwmRunPct() {
+      if (this.pwmRunPctInput == null) return;
+      const pct = Math.max(1, Math.min(100, this.pwmRunPctInput)) / 100;
+      await fetchJSON('/rotator/setvar', 'POST', { action: 'setPwmRunPct', val: pct.toFixed(2) });
+    },
+
+    async applyPwmFreq() {
+      if (this.pwmFreqInput == null) return;
+      const freq = Math.max(10, Math.min(20000, this.pwmFreqInput));
+      await fetchJSON('/rotator/setvar', 'POST', { action: 'setPwmFreq', val: String(freq) });
     },
 
     startScan() {
@@ -974,6 +1001,18 @@ function dashboard() {
       this.rotatorCalError = "";
       try {
         await fetchJSON("/rotator/calibrate", "POST", { procedure });
+        this.rotatorCalSent = true;
+        setTimeout(() => { this.rotatorCalSent = false; }, 2000);
+      } catch (e) {
+        this.rotatorCalError = String(e);
+      }
+    },
+
+    async setRotatorOffset(offset) {
+      this.rotatorCalSent = false;
+      this.rotatorCalError = "";
+      try {
+        await fetchJSON("/rotator/offset", "POST", { offset: parseFloat(offset) });
         this.rotatorCalSent = true;
         setTimeout(() => { this.rotatorCalSent = false; }, 2000);
       } catch (e) {
@@ -1073,6 +1112,14 @@ function dashboard() {
         this.nodeCount = this.nodes.length;
         this.nodeTotal = ev.total ?? this.nodes.length;
         this.homePos = ev.hasHomePos ? true : null;
+        // device_nodes: own-device self-telemetry, never scan-filtered — Devices tab only
+        if (ev.device_nodes?.length) {
+          const updated = { ...this.deviceNodes };
+          for (const n of ev.device_nodes) {
+            updated['!' + n.num.toString(16).padStart(8, '0')] = n;
+          }
+          this.deviceNodes = updated;
+        }
         const myNum = this.info?.my_info?.my_node_num;
         if (myNum) this.nodeSelf = this.nodes.find(n => n.num === myNum) ?? this.nodeSelf;
         this.sortNodes(this.nodeSort.key, true);
@@ -1106,12 +1153,13 @@ function dashboard() {
         return;
       }
       if (ev.type === 'scan_contact') {
+        // scan_contact no longer drives display — node_list (this.nodes) is the single source
+        // Keep scanData only so resumed WS connections can replay contacts to new clients
         const d = ev.data;
         const existing = this.scanData[d.az];
         if (!existing || d.snr > (existing.snr ?? -Infinity)) {
           this.scanData[d.az] = { from: d.from, snr: d.snr, rssi: d.rssi, ts: d.ts };
         }
-        if (this.tab === 'radar') this.drawRadar();
         return;
       }
       if (ev.type === 'scan_end') {
@@ -1594,18 +1642,7 @@ function dashboard() {
     },
 
     scanNodeList() {
-      const byNode = {};
-      for (const [azStr, d] of Object.entries(this.scanData)) {
-        if (d.from == null) continue;
-        const num = d.from;
-        if (!byNode[num] || d.snr > byNode[num].snr) {
-          byNode[num] = { num, az: Number(azStr), snr: d.snr, rssi: d.rssi ?? null, ts: d.ts ?? null };
-        }
-      }
-      return Object.values(byNode).sort((a, b) => b.snr - a.snr).map(n => {
-        const rn = this.radarNodes.find(r => r.num === n.num);
-        return { ...n, km: rn?._km ?? null };
-      });
+      return [...this.nodes].sort((a, b) => (b._scanSnr ?? -999) - (a._scanSnr ?? -999));
     },
 
     nodeShortName(num) {
@@ -1987,7 +2024,6 @@ function dashboard() {
     refreshRadar() {
       if (!this.homePos) return;
       this.radarNodes = this.filteredNodes()
-        .filter((n) => n._km != null && n._az != null)
         .map((n) => {
           const existing = this.radarNodes.find((r) => r.num === n.num);
           return {
@@ -1995,6 +2031,8 @@ function dashboard() {
             _lat: n.position?.latitude_i != null ? n.position.latitude_i / 1e7 : null,
             _lon: n.position?.longitude_i != null ? n.position.longitude_i / 1e7 : null,
             _address: existing?._address,
+            _plotAz: n._az ?? n._scanAz,          // GPS az preferred, scan az fallback
+            _plotKm: n._km ?? null,               // null = unknown distance → outer ring
           };
         });
       // Clear point target if it is not in the filtered node set (e.g. a bridge node)
@@ -2006,7 +2044,7 @@ function dashboard() {
     drawRadar() {
       if (!this.homePos) return;
       const maxKm = this.radarRange === "0"
-        ? (this.radarNodes.length ? Math.max(...this.radarNodes.map((n) => n._km)) * 1.15 : 50)
+        ? (this.radarNodes.length ? Math.max(...this.radarNodes.map((n) => n._plotKm ?? 0)) * 1.15 : 50)
         : Number(this.radarRange);
       this._drawRadarBg(maxKm);
       this._drawTargetArm();
@@ -2117,16 +2155,17 @@ function dashboard() {
       const pointTarget = this.yagiPointTarget;
 
       const npos = nodes.map(node => {
-        const az = node._az * Math.PI / 180;
-        const normKm = this._radarNorm(node._km, maxKm);
+        if (node._plotAz == null) return null;
+        const az = node._plotAz * Math.PI / 180;
+        const normKm = node._plotKm != null ? this._radarNorm(node._plotKm, maxKm) : 0.92;
         return { x: CX + Math.sin(az) * normKm * R, y: CY - Math.cos(az) * normKm * R, diagLen: BASE_DIAG, isRight: null };
       });
       const clusterOf = new Array(npos.length).fill(-1);
       for (let i = 0; i < npos.length; i++) {
-        if (clusterOf[i] >= 0) continue;
+        if (!npos[i] || clusterOf[i] >= 0) continue;
         const members = [i]; clusterOf[i] = i;
         for (let j = i + 1; j < npos.length; j++) {
-          if (clusterOf[j] >= 0) continue;
+          if (!npos[j] || clusterOf[j] >= 0) continue;
           const dx = npos[i].x - npos[j].x, dy = npos[i].y - npos[j].y;
           if (dx * dx + dy * dy < CLUSTER_R * CLUSTER_R) { members.push(j); clusterOf[j] = i; }
         }
@@ -2134,13 +2173,14 @@ function dashboard() {
       }
 
       nodes.forEach((node, ni) => {
+        if (!npos[ni]) return;
         const { x, y, diagLen } = npos[ni];
         const isRight = npos[ni].isRight !== null ? npos[ni].isRight : x >= CX;
         const devColor = this.deviceConfigs[node._device]?.color;
-        const dotColor = devColor ? `var(--color-${devColor})` : ageColor(node.last_heard, this.heatmapMaxAge);
+        const dotColor = devColor ? (themeColor(devColor) ?? ageColor(node.last_heard, this.heatmapMaxAge)) : ageColor(node.last_heard, this.heatmapMaxAge);
         const devices = node._devices || (node._device ? [node._device] : []);
-        const dot2Color = devices.length >= 2 ? (this.deviceConfigs[devices[0]]?.color ? `var(--color-${this.deviceConfigs[devices[0]].color})` : null) : null;
-        const dot1Color = devices.length >= 2 ? (this.deviceConfigs[devices[1]]?.color ? `var(--color-${this.deviceConfigs[devices[1]].color})` : dotColor) : dotColor;
+        const dot2Color = devices.length >= 2 ? (this.deviceConfigs[devices[0]]?.color ? themeColor(this.deviceConfigs[devices[0]].color) : null) : null;
+        const dot1Color = devices.length >= 2 ? (this.deviceConfigs[devices[1]]?.color ? themeColor(this.deviceConfigs[devices[1]].color) : dotColor) : dotColor;
         const isSelected = node.num === selectedNum;
         const isLastHeard = node.num === lastHeardNum;
         const g = svgElem('g', { class: 'radar-node' + (isSelected ? ' radar-node-selected' : ''), style: 'cursor:pointer' });
@@ -2162,7 +2202,7 @@ function dashboard() {
         }
         if (isSelected)
           g.appendChild(svgElem('circle', { cx: x, cy: y, r: 12, style: `fill:none;stroke:${G4};stroke-width:1.5;stroke-dasharray:4 3` }));
-        const r = isSelected ? 5 : 4;
+        const r = isSelected ? 6 : 5;
         if (dot2Color) {
           // Split dot: left half = devices[0] color, right half = devices[1] color
           g.appendChild(svgElem('path', { d: `M${x},${y-r} A${r},${r},0,0,0,${x},${y+r} Z`, style: `fill:${dot2Color};filter:url(#blipGlow)` }));
@@ -2177,9 +2217,9 @@ function dashboard() {
         const diagSign = isRight ? 1 : -1;
         const elbowX = x + diagSign * diagLen, elbowY = y - diagLen;
         const capX = elbowX + diagSign * HOR_LEN;
-        g.appendChild(svgElem('line', { x1: x + diagSign * 5, y1: y - 4, x2: elbowX, y2: elbowY, style: `stroke:${dotColor};stroke-width:0.8;opacity:0.7;pointer-events:none` }));
-        g.appendChild(svgElem('line', { x1: elbowX, y1: elbowY, x2: capX, y2: elbowY, style: `stroke:${dotColor};stroke-width:0.8;opacity:0.7;pointer-events:none` }));
-        const txt = svgElem('text', { class: 'radar-node-label', x: capX + diagSign * 3, y: elbowY + 4, style: `fill:${dotColor};font-size:10px;font-family:'Oxanium',monospace;pointer-events:none;text-anchor:${isRight ? 'start' : 'end'}` });
+        g.appendChild(svgElem('line', { x1: x + diagSign * 6, y1: y - 5, x2: elbowX, y2: elbowY, style: `stroke:${dotColor};stroke-width:1.2;pointer-events:none` }));
+        g.appendChild(svgElem('line', { x1: elbowX, y1: elbowY, x2: capX, y2: elbowY, style: `stroke:${dotColor};stroke-width:1.2;pointer-events:none` }));
+        const txt = svgElem('text', { class: 'radar-node-label', x: capX + diagSign * 3, y: elbowY + 4, style: `fill:${dotColor};font-size:10px;font-weight:600;font-family:'Oxanium',monospace;pointer-events:none;text-anchor:${isRight ? 'start' : 'end'}` });
         txt.textContent = label;
         g.appendChild(txt);
         g.addEventListener('click', (e) => { e.stopPropagation(); this.radarSelected = node; this.openNodeInfo(node); });

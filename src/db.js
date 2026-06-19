@@ -62,18 +62,19 @@ db.exec(`
     value  TEXT NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS mqtt_nodeinfo (
-    node_id     TEXT PRIMARY KEY,
-    num         INTEGER,
-    short_name  TEXT,
-    long_name   TEXT,
-    hw_model    TEXT,
-    role        TEXT,
-    lat         REAL,
-    lon         REAL,
-    alt         INTEGER,
-    topic       TEXT,
-    updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+  CREATE TABLE IF NOT EXISTS nodeinfo (
+    node_id      TEXT PRIMARY KEY,
+    num          INTEGER,
+    short_name   TEXT,
+    long_name    TEXT,
+    hw_model     TEXT,
+    role         TEXT,
+    lat          REAL,
+    lon          REAL,
+    alt          INTEGER,
+    topic        TEXT,
+    first_heard  INTEGER,
+    updated_at   INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
   CREATE TABLE IF NOT EXISTS range_test_log (
@@ -88,6 +89,7 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_range_test_ts ON range_test_log(ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_nodeinfo_num  ON nodeinfo(num);
 
   CREATE TABLE IF NOT EXISTS tilt_history (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,6 +123,11 @@ const tiltCols = db.prepare(`PRAGMA table_info(tilt_history)`).all().map(r => r.
 if (!tiltCols.includes('ncal')) {
   db.exec(`ALTER TABLE tilt_history ADD COLUMN ncal INTEGER NOT NULL DEFAULT 0`);
 }
+const nodeinfoCols = db.prepare(`PRAGMA table_info(nodeinfo)`).all().map(r => r.name);
+if (!nodeinfoCols.includes('first_heard')) {
+  db.exec(`ALTER TABLE nodeinfo ADD COLUMN first_heard INTEGER`);
+  db.exec(`UPDATE nodeinfo SET first_heard = unixepoch() - (7 * 86400) WHERE first_heard IS NULL`);
+}
 
 export const stmts = {
   insertMessage: db.prepare(`
@@ -128,9 +135,9 @@ export const stmts = {
     VALUES (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @reply_id, @device, @replay)
   `),
 
-  upsertMqttNode: db.prepare(`
-    INSERT INTO mqtt_nodeinfo (node_id, num, short_name, long_name, hw_model, role, lat, lon, alt, topic, updated_at)
-    VALUES (@node_id, @num, @short_name, @long_name, @hw_model, @role, @lat, @lon, @alt, @topic, unixepoch())
+  upsertNodeinfo: db.prepare(`
+    INSERT INTO nodeinfo (node_id, num, short_name, long_name, hw_model, role, lat, lon, alt, topic, first_heard, updated_at)
+    VALUES (@node_id, @num, @short_name, @long_name, @hw_model, @role, @lat, @lon, @alt, @topic, unixepoch(), unixepoch())
     ON CONFLICT(node_id) DO UPDATE SET
       num        = COALESCE(excluded.num,        num),
       short_name = COALESCE(excluded.short_name, short_name),
@@ -240,6 +247,11 @@ export function queryTiltHistory(nodeId, sinceTs) {
 
 export function markTiltNcal(nodeId, tsFrom, tsTo) {
   return stmts.markNcal.run(nodeId, tsFrom, tsTo).changes;
+}
+
+const _getNodeinfo = db.prepare(`SELECT * FROM nodeinfo WHERE num = ? LIMIT 1`);
+export function getMqttNode(num) {
+  return _getNodeinfo.get(num) ?? null;
 }
 
 export function getConfigByPrefix(prefix) {

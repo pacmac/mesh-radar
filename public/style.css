@@ -582,7 +582,7 @@ footer {
 /* Short-name labels are always visible (the larger radar has room for
    them); hover/select brightens + bolds for the active node. */
 .radar-node-label {
-  opacity: 0.7;
+  opacity: 0.95;
   transition: opacity 0.12s ease;
 }
 .radar-node:hover .radar-node-label,

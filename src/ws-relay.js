@@ -4,6 +4,7 @@ import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
 import { insertTilt } from './db.js';
+import { dashMode } from './dash-mode.js';
 
 export function attachWsRelay(server) {
   // Both WSSes use noServer so they never compete on the upgrade event.
@@ -37,17 +38,17 @@ export function attachWsRelay(server) {
   });
   rotator.on('status', (data) => broadcast({ type: 'rotator', data }));
   rotator.on('point_target', (data) => broadcast({ type: 'rotator', data }));
-  rotator.on('mode', (data) => broadcast({ type: 'rotator', data }));
+  dashMode.on('change', (data) => broadcast({ type: 'rotator', data }));
 
   scanner.on('start',    (data) => broadcast({ type: 'scan_start',    data }));
   scanner.on('progress', (data) => broadcast({ type: 'scan_progress', data }));
   scanner.on('contact',  (data) => broadcast({ type: 'scan_contact',  data }));
   scanner.on('end',      (data) => broadcast({ type: 'scan_end',      data }));
-  nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
+  nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
 
   wss.on('connection', (ws) => {
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
-      ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: rotator.mode } }));
+      ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
     }
     if (scanner.active) {
       ws.send(JSON.stringify({ type: 'scan_start', data: {
@@ -55,7 +56,7 @@ export function attachWsRelay(server) {
         contacts: scanner.contacts,
       }}));
     }
-    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
+    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
   });
 
   // -- Per-device /!{nodeId}/events — snapshot first, pre-filtered -----------
@@ -71,7 +72,7 @@ export function attachWsRelay(server) {
 
     // Rotator status
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
-      ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: rotator.mode } }));
+      ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
     }
     // Scan state resume
     if (scanner.active) {
@@ -80,7 +81,7 @@ export function attachWsRelay(server) {
       }}));
     }
     // Node list snapshot
-    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
+    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
 
     function onEvent(ev) {
       if (ws.readyState !== 1) return;
@@ -88,6 +89,10 @@ export function attachWsRelay(server) {
     }
 
     function onRotator(data) {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
+    }
+
+    function onDashMode(data) {
       if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
     }
 
@@ -106,7 +111,7 @@ export function attachWsRelay(server) {
     bridge.on('event', onEvent);
     rotator.on('status', onRotator);
     rotator.on('point_target', onRotator);
-    rotator.on('mode', onRotator);
+    dashMode.on('change', onDashMode);
     scanner.on('start',    onScanStart);
     scanner.on('progress', onScanProgress);
     scanner.on('contact',  onScanContact);
@@ -117,7 +122,7 @@ export function attachWsRelay(server) {
       bridge.off('event', onEvent);
       rotator.off('status', onRotator);
       rotator.off('point_target', onRotator);
-      rotator.off('mode', onRotator);
+      dashMode.off('change', onDashMode);
       scanner.off('start',    onScanStart);
       scanner.off('progress', onScanProgress);
       scanner.off('contact',  onScanContact);

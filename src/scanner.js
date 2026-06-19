@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { rotator } from './rotator.js';
 import { getRotatorDeviceId } from './device-config.js';
-import { getConfig } from './db.js';
+import { getConfig, setConfig } from './db.js';
 
 class Scanner extends EventEmitter {
   constructor() {
@@ -28,14 +28,29 @@ class Scanner extends EventEmitter {
     const savedScan = getConfig('scan_config', {});
     this._step    = savedScan.step_deg  ?? 5;
     this._dwell   = savedScan.dwell_sec ?? 60;
-    this._preMode = rotator.mode;
+    this._preMode = getConfig('rotator.dash_mode', 0);
     this._active  = true;
     this._az      = 0;
     this._aborted = false;
     this._contacts = {};
     this._dwellAz  = null;
-    rotator.setMode(0); // PASV during scan (transient, not persisted)
+    setConfig('scan_state', { active: true, az: 0, step: this._step, dwell: this._dwell, contacts: {}, preMode: this._preMode });
     this.emit('start', { step: this._step, dwell: this._dwell });
+    this._doStep();
+  }
+
+  // Resume after server restart — restores contacts and continues from saved az
+  resume(state) {
+    if (this._active) return;
+    this._step     = state.step  ?? 5;
+    this._dwell    = state.dwell ?? 60;
+    this._preMode  = state.preMode ?? 0;
+    this._active   = true;
+    this._az       = state.az ?? 0;
+    this._aborted  = false;
+    this._contacts = state.contacts ?? {};
+    this._dwellAz  = null;
+    this.emit('start', { step: this._step, dwell: this._dwell, resumed: true, az: this._az, contacts: this._contacts });
     this._doStep();
   }
 
@@ -60,6 +75,7 @@ class Scanner extends EventEmitter {
     if (!existing || snr > (existing.snr ?? -Infinity)) {
       const contact = { az, from: pkt.from, snr, rssi, ts: Math.floor(Date.now() / 1000) };
       this._contacts[az] = contact;
+      setConfig('scan_state', { active: true, az: this._az, step: this._step, dwell: this._dwell, contacts: this._contacts, preMode: this._preMode });
       this.emit('contact', contact);
     }
   }
@@ -67,6 +83,7 @@ class Scanner extends EventEmitter {
   _doStep() {
     if (this._aborted || this._az >= 360) { this._end(); return; }
     this._dwellAz = null;
+    setConfig('scan_state', { active: true, az: this._az, step: this._step, dwell: this._dwell, contacts: this._contacts, preMode: this._preMode });
     this.emit('progress', { az: this._az, dwell_az: null });
     rotator.move(this._az);
     this._pollStart = Date.now();
@@ -93,7 +110,7 @@ class Scanner extends EventEmitter {
     if (this._timer) { clearTimeout(this._timer); this._timer = null; }
     this._active  = false;
     this._dwellAz = null;
-    rotator.setMode(this._preMode);
+    setConfig('scan_state', { active: false });
     this.emit('end', { aborted: this._aborted });
   }
 }

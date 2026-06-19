@@ -1,4 +1,5 @@
 import { rotator } from './rotator.js';
+import { dashMode } from './dash-mode.js';
 import { stmts } from './db.js';
 import { getRotatorDeviceId } from './device-config.js';
 
@@ -28,7 +29,7 @@ export function distanceKm(lat2, lon2, lat1 = HOME_LAT, lon1 = HOME_LON) {
 }
 
 export function handlePacketForRotator(event) {
-  if (rotator.mode !== 1) return; // passive — do nothing
+  if (dashMode.value !== 1) return; // passive — do nothing
   if (!rotator.connected) return;
 
   // Only use packets received by the designated rotator radio
@@ -37,6 +38,9 @@ export function handlePacketForRotator(event) {
 
   const packet = event.data?.packet;
   if (!packet?.from) return;
+
+  // Skip self-heard packets (rotator radio hearing its own transmissions)
+  if (rotatorId && packet.from === parseInt(rotatorId.slice(1), 16)) return;
 
   const portnum = packet.decoded?.portnum;
 

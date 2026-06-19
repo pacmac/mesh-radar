@@ -40,7 +40,7 @@
   .node-avatar-lg { --sz: 2.75rem; }
   [x-cloak] { display: none !important; }
 </style>
-<link rel="stylesheet" href="style.css?v=20260617">
+<link rel="stylesheet" href="style.css?v=20260619">
 </head>
 <body class="h-screen overflow-hidden bg-base-200">
 
@@ -614,8 +614,8 @@
               <g id="radar-nodes-g"></g>
             </svg>
 
-            <!-- Scan node list — top-left, visible when scan data exists -->
-            <div x-show="Object.keys(scanData).length > 0" x-transition
+            <!-- Scan node list — top-left, visible during scan with contacts -->
+            <div x-show="scanMode && scanNodeList().length > 0" x-transition
                  style="position:absolute;top:0.75rem;left:0.75rem;z-index:10;
                         background:rgba(4,10,4,0.88);
                         border:1px solid rgba(0,255,80,0.18);
@@ -628,10 +628,12 @@
               <template x-for="n in scanNodeList()" :key="n.num">
                 <div style="display:flex;align-items:center;gap:0.45rem;padding:0.15rem 0;border-top:1px solid rgba(0,255,80,0.07);font-family:'Oxanium',monospace;font-size:12px">
                   <span style="color:rgba(0,255,80,0.90);font-weight:600;min-width:3rem;flex-shrink:0" x-text="nodeShortName(n.num)"></span>
-                  <span style="color:rgba(0,255,80,0.55);min-width:2.8rem;flex-shrink:0" x-text="n.az + '°'"></span>
-                  <span style="color:rgba(0,255,80,0.55);min-width:2.8rem;flex-shrink:0" x-text="n.km != null ? n.km.toFixed(1)+'km' : '–'"></span>
-                  <span style="color:rgba(0,255,80,0.30);flex:1" x-text="n.ts ? new Date(n.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''"></span>
-                  <span x-html="sig3(n.rssi, n.snr)" style="flex-shrink:0"></span>
+                  <span style="color:rgba(0,255,80,0.55);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
+                  <span style="color:rgba(0,255,80,0.55);min-width:2.5rem;flex-shrink:0" x-text="n._az != null ? Math.round(n._az) + '°' : '–'"></span>
+                  <span style="color:rgba(0,255,80,0.55);min-width:2.8rem;flex-shrink:0" x-text="n._km != null ? n._km.toFixed(1)+'km' : '–'"></span>
+                  <span style="color:rgba(0,255,80,0.55);min-width:1.6rem;flex-shrink:0" x-text="(n.hops_away ?? n.hops ?? 0) + 'h'"></span>
+                  <span style="color:rgba(0,255,80,0.55);flex:1" x-text="n.last_heard ? new Date(n.last_heard*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''"></span>
+                  <span x-html="sig3(n._scanRssi, n._scanSnr)" style="flex-shrink:0"></span>
                 </div>
               </template>
             </div>
@@ -847,7 +849,13 @@
                 <div class="font-mono text-xs opacity-60" x-text="nodeInfo.user?.id || nodeInfo.num"></div>
                 <div class="divider my-1"></div>
                 <div class="flex justify-between"><span class="opacity-60">Distance</span> <span x-text="nodeInfo._km != null ? nodeInfo._km.toFixed(1)+' km' : '–'"></span></div>
-                <div class="flex justify-between"><span class="opacity-60">Bearing</span> <span x-text="nodeInfo._az != null ? nodeInfo._az.toFixed(0)+'°' : '–'"></span></div>
+                <div class="flex justify-between items-center">
+                  <span class="opacity-60">Bearing</span>
+                  <div class="flex items-center gap-2">
+                    <span x-text="nodeInfo._az != null ? nodeInfo._az.toFixed(0)+'°' : '–'"></span>
+                    <button class="btn btn-xs btn-outline px-2 text-[10px]" :disabled="nodeInfo._az == null" @click="pointAtNode(nodeInfo); $refs.nodeInfoDialog?.close()" title="Point Yagi to this bearing">Point</button>
+                  </div>
+                </div>
                 <div class="flex justify-between items-center"><span class="opacity-60">Signal</span> <span x-html="sigBars(nodeInfo.rssi, nodeInfo.snr)"></span></div>
                 <div class="flex justify-between"><span class="opacity-60">SNR</span> <span x-text="nodeInfo.snr != null ? nodeInfo.snr+' dB' : '–'"></span></div>
                 <div class="flex justify-between"><span class="opacity-60">RSSI</span> <span x-text="nodeInfo.rssi != null ? nodeInfo.rssi+' dBm' : '–'"></span></div>
@@ -868,7 +876,6 @@
                 <div class="flex flex-nowrap gap-1">
                   <button class="btn btn-xs btn-outline flex-1 px-1 text-[10px] whitespace-nowrap" @click="openMessageModal('broadcast', nodeInfo)">BC Message</button>
                   <button class="btn btn-xs btn-outline flex-1 px-1 text-[10px] whitespace-nowrap" @click="openMessageModal('direct', nodeInfo)">DIR Message</button>
-                  <button class="btn btn-xs btn-outline flex-1 px-1 text-[10px] whitespace-nowrap" :disabled="nodeInfo._az == null" @click="pointAtNode(nodeInfo)" title="Command the Yagi rotator to this node's bearing">Point</button>
                 </div>
               </div>
             </template>
@@ -997,9 +1004,15 @@
                           <div class="card-body p-3 gap-2">
                             <!-- Avatar + name + freshness -->
                             <div class="flex items-center gap-2 min-w-0 pr-8">
-                              <span class="node-avatar shrink-0"
-                                    :style="`background:${avatarColor(n.num)}`"
-                                    x-text="n.user?.short_name || '?'"></span>
+                              <div class="relative shrink-0">
+                                <span class="node-avatar"
+                                      :style="`background:${avatarColor(n.num)}`"
+                                      x-text="n.user?.short_name || '?'"></span>
+                                <span x-show="n._new"
+                                      class="absolute top-0 right-0 text-yellow-400 leading-none pointer-events-none select-none"
+                                      style="font-size:0.7rem;transform:translate(30%,30%)"
+                                      title="New node — first heard within 24h">★</span>
+                              </div>
                               <div class="min-w-0 flex-1">
                                 <div class="font-semibold text-sm leading-tight truncate"
                                      x-text="n.user?.long_name || n.user?.short_name || '–'"></div>
@@ -1022,7 +1035,7 @@
                                     x-text="nodeKm(n)?.toFixed(1) + ' km'"></span>
                               <template x-for="devId in (n._devices || (n._device ? [n._device] : []))" :key="devId">
                                 <span class="badge badge-xs badge-ghost font-mono"
-                                      :style="deviceConfigs[devId]?.color ? `color:var(--color-${deviceConfigs[devId].color})` : ''"
+                                      :style="deviceConfigs[devId]?.color ? `color:${themeColor(deviceConfigs[devId].color)}` : ''"
                                       x-text="deviceConfigs[devId]?.label || deviceLabel(devId)"></span>
                               </template>
                             </div>
@@ -1284,6 +1297,18 @@
                     <span class="opacity-60">Bearing</span>
                     <span class="font-mono" x-text="rotatorStatus.az != null ? rotatorStatus.az.toFixed(1) + '°' : '–'"></span>
                   </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.pwmMin != null">
+                    <span class="opacity-60">PWM min</span>
+                    <span class="font-mono" x-text="rotatorStatus.pwmMin ?? '–'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.pwmRun != null">
+                    <span class="opacity-60">PWM run</span>
+                    <span class="font-mono" x-text="rotatorStatus.pwmRun ?? '–'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.pwmRunPct != null">
+                    <span class="opacity-60">PWM run %</span>
+                    <span class="font-mono" x-text="rotatorStatus.pwmRunPct != null ? Math.round(rotatorStatus.pwmRunPct * 100) + '%' : '–'"></span>
+                  </div>
                   <div class="flex justify-between" x-show="rotatorStatus.blDeg != null">
                     <span class="opacity-60">Backlash</span>
                     <span class="font-mono" x-text="rotatorStatus.blDeg != null ? (+rotatorStatus.blDeg).toFixed(1) + '°' : '–'"></span>
@@ -1300,6 +1325,28 @@
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
                 <h2 class="card-title text-base">Motor &amp; Scan</h2>
+                <div class="flex items-center justify-between gap-2 mb-2" x-show="rotatorStatus.pwmRunPct != null">
+                  <label class="text-sm">Motor speed %
+                    <span class="text-xs font-mono opacity-60" x-text="rotatorStatus.pwmRun != null ? '(pwmRun ' + rotatorStatus.pwmRun + ')' : ''"></span>
+                  </label>
+                  <div class="flex items-center gap-1">
+                    <input type="number" class="input input-xs w-16 text-right font-mono" min="1" max="100"
+                           x-model.number="pwmRunPctInput"
+                           :placeholder="rotatorStatus.pwmRunPct != null ? Math.round(rotatorStatus.pwmRunPct * 100) : 25">
+                    <span class="text-xs opacity-50">%</span>
+                    <button class="btn btn-xs btn-primary" :disabled="pwmRunPctInput == null" @click="applyPwmRunPct()">Set</button>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-2 mb-3" x-show="rotatorStatus.pwmFreq != null">
+                  <label class="text-sm">PWM frequency</label>
+                  <div class="flex items-center gap-1">
+                    <input type="number" class="input input-xs w-20 text-right font-mono" min="10" max="20000"
+                           x-model.number="pwmFreqInput"
+                           :placeholder="rotatorStatus.pwmFreq ?? 1000">
+                    <span class="text-xs opacity-50">Hz</span>
+                    <button class="btn btn-xs btn-primary" :disabled="pwmFreqInput == null" @click="applyPwmFreq()">Set</button>
+                  </div>
+                </div>
                 <div id="rotator_cfg_form" class="mt-2"></div>
                 <div class="flex items-center gap-2 mt-3">
                   <button class="btn btn-sm btn-primary" :disabled="!rotatorCfgSchema" @click="saveRotatorConfig()">Apply to Firmware</button>
@@ -1315,10 +1362,20 @@
                 <h2 class="card-title text-base">Calibration</h2>
                 <div class="flex flex-col gap-4">
                   <div>
-                    <p class="text-xs font-semibold uppercase text-base-content/50 mb-2">Compass offset</p>
-                    <div class="flex gap-2 flex-wrap">
-                      <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsStart')">1. Move to North</button>
-                      <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsEnd')">2. Set North Here</button>
+                    <p class="text-xs font-semibold uppercase text-base-content/50 mb-2">Yagi offset</p>
+                    <div class="flex items-end gap-2 flex-wrap">
+                      <div class="form-control">
+                        <label class="label py-0.5"><span class="label-text text-xs">Direct (0–359°)</span></label>
+                        <input type="number" min="0" max="359" step="1" class="input input-sm input-bordered w-28 font-mono"
+                               :placeholder="rotatorStatus.yagiOffset != null ? rotatorStatus.yagiOffset.toFixed(1) : '0'"
+                               x-model="rotatorOffsetInput">
+                      </div>
+                      <button class="btn btn-sm btn-primary mb-0.5" @click="setRotatorOffset(rotatorOffsetInput)">Set</button>
+                    </div>
+                    <p class="text-xs text-base-content/40 mt-1">Or use compass-guided: point YAGI to North, then:</p>
+                    <div class="flex gap-2 flex-wrap mt-1">
+                      <button class="btn btn-sm btn-outline btn-xs" @click="rotatorCalibrate('qmcOsStart')">1. Move to North</button>
+                      <button class="btn btn-sm btn-outline btn-xs" @click="rotatorCalibrate('qmcOsEnd')">2. Set North Here</button>
                     </div>
                   </div>
                   <div>
@@ -1518,6 +1575,7 @@
                     <div>
                       <div class="opacity-50 mb-0.5">Hardware</div>
                       <div x-text="nodeById(dev.node_id)?.user?.hw_model || '–'"></div>
+                      <div class="opacity-50 text-xs" x-text="dev.firmware_version || ''"></div>
                     </div>
                     <div>
                       <div class="opacity-50 mb-0.5">Uptime</div>
@@ -1548,74 +1606,62 @@
                       <div x-text="nodeById(dev.node_id)?.environment_metrics?.relative_humidity?.toFixed(1) + ' %'"></div>
                     </div>
                   </div>
-                  <!-- Config row -->
-                  <div class="flex flex-col gap-3 pt-2 border-t border-base-300"
+                  <!-- Config -->
+                  <div class="pt-2 border-t border-base-300 flex flex-col gap-2"
                        x-data="{ _labelVal: deviceConfigs[dev.node_id]?.label || '', _tcpVal: dev.tcp_port || '' }">
-                    <!-- Identity: alias + colour grouped together -->
-                    <div class="flex items-end gap-2">
-                      <div class="form-control flex-1">
-                        <label class="label py-0.5"><span class="label-text text-xs">Alias</span></label>
-                        <input type="text" maxlength="8"
-                               class="input input-sm input-bordered font-mono"
-                               x-model="_labelVal"
-                               placeholder="e.g. OMNI or YAGI"
-                               @keydown.enter.prevent="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">
-                      </div>
-                      <div class="form-control w-36">
-                        <label class="label py-0.5"><span class="label-text text-xs">Colour</span></label>
-                        <select class="select select-sm select-bordered"
-                                :value="deviceConfigs[dev.node_id]?.color || ''"
-                                @change="saveDeviceCfg(dev.node_id, 'color', $event.target.value || null)">
-                          <option value="">— none —</option>
-                          <option value="primary">Primary</option>
-                          <option value="secondary">Secondary</option>
-                          <option value="accent">Accent</option>
-                          <option value="info">Info</option>
-                          <option value="success">Success</option>
-                          <option value="warning">Warning</option>
-                          <option value="error">Error</option>
-                        </select>
-                      </div>
-                      <button class="btn btn-xs btn-primary mb-0.5"
+                    <!-- Row 1: Alias · Colour · HW type -->
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <input type="text" maxlength="8" class="input input-xs input-bordered font-mono w-20"
+                             x-model="_labelVal" placeholder="Alias"
+                             @keydown.enter.prevent="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">
+                      <select class="select select-xs select-bordered w-24"
+                              @change="saveDeviceCfg(dev.node_id, 'color', $event.target.value || null)">
+                        <option value="" :selected="!deviceConfigs[dev.node_id]?.color">Colour…</option>
+                        <option value="primary"   :selected="deviceConfigs[dev.node_id]?.color==='primary'">Primary</option>
+                        <option value="secondary" :selected="deviceConfigs[dev.node_id]?.color==='secondary'">Secondary</option>
+                        <option value="accent"    :selected="deviceConfigs[dev.node_id]?.color==='accent'">Accent</option>
+                        <option value="info"      :selected="deviceConfigs[dev.node_id]?.color==='info'">Info</option>
+                        <option value="success"   :selected="deviceConfigs[dev.node_id]?.color==='success'">Success</option>
+                        <option value="warning"   :selected="deviceConfigs[dev.node_id]?.color==='warning'">Warning</option>
+                        <option value="error"     :selected="deviceConfigs[dev.node_id]?.color==='error'">Error</option>
+                      </select>
+                      <button class="btn btn-xs btn-primary"
                               @click="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">Save</button>
                     </div>
-                    <!-- Connection -->
-                    <div class="flex items-end gap-2">
-                      <div class="form-control flex-1">
-                        <label class="label py-0.5"><span class="label-text text-xs">TCP port <span class="opacity-50">(Meshtastic client bridge)</span></span></label>
-                        <input type="number" min="1024" max="65535"
-                               class="input input-sm input-bordered font-mono"
-                               x-model="_tcpVal"
-                               placeholder="e.g. 4403"
+                    <!-- Row 2: TCP port + flags inline -->
+                    <div class="flex items-center gap-3 flex-wrap">
+                      <div class="flex items-center gap-1">
+                        <span class="text-xs opacity-50">TCP</span>
+                        <input type="number" min="1024" max="65535" class="input input-xs input-bordered font-mono w-20"
+                               x-model="_tcpVal" placeholder="4403"
                                @keydown.enter.prevent="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">
+                        <button class="btn btn-xs btn-primary"
+                                @click="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">Save</button>
                       </div>
-                      <button class="btn btn-xs btn-primary mb-0.5"
-                              @click="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">Save</button>
-                    </div>
-                    <div class="flex flex-col gap-2 justify-end">
-                      <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" class="toggle toggle-sm toggle-primary"
+                      <div class="w-px h-4 bg-base-300"></div>
+                      <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
                                :checked="deviceConfigs[dev.node_id]?.is_primary || false"
                                @change="saveDeviceCfg(dev.node_id, 'is_primary', $event.target.checked)">
-                        <span class="text-sm">Primary <span class="opacity-50 text-xs">(overview / status)</span></span>
+                        <span class="text-xs">Primary</span>
                       </label>
-                      <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" class="toggle toggle-sm toggle-primary"
+                      <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
                                :checked="deviceConfigs[dev.node_id]?.is_rotator || false"
                                @change="saveDeviceCfg(dev.node_id, 'is_rotator', $event.target.checked)">
-                        <span class="text-sm">Rotator radio <span class="opacity-50 text-xs">(YAGI)</span></span>
+                        <span class="text-xs">Rotator</span>
                       </label>
-                      <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" class="toggle toggle-sm toggle-primary"
+                      <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
                                :checked="dev.auto_connect !== false"
                                @change="saveBleCfg(dev.ble_address, 'auto_connect', $event.target.checked)">
-                        <span class="text-sm">Auto-connect <span class="opacity-50 text-xs">(on bridge start)</span></span>
+                        <span class="text-xs">Auto-connect</span>
                       </label>
-                      <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" class="toggle toggle-sm toggle-primary"
+                      <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
                                :checked="deviceConfigs[dev.node_id]?.load_nodes_on_boot || false"
                                @change="saveDeviceCfg(dev.node_id, 'load_nodes_on_boot', $event.target.checked)">
-                        <span class="text-sm">Load nodes on boot <span class="opacity-50 text-xs">(slow; off = faster dev)</span></span>
+                        <span class="text-xs">Load nodes</span>
                       </label>
                     </div>
                   </div>
@@ -1635,23 +1681,26 @@
                          else if (last.type === 'ota_error') { _otaState = 'error'; }
                        })">
                     <div class="flex items-center gap-2 mb-2">
-                      <span class="text-xs font-semibold opacity-60 uppercase tracking-wide">Firmware OTA</span>
+                      <span class="text-xs font-semibold opacity-60 uppercase tracking-wide"
+                            x-text="'Firmware OTA' + (dev.hw_model ? ' — ' + dev.hw_model : '')"></span>
                       <span x-show="_otaState === 'flashing'" class="badge badge-sm badge-warning animate-pulse">Flashing <span x-text="_otaPct + '%'"></span></span>
                       <span x-show="_otaState === 'done'" class="badge badge-sm badge-success">Done</span>
                       <span x-show="_otaState === 'error'" class="badge badge-sm badge-error">Error — check bridge log</span>
                     </div>
                     <div class="flex gap-2 items-end flex-wrap">
                       <div class="form-control flex-1 min-w-48">
-                        <label class="label py-0"><span class="label-text text-xs">Firmware zip path (server-side)</span></label>
+                        <label class="label py-0">
+                          <span class="label-text text-xs" x-text="dev.ota_protocol === 'nrf52-dfu' ? 'Firmware .zip path (server-side)' : 'Firmware .bin path (server-side)'"></span>
+                        </label>
                         <input type="text" class="input input-sm input-bordered font-mono text-xs"
                                x-model="_fwPath"
                                @input="_savePath(_fwPath)"
-                               placeholder="/path/to/firmware-rak4631-x.y.z.zip">
+                               :placeholder="dev.ota_protocol === 'nrf52-dfu' ? '/path/to/firmware-rak4631-x.y.z.zip' : '/path/to/firmware-heltec-ht62-esp32c3-sx1262-x.y.z.bin'">
                       </div>
                       <button class="btn btn-sm btn-warning"
                               :disabled="_otaState === 'flashing' || !_fwPath.trim() || dev.ble_state !== 'ready'"
-                              :title="dev.ble_state !== 'ready' ? 'Device must be connected (ready) before flashing' : 'Flash firmware via BLE DFU'"
-                              @click="fetchJSON('/ota', 'POST', {node_id: dev.node_id, firmware: _fwPath.trim()}).then(d=>{ if(d.started) { _otaState='flashing'; _otaPct=0; } else { _otaState='error'; } }).catch(e=>{ _otaState='error'; })">
+                              :title="dev.ble_state !== 'ready' ? 'Device must be connected (ready) before flashing' : 'Flash firmware via BLE'"
+                              @click="fetchJSON('/ota', 'POST', {node_id: dev.node_id, ble_addr: dev.ble_address, firmware: _fwPath.trim()}).then(d=>{ if(d.started) { _otaState='flashing'; _otaPct=0; } else { _otaState='error'; } }).catch(e=>{ _otaState='error'; })">
                         Flash OTA
                       </button>
                     </div>
@@ -1842,6 +1891,6 @@
   </div>
 </div>
 
-<script src="app.js?v=20260617"></script>
+<script src="app.js?v=20260619h"></script>
 </body>
 </html>
