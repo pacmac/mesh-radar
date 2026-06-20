@@ -59,7 +59,7 @@ app.use('/config', configRouter);
 app.use('/device-config', deviceConfigRouter);
 
 app.get('/rotator/status', (req, res) => {
-  const { mode: _fw, ...fwStatus } = rotator.status; // exclude firmware string 'mode' field
+  const fwStatus = rotator.status;
   res.json({
     connected:     rotator.connected,
     mode:          dashMode.value,
@@ -133,8 +133,8 @@ app.get('/rotator/firmware_config', (req, res) => {
       pulses_per_deg: s.ppd     ?? null,
     },
     scan: {
-      step_deg:  savedScan.step_deg  ?? s.scanStep  ?? 5,
-      dwell_sec: savedScan.dwell_sec ?? (s.scanDwell != null ? s.scanDwell / 1000 : 60),
+      step_deg:  savedScan.step_deg  ?? 5,
+      dwell_sec: savedScan.dwell_sec ?? 60,
     },
   });
 });
