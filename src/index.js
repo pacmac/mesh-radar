@@ -7,7 +7,7 @@ import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal } from './db.js';
+import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { handlePacketForRotator } from './rotator-logic.js';
@@ -40,6 +40,12 @@ app.get('/status', async (req, res) => {
 app.get('/messages', (req, res) => {
   const limit = parseInt(req.query.limit) || 100;
   res.json(queryMessages(limit));
+});
+
+app.delete('/nodes', (req, res) => {
+  clearNodeCache();
+  nodeList.clear();
+  res.json({ cleared: true });
 });
 
 app.get('/nodes', (req, res) => {

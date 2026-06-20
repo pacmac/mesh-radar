@@ -57,8 +57,9 @@
        x-transition:leave-end="opacity-0"
        class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-base-300/80 backdrop-blur-sm">
     <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content font-semibold" x-text="status.ble_state === 'ready' ? 'Verifying…' : 'Device restarting…'"></p>
-    <p class="text-base-content/50 text-sm" x-text="status.ble_state || ''"></p>
+    <p class="text-base-content font-semibold"
+       x-text="deviceLabel(activeNodeId) + ' — ' + (status.ble_state === 'ready' ? 'Verifying…' : status.ble_state === 'connecting' ? 'Connecting…' : 'Reconnecting…')"></p>
+    <p class="text-base-content/50 text-sm font-mono" x-text="activeNodeId"></p>
   </div>
 
   <!-- ===================== OTA OVERLAY ===================== -->
@@ -143,6 +144,16 @@
             <span class="inline-block w-1.5 h-1.5 rounded-full" :class="status.ble_connected ? 'bg-success animate-pulse' : 'bg-error'"></span>
           </div>
         </div>
+        <!-- Non-active device reconnecting indicator -->
+        <template x-for="dev in availableDevices.filter(d => d.node_id !== activeNodeId && d.ble_state && d.ble_state !== 'ready' && d.ble_state !== 'idle')" :key="dev.node_id">
+          <div class="tooltip tooltip-bottom" :data-tip="dev.node_id + ' — ' + dev.ble_state"
+               @click="setNav('devices')" style="cursor:pointer">
+            <div class="badge badge-warning gap-1 text-xs animate-pulse">
+              <span class="font-mono" x-text="deviceLabel(dev.node_id)"></span>
+              <span x-text="dev.ble_state"></span>
+            </div>
+          </div>
+        </template>
         <div class="tooltip tooltip-bottom" data-tip="MQTT proxy to broker">
           <div class="badge gap-1" :class="mqttProxy ? 'badge-success' : 'badge-ghost'">
             <span class="inline-block w-2 h-2 rounded-full" :class="mqttProxy ? 'bg-success-content animate-pulse' : ''"></span>
@@ -499,6 +510,10 @@
                   <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasTelem" @change="saveNodeFilter('hasTelem', $event.target.checked)">
                   <span class="text-xs font-mono opacity-80">Telemetry</span>
                 </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.msgOnly" @change="saveNodeFilter('msgOnly', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Messagable only</span>
+                </label>
                 <!-- Role sub-dropdown -->
                 <details class="dropdown dropdown-right">
                   <summary class="btn btn-xs btn-ghost w-full justify-between font-mono font-normal">
@@ -614,8 +629,8 @@
               <g id="radar-nodes-g"></g>
             </svg>
 
-            <!-- Scan node list — top-left, visible during scan with contacts -->
-            <div x-show="scanMode && scanNodeList().length > 0" x-transition
+            <!-- Node list overlay — top-left, always visible when nodes on radar -->
+            <div x-show="radarNodeList().length > 0" x-transition
                  style="position:absolute;top:0.75rem;left:0.75rem;z-index:10;
                         background:rgba(4,10,4,0.88);
                         border:1px solid rgba(0,255,80,0.18);
@@ -623,17 +638,21 @@
                         backdrop-filter:blur(6px);
                         padding:0.4rem 0.55rem;
                         pointer-events:none;
-                        min-width:14rem;max-width:20rem">
-              <div style="font-family:'Oxanium',monospace;font-size:12px;letter-spacing:0.08em;color:rgba(0,255,80,0.40);margin-bottom:0.3rem">SCAN CONTACTS</div>
-              <template x-for="n in scanNodeList()" :key="n.num">
+                        min-width:14rem;max-width:20rem;
+                        max-height:55%;overflow-y:auto">
+              <div style="font-family:'Oxanium',monospace;font-size:12px;letter-spacing:0.08em;color:rgba(0,255,80,0.40);margin-bottom:0.3rem"
+                   x-text="scanMode ? 'SCAN CONTACTS' : 'RADAR NODES'"></div>
+              <template x-for="n in radarNodeList()" :key="n.num">
                 <div style="display:flex;align-items:center;gap:0.45rem;padding:0.15rem 0;border-top:1px solid rgba(0,255,80,0.07);font-family:'Oxanium',monospace;font-size:12px">
                   <span style="color:rgba(0,255,80,0.90);font-weight:600;min-width:3rem;flex-shrink:0" x-text="nodeShortName(n.num)"></span>
-                  <span style="color:rgba(0,255,80,0.55);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
+                  <template x-if="scanMode">
+                    <span style="color:rgba(0,255,80,0.55);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
+                  </template>
                   <span style="color:rgba(0,255,80,0.55);min-width:2.5rem;flex-shrink:0" x-text="n._az != null ? Math.round(n._az) + '°' : '–'"></span>
                   <span style="color:rgba(0,255,80,0.55);min-width:2.8rem;flex-shrink:0" x-text="n._km != null ? n._km.toFixed(1)+'km' : '–'"></span>
                   <span style="color:rgba(0,255,80,0.55);min-width:1.6rem;flex-shrink:0" x-text="(n.hops_away ?? n.hops ?? 0) + 'h'"></span>
                   <span style="color:rgba(0,255,80,0.55);flex:1" x-text="n.last_heard ? new Date(n.last_heard*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''"></span>
-                  <span x-html="sig3(n._scanRssi, n._scanSnr)" style="flex-shrink:0"></span>
+                  <span x-html="sig3(n._scanRssi ?? n.rssi, n._scanSnr ?? n.snr)" style="flex-shrink:0"></span>
                 </div>
               </template>
             </div>
@@ -964,6 +983,10 @@
                     <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasTelem" @change="saveNodeFilter('hasTelem', $event.target.checked)">
                     <span class="text-xs">Telemetry</span>
                   </label>
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.msgOnly" @change="saveNodeFilter('msgOnly', $event.target.checked)">
+                    <span class="text-xs">Messagable only</span>
+                  </label>
                   <!-- Role sub-dropdown -->
                   <details class="dropdown dropdown-right">
                     <summary class="btn btn-xs btn-ghost w-full justify-between font-normal">
@@ -1029,7 +1052,7 @@
                               <span x-show="n.hops != null"
                                     class="badge badge-xs"
                                     :class="n.hops === 0 ? 'badge-info' : 'badge-ghost'"
-                                    x-text="n.hops === 0 ? 'direct' : n.hops + ' hop'"></span>
+                                    x-text="n.hops === 0 ? 'dir' : n.hops + ' hop'"></span>
                               <span x-show="nodeKm(n) != null"
                                     class="badge badge-xs badge-ghost"
                                     x-text="nodeKm(n)?.toFixed(1) + ' km'"></span>
@@ -1711,6 +1734,7 @@
                     <button class="btn btn-xs btn-outline" :class="dev.node_id===activeNodeId&&'btn-success'" :disabled="dev.node_id===activeNodeId" @click="selectDevice(dev.node_id)">
                       <span x-text="dev.node_id===activeNodeId ? 'Active' : 'Set Active'"></span>
                     </button>
+                    <button class="btn btn-xs btn-outline btn-warning" @click="wipeNodeDb(dev.node_id)">Wipe NodeDB</button>
                     <button class="btn btn-xs btn-outline btn-error" @click="disconnectDevice(dev.node_id)">Disconnect</button>
                   </div>
                 </div>
@@ -1872,17 +1896,20 @@
       </ul>
 
       <!-- Status footer inside sidebar -->
-      <div class="p-3 border-t border-base-200 text-xs flex flex-col gap-1 opacity-70">
-        <div class="flex justify-between">
-          <span class="opacity-60">BLE</span>
-          <span :class="status.ble_connected ? 'text-success' : 'text-error'" x-text="status.ble_state || '–'"></span>
-        </div>
-        <div class="flex justify-between">
-          <span class="opacity-60">RSSI</span>
-          <span class="inline-flex items-center gap-1"><span x-html="sigBars(status.ble_rssi, null)"></span><span x-text="status.ble_rssi != null ? status.ble_rssi + ' dBm' : '–'"></span></span>
-        </div>
-        <div class="flex justify-between">
-          <span class="opacity-60">WS</span>
+      <div class="p-3 border-t border-base-200 text-xs flex flex-col gap-1.5">
+        <template x-for="dev in availableDevices" :key="dev.node_id">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-mono opacity-50 shrink-0" x-text="deviceLabel(dev.node_id)"></span>
+            <span class="inline-flex items-center gap-1 min-w-0">
+              <span x-html="sigBars(dev.ble_rssi, null)"></span>
+              <span :class="dev.ble_state==='ready'?'text-success opacity-70':dev.ble_state==='error'?'text-error':'text-warning'"
+                    x-text="dev.ble_state || '–'"></span>
+            </span>
+          </div>
+        </template>
+        <div x-show="!availableDevices.length" class="opacity-50 italic">No radios</div>
+        <div class="flex justify-between border-t border-base-200 pt-1 mt-0.5 opacity-50">
+          <span>WS</span>
           <span :class="wsConnected ? 'text-success' : 'text-error'" x-text="wsConnected ? 'live' : 'offline'"></span>
         </div>
       </div>
@@ -1892,5 +1919,12 @@
 </div>
 
 <script src="app.js?v=20260619h"></script>
+<script>
+  document.addEventListener('click', e => {
+    document.querySelectorAll('details.dropdown[open]').forEach(d => {
+      if (!d.contains(e.target)) d.removeAttribute('open');
+    });
+  });
+</script>
 </body>
 </html>

@@ -98,7 +98,7 @@ class NodeList extends EventEmitter {
       return;
     }
 
-    // PASV/ACTV: tag from whichever radio sent this event
+    // PASV/ACTV: tag _devices from ev.device — the radio that received this event
     const existing = this._cache.get(node.num) ?? {};
     const prevDevs = existing._devices ?? (existing._device ? [existing._device] : []);
     const devices = newDev && !prevDevs.includes(newDev) ? [...prevDevs, newDev] : prevDevs;
@@ -111,7 +111,7 @@ class NodeList extends EventEmitter {
     this._scheduleEmit();
   }
 
-  // Update last_heard and device tag from a received packet event
+  // Update last_heard and device tag from a received packet
   touchLastHeard(num, ts, device = null) {
     if (this._scanActive || !this._cache.has(num)) return;
     const existing = this._cache.get(num);
@@ -210,6 +210,13 @@ class NodeList extends EventEmitter {
     this._scheduleEmit();
   }
 
+  // Wipe all in-memory node state (call after clearing SQLite nodes table)
+  clear() {
+    this._cache.clear();
+    this._pending.clear();
+    this._scheduleEmit();
+  }
+
   // Trigger refilter after a config change (no new data)
   refilter() {
     this._scheduleEmit();
@@ -250,6 +257,7 @@ class NodeList extends EventEmitter {
     const hideMqtt  = getConfig('node_filters.hide_mqtt',   false);
     const hasSignal = getConfig('node_filters.has_signal',  false);
     const hasTelem  = getConfig('node_filters.has_telem',   false);
+    const msgOnly   = getConfig('node_filters.msg_only',    false);
     const roles     = getConfig('node_filters.roles',       []);
     // During scan, force YAGI-only regardless of saved nodeSource setting
     const source    = this._scanActive ? 'yagi'
@@ -271,6 +279,8 @@ class NodeList extends EventEmitter {
       if (hasSignal && n.snr == null && n.rssi == null) return false;
 
       if (hasTelem && !n.device_metrics) return false;
+
+      if (msgOnly && n.user?.is_unmessagable) return false;
 
       // only filter by role when the node actually has a role field
       if (roles.length > 0 && n.role != null && !roles.includes(n.role)) return false;

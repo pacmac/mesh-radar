@@ -193,6 +193,7 @@ export const stmts = {
   `),
 
   clearRangeTest: db.prepare(`DELETE FROM range_test_log`),
+  clearNodes:     db.prepare(`DELETE FROM nodes`),
 
   getConfig:   db.prepare(`SELECT value FROM config WHERE key = ?`),
   setConfig:   db.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
@@ -235,6 +236,10 @@ export function queryRangeTestLog(limit = 500) {
 
 export function clearRangeTestLog() {
   stmts.clearRangeTest.run();
+}
+
+export function clearNodeCache() {
+  stmts.clearNodes.run();
 }
 
 export function insertTilt(entry) {

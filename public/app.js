@@ -24,6 +24,7 @@ const FILTER_CFG_KEY = {
   hideMqtt:  'node_filters.hide_mqtt',
   hasSignal: 'node_filters.has_signal',
   hasTelem:  'node_filters.has_telem',
+  msgOnly:   'node_filters.msg_only',
   nodeRoles: 'node_filters.roles',
   nodeSource: 'node_filters.node_source',
 };
@@ -65,6 +66,7 @@ function dashboard() {
       hasPos:    false,
       hasSignal: false,
       hasTelem:  false,
+      msgOnly:   false,
       maxAge:    0,
       hideMqtt:  false,
       nodeRoles: [],
@@ -266,6 +268,16 @@ function dashboard() {
       await Promise.all([this.loadInfo(), this.loadNodes()]);
     },
 
+    async wipeNodeDb(nodeId) {
+      if (!confirm(`Wipe node database on ${nodeId}?\n\nThis will:\n1. Clear the dashboard node cache (SQLite nodes table + in-memory)\n2. Send nodedb_reset to the radio\n\nThe radio will rebuild from scratch.`)) return;
+      try {
+        await fetchJSON('/nodes', 'DELETE');
+        await fetchJSON(`/${nodeId}/admin`, 'POST', { message: { nodedb_reset: true }, want_response: false });
+      } catch (e) {
+        alert('Wipe failed: ' + e.message);
+      }
+    },
+
     async disconnectDevice(nodeId) {
       this.bleError = "";
       try {
@@ -334,6 +346,7 @@ function dashboard() {
           hideMqtt:  cfg['node_filters.hide_mqtt']  ?? false,
           hasSignal: cfg['node_filters.has_signal'] ?? false,
           hasTelem:  cfg['node_filters.has_telem']  ?? false,
+          msgOnly:   cfg['node_filters.msg_only']   ?? false,
           nodeRoles: cfg['node_filters.roles']      ?? [],
         };
         this.nodeSource     = cfg['node_filters.node_source'] ?? 'both';
@@ -486,7 +499,7 @@ function dashboard() {
       this.nodeSource = 'both';
       this.nodeFilters = {
         maxHops: 99, maxAge: 0, namedOnly: false, hasPos: false,
-        hideMqtt: false, hasSignal: false, hasTelem: false, nodeRoles: [],
+        hideMqtt: false, hasSignal: false, hasTelem: false, msgOnly: false, nodeRoles: [],
       };
       fetchJSON('/config', 'PUT', {
         'node_filters.node_source': 'both',
@@ -497,6 +510,7 @@ function dashboard() {
         'node_filters.hide_mqtt':   false,
         'node_filters.has_signal':  false,
         'node_filters.has_telem':   false,
+        'node_filters.msg_only':    false,
         'node_filters.roles':       [],
       }).catch(() => {});
       // server refilters and pushes node_list automatically
@@ -1645,6 +1659,13 @@ function dashboard() {
       return [...this.nodes].sort((a, b) => (b._scanSnr ?? -999) - (a._scanSnr ?? -999));
     },
 
+    radarNodeList() {
+      const nodes = this.radarNodes.filter(n => n._plotAz != null);
+      return this.scanMode
+        ? [...nodes].sort((a, b) => (b._scanSnr ?? -999) - (a._scanSnr ?? -999))
+        : [...nodes].sort((a, b) => (a._az ?? 0) - (b._az ?? 0));
+    },
+
     nodeShortName(num) {
       const n = this.nodes.find(n => n.num === num);
       return n?.user?.short_name || ('!' + (num & 0xFFFF).toString(16).toUpperCase());
@@ -2148,7 +2169,7 @@ function dashboard() {
       ng.innerHTML = '';
       const nodes = this.radarNodes;
       const CX = 300, CY = 300, R = 256;
-      const G4 = 'rgba(0,255,80,0.95)', AMBER = 'rgba(255,200,40,0.90)';
+      const G4 = 'rgba(0,255,80,0.95)', AMBER = 'rgba(255,200,40,0.90)', LABEL = 'rgba(255,140,0,0.55)';
       const CLUSTER_R = 22, BASE_DIAG = 12, STEP_DIAG = 14, HOR_LEN = 16;
       const selectedNum = this.radarSelected?.num;
       const lastHeardNum = this.lastHeardNum;
@@ -2179,8 +2200,10 @@ function dashboard() {
         const devColor = this.deviceConfigs[node._device]?.color;
         const dotColor = devColor ? (themeColor(devColor) ?? ageColor(node.last_heard, this.heatmapMaxAge)) : ageColor(node.last_heard, this.heatmapMaxAge);
         const devices = node._devices || (node._device ? [node._device] : []);
-        const dot2Color = devices.length >= 2 ? (this.deviceConfigs[devices[0]]?.color ? themeColor(this.deviceConfigs[devices[0]].color) : null) : null;
-        const dot1Color = devices.length >= 2 ? (this.deviceConfigs[devices[1]]?.color ? themeColor(this.deviceConfigs[devices[1]].color) : dotColor) : dotColor;
+        const otherDev = devices.find(d => d !== node._device);
+        const ringColor = otherDev && devices.length >= 2
+          ? (this.deviceConfigs[otherDev]?.color ? themeColor(this.deviceConfigs[otherDev].color) : null)
+          : null;
         const isSelected = node.num === selectedNum;
         const isLastHeard = node.num === lastHeardNum;
         const g = svgElem('g', { class: 'radar-node' + (isSelected ? ' radar-node-selected' : ''), style: 'cursor:pointer' });
@@ -2201,15 +2224,11 @@ function dashboard() {
           g.appendChild(svgElem('line', { x1: x, y1: y+10, x2: x, y2: y+22, style: rs }));
         }
         if (isSelected)
-          g.appendChild(svgElem('circle', { cx: x, cy: y, r: 12, style: `fill:none;stroke:${G4};stroke-width:1.5;stroke-dasharray:4 3` }));
-        const r = isSelected ? 6 : 5;
-        if (dot2Color) {
-          // Split dot: left half = devices[0] color, right half = devices[1] color
-          g.appendChild(svgElem('path', { d: `M${x},${y-r} A${r},${r},0,0,0,${x},${y+r} Z`, style: `fill:${dot2Color};filter:url(#blipGlow)` }));
-          g.appendChild(svgElem('path', { d: `M${x},${y-r} A${r},${r},0,0,1,${x},${y+r} Z`, style: `fill:${dot1Color};filter:url(#blipGlow)` }));
-        } else {
-          g.appendChild(svgElem('circle', { cx: x, cy: y, r, style: `fill:${dotColor};filter:url(#blipGlow)` }));
-        }
+          g.appendChild(svgElem('circle', { cx: x, cy: y, r: 8, style: `fill:none;stroke:${G4};stroke-width:1.5;stroke-dasharray:4 3` }));
+        const r = isSelected ? 3 : 2;
+        if (ringColor)
+          g.appendChild(svgElem('circle', { cx: x, cy: y, r: r + 2, style: `fill:${ringColor};opacity:0.85` }));
+        g.appendChild(svgElem('circle', { cx: x, cy: y, r, style: `fill:${dotColor};filter:url(#blipGlow)` }));
         const title = svgElem('title');
         title.textContent = node.user?.long_name || node.user?.id || ('!' + (node.num ?? 0).toString(16).slice(-4));
         g.appendChild(title);
@@ -2217,9 +2236,9 @@ function dashboard() {
         const diagSign = isRight ? 1 : -1;
         const elbowX = x + diagSign * diagLen, elbowY = y - diagLen;
         const capX = elbowX + diagSign * HOR_LEN;
-        g.appendChild(svgElem('line', { x1: x + diagSign * 6, y1: y - 5, x2: elbowX, y2: elbowY, style: `stroke:${dotColor};stroke-width:1.2;pointer-events:none` }));
-        g.appendChild(svgElem('line', { x1: elbowX, y1: elbowY, x2: capX, y2: elbowY, style: `stroke:${dotColor};stroke-width:1.2;pointer-events:none` }));
-        const txt = svgElem('text', { class: 'radar-node-label', x: capX + diagSign * 3, y: elbowY + 4, style: `fill:${dotColor};font-size:10px;font-weight:600;font-family:'Oxanium',monospace;pointer-events:none;text-anchor:${isRight ? 'start' : 'end'}` });
+        g.appendChild(svgElem('line', { x1: x + diagSign * 3, y1: y - 2, x2: elbowX, y2: elbowY, style: `stroke:${LABEL};stroke-width:1;pointer-events:none;filter:url(#rimGlow)` }));
+        g.appendChild(svgElem('line', { x1: elbowX, y1: elbowY, x2: capX, y2: elbowY, style: `stroke:${LABEL};stroke-width:1;pointer-events:none;filter:url(#rimGlow)` }));
+        const txt = svgElem('text', { class: 'radar-node-label', x: capX + diagSign * 3, y: elbowY + 4, style: `fill:${LABEL};font-size:10px;font-weight:400;font-family:'Oxanium',monospace;pointer-events:none;text-anchor:${isRight ? 'start' : 'end'};filter:url(#rimGlow)` });
         txt.textContent = label;
         g.appendChild(txt);
         g.addEventListener('click', (e) => { e.stopPropagation(); this.radarSelected = node; this.openNodeInfo(node); });
