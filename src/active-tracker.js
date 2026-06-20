@@ -2,6 +2,7 @@ import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { getRotatorDeviceId, getDeviceCfg } from './device-config.js';
 import { stmts } from './db.js';
+import { nodeList } from './node-list.js';
 
 const YAGI_DEVICE_ID = '!fa39f7b4';
 const DWELL_MS       = 5000;
@@ -67,6 +68,11 @@ function resetStale() {
 
 function fireDwell() {
   if (!_candidate) return;
+  const radarNode = nodeList.nodes.find(n => n.num === _candidate.num);
+  if (!radarNode?._az) {
+    log.warn(`dwell fired for node ${_candidate.num} but not visible in radar (no _az) — skipping point_target`);
+    return;
+  }
   const home = getHomePos();
   if (!home) {
     log.warn('dwell fired but no rotator home pos configured — rotator will not move');

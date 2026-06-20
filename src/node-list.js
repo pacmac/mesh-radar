@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { getConfig, setConfig, getMqttNode } from './db.js';
+import { getConfig, setConfig, getMqttNode, stmts } from './db.js';
 import { getRotatorDeviceId, getAllDeviceCfgs } from './device-config.js';
 
 function haversine(lat1, lon1, lat2, lon2) {
@@ -125,9 +125,17 @@ class NodeList extends EventEmitter {
   touchLastHeard(num, ts, device = null) {
     if (this._scanActive) return;
     if (!this._cache.has(num)) {
-      // Node seen only via packet — hydrate from nodeinfo if available
-      const hydrated = enrichFromCache({ num });
-      if (!hydrated._from_cache) return; // not in nodeinfo either — skip
+      // Node seen only via packet — hydrate identity+position from nodeinfo, or
+      // fall back to nodes table for position only (so active-tracker targets stay visible)
+      let hydrated = enrichFromCache({ num });
+      if (!hydrated._from_cache) {
+        const pos = stmts.getNodePos.get(num, num);
+        if (!pos) return; // unknown node, skip
+        hydrated = {
+          num,
+          position: { latitude_i: Math.round(pos.lat * 1e7), longitude_i: Math.round(pos.lon * 1e7) },
+        };
+      }
       this._cache.set(num, {
         ...hydrated,
         last_heard: ts ?? Math.floor(Date.now() / 1000),
@@ -144,8 +152,11 @@ class NodeList extends EventEmitter {
     const tsChanged = !existing.last_heard || existing.last_heard < newTs;
     const devChanged = devices !== prevDevs;
     if (!tsChanged && !devChanged) return;
+    // Backfill position if the cached entry has none (e.g. seeded without position)
+    let pos = existing.position?.latitude_i ? null : stmts.getNodePos.get(num, num);
     this._cache.set(num, {
       ...existing,
+      ...(pos ? { position: { latitude_i: Math.round(pos.lat * 1e7), longitude_i: Math.round(pos.lon * 1e7) } } : {}),
       last_heard: tsChanged ? newTs : existing.last_heard,
       _device:  existing._device ?? device ?? null,
       _devices: devices,
