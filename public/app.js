@@ -2055,8 +2055,12 @@ function dashboard() {
 
     drawRadar() {
       if (!this.homePos) return;
+      const NICE_KM = [1, 2, 5, 10, 25, 50, 100, 200, 500, 1000, 2000];
       const maxKm = this.radarRange === "0"
-        ? (this.radarNodes.length ? Math.max(...this.radarNodes.map((n) => n._km ?? 0)) * 1.15 : 50)
+        ? (() => {
+            const dataMax = this.radarNodes.length ? Math.max(...this.radarNodes.map(n => n._km ?? 0)) : 0;
+            return NICE_KM.find(n => n >= dataMax) ?? dataMax * 1.15;
+          })()
         : Number(this.radarRange);
       this._drawRadarBg(maxKm);
       this._drawTargetArm();
@@ -2108,7 +2112,14 @@ function dashboard() {
             const cands = [1, 2, 5, 10, 20, 50, 100, 150, 250, 500, 1000].filter(k => k < maxKm);
             return [...cands.slice(-3), maxKm];
           })()
-        : [1, 2, 3, 4].map(i => maxKm * i / 4);
+        : this.radarRange === "0"
+          ? (() => {
+              // Auto-range: nice round labels that match the snapped maxKm
+              const cands = [0.5, 1, 2, 5, 10, 25, 50, 100, 200, 500, 1000];
+              const inner = cands.filter(k => k < maxKm).slice(-3);
+              return [...inner, maxKm];
+            })()
+          : [1, 2, 3, 4].map(i => maxKm * i / 4);
       ringKms.forEach((km, idx) => {
         const isFull = idx === ringKms.length - 1;
         const r = this._radarNorm(km, maxKm) * R;

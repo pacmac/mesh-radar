@@ -111,6 +111,10 @@ export const activeTracker = {
         log.debug(`node_update num=${d?.num} — no position, skipping`);
         return;
       }
+      if (d.num === parseInt(YAGI_DEVICE_ID.slice(1), 16)) {
+        log.debug(`node_update is YAGI self — skipping`);
+        return;
+      }
       const lat = pos.latitude_i / 1e7;
       const lon = pos.longitude_i / 1e7;
       posCache.set(d.num, { lat, lon });

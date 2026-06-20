@@ -643,8 +643,8 @@
               <div style="font-family:'Oxanium',monospace;font-size:12px;letter-spacing:0.08em;color:rgba(0,255,80,0.40);margin-bottom:0.3rem"
                    x-text="scanMode ? 'SCAN CONTACTS' : 'RADAR NODES'"></div>
               <template x-for="n in radarNodeList()" :key="n.num">
-                <div style="display:flex;align-items:center;gap:0.45rem;padding:0.15rem 0;border-top:1px solid rgba(0,255,80,0.07);font-family:'Oxanium',monospace;font-size:12px">
-                  <span style="color:rgba(0,255,80,0.90);font-weight:600;min-width:3rem;flex-shrink:0" x-text="nodeShortName(n.num)"></span>
+                <div :style="'display:flex;align-items:center;gap:0.45rem;padding:0.15rem 0;border-top:1px solid rgba(0,255,80,0.07);font-family:\'Oxanium\',monospace;font-size:12px' + (n.num === yagiPointTarget ? ';border-left:2px solid rgba(255,160,0,0.85);padding-left:0.3rem;margin-left:-0.3rem' : '')">
+                  <span :style="'font-weight:600;min-width:3rem;flex-shrink:0;color:' + (n.num === yagiPointTarget ? 'rgba(255,160,0,0.95)' : 'rgba(0,255,80,0.90)')" x-text="nodeShortName(n.num)"></span>
                   <template x-if="scanMode">
                     <span style="color:rgba(0,255,80,0.55);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
                   </template>

@@ -114,7 +114,23 @@ class NodeList extends EventEmitter {
 
   // Update last_heard and device tag from a received packet
   touchLastHeard(num, ts, device = null) {
-    if (this._scanActive || !this._cache.has(num)) return;
+    if (this._scanActive) return;
+    if (!this._cache.has(num)) {
+      // Own devices must never enter the regular node list
+      const ownNums = new Set(Object.keys(getAllDeviceCfgs()).filter(id => id.startsWith('!')).map(id => parseInt(id.slice(1), 16)));
+      if (ownNums.has(num)) return;
+      // Node seen only via packet — hydrate from nodeinfo if available
+      const hydrated = enrichFromCache({ num });
+      if (!hydrated._from_cache) return; // not in nodeinfo either — skip
+      this._cache.set(num, {
+        ...hydrated,
+        last_heard: ts ?? Math.floor(Date.now() / 1000),
+        _device:  device ?? null,
+        _devices: device ? [device] : [],
+      });
+      this._scheduleEmit();
+      return;
+    }
     const existing = this._cache.get(num);
     const newTs = ts ?? Math.floor(Date.now() / 1000);
     const prevDevs = existing._devices ?? (existing._device ? [existing._device] : []);
