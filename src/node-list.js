@@ -61,17 +61,26 @@ class NodeList extends EventEmitter {
     this._emitTimer  = null;
   }
 
+  // Returns the set of node nums for all configured BLE devices.
+  // Called on every update so it always reflects current device-config state.
+  _ownNums() {
+    return new Set(
+      Object.keys(getAllDeviceCfgs())
+        .filter(id => id.startsWith('!'))
+        .map(id => parseInt(id.slice(1), 16))
+    );
+  }
+
   // Called for each bridge node_update (and node_info) event
   handleNodeUpdate(ev) {
     const node = ev.data;
     if (!node?.num) return;
 
-    // Always maintain own-device cache so Devices tab stays live during scan.
-    // A device self-node is one whose num matches its own device id.
+    // Route self-reports to _ownDevices (Devices tab). _filter() excludes all own nums from output.
     if (ev.device?.startsWith('!') && parseInt(ev.device.slice(1), 16) === node.num) {
       this._ownDevices.set(node.num, { ...(this._ownDevices.get(node.num) ?? {}), ...node, _device: ev.device });
-      this._scheduleEmit(); // push updated device_nodes to frontend even if scan blocks this event below
-      return; // own device — never enters the regular node list
+      this._scheduleEmit();
+      return;
     }
 
     const rotatorId = getRotatorDeviceId();
@@ -116,9 +125,6 @@ class NodeList extends EventEmitter {
   touchLastHeard(num, ts, device = null) {
     if (this._scanActive) return;
     if (!this._cache.has(num)) {
-      // Own devices must never enter the regular node list
-      const ownNums = new Set(Object.keys(getAllDeviceCfgs()).filter(id => id.startsWith('!')).map(id => parseInt(id.slice(1), 16)));
-      if (ownNums.has(num)) return;
       // Node seen only via packet — hydrate from nodeinfo if available
       const hydrated = enrichFromCache({ num });
       if (!hydrated._from_cache) return; // not in nodeinfo either — skip
@@ -192,14 +198,8 @@ class NodeList extends EventEmitter {
   // Bulk seed from bridge REST (call on bridge connect or scan start)
   // forceDevice: if true, device tag overwrites any existing _device (used for scan reseed)
   seed(nodes, device, forceDevice = false) {
-    const ownNums = new Set(
-      Object.keys(getAllDeviceCfgs())
-        .filter(id => id.startsWith('!'))
-        .map(id => parseInt(id.slice(1), 16))
-    );
     for (const n of nodes) {
       if (n.num == null) continue;
-      if (ownNums.has(n.num)) continue; // own device — never enters the regular node list
 
       if (this._scanActive) {
         if (this._cache.has(n.num)) {
@@ -287,7 +287,9 @@ class NodeList extends EventEmitter {
                     : getConfig('node_filters.node_source', 'both');
     const rotatorId = getRotatorDeviceId();
 
+    const ownNums = this._ownNums();
     const filtered = Array.from(this._cache.values()).filter(n => {
+      if (ownNums.has(n.num)) return false; // own BLE devices never appear in node list
       if (maxAge > 0 && n.last_heard && (now - n.last_heard) > maxAge) return false;
 
       const hops = n.hops ?? n.hops_away ?? 0;
