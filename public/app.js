@@ -2193,16 +2193,8 @@ function dashboard() {
         return { x: CX + Math.sin(rad) * norm * R, y: CY - Math.cos(rad) * norm * R };
       };
 
-      // snr in 0.25 dB units → actual dB; map to heat colour
-      const snrColor = (snrRaw) => {
-        if (snrRaw == null) return 'rgba(100,200,255,0.45)';
-        const s = snrRaw / 4;
-        if (s >   0) return 'rgba(80,255,120,0.85)';
-        if (s >  -5) return 'rgba(180,255,80,0.85)';
-        if (s > -10) return 'rgba(255,220,50,0.85)';
-        if (s > -15) return 'rgba(255,130,30,0.85)';
-        return 'rgba(255,60,60,0.85)';
-      };
+      // Unique color per node — golden-angle hue spread, fixed sat/light readable on dark bg
+      const nodeColor = (num) => `hsl(${((num * 137.508) % 360).toFixed(0)},80%,65%)`;
 
       for (const node of this.nodes) {
         const tr = node.last_traceroute;
@@ -2211,6 +2203,8 @@ function dashboard() {
         // Age-based opacity: max 0.3 when fresh, fades to 0.10 over 24h
         const ageSec = tr.ts ? (Date.now() - tr.ts) / 1000 : 0;
         const fade = ageSec < 3600 ? 0.3 : Math.max(0.10, 0.3 - (ageSec - 3600) / (23 * 3600) * 0.20);
+
+        const col = nodeColor(node.num);
 
         // Wrap each node's route in a group so hover can boost opacity uniformly
         const rg = svgElem('g', { style: `opacity:${fade.toFixed(2)};cursor:crosshair` });
@@ -2229,45 +2223,35 @@ function dashboard() {
           const ai = known[k], bi = known[k + 1];
           const p1 = points[ai], p2 = points[bi];
           const adjacent = (bi === ai + 1);
-
-          // SNR for the segment: if adjacent use exact value; if bridging gaps use min in span
-          let snrRaw = null;
-          if (adjacent) {
-            snrRaw = snrs[ai] ?? null;
-          } else {
-            const span = snrs.slice(ai, bi).filter(v => v != null);
-            snrRaw = span.length ? Math.min(...span) : null;
-          }
-
-          const col = snrColor(snrRaw);
           // Round-cap zero-length dashes = true round dots. Adjacent hops tighter, gaps looser.
-          const dashArr = adjacent ? '0,4' : '0,7';
           rg.appendChild(svgElem('line', {
             x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
             x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
-            style: `stroke:${col};stroke-width:2;stroke-linecap:round;stroke-dasharray:${dashArr}`
+            style: `stroke:${col};stroke-width:2;stroke-linecap:round;stroke-dasharray:${adjacent ? '0,4' : '0,7'}`
           }));
 
           // SNR label at midpoint for adjacent (exact) segments
-          if (adjacent && snrRaw != null) {
-            const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
-            const db = snrRaw / 4;
-            const lbl = svgElem('text', {
-              x: mx.toFixed(1), y: (my - 4).toFixed(1),
-              style: `fill:${col};font-size:8px;font-family:'Oxanium',monospace;text-anchor:middle`
-            });
-            lbl.textContent = `${db >= 0 ? '+' : ''}${db.toFixed(1)}`;
-            rg.appendChild(lbl);
+          if (adjacent) {
+            const snrRaw = snrs[ai] ?? null;
+            if (snrRaw != null) {
+              const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+              const lbl = svgElem('text', {
+                x: mx.toFixed(1), y: (my - 4).toFixed(1),
+                style: `fill:${col};font-size:8px;font-family:'Oxanium',monospace;text-anchor:middle`
+              });
+              lbl.textContent = `${snrRaw / 4 >= 0 ? '+' : ''}${(snrRaw / 4).toFixed(1)}`;
+              rg.appendChild(lbl);
+            }
           }
         }
 
-        // Intermediate relay nodes — small cyan circles where position is known
+        // Intermediate relay nodes — small circles in route colour
         for (let i = 1; i < chain.length - 1; i++) {
           const p = points[i];
           if (!p) continue;
           rg.appendChild(svgElem('circle', {
             cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: 3,
-            style: `fill:rgba(80,200,255,0.75);stroke:rgba(80,200,255,0.9);stroke-width:1`
+            style: `fill:${col};stroke:${col};stroke-width:1`
           }));
         }
 
