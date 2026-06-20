@@ -882,17 +882,25 @@ function dashboard() {
     // -- Rotator ---------------------------------------------------------------
     _onRotatorEvent(data) {
       this.rotatorConnected = true;
-      this.rotatorStatus = { ...this.rotatorStatus, ...data };
-      if (data._mode != null) this.rotatorMode = data._mode;
-      if (data.az != null) {
-        const azChanged = this.yagiAz !== data.az;
-        this.yagiAz = data.az;
-        if (azChanged && this.tab === "radar") this._animateBeam(data.az);
-      }
-      if ('target' in data && this.tab === 'radar') this._drawTargetArm();
+      // point_target: rotator-logic acquired a node and computed its bearing.
+      // az here is the bearing TO the node, not the rotator heading — never touch yagiAz.
       if ('point_target' in data) {
         this.yagiPointTarget = data.point_target;
         if (this.tab === "radar") this.drawRadar();
+        return;
+      }
+      // Mode change from server (dashMode.set broadcast or WS snapshot).
+      if (data._mode != null) this.rotatorMode = data._mode;
+      // Firmware status fields — strip _mode before merging into rotatorStatus.
+      if (data.az != null || 'busy' in data) {
+        const { _mode, ...fwData } = data;
+        this.rotatorStatus = { ...this.rotatorStatus, ...fwData };
+        if (data.az != null) {
+          const azChanged = this.yagiAz !== data.az;
+          this.yagiAz = data.az;
+          if (azChanged && this.tab === "radar") this._animateBeam(data.az);
+        }
+        if ('target' in data && this.tab === 'radar') this._drawTargetArm();
       }
     },
 
@@ -921,14 +929,12 @@ function dashboard() {
         if (d.az != null) this.yagiAz = d.az;
         const pt = d.point_target ?? null;
         this.yagiPointTarget = pt && this.filteredNodes().some(n => n.num === pt) ? pt : null;
-        if (d.scan_active || d.dash_mode === 2) {
+        this.rotatorMode  = d.dash_mode ?? 0;
+        if (d.scan_active) {
           this.scanMode     = true;
-          this.rotatorMode  = 0;
           this.scanProgress = d.scan_az ?? null;
           this.scanCurrentAz = d.scan_dwell_az ?? null;
           this.scanData     = d.scan_contacts ?? {};
-        } else {
-          this.rotatorMode  = Math.min(d.dash_mode ?? d.mode ?? 0, 1);
         }
       } catch (_) {}
       try {
@@ -939,7 +945,7 @@ function dashboard() {
     },
 
     async setRotatorMode(m) {
-      this.rotatorMode = m;
+      // No optimistic update — rotatorMode is set only when the server echoes _mode back via WS.
       await fetchJSON("/rotator/mode", "POST", { mode: m });
     },
 
