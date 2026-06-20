@@ -2208,9 +2208,9 @@ function dashboard() {
         const tr = node.last_traceroute;
         if (!tr) continue;
 
-        // Age-based opacity fade: full for <1h, linear to 0.35 over 24h
+        // Age-based opacity: max 0.5 when fresh, fades to 0.15 over 24h
         const ageSec = tr.ts ? (Date.now() - tr.ts) / 1000 : 0;
-        const fade = ageSec < 3600 ? 1.0 : Math.max(0.35, 1 - (ageSec - 3600) / (23 * 3600) * 0.65);
+        const fade = ageSec < 3600 ? 0.5 : Math.max(0.15, 0.5 - (ageSec - 3600) / (23 * 3600) * 0.35);
 
         // Full path: home(null) → route[0..n] → target(node.num)
         const chain  = [null, ...(tr.route ?? []), node.num];
