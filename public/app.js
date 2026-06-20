@@ -142,6 +142,8 @@ function dashboard() {
 
     // Node Info modal
     nodeInfo: null,
+    tracerouteResult: null,   // { num, route, route_back, snr_towards, snr_back, ts }
+    traceroutePending: false,
 
     get targetNode() {
       if (!this.yagiPointTarget) return null;
@@ -1263,6 +1265,18 @@ function dashboard() {
         }
         if (this.tab === "nodes" && portnum === "TELEMETRY_APP") this.sortNodes(this.nodeSort.key, true);
         if (portnum === "RANGE_TEST_APP" && this.tab === "range") this.loadRangeTest();
+        if (portnum === "TRACEROUTE_APP" && pkt?.decoded?.route_discovery) {
+          const rd = pkt.decoded.route_discovery;
+          this.traceroutePending = false;
+          this.tracerouteResult = {
+            num:         pkt.from,
+            route:       rd.route       ?? [],
+            route_back:  rd.route_back  ?? [],
+            snr_towards: rd.snr_towards ?? [],
+            snr_back:    rd.snr_back    ?? [],
+            ts: Date.now(),
+          };
+        }
       }
       if (ev.type === "mqtt_node" && ev.data && !this.scanMode) {
         const upd = ev.data;
@@ -2347,12 +2361,26 @@ function dashboard() {
       const lat = node.position?.latitude_i  != null ? node.position.latitude_i  / 1e7 : null;
       const lon = node.position?.longitude_i != null ? node.position.longitude_i / 1e7 : null;
       this.nodeInfo = radarNode || { ...node, _lat: lat, _lon: lon };
+      this.tracerouteResult = null;
       this.$nextTick(() => this.$refs.nodeInfoDialog?.showModal());
       if (!this.nodeInfo._address && this.nodeInfo._lat != null && this.nodeInfo._lon != null) {
         geocodeLatLon(this.nodeInfo._lat, this.nodeInfo._lon).then((addr) => {
           if (this.nodeInfo?.num === node.num) this.nodeInfo = { ...this.nodeInfo, _address: addr };
         });
       }
+    },
+
+    async sendTraceroute(node) {
+      if (!node?.num) return;
+      this.tracerouteResult  = null;
+      this.traceroutePending = true;
+      const nodeId = '!' + (node.num >>> 0).toString(16).padStart(8, '0');
+      fetchJSON(`/${nodeId}/traceroute`, 'POST', {}).catch(() => { this.traceroutePending = false; });
+    },
+
+    tracerouteNodeName(num) {
+      const n = this.nodes.find(n => n.num === num);
+      return n?.user?.short_name || ('!' + (num >>> 0).toString(16).slice(-4).toUpperCase());
     },
 
     toggleRadarCrosshair() {

@@ -629,15 +629,7 @@
 
             <!-- Node list overlay — top-left, always visible when nodes on radar -->
             <div x-show="radarNodeList().length > 0" x-transition
-                 style="position:absolute;top:0.75rem;left:0.75rem;z-index:10;
-                        background:rgba(4,10,4,0.88);
-                        border:1px solid rgba(0,255,80,0.18);
-                        border-radius:0.5rem;
-                        backdrop-filter:blur(6px);
-                        padding:0.4rem 0.55rem;
-                        pointer-events:none;
-                        min-width:14rem;max-width:20rem;
-                        max-height:55%;overflow-y:auto">
+                 :style="'position:absolute;top:0.75rem;left:0.75rem;z-index:10;background:rgba(4,10,4,0.88);border:1px solid rgba(0,255,80,0.18);border-radius:0.5rem;backdrop-filter:blur(6px);padding:0.4rem 0.55rem;min-width:14rem;max-width:20rem;max-height:55%;overflow-y:auto;pointer-events:'+(rotatorMode===1?'auto':'none')">
               <div style="font-family:'Oxanium',monospace;font-size:12px;letter-spacing:0.08em;color:rgba(0,255,80,0.40);margin-bottom:0.3rem"
                    x-text="scanMode ? 'SCAN CONTACTS' : 'RADAR NODES'"></div>
               <template x-for="n in radarNodeList()" :key="n.num">
@@ -933,6 +925,54 @@
                 <div class="flex flex-nowrap gap-1">
                   <button class="btn btn-xs btn-outline flex-1 px-1 text-[10px] whitespace-nowrap" @click="openMessageModal('broadcast', nodeInfo)">BC Message</button>
                   <button class="btn btn-xs btn-outline flex-1 px-1 text-[10px] whitespace-nowrap" @click="openMessageModal('direct', nodeInfo)">DIR Message</button>
+                </div>
+                <div class="divider my-1"></div>
+                <!-- Traceroute -->
+                <div class="flex flex-col gap-1">
+                  <div class="flex items-center justify-between">
+                    <span class="opacity-60 text-xs uppercase" style="font-family:'Oxanium',sans-serif;letter-spacing:.08em">Route</span>
+                    <button class="btn btn-xs btn-outline px-2 text-[10px]"
+                            :class="traceroutePending ? 'loading loading-spinner btn-disabled' : ''"
+                            @click="sendTraceroute(nodeInfo)">
+                      <span x-show="!traceroutePending">Trace</span>
+                    </button>
+                  </div>
+                  <!-- result -->
+                  <template x-if="tracerouteResult && tracerouteResult.num === nodeInfo?.num">
+                    <div class="text-xs font-mono flex flex-col gap-0.5 mt-0.5">
+                      <!-- outbound path: gateway → hops → target -->
+                      <template x-if="tracerouteResult.route.length > 0">
+                        <div class="flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                          <span class="opacity-40">→</span>
+                          <template x-for="(hop, i) in tracerouteResult.route" :key="i">
+                            <span class="flex items-center gap-x-1">
+                              <span class="badge badge-xs badge-outline opacity-70" x-text="tracerouteNodeName(hop)"></span>
+                              <span x-show="tracerouteResult.snr_towards[i] != null" class="opacity-40 text-[9px]" x-text="tracerouteResult.snr_towards[i] != null ? tracerouteResult.snr_towards[i].toFixed(1)+'dB' : ''"></span>
+                              <span class="opacity-40">→</span>
+                            </span>
+                          </template>
+                          <span class="badge badge-xs badge-warning" x-text="tracerouteNodeName(tracerouteResult.num)"></span>
+                        </div>
+                      </template>
+                      <template x-if="tracerouteResult.route.length === 0">
+                        <div class="opacity-50">Direct — no intermediate hops</div>
+                      </template>
+                      <!-- return path if different -->
+                      <template x-if="tracerouteResult.route_back.length > 0">
+                        <div class="flex flex-wrap items-center gap-x-1 gap-y-0.5 mt-0.5 opacity-60">
+                          <span class="opacity-60">↩</span>
+                          <template x-for="(hop, i) in tracerouteResult.route_back" :key="i">
+                            <span class="flex items-center gap-x-1">
+                              <span class="badge badge-xs badge-ghost text-[9px]" x-text="tracerouteNodeName(hop)"></span>
+                              <span x-show="tracerouteResult.snr_back[i] != null" class="opacity-40 text-[9px]" x-text="tracerouteResult.snr_back[i] != null ? tracerouteResult.snr_back[i].toFixed(1)+'dB' : ''"></span>
+                              <span class="opacity-40">→</span>
+                            </span>
+                          </template>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                  <div x-show="traceroutePending" class="text-xs opacity-40">Waiting for response…</div>
                 </div>
               </div>
             </template>
