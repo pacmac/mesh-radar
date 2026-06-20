@@ -588,7 +588,7 @@ function dashboard() {
         this.nodeTotal = data.total ?? Object.keys(data.nodes || {}).length;
         this.nodeCount = data.count ?? this.nodeTotal;
         this.nodes = Object.values(data.nodes || {});
-        this.homePos = data.hasHomePos ? true : null;
+        this.homePos = data.homePos ?? null;
         this.sortNodes(this.nodeSort.key, true);
         if (this.info.my_info?.my_node_num != null) {
           this.nodeSelf = data.nodes?.[String(this.info.my_info.my_node_num)] || {};
@@ -886,6 +886,7 @@ function dashboard() {
       // az here is the bearing TO the node, not the rotator heading — never touch yagiAz.
       if ('point_target' in data) {
         this.yagiPointTarget = data.point_target;
+        if (data.az != null) this.rotatorStatus = { ...this.rotatorStatus, target: data.az };
         if (this.tab === "radar") this.drawRadar();
         return;
       }
@@ -1071,7 +1072,9 @@ function dashboard() {
     },
 
     handleEvent(ev) {
-      if (ev.type === "rotator") { this._onRotatorEvent(ev.data || {}); return; }
+      if (ev.type === "rotator") {
+        this._onRotatorEvent(ev.data || {}); return;
+      }
 
       if (ev.type === "ota_start") {
         this.otaActive = true;
@@ -1131,7 +1134,7 @@ function dashboard() {
         this.nodes = ev.nodes ?? [];
         this.nodeCount = this.nodes.length;
         this.nodeTotal = ev.total ?? this.nodes.length;
-        this.homePos = ev.hasHomePos ? true : null;
+        this.homePos = ev.homePos ?? null;
         // device_nodes: own-device self-telemetry, never scan-filtered — Devices tab only
         if (ev.device_nodes?.length) {
           const updated = { ...this.deviceNodes };

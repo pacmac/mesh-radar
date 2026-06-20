@@ -52,7 +52,7 @@ app.get('/nodes', (req, res) => {
   const nodes = nodeList.nodes;
   const nodeMap = {};
   for (const n of nodes) nodeMap[String(n.num)] = n;
-  res.json({ nodes: nodeMap, count: nodes.length, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null });
+  res.json({ nodes: nodeMap, count: nodes.length, total: nodeList._cache.size, homePos: nodeList.homePos });
 });
 
 app.use('/config', configRouter);

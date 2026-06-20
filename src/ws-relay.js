@@ -57,18 +57,25 @@ export function attachWsRelay(server) {
     broadcast(ev);
   });
   rotator.on('status', makeRotatorThrottle((data) => broadcast({ type: 'rotator', data })));
-  rotator.on('point_target', (data) => broadcast({ type: 'rotator', data }));
+  let lastPointTarget = null;
+  rotator.on('point_target', (data) => {
+    lastPointTarget = data;
+    broadcast({ type: 'rotator', data });
+  });
   dashMode.on('change',      (data) => broadcast({ type: 'rotator', data }));
 
   scanner.on('start',    (data) => broadcast({ type: 'scan_start',    data }));
   scanner.on('progress', (data) => broadcast({ type: 'scan_progress', data }));
   scanner.on('contact',  (data) => broadcast({ type: 'scan_contact',  data }));
   scanner.on('end',      (data) => broadcast({ type: 'scan_end',      data }));
-  nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
+  nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
 
   wss.on('connection', (ws) => {
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
       ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
+    }
+    if (lastPointTarget) {
+      ws.send(JSON.stringify({ type: 'rotator', data: lastPointTarget }));
     }
     if (scanner.active) {
       ws.send(JSON.stringify({ type: 'scan_start', data: {
@@ -76,7 +83,7 @@ export function attachWsRelay(server) {
         contacts: scanner.contacts,
       }}));
     }
-    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
+    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
   });
 
   // -- Per-device /!{nodeId}/events — snapshot first, pre-filtered -----------
@@ -94,6 +101,9 @@ export function attachWsRelay(server) {
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
       ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
     }
+    if (lastPointTarget) {
+      ws.send(JSON.stringify({ type: 'rotator', data: lastPointTarget }));
+    }
     // Scan state resume
     if (scanner.active) {
       ws.send(JSON.stringify({ type: 'scan_start', data: {
@@ -101,7 +111,7 @@ export function attachWsRelay(server) {
       }}));
     }
     // Node list snapshot
-    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
+    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
 
     function onEvent(ev) {
       if (ws.readyState !== 1) return;
@@ -128,7 +138,7 @@ export function attachWsRelay(server) {
     const onScanEnd      = onScan('scan_end');
 
     function onNodeList(nodes) {
-      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'node_list', nodes, total: nodeList._cache.size, hasHomePos: nodeList.homePos != null }));
+      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'node_list', nodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
     }
 
     bridge.on('event', onEvent);

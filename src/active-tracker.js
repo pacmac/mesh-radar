@@ -176,7 +176,9 @@ class ActiveTracker {
 
     log.info(TAG, `${reason} — move !${best.nodeNum.toString(16)} az=${best.az.toFixed(1)}° snr=${best.snr ?? '—'} rssi=${best.rssi ?? '—'} (was ${prev}) pool=${this._candidates.size}`);
     rotator.move(best.az);
-    rotator.emit('point_target', { point_target: best.nodeNum, az: best.az });
+    const ptPayload = { point_target: best.nodeNum, az: best.az };
+    log.info(TAG, `emit point_target payload=${JSON.stringify(ptPayload)}`);
+    rotator.emit('point_target', ptPayload);
   }
 }
 
