@@ -13,9 +13,13 @@ function enrichFromCache(node) {
   const now   = Math.floor(Date.now() / 1000);
   const isNew = cached.first_heard != null && (now - cached.first_heard) < NEW_NODE_TTL;
 
-  // Node already has identity — just tag _new if applicable
+  const traceroute = cached.last_traceroute ? JSON.parse(cached.last_traceroute) : undefined;
+
+  // Node already has identity — just tag _new and attach stored traceroute
   if (node.user?.short_name || node.user?.long_name) {
-    return isNew ? { ...node, _new: true } : node;
+    return isNew
+      ? { ...node, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}) }
+      : (traceroute ? { ...node, last_traceroute: traceroute } : node);
   }
 
   // Backfill identity + position from cache
@@ -37,6 +41,7 @@ function enrichFromCache(node) {
     ),
     _from_cache: true,
     _new: isNew,
+    ...(traceroute ? { last_traceroute: traceroute } : {}),
   };
 }
 
@@ -145,6 +150,18 @@ class NodeList extends EventEmitter {
       _devices: devices,
     });
     this._scheduleEmit();
+  }
+
+  // Save a traceroute result for a node — persists to SQLite and patches in-memory entry
+  setTraceroute(num, data) {
+    stmts.upsertTraceroute.run({ num, json: JSON.stringify(data) });
+    const existing = this._cache.get(num) ?? this._pending.get(num);
+    if (existing) {
+      const patched = { ...existing, last_traceroute: data };
+      if (this._cache.has(num))   this._cache.set(num, patched);
+      else                         this._pending.set(num, patched);
+      this._scheduleEmit();
+    }
   }
 
   // Called when scanner emits a scan_contact — promotes pending node data into the live cache

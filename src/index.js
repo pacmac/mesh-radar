@@ -354,6 +354,16 @@ bridge.on('event', (ev) => {
     scanner.handlePacket(ev);
     const pkt = ev.data?.packet;
     if (pkt?.from) nodeList.touchLastHeard(pkt.from, pkt.rx_time, ev.device ?? null);
+    if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery && pkt?.from) {
+      const rd = pkt.decoded.route_discovery;
+      nodeList.setTraceroute(pkt.from, {
+        route:       rd.route       ?? [],
+        route_back:  rd.route_back  ?? [],
+        snr_towards: rd.snr_towards ?? [],
+        snr_back:    rd.snr_back    ?? [],
+        ts: Date.now(),
+      });
+    }
     if (pkt?.decoded?.portnum === 'RANGE_TEST_APP') {
       const seq = pkt.decoded.payload
         ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8')

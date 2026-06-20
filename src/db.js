@@ -140,6 +140,9 @@ for (const col of yagiCols) {
     }
   }
 }
+if (!nodeinfoCols.includes('last_traceroute')) {
+  db.exec(`ALTER TABLE nodeinfo ADD COLUMN last_traceroute TEXT`);
+}
 
 export const stmts = {
   insertMessage: db.prepare(`
@@ -208,6 +211,10 @@ export const stmts = {
   clearNodes:     db.prepare(`DELETE FROM nodes`),
 
   getNodeinfoByNum: db.prepare(`SELECT * FROM nodeinfo WHERE num = ? LIMIT 1`),
+
+  upsertTraceroute: db.prepare(`
+    UPDATE nodeinfo SET last_traceroute = @json, updated_at = unixepoch() WHERE num = @num
+  `),
 
   recordYagiTargeted: db.prepare(`
     UPDATE nodeinfo

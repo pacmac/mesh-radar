@@ -1192,6 +1192,12 @@ function dashboard() {
             snr_back:    rd.snr_back    ?? [],
             ts: Date.now(),
           };
+          // Patch the in-memory node so radar draws immediately without waiting for node_list
+          const ni = this.nodes.findIndex(n => n.num === pkt.from);
+          if (ni >= 0) {
+            this.nodes[ni] = { ...this.nodes[ni], last_traceroute: this.tracerouteResult };
+            if (this.tab === 'radar') this.refreshRadar();
+          }
         }
       }
 
@@ -2132,6 +2138,7 @@ function dashboard() {
       this._drawRadarBg(maxKm);
       this._drawTargetArm();
       this._drawRadarBeam();
+      this._drawRadarTraceroute(maxKm);
       this._drawRadarNodes(maxKm);
     },
 
@@ -2152,6 +2159,89 @@ function dashboard() {
       line.setAttribute('stroke-width', '1.5');
       line.setAttribute('stroke-dasharray', '6,4');
       ag.appendChild(line);
+    },
+
+    _drawRadarTraceroute(maxKm) {
+      const tg = document.getElementById('radar-traceroute-g');
+      if (!tg) return;
+      tg.innerHTML = '';
+      const home = this.homePos;
+      if (!home) return;
+
+      const CX = 300, CY = 300, R = 256;
+
+      const numToXY = (num) => {
+        if (num == null) return { x: CX, y: CY };
+        const node = this.nodes.find(n => n.num === num);
+        const pos = node?.position;
+        if (!pos?.latitude_i) return null;
+        const lat = pos.latitude_i / 1e7, lon = pos.longitude_i / 1e7;
+        const km = haversine(home.lat, home.lon, lat, lon);
+        const az = bearing(home.lat, home.lon, lat, lon);
+        const norm = this._radarNorm(km, maxKm);
+        const rad = az * Math.PI / 180;
+        return { x: CX + Math.sin(rad) * norm * R, y: CY - Math.cos(rad) * norm * R };
+      };
+
+      // snr in 0.25 dB units → actual dB; map to heat colour
+      const snrColor = (snrRaw) => {
+        if (snrRaw == null) return 'rgba(100,200,255,0.45)';
+        const s = snrRaw / 4;
+        if (s >   0) return 'rgba(80,255,120,0.85)';
+        if (s >  -5) return 'rgba(180,255,80,0.85)';
+        if (s > -10) return 'rgba(255,220,50,0.85)';
+        if (s > -15) return 'rgba(255,130,30,0.85)';
+        return 'rgba(255,60,60,0.85)';
+      };
+
+      for (const node of this.nodes) {
+        const tr = node.last_traceroute;
+        if (!tr) continue;
+
+        // Age-based opacity fade over 6 hours
+        const ageSec = tr.ts ? (Date.now() - tr.ts) / 1000 : 0;
+        const fade = Math.max(0.15, 1 - ageSec / (6 * 3600));
+
+        // Full path: home(null) → route[0..n] → target(node.num)
+        const chain  = [null, ...(tr.route ?? []), node.num];
+        const snrs   = tr.snr_towards ?? [];
+        const points = chain.map(numToXY);
+
+        // Segments — draw each with SNR colour
+        for (let i = 0; i < chain.length - 1; i++) {
+          const p1 = points[i], p2 = points[i + 1];
+          if (!p1 || !p2) continue;
+          const col = snrColor(snrs[i] ?? null);
+          const seg = svgElem('line', {
+            x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
+            x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
+            style: `stroke:${col};stroke-width:1.5;stroke-dasharray:5,3;opacity:${fade.toFixed(2)}`
+          });
+          tg.appendChild(seg);
+
+          // SNR label at midpoint (actual dB)
+          if (snrs[i] != null) {
+            const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+            const db = snrs[i] / 4;
+            const lbl = svgElem('text', {
+              x: mx.toFixed(1), y: (my - 4).toFixed(1),
+              style: `fill:${col};font-size:8px;font-family:'Oxanium',monospace;text-anchor:middle;opacity:${fade.toFixed(2)}`
+            });
+            lbl.textContent = `${db >= 0 ? '+' : ''}${db.toFixed(1)}`;
+            tg.appendChild(lbl);
+          }
+        }
+
+        // Intermediate relay nodes — small cyan circles
+        for (let i = 1; i < chain.length - 1; i++) {
+          const p = points[i];
+          if (!p) continue;
+          tg.appendChild(svgElem('circle', {
+            cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: 3,
+            style: `fill:rgba(80,200,255,0.75);stroke:rgba(80,200,255,0.9);stroke-width:1;opacity:${fade.toFixed(2)}`
+          }));
+        }
+      }
     },
 
     _radarNorm(km, maxKm) {
