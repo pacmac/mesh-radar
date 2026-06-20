@@ -1,23 +1,18 @@
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { getRotatorDeviceId, getDeviceCfg } from './device-config.js';
-import { stmts, insertRangeTestEntry } from './db.js';
-import { passesFilter, ownDeviceNums } from './node-filter.js';
+import { stmts, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
+import { nodeList } from './node-list.js';
 
 const YAGI_DEVICE_ID = '!fa39f7b4';
-const DWELL_MS       = 10_000;        // node must be consistently heard for 10s before pointing
-const HOLD_MS        = 90_000;        // stay pointed at a target for 90s before accepting a new one
-const STALE_MS       = 3 * 60 * 1000; // no YAGI packets at all for 3min → clear state
+const HOLD_MS        = 90_000;   // dwell time at each target
+const RETRY_MS       = 30_000;   // retry delay when no eligible nodes available
 
-const posCache = new Map();
-
-let _dwellTimer  = null;
-let _staleTimer  = null;
-let _candidate   = null; // { num, lat, lon }
-let _firedNum    = null; // num the rotator is currently pointing at
-let _firedAt     = null; // Date.now() when we last fired
-let _lastRssi    = null;
-let _lastSnr     = null;
+let _holdTimer = null;
+let _firedNum  = null;
+let _firedAt   = null;
+let _lastRssi  = null;
+let _lastSnr   = null;
 
 const log = {
   info:  (...a) => console.log( '[active]',  ...a),
@@ -25,7 +20,6 @@ const log = {
   warn:  (...a) => console.warn('[active:w]', ...a),
   error: (...a) => console.error('[active:e]', ...a),
 };
-
 
 function getHomePos() {
   const rotatorId = getRotatorDeviceId();
@@ -44,145 +38,94 @@ function bearing(from, to) {
   return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
 }
 
-function lookupPos(num) {
-  if (posCache.has(num)) return posCache.get(num);
-  try {
-    const row = stmts.getNodePos.get(num, num);
-    if (row) {
-      posCache.set(num, { lat: row.lat, lon: row.lon });
-      return { lat: row.lat, lon: row.lon };
-    }
-  } catch (err) {
-    log.error(`DB lookup failed for ${num}:`, err.message);
-  }
-  return null;
-}
-
-function resetStale() {
-  if (_staleTimer) clearTimeout(_staleTimer);
-  _staleTimer = setTimeout(() => {
-    if (_candidate) {
-      log.warn(`no YAGI packets for 3min — clearing state`);
-      _candidate = _firedNum = _firedAt = _lastRssi = _lastSnr = null;
-    }
-  }, STALE_MS);
-}
-
-function fireDwell() {
-  if (!_candidate) return;
-  if (ownDeviceNums().has(_candidate.num)) {
-    log.warn(`dwell fired for own device ${_candidate.num} — skipping`);
-    return;
-  }
+// Build prioritised visit queue from current filtered radar nodes.
+// Sort: never targeted first, then least recently targeted.
+function buildSchedule() {
   const home = getHomePos();
-  if (!home) {
-    log.warn('dwell fired but no rotator home pos configured');
-    return;
-  }
-  const az = bearing(home, _candidate);
-  _firedNum = _candidate.num;
+  if (!home) return [];
+
+  return nodeList.nodes
+    .filter(n => n.position?.latitude_i != null && n.position?.longitude_i != null)
+    .map(n => {
+      const lat  = n.position.latitude_i  / 1e7;
+      const lon  = n.position.longitude_i / 1e7;
+      const az   = bearing(home, { lat, lon });
+      const info = stmts.getNodeinfoByNum.get(n.num) ?? {};
+      return {
+        num:                n.num,
+        lat, lon, az,
+        yagi_last_targeted: info.yagi_last_targeted ?? null,
+        yagi_contact_count: info.yagi_contact_count ?? 0,
+        label: n.user?.short_name ?? String(n.num),
+      };
+    })
+    .sort((a, b) => {
+      if (a.yagi_last_targeted === null && b.yagi_last_targeted !== null) return -1;
+      if (b.yagi_last_targeted === null && a.yagi_last_targeted !== null) return  1;
+      return (a.yagi_last_targeted ?? 0) - (b.yagi_last_targeted ?? 0);
+    });
+}
+
+function pointAt(node) {
+  _firedNum = node.num;
   _firedAt  = Date.now();
-  log.info(`dwell fired → node ${_candidate.num} az=${az.toFixed(1)}° rssi=${_lastRssi ?? '?'} snr=${_lastSnr ?? '?'}`);
+  _lastRssi = null;
+  _lastSnr  = null;
+
+  log.info(`→ ${node.label} (${node.num}) az=${node.az.toFixed(1)}°`);
   try {
-    rotator.move(az);
-    rotator.emit('point_target', { point_target: _candidate.num, az, _mode: dashMode.value });
-    // signal_update is NOT emitted here — only fires when the first real packet
-    // from the target arrives after the antenna has physically slewed to the bearing.
+    recordYagiTargeted(node.num);
+    rotator.move(node.az);
+    rotator.emit('point_target', { point_target: node.num, az: node.az, _mode: dashMode.value });
   } catch (err) {
     log.error('failed to command rotator:', err.message);
   }
+
+  if (_holdTimer) clearTimeout(_holdTimer);
+  _holdTimer = setTimeout(advance, HOLD_MS);
 }
 
-function resetDwell(num, pos, rssi = null, snr = null) {
-  if (rssi != null) _lastRssi = rssi;
-  if (snr  != null) _lastSnr  = snr;
-
-  // While holding on current target: accept signal updates from it, but ignore other nodes
-  const inHold = _firedAt && (Date.now() - _firedAt) < HOLD_MS;
-  if (inHold && num !== _firedNum) {
-    const remaining = Math.round((HOLD_MS - (Date.now() - _firedAt)) / 1000);
-    log.debug(`hold active for ${remaining}s — ignoring node ${num}`);
+function advance() {
+  const schedule = buildSchedule();
+  if (schedule.length === 0) {
+    log.warn('no eligible nodes in radar — retrying in 30s');
+    _holdTimer = setTimeout(advance, RETRY_MS);
     return;
   }
-
-  // Emit signal update + log for current target
-  if (_firedNum === num && (rssi != null || snr != null)) {
-    rotator.emit('signal_update', { signal_num: num, rssi, snr, ts: Date.now() });
-    try {
-      insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: num, rssi: rssi ?? null, snr: snr ?? null, hops: null, seq: null, rx_device: YAGI_DEVICE_ID });
-    } catch (err) { log.error('range_test insert failed:', err.message); }
-  }
-
-  const isNew = !_candidate || _candidate.num !== num;
-  _candidate = { num, ...pos };
-  if (_dwellTimer) clearTimeout(_dwellTimer);
-  _dwellTimer = setTimeout(fireDwell, DWELL_MS);
-  if (isNew) log.debug(`dwell started for node ${num} (${DWELL_MS}ms)`);
-  else       log.debug(`dwell reset for node ${num}`);
-  resetStale();
+  // Pick the top of the freshly sorted schedule (least recently targeted)
+  pointAt(schedule[0]);
 }
 
 export const activeTracker = {
-  handlePacket(ev) {
-    if (dashMode.value !== 1) return;
-    if (ev.device !== YAGI_DEVICE_ID) return;
+  start() {
+    log.info('starting proactive scan');
+    advance();
+  },
 
-    if (ev.type === 'node_update') {
-      const d   = ev.data;
-      const pos = d?.position;
-      if (d?.num == null || pos?.latitude_i == null || pos?.longitude_i == null) return;
-      const lat = pos.latitude_i / 1e7;
-      const lon = pos.longitude_i / 1e7;
-      posCache.set(d.num, { lat, lon });
-      // Build a minimal node object so passesFilter can evaluate all criteria
-      const nodeObj = { num: d.num, ...d, position: pos };
-      if (!passesFilter(nodeObj)) {
-        log.debug(`node_update num=${d.num} fails filter — skipping`);
-        return;
-      }
-      log.debug(`node_update num=${d.num} lat=${lat.toFixed(5)} lon=${lon.toFixed(5)}`);
-      resetDwell(d.num, { lat, lon });
-      return;
-    }
+  handlePacket(ev) {
+    if (ev.device !== YAGI_DEVICE_ID) return;
 
     if (ev.type === 'packet') {
       const pkt = ev.data?.packet;
-      if (!pkt?.from) return;
+      if (!pkt?.from || pkt.from !== _firedNum) return;
 
-      // Always accept packets from the node we're currently pointed at — filter
-      // is for candidate selection only, not for reading signal from the target.
-      const isTarget = _firedNum != null && pkt.from === _firedNum;
+      const rssi = pkt.rx_rssi ?? null;
+      const snr  = pkt.rx_snr  ?? null;
+      if (rssi != null) _lastRssi = rssi;
+      if (snr  != null) _lastSnr  = snr;
 
-      if (!isTarget) {
-        // Build a minimal node object so passesFilter can evaluate all criteria
-        const nodeObj = {
-          num:       pkt.from,
-          hops:      pkt.hop_start != null ? Math.max(0, pkt.hop_start - (pkt.hop_limit ?? 0)) : undefined,
-          via_mqtt:  pkt.via_mqtt ?? false,
-          _device:   ev.device ?? null,
-          _devices:  ev.device ? [ev.device] : [],
-        };
-        if (!passesFilter(nodeObj)) {
-          log.debug(`packet from ${pkt.from} fails filter — skipping`);
-          return;
-        }
-      }
-
-      const pos = lookupPos(pkt.from);
-      if (!pos) {
-        if (!isTarget) log.warn(`no pos for node ${pkt.from} portnum=${pkt.decoded?.portnum ?? 'none'}`);
-        return;
-      }
-      log.debug(`packet from=${pkt.from} rssi=${pkt.rx_rssi ?? 'n/a'} snr=${pkt.rx_snr ?? 'n/a'}`);
-      resetDwell(pkt.from, pos, pkt.rx_rssi ?? null, pkt.rx_snr ?? null);
+      log.debug(`signal from ${_firedNum} rssi=${rssi ?? '?'} snr=${snr ?? '?'}`);
+      rotator.emit('signal_update', { signal_num: _firedNum, rssi, snr, ts: Date.now() });
+      try {
+        recordYagiContact(_firedNum, rssi, snr);
+        insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: _firedNum, rssi, snr, hops: null, seq: null, rx_device: YAGI_DEVICE_ID });
+      } catch (err) { log.error('contact record failed:', err.message); }
     }
   },
 
   stop() {
     log.info('stopping');
-    if (_dwellTimer) { clearTimeout(_dwellTimer); _dwellTimer = null; }
-    if (_staleTimer) { clearTimeout(_staleTimer); _staleTimer = null; }
-    _candidate = _firedNum = _firedAt = _lastRssi = _lastSnr = null;
-    posCache.clear();
+    if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = null; }
+    _firedNum = _firedAt = _lastRssi = _lastSnr = null;
   },
 };

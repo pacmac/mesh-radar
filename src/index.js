@@ -298,12 +298,17 @@ scanner.on('end', () => {
   nodeList.setScanActive(false);
 });
 
+// -- ACTV mode lifecycle -----------------------------------------------------
+dashMode.on('change', ({ _mode }) => {
+  if (_mode === 1) activeTracker.start();
+  else             activeTracker.stop();
+});
+
 // -- event handlers ----------------------------------------------------------
 bridge.on('event', (ev) => {
   handleEvent(ev);
   if (ev.type === 'node_update' || ev.type === 'node_info') {
     nodeList.handleNodeUpdate(ev);
-    activeTracker.handlePacket(ev);
   }
   if (ev.type === 'packet') {
     activeTracker.handlePacket(ev);

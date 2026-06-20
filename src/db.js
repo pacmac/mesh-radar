@@ -128,6 +128,18 @@ if (!nodeinfoCols.includes('first_heard')) {
   db.exec(`ALTER TABLE nodeinfo ADD COLUMN first_heard INTEGER`);
   db.exec(`UPDATE nodeinfo SET first_heard = unixepoch() - (7 * 86400) WHERE first_heard IS NULL`);
 }
+const yagiCols = ['yagi_last_targeted','yagi_target_count','yagi_last_contact',
+                  'yagi_contact_count','yagi_best_rssi','yagi_best_snr','yagi_last_rssi','yagi_last_snr'];
+for (const col of yagiCols) {
+  if (!nodeinfoCols.includes(col)) {
+    const def = col.endsWith('_count') ? 'INTEGER NOT NULL DEFAULT 0' : 'INTEGER';
+    if (col === 'yagi_best_snr' || col === 'yagi_last_snr') {
+      db.exec(`ALTER TABLE nodeinfo ADD COLUMN ${col} REAL`);
+    } else {
+      db.exec(`ALTER TABLE nodeinfo ADD COLUMN ${col} ${def}`);
+    }
+  }
+}
 
 export const stmts = {
   insertMessage: db.prepare(`
@@ -195,6 +207,28 @@ export const stmts = {
   clearRangeTest: db.prepare(`DELETE FROM range_test_log`),
   clearNodes:     db.prepare(`DELETE FROM nodes`),
 
+  getNodeinfoByNum: db.prepare(`SELECT * FROM nodeinfo WHERE num = ? LIMIT 1`),
+
+  recordYagiTargeted: db.prepare(`
+    UPDATE nodeinfo
+    SET yagi_last_targeted = unixepoch(),
+        yagi_target_count  = yagi_target_count + 1
+    WHERE num = ?
+  `),
+
+  recordYagiContact: db.prepare(`
+    UPDATE nodeinfo
+    SET yagi_last_contact  = unixepoch(),
+        yagi_contact_count = yagi_contact_count + 1,
+        yagi_last_rssi     = COALESCE(@rssi, yagi_last_rssi),
+        yagi_last_snr      = COALESCE(@snr,  yagi_last_snr),
+        yagi_best_rssi     = CASE WHEN @rssi IS NOT NULL AND (yagi_best_rssi IS NULL OR @rssi > yagi_best_rssi)
+                                  THEN @rssi ELSE yagi_best_rssi END,
+        yagi_best_snr      = CASE WHEN @snr  IS NOT NULL AND (yagi_best_snr  IS NULL OR @snr  > yagi_best_snr)
+                                  THEN @snr  ELSE yagi_best_snr  END
+    WHERE num = @num
+  `),
+
   getConfig:   db.prepare(`SELECT value FROM config WHERE key = ?`),
   setConfig:   db.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
   getNodePos:  db.prepare(`
@@ -245,6 +279,14 @@ export function clearRangeTestLog() {
 
 export function clearNodeCache() {
   stmts.clearNodes.run();
+}
+
+export function recordYagiTargeted(num) {
+  stmts.recordYagiTargeted.run(num);
+}
+
+export function recordYagiContact(num, rssi, snr) {
+  stmts.recordYagiContact.run({ num, rssi: rssi ?? null, snr: snr ?? null });
 }
 
 export function insertTilt(entry) {
