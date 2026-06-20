@@ -2245,16 +2245,24 @@ function dashboard() {
           g.appendChild(svgElem('line', { x1: x+10, y1: y, x2: x+22, y2: y, style: rs }));
           g.appendChild(svgElem('line', { x1: x, y1: y-22, x2: x, y2: y-10, style: rs }));
           g.appendChild(svgElem('line', { x1: x, y1: y+10, x2: x, y2: y+22, style: rs }));
-          // Pulse ring — recreated on each redraw so SMIL animation restarts per packet
-          if (this.yagiSignal.num === node.num) {
-            const age = this.signalAge();
-            const fresh = age != null && age < 30;
-            if (fresh) {
-              const pulse = svgElem('circle', { cx: x, cy: y, r: '16', style: 'fill:none;stroke:rgba(255,30,30,0.85);stroke-width:1.5;pointer-events:none' });
-              pulse.innerHTML = '<animate attributeName="r" values="16;40" dur="0.7s" begin="0s" repeatCount="1" fill="freeze"/>' +
-                                '<animate attributeName="stroke-opacity" values="0.85;0" dur="0.7s" begin="0s" repeatCount="1" fill="freeze"/>';
-              g.appendChild(pulse);
-            }
+          // Pulse ring — recreated on each refreshRadar() so SMIL restarts per packet
+          if (this.yagiSignal.num === node.num && this.signalAge() != null && this.signalAge() < 30) {
+            const pulse = svgElem('circle', { cx: x, cy: y, r: '16', style: 'fill:none;stroke:rgba(255,30,30,0.85);stroke-width:1.5;pointer-events:none' });
+            const aR = svgElem('animate');
+            aR.setAttribute('attributeName', 'r');
+            aR.setAttribute('values', '16;40');
+            aR.setAttribute('dur', '0.7s');
+            aR.setAttribute('repeatCount', '1');
+            aR.setAttribute('fill', 'freeze');
+            const aO = svgElem('animate');
+            aO.setAttribute('attributeName', 'stroke-opacity');
+            aO.setAttribute('values', '0.85;0');
+            aO.setAttribute('dur', '0.7s');
+            aO.setAttribute('repeatCount', '1');
+            aO.setAttribute('fill', 'freeze');
+            pulse.appendChild(aR);
+            pulse.appendChild(aO);
+            g.appendChild(pulse);
           }
           // Live signal badge below the node
           if (this.yagiSignal.num === node.num && (this.yagiSignal.rssi != null || this.yagiSignal.snr != null)) {
