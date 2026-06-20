@@ -16,8 +16,6 @@ module.exports = {
         BRIDGE_WS_URL: "ws://localhost:8001",
         DB_PATH: "/usr/share/pac/dev/pio/projects/mt-yagi/node-dash/data/node-dash.db",
         ROTATOR_WS_URL: "ws://192.168.10.186:81",
-        HOME_LAT: "51.028568",
-        HOME_LON: "-3.15329",
       },
     },
   ],
