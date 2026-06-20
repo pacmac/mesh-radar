@@ -8,7 +8,7 @@ import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -356,11 +356,21 @@ bridge.on('event', (ev) => {
     if (pkt?.from) nodeList.touchLastHeard(pkt.from, pkt.rx_time, ev.device ?? null);
     if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery && pkt?.from) {
       const rd = pkt.decoded.route_discovery;
+      // Snapshot relay node positions from nodeinfo so the radar can draw
+      // the exact path even when relay nodes are not in the current radar view.
+      const relay_positions = {};
+      for (const num of rd.route ?? []) {
+        const info = stmts.getNodeinfoByNum.get(num);
+        if (info?.lat != null && info?.lon != null) {
+          relay_positions[num] = { latitude_i: Math.round(info.lat * 1e7), longitude_i: Math.round(info.lon * 1e7) };
+        }
+      }
       nodeList.setTraceroute(pkt.from, {
-        route:       rd.route       ?? [],
-        route_back:  rd.route_back  ?? [],
-        snr_towards: rd.snr_towards ?? [],
-        snr_back:    rd.snr_back    ?? [],
+        route:            rd.route       ?? [],
+        route_back:       rd.route_back  ?? [],
+        snr_towards:      rd.snr_towards ?? [],
+        snr_back:         rd.snr_back    ?? [],
+        relay_positions,
         ts: Date.now(),
       });
     }
@@ -383,6 +393,24 @@ bridge.on('event', (ev) => {
 });
 
 rotator.on('connected', () => {
+});
+
+// Auto-traceroute: when ACTV mode acquires a new target, send a traceroute automatically.
+// Throttle: skip if this node was traced less than 5 minutes ago.
+let _lastTracedNum = null;
+let _lastTracedAt  = 0;
+const TRACE_COOLDOWN_MS = 5 * 60 * 1000;
+
+rotator.on('point_target', (data) => {
+  const num = data.point_target;
+  if (!num) return;
+  const now = Date.now();
+  if (num === _lastTracedNum && now - _lastTracedAt < TRACE_COOLDOWN_MS) return;
+  _lastTracedNum = num;
+  _lastTracedAt  = now;
+  const sender = getPrimaryDeviceId();
+  if (!sender) return;
+  bridge.post(`/${sender}/traceroute`, { to: num }).catch(() => {});
 });
 
 bridge.on('connected', async () => {

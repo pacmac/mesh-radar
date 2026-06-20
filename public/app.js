@@ -2170,10 +2170,11 @@ function dashboard() {
 
       const CX = 300, CY = 300, R = 256;
 
-      const numToXY = (num) => {
+      const numToXY = (num, trRelayPos) => {
         if (num == null) return { x: CX, y: CY };
+        // Prefer live radar node position; fall back to position snapshotted at trace time
         const node = this.nodes.find(n => n.num === num);
-        const pos = node?.position;
+        const pos  = node?.position ?? trRelayPos?.[num];
         if (!pos?.latitude_i) return null;
         const lat = pos.latitude_i / 1e7, lon = pos.longitude_i / 1e7;
         const km = haversine(home.lat, home.lon, lat, lon);
@@ -2198,31 +2199,47 @@ function dashboard() {
         const tr = node.last_traceroute;
         if (!tr) continue;
 
-        // Age-based opacity fade over 6 hours
+        // Age-based opacity fade: full for <1h, linear to 0.35 over 24h
         const ageSec = tr.ts ? (Date.now() - tr.ts) / 1000 : 0;
-        const fade = Math.max(0.15, 1 - ageSec / (6 * 3600));
+        const fade = ageSec < 3600 ? 1.0 : Math.max(0.35, 1 - (ageSec - 3600) / (23 * 3600) * 0.65);
 
         // Full path: home(null) → route[0..n] → target(node.num)
         const chain  = [null, ...(tr.route ?? []), node.num];
         const snrs   = tr.snr_towards ?? [];
-        const points = chain.map(numToXY);
+        const points = chain.map(n => numToXY(n, tr.relay_positions));
 
-        // Segments — draw each with SNR colour
-        for (let i = 0; i < chain.length - 1; i++) {
-          const p1 = points[i], p2 = points[i + 1];
-          if (!p1 || !p2) continue;
-          const col = snrColor(snrs[i] ?? null);
-          const seg = svgElem('line', {
+        // Collect known-position waypoints; connect over unknown relay hops with gap styling
+        const known = chain.map((_, i) => points[i] ? i : -1).filter(i => i >= 0);
+
+        for (let k = 0; k < known.length - 1; k++) {
+          const ai = known[k], bi = known[k + 1];
+          const p1 = points[ai], p2 = points[bi];
+          const adjacent = (bi === ai + 1);
+
+          // SNR for the segment: if adjacent use exact value; if bridging gaps use min in span
+          let snrRaw = null;
+          if (adjacent) {
+            snrRaw = snrs[ai] ?? null;
+          } else {
+            const span = snrs.slice(ai, bi).filter(v => v != null);
+            snrRaw = span.length ? Math.min(...span) : null;
+          }
+
+          const col = snrColor(snrRaw);
+          // adjacent = exact hop; gap = relay pos unknown. Both are clearly dotted
+          // (larger gaps than the target arm's 6,4 pattern) to avoid confusion.
+          const dashArr = adjacent ? '4,6' : '2,8';
+          const opacity = fade.toFixed(2);
+          tg.appendChild(svgElem('line', {
             x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
             x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
-            style: `stroke:${col};stroke-width:1.5;stroke-dasharray:5,3;opacity:${fade.toFixed(2)}`
-          });
-          tg.appendChild(seg);
+            style: `stroke:${col};stroke-width:1.5;stroke-dasharray:${dashArr};opacity:${opacity}`
+          }));
 
-          // SNR label at midpoint (actual dB)
-          if (snrs[i] != null) {
+          // SNR label at midpoint for adjacent (exact) segments
+          if (adjacent && snrRaw != null) {
             const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
-            const db = snrs[i] / 4;
+            const db = snrRaw / 4;
             const lbl = svgElem('text', {
               x: mx.toFixed(1), y: (my - 4).toFixed(1),
               style: `fill:${col};font-size:8px;font-family:'Oxanium',monospace;text-anchor:middle;opacity:${fade.toFixed(2)}`
@@ -2232,7 +2249,7 @@ function dashboard() {
           }
         }
 
-        // Intermediate relay nodes — small cyan circles
+        // Intermediate relay nodes — small cyan circles where position is known
         for (let i = 1; i < chain.length - 1; i++) {
           const p = points[i];
           if (!p) continue;
