@@ -2208,9 +2208,14 @@ function dashboard() {
         const tr = node.last_traceroute;
         if (!tr) continue;
 
-        // Age-based opacity: max 0.5 when fresh, fades to 0.15 over 24h
+        // Age-based opacity: max 0.3 when fresh, fades to 0.10 over 24h
         const ageSec = tr.ts ? (Date.now() - tr.ts) / 1000 : 0;
-        const fade = ageSec < 3600 ? 0.5 : Math.max(0.15, 0.5 - (ageSec - 3600) / (23 * 3600) * 0.35);
+        const fade = ageSec < 3600 ? 0.3 : Math.max(0.10, 0.3 - (ageSec - 3600) / (23 * 3600) * 0.20);
+
+        // Wrap each node's route in a group so hover can boost opacity uniformly
+        const rg = svgElem('g', { style: `opacity:${fade.toFixed(2)};cursor:crosshair` });
+        rg.addEventListener('mouseenter', () => { rg.style.opacity = 1; });
+        rg.addEventListener('mouseleave', () => { rg.style.opacity = fade; });
 
         // Full path: home(null) → route[0..n] → target(node.num)
         const chain  = [null, ...(tr.route ?? []), node.num];
@@ -2237,11 +2242,10 @@ function dashboard() {
           const col = snrColor(snrRaw);
           // Round-cap zero-length dashes = true round dots. Adjacent hops tighter, gaps looser.
           const dashArr = adjacent ? '0,4' : '0,7';
-          const opacity = fade.toFixed(2);
-          tg.appendChild(svgElem('line', {
+          rg.appendChild(svgElem('line', {
             x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
             x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
-            style: `stroke:${col};stroke-width:2;stroke-linecap:round;stroke-dasharray:${dashArr};opacity:${opacity}`
+            style: `stroke:${col};stroke-width:2;stroke-linecap:round;stroke-dasharray:${dashArr}`
           }));
 
           // SNR label at midpoint for adjacent (exact) segments
@@ -2250,10 +2254,10 @@ function dashboard() {
             const db = snrRaw / 4;
             const lbl = svgElem('text', {
               x: mx.toFixed(1), y: (my - 4).toFixed(1),
-              style: `fill:${col};font-size:8px;font-family:'Oxanium',monospace;text-anchor:middle;opacity:${fade.toFixed(2)}`
+              style: `fill:${col};font-size:8px;font-family:'Oxanium',monospace;text-anchor:middle`
             });
             lbl.textContent = `${db >= 0 ? '+' : ''}${db.toFixed(1)}`;
-            tg.appendChild(lbl);
+            rg.appendChild(lbl);
           }
         }
 
@@ -2261,11 +2265,13 @@ function dashboard() {
         for (let i = 1; i < chain.length - 1; i++) {
           const p = points[i];
           if (!p) continue;
-          tg.appendChild(svgElem('circle', {
+          rg.appendChild(svgElem('circle', {
             cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: 3,
-            style: `fill:rgba(80,200,255,0.75);stroke:rgba(80,200,255,0.9);stroke-width:1;opacity:${fade.toFixed(2)}`
+            style: `fill:rgba(80,200,255,0.75);stroke:rgba(80,200,255,0.9);stroke-width:1`
           }));
         }
+
+        tg.appendChild(rg);
       }
     },
 
