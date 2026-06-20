@@ -30,7 +30,7 @@ class RotatorClient extends EventEmitter {
   }
 
   move(az) {
-    this._send({ action: 'move2az', args: [Number(az)] });
+    this._send({ action: 'seek2az', args: [Number(az)] });
   }
 
   sendAction(action, args) {
