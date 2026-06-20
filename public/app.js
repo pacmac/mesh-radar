@@ -1161,6 +1161,7 @@ function dashboard() {
         if (d?.signal_num != null) {
           this.yagiSignal = { num: d.signal_num, rssi: d.rssi ?? null, snr: d.snr ?? null, ts: d.ts ?? Date.now() };
           this._sigTick = 0;
+          this._pingSignal();
           if (this.tab === 'radar') this.refreshRadar();
         }
         return;
@@ -2360,9 +2361,25 @@ function dashboard() {
 
     // -- formatting helpers ---------------------------------------------------
     signalAge() {
-      void this._sigTick; // reactive dependency
+      void this._sigTick;
       if (!this.yagiSignal.ts) return null;
       return Math.round((Date.now() - this.yagiSignal.ts) / 1000);
+    },
+
+    _pingSignal() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.12);
+      } catch (_) {}
     },
 
     fmtUptime(secs) {
