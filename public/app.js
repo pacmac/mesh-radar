@@ -2311,7 +2311,7 @@ function dashboard() {
       ringKms.forEach((km, idx) => {
         const isFull = idx === ringKms.length - 1;
         const r = this._radarNorm(km, maxKm) * R;
-        bg.appendChild(svgElem('circle', { cx: CX, cy: CY, r, style: `fill:none;stroke:${isFull ? G2 : G1};stroke-width:${isFull ? 1.2 : 0.9};stroke-dasharray:${isFull ? '' : '5 5'}` }));
+        bg.appendChild(svgElem('circle', { cx: CX, cy: CY, r, style: `fill:none;stroke:${G1};stroke-width:0.9;stroke-dasharray:5 5` }));
         const lbl = svgElem('text', { x: CX + 5, y: CY - r + 12, style: `fill:${G3};font-size:10px;font-family:'Oxanium',monospace;letter-spacing:0.05em` });
         lbl.textContent = (km < 10 ? km.toFixed(km % 1 ? 1 : 0) : km) + ' km';
         bg.appendChild(lbl);
