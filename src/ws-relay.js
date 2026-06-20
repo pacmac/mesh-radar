@@ -108,9 +108,12 @@ export function attachWsRelay(server) {
       if (!ev.device || ev.device === nodeId || ev.type?.startsWith('ota_')) ws.send(JSON.stringify(ev));
     }
 
-    const onRotator = makeRotatorThrottle((data) => {
+    const onRotatorStatus = makeRotatorThrottle((data) => {
       if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
     });
+    const onRotatorTarget = (data) => {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
+    };
 
     function onDashMode(data) {
       if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
@@ -129,8 +132,8 @@ export function attachWsRelay(server) {
     }
 
     bridge.on('event', onEvent);
-    rotator.on('status', onRotator);
-    rotator.on('point_target', onRotator);
+    rotator.on('status',       onRotatorStatus);
+    rotator.on('point_target', onRotatorTarget);
     dashMode.on('change', onDashMode);
     scanner.on('start',    onScanStart);
     scanner.on('progress', onScanProgress);
@@ -140,8 +143,8 @@ export function attachWsRelay(server) {
 
     ws.on('close', () => {
       bridge.off('event', onEvent);
-      rotator.off('status', onRotator);
-      rotator.off('point_target', onRotator);
+      rotator.off('status',       onRotatorStatus);
+      rotator.off('point_target', onRotatorTarget);
       dashMode.off('change', onDashMode);
       scanner.off('start',    onScanStart);
       scanner.off('progress', onScanProgress);
