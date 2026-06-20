@@ -81,7 +81,8 @@ function dashboard() {
     yagiAz: null,
     yagiConnected: false,
     yagiPointTarget: null,
-    yagiSignal: { num: null, rssi: null, snr: null },
+    yagiSignal: { num: null, rssi: null, snr: null, ts: null },
+    _sigTick: 0,
     rotatorStatus: {},
     rotatorConnected: false,
     rotatorManualAz: null,
@@ -327,6 +328,7 @@ function dashboard() {
       });
       this.loadTiltHistory();
       setInterval(() => { this.loadDevices(); }, 60000);
+      setInterval(() => { if (this.yagiSignal.ts) this._sigTick++; }, 1000);
 
       if (this.tab === "radar") this.$nextTick(() => this.initRadar());
       else if (this.tab === "cfg") this.switchCfgTab(this.cfgTab);
@@ -1157,7 +1159,8 @@ function dashboard() {
       if (ev.type === 'signal_update') {
         const d = ev.data;
         if (d?.signal_num != null) {
-          this.yagiSignal = { num: d.signal_num, rssi: d.rssi ?? null, snr: d.snr ?? null };
+          this.yagiSignal = { num: d.signal_num, rssi: d.rssi ?? null, snr: d.snr ?? null, ts: d.ts ?? Date.now() };
+          this._sigTick = 0;
           if (this.tab === 'radar') this.refreshRadar();
         }
         return;
@@ -2242,14 +2245,29 @@ function dashboard() {
           g.appendChild(svgElem('line', { x1: x+10, y1: y, x2: x+22, y2: y, style: rs }));
           g.appendChild(svgElem('line', { x1: x, y1: y-22, x2: x, y2: y-10, style: rs }));
           g.appendChild(svgElem('line', { x1: x, y1: y+10, x2: x, y2: y+22, style: rs }));
+          // Pulse ring — recreated on each redraw so SMIL animation restarts per packet
+          if (this.yagiSignal.num === node.num) {
+            const age = this.signalAge();
+            const fresh = age != null && age < 30;
+            if (fresh) {
+              const pulse = svgElem('circle', { cx: x, cy: y, r: '16', style: 'fill:none;stroke:rgba(255,30,30,0.85);stroke-width:1.5;pointer-events:none' });
+              pulse.innerHTML = '<animate attributeName="r" values="16;40" dur="0.7s" begin="0s" repeatCount="1" fill="freeze"/>' +
+                                '<animate attributeName="stroke-opacity" values="0.85;0" dur="0.7s" begin="0s" repeatCount="1" fill="freeze"/>';
+              g.appendChild(pulse);
+            }
+          }
           // Live signal badge below the node
           if (this.yagiSignal.num === node.num && (this.yagiSignal.rssi != null || this.yagiSignal.snr != null)) {
             const sig = this.yagiSignal;
+            const age = this.signalAge();
+            const stale = age != null && age >= 30;
+            const col = stale ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)';
             const parts = [];
             if (sig.rssi != null) parts.push(`${sig.rssi} dBm`);
             if (sig.snr  != null) parts.push(`${sig.snr >= 0 ? '+' : ''}${sig.snr.toFixed(1)} dB`);
-            const sigTxt = svgElem('text', { x, y: y + 32, style: "fill:rgba(255,140,0,0.95);font-size:9px;font-weight:600;font-family:'Oxanium',monospace;text-anchor:middle;pointer-events:none;filter:url(#rimGlow)" });
-            sigTxt.textContent = parts.join(' / ');
+            if (age != null) parts.push(`${age}s`);
+            const sigTxt = svgElem('text', { x, y: y + 32, style: `fill:${col};font-size:9px;font-weight:600;font-family:'Oxanium',monospace;text-anchor:middle;pointer-events:none;filter:url(#rimGlow)` });
+            sigTxt.textContent = parts.join(' · ');
             g.appendChild(sigTxt);
           }
         }
@@ -2317,6 +2335,12 @@ function dashboard() {
     },
 
     // -- formatting helpers ---------------------------------------------------
+    signalAge() {
+      void this._sigTick; // reactive dependency
+      if (!this.yagiSignal.ts) return null;
+      return Math.round((Date.now() - this.yagiSignal.ts) / 1000);
+    },
+
     fmtUptime(secs) {
       if (secs == null) return "–";
       const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60);

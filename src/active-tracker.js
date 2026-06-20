@@ -90,7 +90,7 @@ function fireDwell() {
   try {
     rotator.move(az);
     rotator.emit('point_target', { point_target: _candidate.num, az, _mode: dashMode.value });
-    rotator.emit('signal_update', { signal_num: _firedNum, rssi: _lastRssi, snr: _lastSnr });
+    rotator.emit('signal_update', { signal_num: _firedNum, rssi: _lastRssi, snr: _lastSnr, ts: Date.now() });
     log.info(`rotator.move(${az.toFixed(1)}) + point_target emitted`);
   } catch (err) {
     log.error('failed to command rotator:', err.message);
@@ -104,7 +104,7 @@ function resetDwell(num, pos, rssi = null, snr = null) {
   if (snr  != null) _lastSnr  = snr;
   // If we're already pointed at this node, emit live signal update + log it
   if (_firedNum === num && (rssi != null || snr != null)) {
-    rotator.emit('signal_update', { signal_num: num, rssi, snr });
+    rotator.emit('signal_update', { signal_num: num, rssi, snr, ts: Date.now() });
     try {
       insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: num, rssi: rssi ?? null, snr: snr ?? null, hops: null, seq: null, rx_device: YAGI_DEVICE_ID });
     } catch (err) { log.error('range_test insert failed:', err.message); }
