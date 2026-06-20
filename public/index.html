@@ -644,7 +644,7 @@
                   </template>
                   <span style="color:rgba(0,255,80,0.55);min-width:2.5rem;flex-shrink:0" x-text="n._az != null ? Math.round(n._az) + '°' : '–'"></span>
                   <span style="color:rgba(0,255,80,0.55);min-width:2.8rem;flex-shrink:0" x-text="n._km != null ? n._km.toFixed(1)+'km' : '–'"></span>
-                  <span style="color:rgba(0,255,80,0.55);min-width:1.6rem;flex-shrink:0" x-text="(n.hops_away ?? n.hops ?? 0) + 'h'"></span>
+                  <span style="color:rgba(0,255,80,0.55);min-width:1.6rem;flex-shrink:0" x-text="(nodeHops(n) ?? 0) + 'h'"></span>
                   <template x-if="n.num === yagiPointTarget && yagiSignal.num === n.num">
                     <span :style="'flex:1;font-size:10px;font-weight:600;white-space:nowrap;color:' + (signalAge() != null && signalAge() >= 30 ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)')">
                       <span x-text="yagiSignal.rssi != null ? yagiSignal.rssi + ' dBm' : ''"></span>
@@ -734,7 +734,7 @@
                   <span style="color:rgba(0,255,80,0.45)">Bearing</span>
                   <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="targetNode._az != null ? targetNode._az.toFixed(0)+'°' : '–'"></span>
                   <span style="color:rgba(0,255,80,0.45)">Hops</span>
-                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="(targetNode.hops_away ?? targetNode.hops) ?? '–'"></span>
+                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="nodeHops(targetNode) ?? '–'"></span>
                   <span style="color:rgba(0,255,80,0.45)">Last heard</span>
                   <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="fmtAge(targetNode.last_heard)"></span>
                 </div>
@@ -909,7 +909,7 @@
                 <div class="flex justify-between items-center"><span class="opacity-60">Signal</span> <span x-html="sigBars(nodeInfo.rssi, nodeInfo.snr)"></span></div>
                 <div class="flex justify-between"><span class="opacity-60">SNR</span> <span x-text="nodeInfo.snr != null ? nodeInfo.snr+' dB' : '–'"></span></div>
                 <div class="flex justify-between"><span class="opacity-60">RSSI</span> <span x-text="nodeInfo.rssi != null ? nodeInfo.rssi+' dBm' : '–'"></span></div>
-                <div class="flex justify-between"><span class="opacity-60">Hops</span> <span x-text="nodeInfo.hops ?? '–'"></span></div>
+                <div class="flex justify-between"><span class="opacity-60">Hops</span> <span x-text="nodeHops(nodeInfo) ?? '–'"></span></div>
                 <div class="flex justify-between"><span class="opacity-60">Battery</span> <span x-text="nodeInfo.device_metrics?.battery_level != null ? nodeInfo.device_metrics.battery_level+'%' : '–'"></span></div>
                 <div class="flex justify-between"><span class="opacity-60">Last heard</span> <span x-text="fmtAge(nodeInfo.last_heard)"></span></div>
                 <div class="divider my-1"></div>
@@ -1128,10 +1128,10 @@
                             </div>
                             <!-- Hops · distance -->
                             <div class="flex flex-wrap gap-1">
-                              <span x-show="(n.hops_away ?? n.hops) != null"
+                              <span x-show="nodeHops(n) != null"
                                     class="badge badge-xs"
-                                    :class="(n.hops_away ?? n.hops) === 0 ? 'badge-info' : 'badge-ghost'"
-                                    x-text="(n.hops_away ?? n.hops) === 0 ? 'dir' : (n.hops_away ?? n.hops) + ' hop'"></span>
+                                    :class="nodeHops(n) === 0 ? 'badge-info' : 'badge-ghost'"
+                                    x-text="nodeHops(n) === 0 ? 'dir' : nodeHops(n) + ' hop'"></span>
                               <span x-show="nodeKm(n) != null"
                                     class="badge badge-xs badge-ghost"
                                     x-text="nodeKm(n)?.toFixed(1) + ' km'"></span>

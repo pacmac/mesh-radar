@@ -1904,6 +1904,14 @@ function dashboard() {
       return { pct, label, cls, badgeCls, none: false };
     },
 
+    // True hop count: traceroute route.length is authoritative (enumerates every relay).
+    // Falls back to hops_away (device nodeDB estimate) then hops (last-packet calculation).
+    nodeHops(n) {
+      const tr = n?.last_traceroute;
+      if (tr?.route != null) return tr.route.length;
+      return n?.hops_away ?? n?.hops ?? null;
+    },
+
     sigQualColor(pct) {
       if (pct >= 75) return 'oklch(0.72 0.20 145)';  // green
       if (pct >= 50) return 'oklch(0.80 0.18 115)';  // lime
