@@ -2,7 +2,7 @@ import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { getRotatorDeviceId, getDeviceCfg, getAllDeviceCfgs } from './device-config.js';
 import { stmts, insertRangeTestEntry } from './db.js';
-import { actvState } from './actv-state.js';
+import { nodeList } from './node-list.js';
 
 const YAGI_DEVICE_ID = '!fa39f7b4';
 const DWELL_MS       = 10_000;        // node must be consistently heard for 10s before pointing
@@ -71,7 +71,6 @@ function resetStale() {
     if (_candidate) {
       log.warn(`no YAGI packets for 3min — clearing state`);
       _candidate = _firedNum = _firedAt = _lastRssi = _lastSnr = null;
-      actvState.firedNum = null;
     }
   }, STALE_MS);
 }
@@ -90,7 +89,6 @@ function fireDwell() {
   const az = bearing(home, _candidate);
   _firedNum = _candidate.num;
   _firedAt  = Date.now();
-  actvState.firedNum = _firedNum;
   log.info(`dwell fired → node ${_candidate.num} az=${az.toFixed(1)}° rssi=${_lastRssi ?? '?'} snr=${_lastSnr ?? '?'}`);
   try {
     rotator.move(az);
@@ -147,6 +145,10 @@ export const activeTracker = {
       const lat = pos.latitude_i / 1e7;
       const lon = pos.longitude_i / 1e7;
       posCache.set(d.num, { lat, lon });
+      if (!nodeList.nodes.find(n => n.num === d.num)) {
+        log.debug(`node_update num=${d.num} not in filtered radar — skipping`);
+        return;
+      }
       log.debug(`node_update num=${d.num} lat=${lat.toFixed(5)} lon=${lon.toFixed(5)}`);
       resetDwell(d.num, { lat, lon });
       return;
@@ -157,6 +159,10 @@ export const activeTracker = {
       if (!pkt?.from) return;
       if (ownNums().has(pkt.from)) {
         log.debug(`packet from own device ${pkt.from} — skipping`);
+        return;
+      }
+      if (!nodeList.nodes.find(n => n.num === pkt.from)) {
+        log.debug(`packet from ${pkt.from} not in filtered radar — skipping`);
         return;
       }
       const pos = lookupPos(pkt.from);
@@ -174,7 +180,6 @@ export const activeTracker = {
     if (_dwellTimer) { clearTimeout(_dwellTimer); _dwellTimer = null; }
     if (_staleTimer) { clearTimeout(_staleTimer); _staleTimer = null; }
     _candidate = _firedNum = _firedAt = _lastRssi = _lastSnr = null;
-    actvState.firedNum = null;
     posCache.clear();
   },
 };
