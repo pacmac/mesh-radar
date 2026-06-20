@@ -54,7 +54,7 @@ export function handlePacketForRotator(event) {
     }
   } else if (portnum === 'NODEINFO_APP' || portnum === 'TELEMETRY_APP' || portnum === 'TEXT_MESSAGE_APP') {
     // Use stored position for any heard packet
-    const row = stmts.getNodePos?.get(packet.from);
+    const row = stmts.getNodePos?.get(packet.from, packet.from);
     if (row) { lat = row.lat; lon = row.lon; }
   }
 

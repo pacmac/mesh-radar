@@ -197,7 +197,12 @@ export const stmts = {
 
   getConfig:   db.prepare(`SELECT value FROM config WHERE key = ?`),
   setConfig:   db.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
-  getNodePos:  db.prepare(`SELECT lat, lon FROM nodes WHERE num = ? AND lat IS NOT NULL`),
+  getNodePos:  db.prepare(`
+    SELECT lat, lon FROM nodes WHERE num = ? AND lat IS NOT NULL
+    UNION ALL
+    SELECT lat, lon FROM nodeinfo WHERE num = ? AND lat IS NOT NULL
+    LIMIT 1
+  `),
 
   insertTilt: db.prepare(`
     INSERT INTO tilt_history (ts, node_id, pitch, roll, x_g, y_g, z_g)
