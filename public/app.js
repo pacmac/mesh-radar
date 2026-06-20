@@ -2226,13 +2226,13 @@ function dashboard() {
           }
 
           const col = snrColor(snrRaw);
-          // Round-cap zero-length dashes = true dots. Adjacent hops tighter, gaps looser.
-          const dashArr = adjacent ? '0,6' : '0,10';
+          // Round-cap zero-length dashes = true round dots. Adjacent hops tighter, gaps looser.
+          const dashArr = adjacent ? '0,4' : '0,7';
           const opacity = fade.toFixed(2);
           tg.appendChild(svgElem('line', {
             x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
             x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
-            style: `stroke:${col};stroke-width:3;stroke-linecap:round;stroke-dasharray:${dashArr};opacity:${opacity}`
+            style: `stroke:${col};stroke-width:2;stroke-linecap:round;stroke-dasharray:${dashArr};opacity:${opacity}`
           }));
 
           // SNR label at midpoint for adjacent (exact) segments
