@@ -303,8 +303,6 @@ class NodeList extends EventEmitter {
     const ownNums = this._ownNums();
     const filtered = Array.from(this._cache.values()).filter(n => {
       if (ownNums.has(n.num)) return false; // own BLE devices never appear in node list
-      // ACTV: always show the current active target so crosshair & overlay render
-      if (actvState.firedNum != null && n.num === actvState.firedNum) return true;
       if (maxAge > 0 && n.last_heard && (now - n.last_heard) > maxAge) return false;
 
       const hops = n.hops ?? n.hops_away ?? 0;
