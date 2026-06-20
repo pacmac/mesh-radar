@@ -2172,9 +2172,10 @@ function dashboard() {
 
       const numToXY = (num, trRelayPos) => {
         if (num == null) return { x: CX, y: CY };
-        // Prefer live radar node position; fall back to position snapshotted at trace time
+        // Prefer live radar node position; fall back to position snapshotted at trace time.
+        // relay_positions keys are JSON strings so coerce num to string for lookup.
         const node = this.nodes.find(n => n.num === num);
-        const pos  = node?.position ?? trRelayPos?.[num];
+        const pos  = node?.position ?? trRelayPos?.[String(num)];
         if (!pos?.latitude_i) return null;
         const lat = pos.latitude_i / 1e7, lon = pos.longitude_i / 1e7;
         const km = haversine(home.lat, home.lon, lat, lon);
