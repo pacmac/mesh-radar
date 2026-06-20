@@ -57,10 +57,15 @@ export function attachWsRelay(server) {
     broadcast(ev);
   });
   rotator.on('status', makeRotatorThrottle((data) => broadcast({ type: 'rotator', data })));
-  let lastPointTarget = null;
+  let lastPointTarget  = null;
+  let lastSignalUpdate = null;
   rotator.on('point_target', (data) => {
     lastPointTarget = data;
     broadcast({ type: 'rotator', data });
+  });
+  rotator.on('signal_update', (data) => {
+    lastSignalUpdate = data;
+    broadcast({ type: 'signal_update', data });
   });
   dashMode.on('change',      (data) => broadcast({ type: 'rotator', data }));
 
@@ -76,6 +81,9 @@ export function attachWsRelay(server) {
     }
     if (lastPointTarget) {
       ws.send(JSON.stringify({ type: 'rotator', data: lastPointTarget }));
+    }
+    if (lastSignalUpdate) {
+      ws.send(JSON.stringify({ type: 'signal_update', data: lastSignalUpdate }));
     }
     if (scanner.active) {
       ws.send(JSON.stringify({ type: 'scan_start', data: {
@@ -104,6 +112,9 @@ export function attachWsRelay(server) {
     if (lastPointTarget) {
       ws.send(JSON.stringify({ type: 'rotator', data: lastPointTarget }));
     }
+    if (lastSignalUpdate) {
+      ws.send(JSON.stringify({ type: 'signal_update', data: lastSignalUpdate }));
+    }
     // Scan state resume
     if (scanner.active) {
       ws.send(JSON.stringify({ type: 'scan_start', data: {
@@ -124,6 +135,9 @@ export function attachWsRelay(server) {
     const onRotatorTarget = (data) => {
       if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
     };
+    const onSignalUpdate = (data) => {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'signal_update', data }));
+    };
 
     function onDashMode(data) {
       if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
@@ -142,8 +156,9 @@ export function attachWsRelay(server) {
     }
 
     bridge.on('event', onEvent);
-    rotator.on('status',       onRotatorStatus);
-    rotator.on('point_target', onRotatorTarget);
+    rotator.on('status',        onRotatorStatus);
+    rotator.on('point_target',  onRotatorTarget);
+    rotator.on('signal_update', onSignalUpdate);
     dashMode.on('change', onDashMode);
     scanner.on('start',    onScanStart);
     scanner.on('progress', onScanProgress);
@@ -153,8 +168,9 @@ export function attachWsRelay(server) {
 
     ws.on('close', () => {
       bridge.off('event', onEvent);
-      rotator.off('status',       onRotatorStatus);
-      rotator.off('point_target', onRotatorTarget);
+      rotator.off('status',        onRotatorStatus);
+      rotator.off('point_target',  onRotatorTarget);
+      rotator.off('signal_update', onSignalUpdate);
       dashMode.off('change', onDashMode);
       scanner.off('start',    onScanStart);
       scanner.off('progress', onScanProgress);

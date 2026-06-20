@@ -1,7 +1,7 @@
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { getRotatorDeviceId, getDeviceCfg } from './device-config.js';
-import { stmts } from './db.js';
+import { stmts, insertRangeTestEntry } from './db.js';
 import { nodeList } from './node-list.js';
 
 const YAGI_DEVICE_ID = '!fa39f7b4';
@@ -10,9 +10,12 @@ const STALE_MS       = 3 * 60 * 1000;
 
 const posCache = new Map();
 
-let _dwellTimer = null;
-let _staleTimer = null;
-let _candidate  = null; // { num, lat, lon }
+let _dwellTimer  = null;
+let _staleTimer  = null;
+let _candidate   = null; // { num, lat, lon }
+let _firedNum    = null; // num of the node the rotator is currently pointing at
+let _lastRssi    = null;
+let _lastSnr     = null;
 
 const log = {
   info:  (...a) => console.log( '[active]',  ...a),
@@ -62,6 +65,9 @@ function resetStale() {
     if (_candidate) {
       log.warn(`no YAGI packets for 3min — clearing candidate ${_candidate.num}`);
       _candidate = null;
+      _firedNum  = null;
+      _lastRssi  = null;
+      _lastSnr   = null;
     }
   }, STALE_MS);
 }
@@ -79,19 +85,30 @@ function fireDwell() {
     return;
   }
   const az = bearing(home, _candidate);
+  _firedNum = _candidate.num;
   log.info(`dwell fired → node ${_candidate.num} lat=${_candidate.lat.toFixed(5)} lon=${_candidate.lon.toFixed(5)} az=${az.toFixed(1)}°`);
   try {
     rotator.move(az);
     rotator.emit('point_target', { point_target: _candidate.num, az, _mode: dashMode.value });
+    rotator.emit('signal_update', { signal_num: _firedNum, rssi: _lastRssi, snr: _lastSnr });
     log.info(`rotator.move(${az.toFixed(1)}) + point_target emitted`);
   } catch (err) {
     log.error('failed to command rotator:', err.message);
   }
 }
 
-function resetDwell(num, pos) {
+function resetDwell(num, pos, rssi = null, snr = null) {
   const isNew = !_candidate || _candidate.num !== num;
   _candidate = { num, ...pos };
+  if (rssi != null) _lastRssi = rssi;
+  if (snr  != null) _lastSnr  = snr;
+  // If we're already pointed at this node, emit live signal update + log it
+  if (_firedNum === num && (rssi != null || snr != null)) {
+    rotator.emit('signal_update', { signal_num: num, rssi, snr });
+    try {
+      insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: num, rssi: rssi ?? null, snr: snr ?? null, hops: null, seq: null, rx_device: YAGI_DEVICE_ID });
+    } catch (err) { log.error('range_test insert failed:', err.message); }
+  }
   if (_dwellTimer) clearTimeout(_dwellTimer);
   _dwellTimer = setTimeout(fireDwell, DWELL_MS);
   if (isNew) log.debug(`dwell started for node ${num} (${DWELL_MS}ms)`);
@@ -140,8 +157,8 @@ export const activeTracker = {
         log.warn(`no pos for node ${pkt.from} portnum=${pkt.decoded?.portnum ?? 'none'} — skipping`);
         return;
       }
-      log.debug(`packet from=${pkt.from} portnum=${pkt.decoded?.portnum ?? 'none'} rssi=${pkt.rx_rssi ?? 'n/a'}`);
-      resetDwell(pkt.from, pos);
+      log.debug(`packet from=${pkt.from} portnum=${pkt.decoded?.portnum ?? 'none'} rssi=${pkt.rx_rssi ?? 'n/a'} snr=${pkt.rx_snr ?? 'n/a'}`);
+      resetDwell(pkt.from, pos, pkt.rx_rssi ?? null, pkt.rx_snr ?? null);
     }
   },
 
@@ -150,6 +167,9 @@ export const activeTracker = {
     if (_dwellTimer) { clearTimeout(_dwellTimer); _dwellTimer = null; }
     if (_staleTimer) { clearTimeout(_staleTimer); _staleTimer = null; }
     _candidate = null;
+    _firedNum  = null;
+    _lastRssi  = null;
+    _lastSnr   = null;
     posCache.clear();
   },
 };

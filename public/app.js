@@ -81,6 +81,7 @@ function dashboard() {
     yagiAz: null,
     yagiConnected: false,
     yagiPointTarget: null,
+    yagiSignal: { num: null, rssi: null, snr: null },
     rotatorStatus: {},
     rotatorConnected: false,
     rotatorManualAz: null,
@@ -1149,6 +1150,15 @@ function dashboard() {
         if (this.tab === 'radar') {
           if (this.homePos) this.refreshRadar();
           else this.drawRadar();
+        }
+        return;
+      }
+
+      if (ev.type === 'signal_update') {
+        const d = ev.data;
+        if (d?.signal_num != null) {
+          this.yagiSignal = { num: d.signal_num, rssi: d.rssi ?? null, snr: d.snr ?? null };
+          if (this.tab === 'radar') this.refreshRadar();
         }
         return;
       }
@@ -2232,6 +2242,16 @@ function dashboard() {
           g.appendChild(svgElem('line', { x1: x+10, y1: y, x2: x+22, y2: y, style: rs }));
           g.appendChild(svgElem('line', { x1: x, y1: y-22, x2: x, y2: y-10, style: rs }));
           g.appendChild(svgElem('line', { x1: x, y1: y+10, x2: x, y2: y+22, style: rs }));
+          // Live signal badge below the node
+          if (this.yagiSignal.num === node.num && (this.yagiSignal.rssi != null || this.yagiSignal.snr != null)) {
+            const sig = this.yagiSignal;
+            const parts = [];
+            if (sig.rssi != null) parts.push(`${sig.rssi} dBm`);
+            if (sig.snr  != null) parts.push(`${sig.snr >= 0 ? '+' : ''}${sig.snr.toFixed(1)} dB`);
+            const sigTxt = svgElem('text', { x, y: y + 32, style: "fill:rgba(255,140,0,0.95);font-size:9px;font-weight:600;font-family:'Oxanium',monospace;text-anchor:middle;pointer-events:none;filter:url(#rimGlow)" });
+            sigTxt.textContent = parts.join(' / ');
+            g.appendChild(sigTxt);
+          }
         }
         if (isSelected)
           g.appendChild(svgElem('circle', { cx: x, cy: y, r: 8, style: `fill:none;stroke:${G4};stroke-width:1.5;stroke-dasharray:4 3` }));
