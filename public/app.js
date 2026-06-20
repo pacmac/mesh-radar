@@ -2226,14 +2226,13 @@ function dashboard() {
           }
 
           const col = snrColor(snrRaw);
-          // adjacent = exact hop; gap = relay pos unknown. Both are clearly dotted
-          // (larger gaps than the target arm's 6,4 pattern) to avoid confusion.
-          const dashArr = adjacent ? '4,6' : '2,8';
+          // Round-cap zero-length dashes = true dots. Adjacent hops tighter, gaps looser.
+          const dashArr = adjacent ? '0,6' : '0,10';
           const opacity = fade.toFixed(2);
           tg.appendChild(svgElem('line', {
             x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
             x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
-            style: `stroke:${col};stroke-width:1.5;stroke-dasharray:${dashArr};opacity:${opacity}`
+            style: `stroke:${col};stroke-width:3;stroke-linecap:round;stroke-dasharray:${dashArr};opacity:${opacity}`
           }));
 
           // SNR label at midpoint for adjacent (exact) segments
