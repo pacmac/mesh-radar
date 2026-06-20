@@ -1,6 +1,7 @@
 import http from 'http';
 import express from 'express';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
 import path from 'path';
 import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
@@ -25,6 +26,18 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const app = express();
 app.use(express.json());
+
+// Serve src/utils.js to the browser as a classic script — true SSOT.
+// ESM export keywords are stripped; named functions assigned to window.
+app.get('/utils.js', (req, res) => {
+  const src  = readFileSync(path.join(__dirname, 'utils.js'), 'utf8');
+  const body = src
+    .replace(/^\/\/.*$/gm, '')        // strip single-line comments
+    .replace(/^export\s+/gm, '');     // strip ESM export keywords
+  const names = ['haversine', 'bearing', 'signalQuality', 'numToNodeId', 'nodeIdToNum'];
+  const out = `(function(){\n${body}\nif(typeof window!=='undefined')Object.assign(window,{${names.join(',')}});\n})();`;
+  res.type('application/javascript').set('Cache-Control', 'no-cache').send(out);
+});
 
 // -- node-dash APIs ----------------------------------------------------------
 
@@ -84,6 +97,15 @@ app.post('/rotator/mode', (req, res) => {
   if (mode == null) return res.status(400).json({ error: 'mode required' });
   dashMode.set(mode);
   res.json({ mode });
+});
+
+app.post('/rotator/target', (req, res) => {
+  const num = parseInt(req.body.num, 10);
+  if (!num) return res.status(400).json({ error: 'num required' });
+  if (dashMode.value !== 1) return res.status(409).json({ error: 'not in ACTV mode' });
+  const ok = activeTracker.targetNum(num);
+  if (!ok) return res.status(404).json({ error: 'node not in radar list or no position' });
+  res.json({ targeted: num });
 });
 
 app.post('/rotator/scan/start', (req, res) => {
@@ -303,6 +325,9 @@ dashMode.on('change', ({ _mode }) => {
   if (_mode === 1) activeTracker.start();
   else             activeTracker.stop();
 });
+
+// Resume active mode if it was persisted before restart
+if (dashMode.value === 1) activeTracker.start();
 
 // -- event handlers ----------------------------------------------------------
 bridge.on('event', (ev) => {

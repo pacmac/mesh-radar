@@ -3,6 +3,7 @@ import { dashMode } from './dash-mode.js';
 import { getRotatorDeviceId, getDeviceCfg } from './device-config.js';
 import { stmts, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
 import { nodeList } from './node-list.js';
+import { bearing } from './utils.js';
 
 const YAGI_DEVICE_ID = '!fa39f7b4';
 const HOLD_MS        = 90_000;   // dwell time at each target
@@ -29,15 +30,6 @@ function getHomePos() {
   return { lat: cfg.fixed_lat, lon: cfg.fixed_lon };
 }
 
-function bearing(from, to) {
-  const lat1 = from.lat * Math.PI / 180;
-  const lat2 = to.lat  * Math.PI / 180;
-  const dlon  = (to.lon - from.lon) * Math.PI / 180;
-  const y = Math.sin(dlon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dlon);
-  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
-}
-
 // Build prioritised visit queue from current filtered radar nodes.
 // Sort: never targeted first, then least recently targeted.
 function buildSchedule() {
@@ -49,7 +41,7 @@ function buildSchedule() {
     .map(n => {
       const lat  = n.position.latitude_i  / 1e7;
       const lon  = n.position.longitude_i / 1e7;
-      const az   = bearing(home, { lat, lon });
+      const az   = bearing(home.lat, home.lon, lat, lon);
       const info = stmts.getNodeinfoByNum.get(n.num) ?? {};
       return {
         num:                n.num,
@@ -74,9 +66,19 @@ function pointAt(node) {
 
   log.info(`→ ${node.label} (${node.num}) az=${node.az.toFixed(1)}°`);
   try {
-    recordYagiTargeted(node.num);
     rotator.move(node.az);
-    rotator.emit('point_target', { point_target: node.num, az: node.az, _mode: dashMode.value });
+    recordYagiTargeted(node.num);
+    const info = stmts.getNodeinfoByNum.get(node.num) ?? {};
+    rotator.emit('point_target', {
+      point_target:       node.num,
+      az:                 node.az,
+      _mode:              dashMode.value,
+      yagi_target_count:  info.yagi_target_count  ?? 1,
+      yagi_contact_count: info.yagi_contact_count ?? 0,
+      yagi_last_contact:  info.yagi_last_contact  ?? null,
+      yagi_best_rssi:     info.yagi_best_rssi     ?? null,
+      yagi_best_snr:      info.yagi_best_snr      ?? null,
+    });
   } catch (err) {
     log.error('failed to command rotator:', err.message);
   }
@@ -121,6 +123,27 @@ export const activeTracker = {
         insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: _firedNum, rssi, snr, hops: null, seq: null, rx_device: YAGI_DEVICE_ID });
       } catch (err) { log.error('contact record failed:', err.message); }
     }
+  },
+
+  // Manually target a specific node (user click). Interrupts current dwell;
+  // resumes normal scheduling after HOLD_MS.
+  targetNum(num) {
+    const home = getHomePos();
+    if (!home) return false;
+    const node = nodeList.nodes.find(n => n.num === num);
+    if (!node) return false;
+    const lat = node.position?.latitude_i  / 1e7;
+    const lon = node.position?.longitude_i / 1e7;
+    if (lat == null || lon == null) return false;
+    if (_holdTimer) clearTimeout(_holdTimer);
+    const az    = bearing(home.lat, home.lon, lat, lon);
+    const info  = stmts.getNodeinfoByNum.get(num) ?? {};
+    const label = node.user?.short_name ?? String(num);
+    log.info(`manual → ${label} (${num}) az=${az.toFixed(1)}°`);
+    pointAt({ num, lat, lon, az, label,
+      yagi_last_targeted: info.yagi_last_targeted ?? null,
+      yagi_contact_count: info.yagi_contact_count ?? 0 });
+    return true;
   },
 
   stop() {

@@ -81,6 +81,7 @@ function dashboard() {
     yagiAz: null,
     yagiConnected: false,
     yagiPointTarget: null,
+    yagiTargetMeta:  {},
     yagiSignal: { num: null, rssi: null, snr: null, ts: null },
     _sigTick: 0,
     rotatorStatus: {},
@@ -887,6 +888,14 @@ function dashboard() {
       // az here is the bearing TO the node, not the rotator heading — never touch yagiAz.
       if ('point_target' in data) {
         this.yagiPointTarget = data.point_target;
+        this.yagiTargetMeta  = {
+          target_count:  data.yagi_target_count  ?? null,
+          contact_count: data.yagi_contact_count ?? null,
+          last_contact:  data.yagi_last_contact  ?? null,
+          best_rssi:     data.yagi_best_rssi     ?? null,
+          best_snr:      data.yagi_best_snr      ?? null,
+        };
+        this.yagiSignal = { num: null, rssi: null, snr: null, ts: null };
         if (data.az != null) this.rotatorStatus = { ...this.rotatorStatus, target: data.az };
         if (this.tab === "radar") this.drawRadar();
         return;
@@ -1689,6 +1698,11 @@ function dashboard() {
         : [...nodes].sort((a, b) => (a._az ?? 0) - (b._az ?? 0));
     },
 
+    async manualTarget(num) {
+      if (this.rotatorMode !== 1) return;
+      await fetchJSON('/rotator/target', 'POST', { num }).catch(() => {});
+    },
+
     nodeShortName(num) {
       const n = this.nodes.find(n => n.num === num);
       return n?.user?.short_name || ('!' + (num & 0xFFFF).toString(16).toUpperCase());
@@ -1857,18 +1871,20 @@ function dashboard() {
     },
 
     signalQuality(rssi, snr) {
-      const hasRssi = rssi != null, hasSnr = snr != null;
-      if (!hasRssi && !hasSnr) return { pct: 0, label: 'No signal', cls: 'text-base-content/30', badgeCls: 'badge-ghost', none: true };
-      const snrScore  = hasSnr  ? Math.max(0, Math.min(1, (snr  + 20) / 30)) : null;
-      const rssiScore = hasRssi ? Math.max(0, Math.min(1, (rssi + 120) / 70)) : null;
-      const pct = Math.round(
-        snrScore != null && rssiScore != null ? (snrScore * 0.6 + rssiScore * 0.4) * 100
-        : (snrScore ?? rssiScore) * 100
-      );
+      const pct = window.signalQuality(rssi, snr);
+      if (pct === 0 && rssi == null && snr == null) return { pct: 0, label: 'No signal', cls: 'text-base-content/30', badgeCls: 'badge-ghost', none: true };
       const label    = pct >= 76 ? 'Excellent' : pct >= 51 ? 'Good' : pct >= 26 ? 'Fair' : 'Poor';
       const cls      = pct >= 76 ? 'text-success' : pct >= 51 ? 'text-success' : pct >= 26 ? 'text-warning' : 'text-error';
       const badgeCls = pct >= 76 ? 'badge-success' : pct >= 51 ? 'badge-success' : pct >= 26 ? 'badge-warning' : 'badge-error';
       return { pct, label, cls, badgeCls, none: false };
+    },
+
+    sigQualColor(pct) {
+      if (pct >= 75) return 'oklch(0.72 0.20 145)';  // green
+      if (pct >= 50) return 'oklch(0.80 0.18 115)';  // lime
+      if (pct >= 25) return 'oklch(0.78 0.17 65)';   // amber
+      if (pct > 0)   return 'oklch(0.68 0.20 38)';   // orange
+      return 'rgba(255,255,255,0.08)';                // no signal
     },
 
     // -- Tilt radar helpers ---------------------------------------------------

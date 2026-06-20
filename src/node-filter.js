@@ -1,12 +1,13 @@
 import { getConfig } from './db.js';
 import { getRotatorDeviceId, getAllDeviceCfgs } from './device-config.js';
+import { nodeIdToNum } from './utils.js';
 
 // Returns the set of nums for all configured BLE devices.
 export function ownDeviceNums() {
   return new Set(
     Object.keys(getAllDeviceCfgs())
       .filter(id => id.startsWith('!'))
-      .map(id => parseInt(id.slice(1), 16))
+      .map(id => nodeIdToNum(id))
   );
 }
 
