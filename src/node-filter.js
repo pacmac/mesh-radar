@@ -33,7 +33,7 @@ export function passesFilter(node, { scanActive = false, ownNums = null } = {}) 
 
   if (maxAge > 0 && node.last_heard && (now - node.last_heard) > maxAge) return false;
 
-  const hops = node.hops ?? node.hops_away ?? 0;
+  const hops = node.hops_away ?? node.hops ?? 0;
   if (hops > maxHops) return false;
 
   if (namedOnly && !node.user?.long_name) return false;

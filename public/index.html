@@ -1051,10 +1051,10 @@
                             </div>
                             <!-- Hops · distance -->
                             <div class="flex flex-wrap gap-1">
-                              <span x-show="n.hops != null"
+                              <span x-show="(n.hops_away ?? n.hops) != null"
                                     class="badge badge-xs"
-                                    :class="n.hops === 0 ? 'badge-info' : 'badge-ghost'"
-                                    x-text="n.hops === 0 ? 'dir' : n.hops + ' hop'"></span>
+                                    :class="(n.hops_away ?? n.hops) === 0 ? 'badge-info' : 'badge-ghost'"
+                                    x-text="(n.hops_away ?? n.hops) === 0 ? 'dir' : (n.hops_away ?? n.hops) + ' hop'"></span>
                               <span x-show="nodeKm(n) != null"
                                     class="badge badge-xs badge-ghost"
                                     x-text="nodeKm(n)?.toFixed(1) + ' km'"></span>
