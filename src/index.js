@@ -301,7 +301,10 @@ scanner.on('end', () => {
 // -- event handlers ----------------------------------------------------------
 bridge.on('event', (ev) => {
   handleEvent(ev);
-  if (ev.type === 'node_update' || ev.type === 'node_info') nodeList.handleNodeUpdate(ev);
+  if (ev.type === 'node_update' || ev.type === 'node_info') {
+    nodeList.handleNodeUpdate(ev);
+    activeTracker.handlePacket(ev);
+  }
   if (ev.type === 'packet') {
     activeTracker.handlePacket(ev);
     scanner.handlePacket(ev);
