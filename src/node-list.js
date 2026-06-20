@@ -71,6 +71,7 @@ class NodeList extends EventEmitter {
     if (ev.device?.startsWith('!') && parseInt(ev.device.slice(1), 16) === node.num) {
       this._ownDevices.set(node.num, { ...(this._ownDevices.get(node.num) ?? {}), ...node, _device: ev.device });
       this._scheduleEmit(); // push updated device_nodes to frontend even if scan blocks this event below
+      return; // own device — never enters the regular node list
     }
 
     const rotatorId = getRotatorDeviceId();
@@ -175,8 +176,14 @@ class NodeList extends EventEmitter {
   // Bulk seed from bridge REST (call on bridge connect or scan start)
   // forceDevice: if true, device tag overwrites any existing _device (used for scan reseed)
   seed(nodes, device, forceDevice = false) {
+    const ownNums = new Set(
+      Object.keys(getAllDeviceCfgs())
+        .filter(id => id.startsWith('!'))
+        .map(id => parseInt(id.slice(1), 16))
+    );
     for (const n of nodes) {
       if (n.num == null) continue;
+      if (ownNums.has(n.num)) continue; // own device — never enters the regular node list
 
       if (this._scanActive) {
         if (this._cache.has(n.num)) {
