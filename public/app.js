@@ -2283,8 +2283,8 @@ function dashboard() {
       const bg = document.getElementById('radar-bg-g');
       if (!bg) return;
       const CX = 300, CY = 300, R = 256;
-      const G0 = "rgba(0,255,80,0.06)", G1 = "rgba(0,255,80,0.45)", G2 = "rgba(0,255,80,0.40)";
-      const G3 = "rgba(0,255,80,0.70)", G4 = "rgba(0,255,80,0.95)";
+      const G0 = "rgba(0,255,80,0.06)", G1 = "rgba(0,255,80,0.22)", G2 = "rgba(0,255,80,0.40)";
+      const G3 = "rgba(0,255,80,0.45)", G4 = "rgba(0,255,80,0.95)";
       bg.innerHTML = '';
       bg.appendChild(svgElem('circle', { cx: CX, cy: CY, r: R, style: 'fill:url(#radarBg)' }));
       const scanG = svgElem('g', { 'clip-path': 'url(#radarClip)', style: 'pointer-events:none' });
