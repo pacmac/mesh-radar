@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { getConfig, setConfig, getMqttNode, stmts } from './db.js';
 import { getRotatorDeviceId, getAllDeviceCfgs } from './device-config.js';
+import { actvState } from './actv-state.js';
 
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
@@ -303,6 +304,8 @@ class NodeList extends EventEmitter {
     const ownNums = this._ownNums();
     const filtered = Array.from(this._cache.values()).filter(n => {
       if (ownNums.has(n.num)) return false; // own BLE devices never appear in node list
+      // ACTV: always show the current active target so crosshair & overlay render
+      if (actvState.firedNum != null && n.num === actvState.firedNum) return true;
       if (maxAge > 0 && n.last_heard && (now - n.last_heard) > maxAge) return false;
 
       const hops = n.hops ?? n.hops_away ?? 0;

@@ -2,6 +2,7 @@ import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { getRotatorDeviceId, getDeviceCfg, getAllDeviceCfgs } from './device-config.js';
 import { stmts, insertRangeTestEntry } from './db.js';
+import { actvState } from './actv-state.js';
 
 const YAGI_DEVICE_ID = '!fa39f7b4';
 const DWELL_MS       = 10_000;        // node must be consistently heard for 10s before pointing
@@ -70,6 +71,7 @@ function resetStale() {
     if (_candidate) {
       log.warn(`no YAGI packets for 3min — clearing state`);
       _candidate = _firedNum = _firedAt = _lastRssi = _lastSnr = null;
+      actvState.firedNum = null;
     }
   }, STALE_MS);
 }
@@ -88,11 +90,13 @@ function fireDwell() {
   const az = bearing(home, _candidate);
   _firedNum = _candidate.num;
   _firedAt  = Date.now();
+  actvState.firedNum = _firedNum;
   log.info(`dwell fired → node ${_candidate.num} az=${az.toFixed(1)}° rssi=${_lastRssi ?? '?'} snr=${_lastSnr ?? '?'}`);
   try {
     rotator.move(az);
     rotator.emit('point_target', { point_target: _candidate.num, az, _mode: dashMode.value });
-    rotator.emit('signal_update', { signal_num: _firedNum, rssi: _lastRssi, snr: _lastSnr, ts: Date.now() });
+    // signal_update is NOT emitted here — only fires when the first real packet
+    // from the target arrives after the antenna has physically slewed to the bearing.
   } catch (err) {
     log.error('failed to command rotator:', err.message);
   }
@@ -170,6 +174,7 @@ export const activeTracker = {
     if (_dwellTimer) { clearTimeout(_dwellTimer); _dwellTimer = null; }
     if (_staleTimer) { clearTimeout(_staleTimer); _staleTimer = null; }
     _candidate = _firedNum = _firedAt = _lastRssi = _lastSnr = null;
+    actvState.firedNum = null;
     posCache.clear();
   },
 };
