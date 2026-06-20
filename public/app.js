@@ -1142,7 +1142,9 @@ function dashboard() {
           this.deviceNodes = updated;
         }
         const myNum = this.info?.my_info?.my_node_num;
-        if (myNum) this.nodeSelf = this.nodes.find(n => n.num === myNum) ?? this.nodeSelf;
+        if (myNum) this.nodeSelf = this.nodes.find(n => n.num === myNum)
+          ?? Object.values(this.deviceNodes).find(n => n.num === myNum)
+          ?? this.nodeSelf;
         this.sortNodes(this.nodeSort.key, true);
         if (this.tab === 'radar') {
           if (this.homePos) this.refreshRadar();
@@ -2089,8 +2091,10 @@ function dashboard() {
 
     _radarNorm(km, maxKm) {
       if (!km || !maxKm) return 0;
+      // Power scale (exponent 0.4): compresses far distances, opens up near ones
+      // Sits between linear (1.0) and log, giving even visual spread for typical mesh data
       const f = this.radarLogScale
-        ? Math.log1p(km) / Math.log1p(maxKm)
+        ? Math.pow(km / maxKm, 0.4)
         : km / maxKm;
       return Math.min(f, 1.0);
     },
@@ -2107,16 +2111,20 @@ function dashboard() {
       for (let yy = CY - R; yy < CY + R; yy += 4)
         scanG.appendChild(svgElem('line', { x1: CX - R, y1: yy, x2: CX + R, y2: yy, style: 'stroke:rgba(0,0,0,0.10);stroke-width:1' }));
       bg.appendChild(scanG);
+      const NICE_RING = [0.5, 1, 2, 5, 10, 20, 25, 50, 75, 100, 150, 200, 250, 500, 750, 1000, 2000];
       const ringKms = this.radarLogScale
         ? (() => {
-            const cands = [1, 2, 5, 10, 20, 50, 100, 150, 250, 500, 1000].filter(k => k < maxKm);
-            return [...cands.slice(-3), maxKm];
+            // Power scale: invert f = (km/maxKm)^0.4 → km = maxKm × f^2.5
+            // Place rings at visual fractions [0.25, 0.5, 0.75, 1.0], snap each to nearest nice km
+            return [0.25, 0.5, 0.75, 1.0].map(f => {
+              const rawKm = maxKm * Math.pow(f, 2.5);
+              return NICE_RING.find(n => n >= rawKm * 0.7) ?? Math.round(rawKm);
+            }).filter((k, i, a) => k > 0 && k <= maxKm && a.indexOf(k) === i);
           })()
         : this.radarRange === "0"
           ? (() => {
-              // Auto-range: nice round labels that match the snapped maxKm
-              const cands = [0.5, 1, 2, 5, 10, 25, 50, 100, 200, 500, 1000];
-              const inner = cands.filter(k => k < maxKm).slice(-3);
+              // Auto-range linear: pick 3 inner nice values below maxKm
+              const inner = NICE_RING.filter(k => k < maxKm).slice(-3);
               return [...inner, maxKm];
             })()
           : [1, 2, 3, 4].map(i => maxKm * i / 4);

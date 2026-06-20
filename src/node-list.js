@@ -76,9 +76,11 @@ class NodeList extends EventEmitter {
     const node = ev.data;
     if (!node?.num) return;
 
-    // Route self-reports to _ownDevices (Devices tab). _filter() excludes all own nums from output.
-    if (ev.device?.startsWith('!') && parseInt(ev.device.slice(1), 16) === node.num) {
-      this._ownDevices.set(node.num, { ...(this._ownDevices.get(node.num) ?? {}), ...node, _device: ev.device });
+    // Route all updates about own BLE devices to _ownDevices (Devices tab).
+    // This covers both self-reports and cross-device reports (e.g. YAGI reporting about OMNI).
+    // _filter() excludes own nums from the public node list regardless of how they enter.
+    if (this._ownNums().has(node.num)) {
+      this._ownDevices.set(node.num, { ...(this._ownDevices.get(node.num) ?? {}), ...node, _device: ev.device ?? null });
       this._scheduleEmit();
       return;
     }

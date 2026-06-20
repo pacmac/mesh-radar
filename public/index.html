@@ -440,7 +440,7 @@
                   <button class="btn btn-xs font-mono tracking-widest"
                           :class="radarLogScale ? 'btn-outline btn-success' : 'btn-ghost opacity-40'"
                           @click="radarLogScale = !radarLogScale; saveRadarPref('log_scale', radarLogScale); drawRadar()"
-                          x-text="radarLogScale ? 'LOG' : 'LIN'"></button>
+                          x-text="radarLogScale ? 'PWR' : 'LIN'"></button>
                 </li>
                 <li class="flex items-center justify-between gap-3">
                   <span class="font-mono opacity-60 uppercase tracking-wider">XHair</span>
