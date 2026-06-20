@@ -1,8 +1,8 @@
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
-import { getRotatorDeviceId, getDeviceCfg, getAllDeviceCfgs } from './device-config.js';
+import { getRotatorDeviceId, getDeviceCfg } from './device-config.js';
 import { stmts, insertRangeTestEntry } from './db.js';
-import { nodeList } from './node-list.js';
+import { passesFilter, ownDeviceNums } from './node-filter.js';
 
 const YAGI_DEVICE_ID = '!fa39f7b4';
 const DWELL_MS       = 10_000;        // node must be consistently heard for 10s before pointing
@@ -26,13 +26,6 @@ const log = {
   error: (...a) => console.error('[active:e]', ...a),
 };
 
-function ownNums() {
-  return new Set(
-    Object.keys(getAllDeviceCfgs())
-      .filter(id => id.startsWith('!'))
-      .map(id => parseInt(id.slice(1), 16))
-  );
-}
 
 function getHomePos() {
   const rotatorId = getRotatorDeviceId();
@@ -77,7 +70,7 @@ function resetStale() {
 
 function fireDwell() {
   if (!_candidate) return;
-  if (ownNums().has(_candidate.num)) {
+  if (ownDeviceNums().has(_candidate.num)) {
     log.warn(`dwell fired for own device ${_candidate.num} — skipping`);
     return;
   }
@@ -138,15 +131,13 @@ export const activeTracker = {
       const d   = ev.data;
       const pos = d?.position;
       if (d?.num == null || pos?.latitude_i == null || pos?.longitude_i == null) return;
-      if (ownNums().has(d.num)) {
-        log.debug(`node_update num=${d.num} is own device — skipping`);
-        return;
-      }
       const lat = pos.latitude_i / 1e7;
       const lon = pos.longitude_i / 1e7;
       posCache.set(d.num, { lat, lon });
-      if (!nodeList.nodes.find(n => n.num === d.num)) {
-        log.debug(`node_update num=${d.num} not in filtered radar — skipping`);
+      // Build a minimal node object so passesFilter can evaluate all criteria
+      const nodeObj = { num: d.num, ...d, position: pos };
+      if (!passesFilter(nodeObj)) {
+        log.debug(`node_update num=${d.num} fails filter — skipping`);
         return;
       }
       log.debug(`node_update num=${d.num} lat=${lat.toFixed(5)} lon=${lon.toFixed(5)}`);
@@ -157,12 +148,17 @@ export const activeTracker = {
     if (ev.type === 'packet') {
       const pkt = ev.data?.packet;
       if (!pkt?.from) return;
-      if (ownNums().has(pkt.from)) {
-        log.debug(`packet from own device ${pkt.from} — skipping`);
-        return;
-      }
-      if (!nodeList.nodes.find(n => n.num === pkt.from)) {
-        log.debug(`packet from ${pkt.from} not in filtered radar — skipping`);
+      // Build a minimal node object from whatever we know about this node
+      // so passesFilter can evaluate all criteria including own-device exclusion
+      const nodeObj = {
+        num:       pkt.from,
+        hops:      pkt.hop_start != null ? Math.max(0, pkt.hop_start - (pkt.hop_limit ?? 0)) : undefined,
+        via_mqtt:  pkt.via_mqtt ?? false,
+        _device:   ev.device ?? null,
+        _devices:  ev.device ? [ev.device] : [],
+      };
+      if (!passesFilter(nodeObj)) {
+        log.debug(`packet from ${pkt.from} fails filter — skipping`);
         return;
       }
       const pos = lookupPos(pkt.from);

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
-import { getConfig, setConfig, getMqttNode, stmts } from './db.js';
+import { setConfig, getMqttNode, stmts } from './db.js';
 import { getRotatorDeviceId, getAllDeviceCfgs } from './device-config.js';
+import { passesFilter, ownDeviceNums } from './node-filter.js';
 
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
@@ -61,15 +62,7 @@ class NodeList extends EventEmitter {
     this._emitTimer  = null;
   }
 
-  // Returns the set of node nums for all configured BLE devices.
-  // Called on every update so it always reflects current device-config state.
-  _ownNums() {
-    return new Set(
-      Object.keys(getAllDeviceCfgs())
-        .filter(id => id.startsWith('!'))
-        .map(id => parseInt(id.slice(1), 16))
-    );
-  }
+  _ownNums() { return ownDeviceNums(); }
 
   // Called for each bridge node_update (and node_info) event
   handleNodeUpdate(ev) {
@@ -285,61 +278,9 @@ class NodeList extends EventEmitter {
   }
 
   _filter() {
-    const now       = Math.floor(Date.now() / 1000);
-    const maxAge    = getConfig('node_filters.max_age',     0);
-    const maxHops   = getConfig('node_filters.max_hops',    99);
-    const namedOnly = getConfig('node_filters.named_only',  false);
-    const hasPos    = getConfig('node_filters.has_pos',     false);
-    const hideMqtt  = getConfig('node_filters.hide_mqtt',   false);
-    const hasSignal = getConfig('node_filters.has_signal',  false);
-    const hasTelem  = getConfig('node_filters.has_telem',   false);
-    const msgOnly   = getConfig('node_filters.msg_only',    false);
-    const roles     = getConfig('node_filters.roles',       []);
-    // During scan, force YAGI-only regardless of saved nodeSource setting
-    const source    = this._scanActive ? 'yagi'
-                    : getConfig('node_filters.node_source', 'both');
-    const rotatorId = getRotatorDeviceId();
-
-    const ownNums = this._ownNums();
-    const filtered = Array.from(this._cache.values()).filter(n => {
-      if (ownNums.has(n.num)) return false; // own BLE devices never appear in node list
-      if (maxAge > 0 && n.last_heard && (now - n.last_heard) > maxAge) return false;
-
-      const hops = n.hops ?? n.hops_away ?? 0;
-      if (hops > maxHops) return false;
-
-      if (namedOnly && !n.user?.long_name) return false;
-
-      if (hasPos && !n.position?.latitude_i) return false;
-
-      if (hideMqtt && n.via_mqtt) return false;
-
-      if (hasSignal && n.snr == null && n.rssi == null) return false;
-
-      if (hasTelem && !n.device_metrics) return false;
-
-      if (msgOnly && n.user?.is_unmessagable) return false;
-
-      // only filter by role when the node actually has a role field
-      if (roles.length > 0 && n.role != null && !roles.includes(n.role)) return false;
-
-      if (rotatorId && source !== 'both') {
-        const devs = n._devices ?? (n._device ? [n._device] : []);
-        if (source === 'yagi') {
-          if (!devs.includes(rotatorId)) return false;
-        } else if (source === 'omni') {
-          // Exclude nodes heard ONLY by the rotator/yagi, never by OMNI
-          if (devs.length > 0 && devs.every(d => d === rotatorId)) return false;
-        }
-      }
-
-      // During scan: only confirmed scan contacts (have _scanAz or _scanSnr).
-      // This is the single source of truth — table, radar, and overlay card
-      // all derive from this same filtered list.
-      if (this._scanActive && n._scanAz == null && n._scanSnr == null) return false;
-
-      return true;
-    });
+    const ownNums = ownDeviceNums();
+    const filtered = Array.from(this._cache.values())
+      .filter(n => passesFilter(n, { scanActive: this._scanActive, ownNums }));
 
     const hp = this.homePos;
     if (!hp) return filtered;
