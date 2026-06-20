@@ -10,7 +10,7 @@ import { queryMessages } from './filters.js';
 import { getConfig, setConfig, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
-import { handlePacketForRotator } from './rotator-logic.js';
+import { activeTracker } from './active-tracker.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
 import { attachWsRelay } from './ws-relay.js';
@@ -303,7 +303,7 @@ bridge.on('event', (ev) => {
   handleEvent(ev);
   if (ev.type === 'node_update' || ev.type === 'node_info') nodeList.handleNodeUpdate(ev);
   if (ev.type === 'packet') {
-    handlePacketForRotator(ev);
+    activeTracker.handlePacket(ev);
     scanner.handlePacket(ev);
     const pkt = ev.data?.packet;
     if (pkt?.from) nodeList.touchLastHeard(pkt.from, pkt.rx_time, ev.device ?? null);
