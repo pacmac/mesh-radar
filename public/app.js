@@ -1178,6 +1178,23 @@ function dashboard() {
         return;
       }
 
+      // Device-agnostic handlers — must run before the per-device filter below.
+      if (ev.type === "packet") {
+        const pkt = ev.data?.packet;
+        if (pkt?.decoded?.portnum === "TRACEROUTE_APP" && pkt?.decoded?.route_discovery) {
+          const rd = pkt.decoded.route_discovery;
+          this.traceroutePending = false;
+          this.tracerouteResult = {
+            num:         pkt.from,
+            route:       rd.route       ?? [],
+            route_back:  rd.route_back  ?? [],
+            snr_towards: rd.snr_towards ?? [],
+            snr_back:    rd.snr_back    ?? [],
+            ts: Date.now(),
+          };
+        }
+      }
+
       if (ev.device && this.activeNodeId && ev.device !== this.activeNodeId) return;
       const time = new Date().toLocaleTimeString();
       const summary = summarizeEvent(ev);
@@ -1265,18 +1282,6 @@ function dashboard() {
         }
         if (this.tab === "nodes" && portnum === "TELEMETRY_APP") this.sortNodes(this.nodeSort.key, true);
         if (portnum === "RANGE_TEST_APP" && this.tab === "range") this.loadRangeTest();
-        if (portnum === "TRACEROUTE_APP" && pkt?.decoded?.route_discovery) {
-          const rd = pkt.decoded.route_discovery;
-          this.traceroutePending = false;
-          this.tracerouteResult = {
-            num:         pkt.from,
-            route:       rd.route       ?? [],
-            route_back:  rd.route_back  ?? [],
-            snr_towards: rd.snr_towards ?? [],
-            snr_back:    rd.snr_back    ?? [],
-            ts: Date.now(),
-          };
-        }
       }
       if (ev.type === "mqtt_node" && ev.data && !this.scanMode) {
         const upd = ev.data;

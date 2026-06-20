@@ -256,12 +256,14 @@ app.post('/range_test/stop', async (req, res) => {
   res.json({ stopped: true });
 });
 
-// Traceroute — extract num from nodeId path param, call bridge /traceroute
+// Traceroute — send from primary device to target node num in URL
 app.post('/:nodeId/traceroute', async (req, res) => {
-  const num = parseInt((req.params.nodeId || '').replace('!', ''), 16);
-  if (!num) return res.status(400).json({ error: 'invalid nodeId' });
+  const targetNum = parseInt((req.params.nodeId || '').replace('!', ''), 16);
+  if (!targetNum) return res.status(400).json({ error: 'invalid nodeId' });
+  const sender = getPrimaryDeviceId();
+  if (!sender) return res.status(503).json({ error: 'no primary device configured' });
   try {
-    const result = await bridge.post('/traceroute', { to: num });
+    const result = await bridge.post(`/${sender}/traceroute`, { to: targetNum });
     res.json(result);
   } catch (err) {
     res.status(502).json({ error: err.message });
