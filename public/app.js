@@ -2460,7 +2460,7 @@ function dashboard() {
         const elbowX = x + diagSign * diagLen, elbowY = y - diagLen;
         const capX = elbowX + diagSign * HOR_LEN;
         g.appendChild(svgElem('line', { x1: x + diagSign * 3, y1: y - 2, x2: elbowX, y2: elbowY, style: `stroke:${LABEL};stroke-width:1;pointer-events:none;filter:url(#rimGlow)` }));
-        g.appendChild(svgElem('line', { x1: elbowX, y1: elbowY, x2: capX, y2: elbowY, style: `stroke:${LABEL};stroke-width:1;pointer-events:none;filter:url(#rimGlow)` }));
+        g.appendChild(svgElem('line', { x1: elbowX, y1: elbowY + 0.5, x2: capX, y2: elbowY + 0.5, style: `stroke:${LABEL};stroke-width:1.5;pointer-events:none;filter:url(#rimGlow)` }));
         const txt = svgElem('text', { class: 'radar-node-label', x: capX + diagSign * 3, y: elbowY + 4, style: `fill:${LABEL};font-size:10px;font-weight:400;font-family:'Oxanium',monospace;pointer-events:none;text-anchor:${isRight ? 'start' : 'end'};filter:url(#rimGlow)` });
         txt.textContent = label;
         g.appendChild(txt);
