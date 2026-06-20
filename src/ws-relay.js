@@ -6,6 +6,26 @@ import { nodeList } from './node-list.js';
 import { insertTilt } from './db.js';
 import { dashMode } from './dash-mode.js';
 
+// Returns a wrapper that throttles rotator status pushes:
+//   - state change (busy/stall/dir flip) → immediate
+//   - busy=true  → at most every 100ms  (10 Hz)
+//   - busy=false → at most every 1000ms ( 1 Hz heartbeat)
+function makeRotatorThrottle(sendFn) {
+  let lastMs    = 0;
+  let lastBusy  = undefined;
+  let lastStall = undefined;
+  let lastDir   = undefined;
+  return (data) => {
+    const now          = Date.now();
+    const stateChanged = data.busy !== lastBusy || data.stall !== lastStall || data.dir !== lastDir;
+    const interval     = data.busy ? 100 : 1000;
+    if (stateChanged || now - lastMs >= interval) {
+      lastMs = now; lastBusy = data.busy; lastStall = data.stall; lastDir = data.dir;
+      sendFn(data);
+    }
+  };
+}
+
 export function attachWsRelay(server) {
   // Both WSSes use noServer so they never compete on the upgrade event.
   // All routing is done manually in the server 'upgrade' handler below.
@@ -36,9 +56,9 @@ export function attachWsRelay(server) {
     }
     broadcast(ev);
   });
-  rotator.on('status', (data) => broadcast({ type: 'rotator', data }));
+  rotator.on('status', makeRotatorThrottle((data) => broadcast({ type: 'rotator', data })));
   rotator.on('point_target', (data) => broadcast({ type: 'rotator', data }));
-  dashMode.on('change', (data) => broadcast({ type: 'rotator', data }));
+  dashMode.on('change',      (data) => broadcast({ type: 'rotator', data }));
 
   scanner.on('start',    (data) => broadcast({ type: 'scan_start',    data }));
   scanner.on('progress', (data) => broadcast({ type: 'scan_progress', data }));
@@ -88,9 +108,9 @@ export function attachWsRelay(server) {
       if (!ev.device || ev.device === nodeId || ev.type?.startsWith('ota_')) ws.send(JSON.stringify(ev));
     }
 
-    function onRotator(data) {
+    const onRotator = makeRotatorThrottle((data) => {
       if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
-    }
+    });
 
     function onDashMode(data) {
       if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
