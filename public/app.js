@@ -142,9 +142,7 @@ function dashboard() {
 
     get targetNode() {
       if (!this.yagiPointTarget) return null;
-      return this.radarNodes.find(n => n.num === this.yagiPointTarget)
-          || this.filteredNodes().find(n => n.num === this.yagiPointTarget)
-          || null;
+      return this.nodes.find(n => n.num === this.yagiPointTarget) || null;
     },
     lastHeardNum: null,
 
@@ -929,7 +927,7 @@ function dashboard() {
         this.rotatorStatus    = d;
         if (d.az != null) this.yagiAz = d.az;
         const pt = d.point_target ?? null;
-        this.yagiPointTarget = pt && this.filteredNodes().some(n => n.num === pt) ? pt : null;
+        this.yagiPointTarget = pt ?? null;
         this.rotatorMode  = d.dash_mode ?? 0;
         if (d.scan_active) {
           this.scanMode     = true;
@@ -1669,7 +1667,7 @@ function dashboard() {
     },
 
     radarNodeList() {
-      const nodes = this.radarNodes.filter(n => n._plotAz != null);
+      const nodes = this.radarNodes.filter(n => n._az != null);
       return this.scanMode
         ? [...nodes].sort((a, b) => (b._scanSnr ?? -999) - (a._scanSnr ?? -999))
         : [...nodes].sort((a, b) => (a._az ?? 0) - (b._az ?? 0));
@@ -1703,7 +1701,6 @@ function dashboard() {
     async pointAtNode(node) {
       if (node._az == null) return;
       await fetchJSON("/rotator/move", "POST", { az: node._az });
-      this.yagiPointTarget = node.num;
       if (this.tab === "radar") this.drawRadar();
     },
 
@@ -2052,29 +2049,14 @@ function dashboard() {
     },
 
     refreshRadar() {
-      if (!this.homePos) return;
-      this.radarNodes = this.filteredNodes()
-        .map((n) => {
-          const existing = this.radarNodes.find((r) => r.num === n.num);
-          return {
-            ...n,
-            _lat: n.position?.latitude_i != null ? n.position.latitude_i / 1e7 : null,
-            _lon: n.position?.longitude_i != null ? n.position.longitude_i / 1e7 : null,
-            _address: existing?._address,
-            _plotAz: n._az ?? n._scanAz,          // GPS az preferred, scan az fallback
-            _plotKm: n._km ?? null,               // null = unknown distance → outer ring
-          };
-        });
-      // Clear point target if it is not in the filtered node set (e.g. a bridge node)
-      if (this.yagiPointTarget && !this.filteredNodes().some(n => n.num === this.yagiPointTarget))
-        this.yagiPointTarget = null;
+      this.radarNodes = this.nodes;
       this.drawRadar();
     },
 
     drawRadar() {
       if (!this.homePos) return;
       const maxKm = this.radarRange === "0"
-        ? (this.radarNodes.length ? Math.max(...this.radarNodes.map((n) => n._plotKm ?? 0)) * 1.15 : 50)
+        ? (this.radarNodes.length ? Math.max(...this.radarNodes.map((n) => n._km ?? 0)) * 1.15 : 50)
         : Number(this.radarRange);
       this._drawRadarBg(maxKm);
       this._drawTargetArm();
@@ -2185,9 +2167,9 @@ function dashboard() {
       const pointTarget = this.yagiPointTarget;
 
       const npos = nodes.map(node => {
-        if (node._plotAz == null) return null;
-        const az = node._plotAz * Math.PI / 180;
-        const normKm = node._plotKm != null ? this._radarNorm(node._plotKm, maxKm) : 0.92;
+        if (node._az == null) return null;
+        const az = node._az * Math.PI / 180;
+        const normKm = node._km != null ? this._radarNorm(node._km, maxKm) : 0.92;
         return { x: CX + Math.sin(az) * normKm * R, y: CY - Math.cos(az) * normKm * R, diagLen: BASE_DIAG, isRight: null };
       });
       const clusterOf = new Array(npos.length).fill(-1);
