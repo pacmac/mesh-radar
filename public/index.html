@@ -317,9 +317,7 @@
                   <!-- history trace -->
                   <polyline :points="tiltPolylinePoints()" fill="none" stroke="rgba(0,255,80,0.20)" stroke-width="1"/>
                   <!-- recent fade dots -->
-                  <template x-for="dot in tiltRecentDots()">
-                    <circle :cx="dot.x" :cy="dot.y" r="2" fill="rgba(0,255,80,1)" :fill-opacity="dot.opacity * 0.55"/>
-                  </template>
+                  <g x-html="tiltDotsSvg('rgba(0,255,80,1)', 0.55)"></g>
                   <!-- peak ring (amber) -->
                   <circle x-show="tiltPeak > 0.05" cx="150" cy="150"
                           :r="tiltLogPx(tiltPeak)" fill="none"
@@ -677,17 +675,11 @@
                         padding:0.5rem;
                         pointer-events:none">
               <svg viewBox="0 0 300 300" style="width:130px;height:130px;display:block">
-                <template x-for="(deg,i) in tiltRings">
-                  <circle cx="150" cy="150" :r="tiltLogPx(deg)" fill="none"
-                          :stroke="i===0 ? 'rgba(0,255,80,0.65)' : i===tiltRings.length-1 ? 'rgba(0,255,80,0.55)' : 'rgba(0,255,80,0.42)'"
-                          :stroke-width="i===0 || i===tiltRings.length-1 ? 1.5 : 1"/>
-                </template>
+                <g x-html="tiltRingsSvg()"></g>
                 <line x1="150" y1="20" x2="150" y2="280" stroke="rgba(0,255,80,0.06)" stroke-width="1"/>
                 <line x1="20" y1="150" x2="280" y2="150" stroke="rgba(0,255,80,0.06)" stroke-width="1"/>
                 <polyline :points="tiltPolylinePoints()" fill="none" stroke="rgba(0,255,80,0.25)" stroke-width="1"/>
-                <template x-for="dot in tiltRecentDots()">
-                  <circle :cx="dot.x" :cy="dot.y" r="2" fill="#4ade80" :fill-opacity="dot.opacity * 0.6"/>
-                </template>
+                <g x-html="tiltDotsSvg('#4ade80', 0.6)"></g>
                 <circle x-show="tiltPeak > tiltRings[0] * 0.3" cx="150" cy="150"
                         :r="tiltLogPx(tiltPeak)" fill="none" stroke="rgba(245,158,11,0.35)"
                         stroke-width="1" stroke-dasharray="3,3"/>

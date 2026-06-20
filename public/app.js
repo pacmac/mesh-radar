@@ -1994,6 +1994,22 @@ function dashboard() {
       });
     },
 
+    tiltRingsSvg(cx = 150, cy = 150, maxPx = 130) {
+      return this.tiltRings.map((deg, i) => {
+        const r = this.tiltLogPx(deg, maxPx);
+        const last = i === this.tiltRings.length - 1;
+        const stroke = i === 0 ? 'rgba(0,255,80,0.65)' : last ? 'rgba(0,255,80,0.55)' : 'rgba(0,255,80,0.42)';
+        const sw = (i === 0 || last) ? 1.5 : 1;
+        return `<circle cx="${cx}" cy="${cy}" r="${r.toFixed(2)}" fill="none" stroke="${stroke}" stroke-width="${sw}"/>`;
+      }).join('');
+    },
+
+    tiltDotsSvg(fill = 'rgba(0,255,80,1)', opacityScale = 0.55, cx = 150, cy = 150, maxPx = 130) {
+      return this.tiltRecentDots(cx, cy, maxPx).map(d =>
+        `<circle cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}" r="2" fill="${fill}" fill-opacity="${(d.opacity * opacityScale).toFixed(2)}"/>`
+      ).join('');
+    },
+
     // Returns SVG path data for compass bearing ticks (no template x-for needed in SVG)
     tiltTicksMinorPath(maxPx = 130) {
       const cx = 150, cy = 150;
