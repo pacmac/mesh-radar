@@ -148,22 +148,29 @@ export const activeTracker = {
     if (ev.type === 'packet') {
       const pkt = ev.data?.packet;
       if (!pkt?.from) return;
-      // Build a minimal node object from whatever we know about this node
-      // so passesFilter can evaluate all criteria including own-device exclusion
-      const nodeObj = {
-        num:       pkt.from,
-        hops:      pkt.hop_start != null ? Math.max(0, pkt.hop_start - (pkt.hop_limit ?? 0)) : undefined,
-        via_mqtt:  pkt.via_mqtt ?? false,
-        _device:   ev.device ?? null,
-        _devices:  ev.device ? [ev.device] : [],
-      };
-      if (!passesFilter(nodeObj)) {
-        log.debug(`packet from ${pkt.from} fails filter — skipping`);
-        return;
+
+      // Always accept packets from the node we're currently pointed at — filter
+      // is for candidate selection only, not for reading signal from the target.
+      const isTarget = _firedNum != null && pkt.from === _firedNum;
+
+      if (!isTarget) {
+        // Build a minimal node object so passesFilter can evaluate all criteria
+        const nodeObj = {
+          num:       pkt.from,
+          hops:      pkt.hop_start != null ? Math.max(0, pkt.hop_start - (pkt.hop_limit ?? 0)) : undefined,
+          via_mqtt:  pkt.via_mqtt ?? false,
+          _device:   ev.device ?? null,
+          _devices:  ev.device ? [ev.device] : [],
+        };
+        if (!passesFilter(nodeObj)) {
+          log.debug(`packet from ${pkt.from} fails filter — skipping`);
+          return;
+        }
       }
+
       const pos = lookupPos(pkt.from);
       if (!pos) {
-        log.warn(`no pos for node ${pkt.from} portnum=${pkt.decoded?.portnum ?? 'none'}`);
+        if (!isTarget) log.warn(`no pos for node ${pkt.from} portnum=${pkt.decoded?.portnum ?? 'none'}`);
         return;
       }
       log.debug(`packet from=${pkt.from} rssi=${pkt.rx_rssi ?? 'n/a'} snr=${pkt.rx_snr ?? 'n/a'}`);
