@@ -58,7 +58,7 @@ function dashboard() {
     unreadMessages: 0,
     _seenPacketIds: new Set(),
     availableDevices: [],
-    deviceBleStates: {},    // nodeId → { ble_state, config_complete, config_saving, ble_connected, ... }
+    deviceBleStates: {},    // nodeId → { ble_state, config_complete, ble_connected, ... }
     _readbackQueues: {},    // nodeId → [fn, fn, ...] — DEPRECATED, kept for safety
     toasts: [],             // { id, message, type: 'success'|'error' }
     ops: {},                // { key: { loading, ok, err } } — asyncOp state per button key
@@ -245,10 +245,12 @@ function dashboard() {
       return this.availableDevices.find(d => d.node_id === nodeId)?.ble_state || 'idle';
     },
     devIsReady(nodeId) { return this.devBleState(nodeId) === 'ready'; },
-    devIsSaving(nodeId) { return !!this.deviceBleStates[nodeId]?.config_saving; },
+    devIsSaving(nodeId) {
+      return Object.keys(this.ops).some(k => k.endsWith('_' + nodeId) && this.ops[k]?.loading);
+    },
     devBleLabel(nodeId) {
       const s = this.deviceBleStates[nodeId] || {};
-      if (s.config_saving) return 'Saving config…';
+      if (this.devIsSaving(nodeId)) return 'Saving config…';
       return { connecting: 'Connecting…', syncing: 'Syncing…', reconnecting: 'Reconnecting…', error: 'Error', idle: '' }[s.ble_state] || '';
     },
 
@@ -1183,12 +1185,7 @@ function dashboard() {
       const patch = { ...existing };
       for (const f of fields) if (ev[f] !== undefined) patch[f] = ev[f];
 
-      if (t === "config_save_start") {
-        patch.config_saving = true;
-      } else if (t === "config_save_end") {
-        patch.config_saving = false;
-      } else if (t === "ready") {
-        patch.config_saving = false;
+      if (t === "ready") {
         this.serverReachable = true;
         if (ev.mqtt_proxy != null) this.mqttProxy = !!ev.mqtt_proxy;
         const isPrimary = device === (this.primaryDeviceId || this.activeNodeId);
@@ -1201,7 +1198,6 @@ function dashboard() {
       } else if (t === "mqtt_proxy_down") {
         this.mqttProxy = false;
       } else if (t === "error") {
-        patch.config_saving = false;
         this.serverReachable = true;
       } else {
         // connecting | syncing | reconnecting | idle | sync_progress
@@ -1250,8 +1246,7 @@ function dashboard() {
 
       // State-machine events from bridge — applied per device, all devices
       if (["snapshot", "ready", "connecting", "syncing", "sync_progress",
-           "reconnecting", "error", "idle", "mqtt_proxy_up", "mqtt_proxy_down",
-           "config_save_start"].includes(ev.type)) {
+           "reconnecting", "error", "idle", "mqtt_proxy_up", "mqtt_proxy_down"].includes(ev.type)) {
         this._applyStateEvent(ev);
         return;
       }
