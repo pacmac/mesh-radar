@@ -1702,8 +1702,9 @@ function dashboard() {
       const target = m.direction === 'tx' ? m.to : m.fromNum;
       this.msgInsertNode = target;
       if (target && (target >>> 0) !== 0xFFFFFFFF) {
-        this.msgDirectTo = target;
-        this.msgIsDirect = !m.broadcast;
+        const inList = this.filteredNodes().some(n => n.num === target);
+        this.msgDirectTo = inList ? target : '';
+        this.msgIsDirect = inList && !m.broadcast;
       }
       this.msgReplyId = m.pktId || null;
       this.msgReplyFrom = m.fromNum || null;
