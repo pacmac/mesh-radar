@@ -1401,10 +1401,11 @@ function dashboard() {
               }
               const text = b64ToUtf8(pkt.decoded.payload);
 
-              // Absorb echo of a locally sent TX message: update its pktId so threading works
+              // Absorb echo of our own TX: radio echoed the packet back, confirming RF queued
               const localTx = this.messages.find(m => m._localTx && m.fromNum === (pkt.from ?? 0) && m.text === text);
               if (localTx) {
                 localTx.pktId = pktId;
+                localTx.ackStatus = 'confirmed';
                 delete localTx._localTx;
               } else {
                 const toNum = pkt.to >>> 0;
@@ -1700,14 +1701,16 @@ function dashboard() {
       if (this.msgIsModal) this.closeMessageModal();
 
       try {
-        await fetchJSON("/" + fromId + "/messages", "POST", body);
+        const res = await fetchJSON("/" + fromId + "/messages", "POST", body);
+        if (res?.error) throw new Error(res.error?.message || String(res.error));
+        if (res?.detail) throw new Error(res.detail);
+        // BLE write queued — radio echo (when it arrives via WS) upgrades to 'confirmed'
         txEntry.ackStatus = 'sent';
         this.msgSent = true;
         setTimeout(() => (this.msgSent = false), 2000);
       } catch (e) {
-        // Remove the optimistic entry so the user can retry
-        const idx = this.messages.indexOf(txEntry);
-        if (idx !== -1) this.messages.splice(idx, 1);
+        txEntry.ackStatus = 'failed';
+        txEntry._sendError = e.message;
       }
     },
 
@@ -2475,16 +2478,6 @@ function dashboard() {
     // -------------------------------------------------------------------------
 
     // Compact 3-bar icon for radar overlay — radar green palette, no CSS class dependency
-    sig3(rssi, snr) {
-      const sq = this.signalQuality(rssi, snr);
-      if (sq.none) return '<span style="display:inline-flex;align-items:flex-end;gap:2px;opacity:0.25"><i style="display:block;width:3px;height:4px;border-radius:1px;background:rgba(0,255,80,1)"></i><i style="display:block;width:3px;height:7px;border-radius:1px;background:rgba(0,255,80,1)"></i><i style="display:block;width:3px;height:10px;border-radius:1px;background:rgba(0,255,80,1)"></i></span>';
-      const col = sq.pct >= 51 ? 'rgba(0,255,80,1)' : sq.pct >= 26 ? 'rgba(255,200,40,1)' : 'rgba(255,80,60,1)';
-      const lit  = sq.pct >= 76 ? 3 : sq.pct >= 26 ? 2 : 1;
-      const tip  = `${sq.label} (${sq.pct}%) · ${rssi != null ? rssi + ' dBm' : '–'} / ${snr != null ? snr + ' dB' : '–'}`;
-      const bar  = (h, on) => `<i style="display:block;width:3px;height:${h}px;border-radius:1px;background:${col};opacity:${on ? 0.9 : 0.15}"></i>`;
-      return `<span style="display:inline-flex;align-items:flex-end;gap:2px" title="${tip}">${bar(4,lit>=1)}${bar(7,lit>=2)}${bar(10,lit>=3)}</span>`;
-    },
-
     sigBars(rssi, snr, scale = 1) {
       const sq = this.signalQuality(rssi, snr);
       if (sq.none) return '';
@@ -2493,14 +2486,6 @@ function dashboard() {
       ).join('');
       const tip = `${sq.label} (${sq.pct}%) · ${rssi != null ? rssi + ' dBm' : '–'} / ${snr != null ? snr + ' dB' : '–'}`;
       return `<span class="sig-bars ${sq.cls}" title="${tip}">${parts}</span>`;
-    },
-
-    sigBadge(rssi, snr) {
-      const sq = this.signalQuality(rssi, snr);
-      if (sq.none) return '<span class="badge badge-xs badge-ghost">no RF</span>';
-      const b = (h, on) => `<i style="display:block;width:2px;border-radius:1px;background:currentColor;height:${h}px;opacity:${on?0.85:0.2}"></i>`;
-      const tip = `${sq.label} (${sq.pct}%) · ${rssi != null ? rssi + ' dBm' : '–'} / ${snr != null ? snr + ' dB' : '–'}`;
-      return `<span class="badge badge-xs ${sq.badgeCls} inline-flex items-end gap-px px-1" title="${tip}">${b(4,sq.pct>0)}${b(6,sq.pct>25)}${b(8,sq.pct>50)}${b(10,sq.pct>75)}</span>`;
     },
 
     // -- Radar ----------------------------------------------------------------

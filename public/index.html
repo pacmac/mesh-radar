@@ -748,7 +748,7 @@
                     <span style="font-family:monospace;font-size:10px;color:rgba(0,255,80,0.28);flex:1"
                           x-text="n.last_heard ? new Date(n.last_heard*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''"></span>
                   </template>
-                  <span x-html="n.num===yagiPointTarget && yagiSignal.num===n.num ? sig3(yagiSignal.rssi,yagiSignal.snr) : sig3(n._scanRssi??n.rssi,n._scanSnr??n.snr)" style="flex-shrink:0"></span>
+                  <span x-html="n.num===yagiPointTarget && yagiSignal.num===n.num ? sigBars(yagiSignal.rssi,yagiSignal.snr) : sigBars(n._scanRssi??n.rssi,n._scanSnr??n.snr)" style="flex-shrink:0"></span>
                 </div>
               </template>
             </div>
@@ -1877,17 +1877,17 @@
                         <span class="badge badge-xs" :class="m.broadcast ? 'badge-ghost' : 'badge-info'" x-text="m.broadcast ? 'BC' : 'DM'"></span>
                         <span x-show="m.hops != null" class="badge badge-xs badge-ghost font-mono"
                               x-text="m.hops === 0 ? 'direct' : m.hops + (m.hops === 1 ? ' hop' : ' hops')"></span>
-                        <template x-if="m.rssi != null || m.snr != null">
-                          <span class="badge badge-xs"
-                                :class="signalQuality(m.rssi, m.snr).badgeCls"
-                                :title="'RSSI ' + (m.rssi != null ? m.rssi + ' dBm' : 'n/a') + ' · SNR ' + (m.snr != null ? m.snr.toFixed(1) + ' dB' : 'n/a')"
-                                x-text="signalQuality(m.rssi, m.snr).label"></span>
-                        </template>
+                        <span x-show="m.rssi != null || m.snr != null" x-html="sigBars(m.rssi, m.snr)"></span>
                         <template x-for="d in (Array.isArray(m.src) ? m.src : (m.src ? [m.src] : []))" :key="d">
                           <span class="badge badge-xs badge-outline font-mono opacity-60" :title="d" x-text="deviceLabel(d)"></span>
                         </template>
                         <span class="ml-auto text-base-content/50 shrink-0" x-text="m.time"></span>
-                        <span x-show="m.direction==='tx'" class="text-success shrink-0" title="Sent">✓</span>
+                        <template x-if="m.direction==='tx'">
+                          <span class="shrink-0"
+                                :class="m.ackStatus==='confirmed' ? 'text-success' : m.ackStatus==='sent' ? 'text-base-content/40' : m.ackStatus==='failed' ? 'text-error' : 'text-base-content/30'"
+                                :title="m.ackStatus==='confirmed' ? 'Confirmed by radio' : m.ackStatus==='sent' ? 'Queued (awaiting radio echo)' : m.ackStatus==='failed' ? ('Send failed: ' + (m._sendError||'unknown error')) : 'Sending…'"
+                                x-text="m.ackStatus==='confirmed' ? '✓✓' : m.ackStatus==='sent' ? '✓' : m.ackStatus==='failed' ? '✕' : '…'"></span>
+                        </template>
                       </div>
                       <div class="text-sm text-base-content mt-0.5 break-words" x-text="m.text"></div>
                     </div>
