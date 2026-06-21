@@ -2318,6 +2318,19 @@
       </div>
 
     </aside>
+
+    <!-- Toast notifications — must be inside x-data scope -->
+    <div class="toast toast-top toast-end z-[9999] pointer-events-none" style="top:4rem">
+      <template x-for="t in toasts" :key="t.id">
+        <div class="alert shadow-lg text-sm py-2 px-3 pointer-events-auto flex items-start gap-2 max-w-xs"
+             :class="t.type === 'error' ? 'alert-error' : 'alert-success'"
+             x-transition>
+          <span class="flex-1" x-text="t.message"></span>
+          <button @click="dismissToast(t.id)" class="btn btn-xs btn-ghost shrink-0 opacity-70 hover:opacity-100 -mr-1">✕</button>
+        </div>
+      </template>
+    </div>
+
   </div>
 </div>
 
@@ -2330,18 +2343,6 @@
     });
   });
 </script>
-
-<!-- Toast notifications -->
-<div class="toast toast-top toast-end z-[9999] pointer-events-none" style="top:4rem">
-  <template x-for="t in toasts" :key="t.id">
-    <div class="alert shadow-lg text-sm py-2 px-3 pointer-events-auto flex items-start gap-2 max-w-xs"
-         :class="t.type === 'error' ? 'alert-error' : 'alert-success'"
-         x-transition>
-      <span class="flex-1" x-text="t.message"></span>
-      <button @click="dismissToast(t.id)" class="btn btn-xs btn-ghost shrink-0 opacity-70 hover:opacity-100 -mr-1">✕</button>
-    </div>
-  </template>
-</div>
 
 </body>
 </html>
