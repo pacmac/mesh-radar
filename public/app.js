@@ -1185,6 +1185,8 @@ function dashboard() {
 
       if (t === "config_save_start") {
         patch.config_saving = true;
+      } else if (t === "config_save_end") {
+        patch.config_saving = false;
       } else if (t === "ready") {
         patch.config_saving = false;
         this.serverReachable = true;
