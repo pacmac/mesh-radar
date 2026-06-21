@@ -380,17 +380,17 @@
                   <g x-html="envChartYLabels(activeNodeId)"></g>
                   <g x-html="envChartRhLabels(activeNodeId)"></g>
                   <g x-html="envChartXLabels(activeNodeId)"></g>
-                  <!-- data lines: humidity behind, dew point, temp on top -->
-                  <polyline :points="envHumPoints(activeNodeId)" fill="none" stroke="rgba(80,160,255,0.42)" stroke-width="0.9"/>
-                  <polyline :points="envDpPoints(activeNodeId)"  fill="none" stroke="rgba(0,210,170,0.65)"  stroke-width="0.9" stroke-dasharray="4,2"/>
-                  <polyline :points="envTempPoints(activeNodeId)" fill="none" stroke="rgba(255,175,40,0.80)" stroke-width="1.1"/>
+                  <!-- data lines -->
+                  <polyline :points="envHumPoints(activeNodeId)" fill="none" stroke="rgba(80,160,255,0.85)" stroke-width="1.2"/>
+                  <polyline :points="envDpPoints(activeNodeId)"  fill="none" stroke="rgba(0,210,170,0.85)"  stroke-width="1.2" stroke-dasharray="4,2"/>
+                  <polyline :points="envTempPoints(activeNodeId)" fill="none" stroke="rgba(255,175,40,0.85)" stroke-width="1.2"/>
                   <!-- legend -->
-                  <line x1="38"  y1="10" x2="52"  y2="10" stroke="rgba(255,175,40,0.72)" stroke-width="1"/>
-                  <text x="54"  y="13"  font-size="8" fill="rgba(255,175,40,0.60)" font-family="monospace">temp</text>
-                  <line x1="96"  y1="10" x2="110" y2="10" stroke="rgba(0,210,170,0.60)" stroke-width="0.9" stroke-dasharray="4,2"/>
-                  <text x="112" y="13"  font-size="8" fill="rgba(0,210,170,0.55)" font-family="monospace">dew pt</text>
-                  <line x1="162" y1="10" x2="176" y2="10" stroke="rgba(80,160,255,0.47)" stroke-width="0.9"/>
-                  <text x="178" y="13"  font-size="8" fill="rgba(80,160,255,0.50)" font-family="monospace">humidity</text>
+                  <line x1="38"  y1="10" x2="52"  y2="10" stroke="rgba(255,175,40,0.85)" stroke-width="1.2"/>
+                  <text x="54"  y="13"  font-size="8" fill="rgba(255,175,40,0.85)" font-family="monospace">temp</text>
+                  <line x1="96"  y1="10" x2="110" y2="10" stroke="rgba(0,210,170,0.85)" stroke-width="1.2" stroke-dasharray="4,2"/>
+                  <text x="112" y="13"  font-size="8" fill="rgba(0,210,170,0.85)" font-family="monospace">dew pt</text>
+                  <line x1="162" y1="10" x2="176" y2="10" stroke="rgba(80,160,255,0.85)" stroke-width="1.2"/>
+                  <text x="178" y="13"  font-size="8" fill="rgba(80,160,255,0.85)" font-family="monospace">humidity</text>
                 </svg>
               </div>
               <div class="flex-1 flex items-center justify-center" x-show="(envHistory[activeNodeId]?.length ?? 0) <= 1"
