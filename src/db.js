@@ -155,6 +155,9 @@ for (const col of yagiCols) {
 if (!nodeinfoCols.includes('last_traceroute')) {
   db.exec(`ALTER TABLE nodeinfo ADD COLUMN last_traceroute TEXT`);
 }
+if (!nodeinfoCols.includes('address')) {
+  db.exec(`ALTER TABLE nodeinfo ADD COLUMN address TEXT`);
+}
 
 const nodeCols = db.prepare(`PRAGMA table_info(nodes)`).all().map(r => r.name);
 const envCols = ['temperature', 'relative_humidity', 'barometric_pressure'];
@@ -266,6 +269,9 @@ export const stmts = {
     WHERE num = @num
   `),
 
+  getGeocode:  db.prepare(`SELECT address FROM nodeinfo WHERE num = ? AND address IS NOT NULL LIMIT 1`),
+  setGeocode:  db.prepare(`UPDATE nodeinfo SET address = ? WHERE num = ?`),
+
   getConfig:   db.prepare(`SELECT value FROM config WHERE key = ?`),
   setConfig:   db.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
   getNodePos:  db.prepare(`
@@ -355,6 +361,14 @@ export function queryTiltHistory(nodeId, sinceTs) {
 
 export function markTiltNcal(nodeId, tsFrom, tsTo) {
   return stmts.markNcal.run(nodeId, tsFrom, tsTo).changes;
+}
+
+export function getCachedGeocode(num) {
+  return stmts.getGeocode.get(num)?.address ?? null;
+}
+
+export function setCachedGeocode(num, address) {
+  stmts.setGeocode.run(address, num);
 }
 
 const _getNodeinfo = db.prepare(`SELECT * FROM nodeinfo WHERE num = ? LIMIT 1`);

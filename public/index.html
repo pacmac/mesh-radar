@@ -694,35 +694,58 @@
               <g id="radar-nodes-g"></g>
             </svg>
 
-            <!-- Node list overlay — top-left, always visible when nodes on radar -->
+            <!-- Node list overlay — top-left -->
             <div x-show="radarNodeList().length > 0" x-transition
-                 :style="'position:absolute;top:0.75rem;left:0.75rem;z-index:10;background:rgba(4,10,4,0.88);border:1px solid rgba(0,255,80,0.18);border-radius:0.5rem;backdrop-filter:blur(6px);padding:0.4rem 0.55rem;min-width:14rem;max-width:20rem;max-height:55%;overflow-y:auto;pointer-events:'+(rotatorMode===1?'auto':'none')">
-              <div style="font-family:'Oxanium',monospace;font-size:12px;letter-spacing:0.08em;color:rgba(0,255,80,0.40);margin-bottom:0.3rem"
-                   x-text="scanMode ? 'SCAN CONTACTS' : 'RADAR NODES'"></div>
+                 style="position:absolute;top:0.75rem;left:0.75rem;z-index:10;
+                        background:rgba(2,7,2,0.94);
+                        border:1px solid rgba(0,255,80,0.16);
+                        border-radius:0.5rem;backdrop-filter:blur(8px);
+                        padding:0.45rem 0.55rem;min-width:15rem;max-width:21rem;
+                        max-height:55%;overflow-y:auto;pointer-events:auto;
+                        box-shadow:0 0 0 1px rgba(0,255,80,0.04),0 8px 32px rgba(0,0,0,0.85)">
+              <!-- header row -->
+              <div style="display:flex;align-items:center;gap:0.4rem;
+                          padding-bottom:0.3rem;margin-bottom:0.15rem;
+                          border-bottom:1px solid rgba(0,255,80,0.10)">
+                <span style="font-family:'Oxanium',monospace;font-size:10px;font-weight:700;
+                              letter-spacing:0.14em;color:rgba(0,255,80,0.38)"
+                      x-text="scanMode ? 'SCAN CONTACTS' : 'RADAR NODES'"></span>
+                <span style="font-family:monospace;font-size:10px;color:rgba(0,255,80,0.22);margin-left:auto"
+                      x-text="radarNodeList().length"></span>
+              </div>
               <template x-for="n in radarNodeList()" :key="n.num">
-                <div @click="manualTarget(n.num)"
-                     :style="'display:flex;align-items:center;gap:0.45rem;padding:0.15rem 0;border-top:1px solid rgba(0,255,80,0.07);font-family:\'Oxanium\',monospace;font-size:12px'
-                       + (rotatorMode===1 ? ';cursor:pointer' : '')
-                       + (n.num === yagiPointTarget ? ';border-left:2px solid rgba(255,160,0,0.85);padding-left:0.3rem;margin-left:-0.3rem' : '')">
-                  <span :style="'font-weight:600;min-width:3rem;flex-shrink:0;color:' + (n.num === yagiPointTarget ? 'rgba(255,160,0,0.95)' : 'rgba(0,255,80,0.90)')" x-text="nodeShortName(n.num)"></span>
+                <div @click="openNodeInfo(n)"
+                     @mouseenter="$el.style.background = n.num===yagiPointTarget ? 'rgba(255,160,0,0.10)' : 'rgba(0,255,80,0.05)'"
+                     @mouseleave="$el.style.background = n.num===yagiPointTarget ? 'rgba(255,160,0,0.05)' : 'transparent'"
+                     :style="{ display:'flex', alignItems:'center', gap:'0.4rem',
+                               padding:'0.18rem 0.3rem', borderRadius:'0.25rem', margin:'0 -0.3rem',
+                               cursor:'pointer', userSelect:'none',
+                               background: n.num===yagiPointTarget ? 'rgba(255,160,0,0.05)' : 'transparent',
+                               borderLeft: n.num===yagiPointTarget ? '2px solid rgba(255,160,0,0.75)' : '2px solid transparent',
+                               paddingLeft: n.num===yagiPointTarget ? '0.5rem' : '0.3rem' }">
+                  <span style="font-family:'Oxanium',monospace;font-size:12px;font-weight:700;min-width:3rem;flex-shrink:0"
+                        :style="{ color: n.num===yagiPointTarget ? 'rgba(255,160,0,0.95)' : 'rgba(0,255,80,0.88)' }"
+                        x-text="nodeShortName(n.num)"></span>
                   <template x-if="scanMode">
-                    <span style="color:rgba(0,255,80,0.55);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
+                    <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
                   </template>
-                  <span style="color:rgba(0,255,80,0.55);min-width:2.5rem;flex-shrink:0" x-text="n._az != null ? Math.round(n._az) + '°' : '–'"></span>
-                  <span style="color:rgba(0,255,80,0.55);min-width:2.8rem;flex-shrink:0" x-text="n._km != null ? n._km.toFixed(1)+'km' : '–'"></span>
-                  <span style="color:rgba(0,255,80,0.55);min-width:1.6rem;flex-shrink:0" x-text="(nodeHops(n) ?? 0) + 'h'"></span>
+                  <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.5rem;flex-shrink:0" x-text="n._az != null ? Math.round(n._az)+'°' : '–'"></span>
+                  <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.8rem;flex-shrink:0" x-text="n._km != null ? n._km.toFixed(1)+'km' : '–'"></span>
+                  <span style="font-family:monospace;font-size:11px;min-width:1.4rem;flex-shrink:0"
+                        :style="{ color: (nodeHops(n)??1)===0 ? 'rgba(255,160,0,0.85)' : 'rgba(0,255,80,0.30)' }"
+                        x-text="(nodeHops(n)??0)+'h'"></span>
                   <template x-if="n.num === yagiPointTarget && yagiSignal.num === n.num">
-                    <span :style="'flex:1;font-size:10px;font-weight:600;white-space:nowrap;color:' + (signalAge() != null && signalAge() >= 30 ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)')">
-                      <span x-text="yagiSignal.rssi != null ? yagiSignal.rssi + ' dBm' : ''"></span>
-                      <span x-show="yagiSignal.rssi != null && yagiSignal.snr != null"> / </span>
-                      <span x-text="yagiSignal.snr != null ? (yagiSignal.snr >= 0 ? '+' : '') + yagiSignal.snr.toFixed(1) + ' dB' : ''"></span>
-                      <span x-show="signalAge() != null" x-text="' · ' + signalAge() + 's'" style="opacity:0.7"></span>
+                    <span style="flex:1;font-family:monospace;font-size:10px;font-weight:600;white-space:nowrap"
+                          :style="{ color: signalAge()!=null && signalAge()>=30 ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)' }">
+                      <span x-text="yagiSignal.rssi != null ? yagiSignal.rssi+'dBm' : ''"></span>
+                      <span x-text="yagiSignal.snr != null ? ' / '+(yagiSignal.snr>=0?'+':'')+yagiSignal.snr.toFixed(1) : ''"></span>
                     </span>
                   </template>
                   <template x-if="!(n.num === yagiPointTarget && yagiSignal.num === n.num)">
-                    <span style="color:rgba(0,255,80,0.55);flex:1" x-text="n.last_heard ? new Date(n.last_heard*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''"></span>
+                    <span style="font-family:monospace;font-size:10px;color:rgba(0,255,80,0.28);flex:1"
+                          x-text="n.last_heard ? new Date(n.last_heard*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''"></span>
                   </template>
-                  <span x-html="n.num === yagiPointTarget && yagiSignal.num === n.num ? sig3(yagiSignal.rssi, yagiSignal.snr) : sig3(n._scanRssi ?? n.rssi, n._scanSnr ?? n.snr)" style="flex-shrink:0"></span>
+                  <span x-html="n.num===yagiPointTarget && yagiSignal.num===n.num ? sig3(yagiSignal.rssi,yagiSignal.snr) : sig3(n._scanRssi??n.rssi,n._scanSnr??n.snr)" style="flex-shrink:0"></span>
                 </div>
               </template>
             </div>
@@ -958,94 +981,150 @@
 
         <!-- ===================== NODE INFO MODAL ===================== -->
         <dialog class="modal" x-ref="nodeInfoDialog">
-          <div class="modal-box">
-            <h3 class="font-bold text-lg font-oxanium" x-text="nodeInfo?.user?.long_name || '–'"></h3>
+          <div class="modal-box p-0 overflow-hidden max-w-sm"
+               style="background:rgba(2,7,2,0.98);border:1px solid rgba(0,255,80,0.18);
+                      border-radius:0.6rem;box-shadow:0 0 0 1px rgba(0,255,80,0.05),0 20px 60px rgba(0,0,0,0.95)">
             <template x-if="nodeInfo">
-              <div class="flex flex-col gap-2 text-sm mt-2">
-                <div class="font-mono text-xs opacity-60" x-text="nodeInfo.user?.id || nodeInfo.num"></div>
-                <div class="divider my-1"></div>
-                <div class="flex justify-between"><span class="opacity-60">Distance</span> <span x-text="nodeInfo._km != null ? nodeInfo._km.toFixed(1)+' km' : '–'"></span></div>
-                <div class="flex justify-between items-center">
-                  <span class="opacity-60">Bearing</span>
-                  <div class="flex items-center gap-2">
-                    <span x-text="nodeInfo._az != null ? nodeInfo._az.toFixed(0)+'°' : '–'"></span>
-                    <button class="btn btn-xs btn-outline px-2 text-[10px]" :disabled="nodeInfo._az == null" @click="pointAtNode(nodeInfo); $refs.nodeInfoDialog?.close()" title="Point Yagi to this bearing">Point</button>
+              <div>
+                <!-- Header -->
+                <div style="padding:1rem 1.1rem 0.8rem;border-bottom:1px solid rgba(0,255,80,0.10);
+                            background:linear-gradient(180deg,rgba(0,255,80,0.05) 0%,transparent 100%)">
+                  <div style="font-family:'Oxanium',monospace;font-size:9px;font-weight:700;
+                              letter-spacing:0.18em;color:rgba(0,255,80,0.32);margin-bottom:0.25rem">NODE INFO</div>
+                  <div style="font-family:'Oxanium',monospace;font-size:1.15rem;font-weight:700;
+                              color:rgba(0,255,80,0.92);line-height:1.2" x-text="nodeInfo?.user?.long_name || '–'"></div>
+                  <div style="font-family:monospace;font-size:0.68rem;color:rgba(0,255,80,0.28);margin-top:0.2rem"
+                       x-text="nodeInfo.user?.id || ('!' + (nodeInfo.num >>> 0).toString(16).padStart(8,'0'))"></div>
+                </div>
+                <!-- Stats 2-col grid -->
+                <div style="padding:0.7rem 1.1rem;display:grid;grid-template-columns:1fr 1fr;gap:0.55rem 1.2rem;
+                            border-bottom:1px solid rgba(0,255,80,0.08)">
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">DISTANCE</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo._km != null ? nodeInfo._km.toFixed(1)+' km' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">BEARING</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo._az != null ? nodeInfo._az.toFixed(0)+'°' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">RSSI</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo.rssi != null ? nodeInfo.rssi+' dBm' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">SNR</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo.snr != null ? (nodeInfo.snr>=0?'+':'')+nodeInfo.snr.toFixed(1)+' dB' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">HOPS</div>
+                    <div style="font-family:monospace;font-size:13px"
+                         :style="{ color: (nodeHops(nodeInfo)??1)===0 ? 'rgba(255,160,0,0.90)' : 'rgba(0,255,80,0.82)' }"
+                         x-text="nodeHops(nodeInfo) ?? '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">BATTERY</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo.device_metrics?.battery_level != null ? nodeInfo.device_metrics.battery_level+'%' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">LAST HEARD</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)" x-text="fmtAge(nodeInfo.last_heard)"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">HARDWARE</div>
+                    <div style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.65)" x-text="nodeInfo.user?.hw_model || '–'"></div>
                   </div>
                 </div>
-                <div class="flex justify-between items-center"><span class="opacity-60">Signal</span> <span x-html="sigBars(nodeInfo.rssi, nodeInfo.snr)"></span></div>
-                <div class="flex justify-between"><span class="opacity-60">SNR</span> <span x-text="nodeInfo.snr != null ? nodeInfo.snr+' dB' : '–'"></span></div>
-                <div class="flex justify-between"><span class="opacity-60">RSSI</span> <span x-text="nodeInfo.rssi != null ? nodeInfo.rssi+' dBm' : '–'"></span></div>
-                <div class="flex justify-between"><span class="opacity-60">Hops</span> <span x-text="nodeHops(nodeInfo) ?? '–'"></span></div>
-                <div class="flex justify-between"><span class="opacity-60">Battery</span> <span x-text="nodeInfo.device_metrics?.battery_level != null ? nodeInfo.device_metrics.battery_level+'%' : '–'"></span></div>
-                <div class="flex justify-between"><span class="opacity-60">Last heard</span> <span x-text="fmtAge(nodeInfo.last_heard)"></span></div>
-                <div class="divider my-1"></div>
-                <div class="flex flex-col gap-1">
-                  <span class="opacity-60 text-xs uppercase" style="font-family:'Oxanium',sans-serif;letter-spacing:.08em">Location</span>
-                  <span class="text-xs" x-text="nodeInfo._address || (nodeInfo.position ? (nodeInfo.position.latitude_i/1e7).toFixed(4)+', '+(nodeInfo.position.longitude_i/1e7).toFixed(4) : 'no position')"></span>
+                <!-- Location -->
+                <div style="padding:0.55rem 1.1rem;border-bottom:1px solid rgba(0,255,80,0.08)">
+                  <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32);margin-bottom:0.2rem">LOCATION</div>
+                  <div style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.62);line-height:1.5"
+                       x-text="nodeInfo._address || (nodeInfo.position ? (nodeInfo.position.latitude_i/1e7).toFixed(4)+', '+(nodeInfo.position.longitude_i/1e7).toFixed(4) : '–')"></div>
                 </div>
-                <div class="divider my-1"></div>
-                <div class="flex flex-col gap-1">
-                  <span class="opacity-60 text-xs uppercase" style="font-family:'Oxanium',sans-serif;letter-spacing:.08em">Hardware</span>
-                  <span x-text="nodeInfo.user?.hw_model || '–'"></span>
-                </div>
-                <div class="divider my-1"></div>
-                <div class="flex flex-nowrap gap-1">
-                  <button class="btn btn-xs btn-outline flex-1 px-1 text-[10px] whitespace-nowrap" @click="openMessageModal('broadcast', nodeInfo)">BC Message</button>
-                  <button class="btn btn-xs btn-outline flex-1 px-1 text-[10px] whitespace-nowrap" @click="openMessageModal('direct', nodeInfo)">DIR Message</button>
-                </div>
-                <div class="divider my-1"></div>
-                <!-- Traceroute -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between">
-                    <span class="opacity-60 text-xs uppercase" style="font-family:'Oxanium',sans-serif;letter-spacing:.08em">Route</span>
-                    <button class="btn btn-xs btn-outline px-2 text-[10px]"
-                            :class="traceroutePending ? 'loading loading-spinner btn-disabled' : ''"
+                <!-- Route -->
+                <div style="padding:0.55rem 1.1rem;border-bottom:1px solid rgba(0,255,80,0.08)">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem">
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">ROUTE</div>
+                    <button style="font-family:'Oxanium',monospace;font-size:9px;letter-spacing:0.08em;
+                                   color:rgba(0,255,80,0.65);border:1px solid rgba(0,255,80,0.25);
+                                   border-radius:0.2rem;padding:0.1rem 0.45rem;background:transparent;cursor:pointer"
+                            :class="traceroutePending ? 'opacity-40 pointer-events-none' : ''"
                             @click="sendTraceroute(nodeInfo)">
-                      <span x-show="!traceroutePending">Trace</span>
+                      <span x-show="!traceroutePending">TRACE</span><span x-show="traceroutePending">…</span>
                     </button>
                   </div>
-                  <!-- result -->
                   <template x-if="tracerouteResult && tracerouteResult.num === nodeInfo?.num">
-                    <div class="text-xs font-mono flex flex-col gap-0.5 mt-0.5">
-                      <!-- outbound path: gateway → hops → target -->
-                      <template x-if="tracerouteResult.route.length > 0">
-                        <div class="flex flex-wrap items-center gap-x-1 gap-y-0.5">
-                          <span class="opacity-40">→</span>
-                          <template x-for="(hop, i) in tracerouteResult.route" :key="i">
-                            <span class="flex items-center gap-x-1">
-                              <span class="badge badge-xs badge-outline opacity-70" x-text="tracerouteNodeName(hop)"></span>
-                              <span x-show="tracerouteResult.snr_towards[i] != null" class="opacity-40 text-[9px]" x-text="tracerouteResult.snr_towards[i] != null ? tracerouteResult.snr_towards[i].toFixed(1)+'dB' : ''"></span>
-                              <span class="opacity-40">→</span>
-                            </span>
-                          </template>
-                          <span class="badge badge-xs badge-warning" x-text="tracerouteNodeName(tracerouteResult.num)"></span>
-                        </div>
-                      </template>
+                    <div style="font-family:monospace;font-size:11px;display:flex;flex-wrap:wrap;gap:0.2rem;align-items:center">
                       <template x-if="tracerouteResult.route.length === 0">
-                        <div class="opacity-50">Direct — no intermediate hops</div>
+                        <span style="color:rgba(0,255,80,0.38)">Direct — no intermediate hops</span>
                       </template>
-                      <!-- return path if different -->
+                      <template x-if="tracerouteResult.route.length > 0">
+                        <span style="color:rgba(0,255,80,0.28)">→</span>
+                      </template>
+                      <template x-if="tracerouteResult.route.length > 0">
+                        <template x-for="(hop, i) in tracerouteResult.route" :key="i">
+                          <span style="display:inline-flex;align-items:center;gap:0.2rem">
+                            <span style="border:1px solid rgba(0,255,80,0.22);border-radius:0.2rem;padding:0 0.3rem;color:rgba(0,255,80,0.65)" x-text="tracerouteNodeName(hop)"></span>
+                            <span x-show="tracerouteResult.snr_towards[i] != null" style="font-size:9px;color:rgba(0,255,80,0.28)" x-text="tracerouteResult.snr_towards[i]?.toFixed(1)+'dB'"></span>
+                            <span style="color:rgba(0,255,80,0.28)">→</span>
+                          </span>
+                        </template>
+                      </template>
+                      <template x-if="tracerouteResult.route.length > 0">
+                        <span style="border:1px solid rgba(255,160,0,0.35);border-radius:0.2rem;padding:0 0.3rem;color:rgba(255,160,0,0.80)" x-text="tracerouteNodeName(tracerouteResult.num)"></span>
+                      </template>
                       <template x-if="tracerouteResult.route_back.length > 0">
-                        <div class="flex flex-wrap items-center gap-x-1 gap-y-0.5 mt-0.5 opacity-60">
-                          <span class="opacity-60">↩</span>
+                        <div style="width:100%;margin-top:0.2rem;display:flex;flex-wrap:wrap;gap:0.2rem;align-items:center;opacity:0.55">
+                          <span style="color:rgba(0,255,80,0.50)">↩</span>
                           <template x-for="(hop, i) in tracerouteResult.route_back" :key="i">
-                            <span class="flex items-center gap-x-1">
-                              <span class="badge badge-xs badge-ghost text-[9px]" x-text="tracerouteNodeName(hop)"></span>
-                              <span x-show="tracerouteResult.snr_back[i] != null" class="opacity-40 text-[9px]" x-text="tracerouteResult.snr_back[i] != null ? tracerouteResult.snr_back[i].toFixed(1)+'dB' : ''"></span>
-                              <span class="opacity-40">→</span>
+                            <span style="display:inline-flex;align-items:center;gap:0.2rem">
+                              <span style="border:1px solid rgba(0,255,80,0.18);border-radius:0.2rem;padding:0 0.3rem;font-size:10px;color:rgba(0,255,80,0.55)" x-text="tracerouteNodeName(hop)"></span>
+                              <span x-show="tracerouteResult.snr_back[i] != null" style="font-size:9px" x-text="tracerouteResult.snr_back[i]?.toFixed(1)+'dB'"></span>
+                              <span>→</span>
                             </span>
                           </template>
                         </div>
                       </template>
                     </div>
                   </template>
-                  <div x-show="traceroutePending" class="text-xs opacity-40">Waiting for response…</div>
+                  <div x-show="traceroutePending" style="font-size:11px;font-family:monospace;color:rgba(0,255,80,0.28)">Waiting for response…</div>
+                </div>
+                <!-- Actions -->
+                <div style="padding:0.65rem 1.1rem;display:flex;flex-wrap:wrap;gap:0.4rem">
+                  <button x-show="rotatorMode === 1"
+                          @click="manualTarget(nodeInfo.num); $refs.nodeInfoDialog?.close()"
+                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
+                                 letter-spacing:0.10em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
+                                 background:rgba(255,160,0,0.10);color:rgba(255,160,0,0.92);
+                                 border:1px solid rgba(255,160,0,0.38)">TARGET</button>
+                  <button @click="pointAtNode(nodeInfo); $refs.nodeInfoDialog?.close()"
+                          :disabled="nodeInfo._az == null"
+                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
+                                 letter-spacing:0.10em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
+                                 background:transparent;color:rgba(0,255,80,0.65);
+                                 border:1px solid rgba(0,255,80,0.22)">POINT</button>
+                  <button @click="openMessageModal('broadcast', nodeInfo)"
+                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
+                                 letter-spacing:0.08em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
+                                 background:transparent;color:rgba(0,255,80,0.65);
+                                 border:1px solid rgba(0,255,80,0.22)">BC MSG</button>
+                  <button @click="openMessageModal('direct', nodeInfo)"
+                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
+                                 letter-spacing:0.08em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
+                                 background:transparent;color:rgba(0,255,80,0.65);
+                                 border:1px solid rgba(0,255,80,0.22)">DIR MSG</button>
+                  <button @click="$refs.nodeInfoDialog?.close()"
+                          style="width:100%;font-family:'Oxanium',monospace;font-size:10px;
+                                 letter-spacing:0.12em;padding:0.35rem;border-radius:0.3rem;cursor:pointer;
+                                 background:transparent;color:rgba(0,255,80,0.28);
+                                 border:1px solid rgba(0,255,80,0.10)">CLOSE</button>
                 </div>
               </div>
             </template>
-            <div class="modal-action">
-              <button class="btn btn-sm" @click="$refs.nodeInfoDialog?.close()">Close</button>
-            </div>
           </div>
           <form method="dialog" class="modal-backdrop"><button>close</button></form>
         </dialog>

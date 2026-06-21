@@ -2604,12 +2604,13 @@ function dashboard() {
       const radarNode = this.radarNodes.find((r) => r.num === node.num);
       const lat = node.position?.latitude_i  != null ? node.position.latitude_i  / 1e7 : null;
       const lon = node.position?.longitude_i != null ? node.position.longitude_i / 1e7 : null;
-      this.nodeInfo = radarNode || { ...node, _lat: lat, _lon: lon };
+      this.nodeInfo = { ...(radarNode ?? node), _lat: lat, _lon: lon };
       this.tracerouteResult = null;
       this.$nextTick(() => this.$refs.nodeInfoDialog?.showModal());
-      if (!this.nodeInfo._address && this.nodeInfo._lat != null && this.nodeInfo._lon != null) {
-        geocodeLatLon(this.nodeInfo._lat, this.nodeInfo._lon).then((addr) => {
-          if (this.nodeInfo?.num === node.num) this.nodeInfo = { ...this.nodeInfo, _address: addr };
+      if (!this.nodeInfo._address && node.num) {
+        geocodeNode(node.num).then(addr => {
+          if (addr && this.nodeInfo?.num === node.num)
+            this.nodeInfo = { ...this.nodeInfo, _address: addr };
         });
       }
     },
@@ -2636,9 +2637,10 @@ function dashboard() {
     async geocodeNodes() {
       this.geocoding = true;
       for (const node of [...this.radarNodes]) {
-        if (node._address || !node._lat || !node._lon) continue;
-        const addr = await geocodeLatLon(node._lat, node._lon);
-        node._address = addr;
+        if (node._address || !node.num) continue;
+        if (!node.position?.latitude_i && !node._km) continue;
+        const addr = await geocodeNode(node.num);
+        if (!addr) continue;
         const idx = this.radarNodes.findIndex((r) => r.num === node.num);
         if (idx >= 0) this.radarNodes[idx] = { ...this.radarNodes[idx], _address: addr };
         if (this.radarSelected?.num === node.num)
@@ -2917,40 +2919,13 @@ function svgElem(tag, attrs = {}) {
 }
 
 // ============================================================================
-// Nominatim geocoding — sequential queue with 1.1s inter-request delay
-// ============================================================================
-
-const _geocodeCache = new Map();
-let _geocodeQueue = Promise.resolve();
-
-function geocodeLatLon(lat, lon) {
-  const key = lat.toFixed(4) + "," + lon.toFixed(4);
-  if (_geocodeCache.has(key)) return Promise.resolve(_geocodeCache.get(key));
-  const p = _geocodeQueue.then(
-    () => new Promise((resolve) => {
-      setTimeout(async () => {
-        try {
-          const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=18`;
-          const res = await fetch(url, { headers: { "Accept-Language": "en" } });
-          const data = await res.json();
-          const a = data.address || {};
-          const street   = [a.house_number, a.road].filter(Boolean).join(" ");
-          const locality = a.city || a.town || a.village || a.suburb || a.county || "";
-          const postcode = a.postcode || "";
-          const parts    = [street, locality, postcode].filter(Boolean);
-          const addr = parts.join(", ") || (data.display_name || "").split(",").slice(0, 3).join(", ") || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-          _geocodeCache.set(key, addr);
-          resolve(addr);
-        } catch (_) {
-          const fallback = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-          _geocodeCache.set(key, fallback);
-          resolve(fallback);
-        }
-      }, 1100);
-    })
-  );
-  _geocodeQueue = p;
-  return p;
+// Geocoding — proxied through backend, cached in nodeinfo SQLite table
+async function geocodeNode(num) {
+  if (!num) return null;
+  try {
+    const { address } = await fetchJSON(`/geocode?num=${num}`);
+    return address ?? null;
+  } catch (_) { return null; }
 }
 
 function summarizeEvent(ev) {
