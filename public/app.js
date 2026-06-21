@@ -356,6 +356,41 @@ function dashboard() {
       }
     },
 
+    async backupRadioConfig(nodeId) {
+      try {
+        const data = await fetchJSON(`/${nodeId}/radio_backup`);
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = Object.assign(document.createElement('a'), {
+          href: url,
+          download: `meshtastic-${nodeId}-${new Date().toISOString().slice(0, 10)}.json`,
+        });
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Backup failed: ' + (e.message || e));
+      }
+    },
+
+    async pushFixedPosition(nodeId) {
+      const cfg = this.deviceConfigs[nodeId] || {};
+      const lat = cfg.fixed_lat;
+      const lon = cfg.fixed_lon;
+      if (lat == null || lon == null) {
+        alert(`No fixed position configured for ${nodeId}.\nSet it in Config → Radio → Device.`);
+        return;
+      }
+      try {
+        const body = { latitude_i: Math.round(lat * 1e7), longitude_i: Math.round(lon * 1e7) };
+        const res = await fetchJSON(`/${nodeId}/fixed_position`, 'PUT', body);
+        if (res?.error) throw new Error(res.error.message || 'Push failed');
+      } catch (e) {
+        alert('Push position failed: ' + (e.message || e));
+      }
+    },
+
     async init() {
       // Seed messages from localStorage as a fast cache while /messages loads
       try {

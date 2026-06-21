@@ -2045,6 +2045,51 @@
                     </div>
                     <p class="text-xs opacity-40 mt-1">Device disconnects, reboots into bootloader, flashes over BLE, reconnects automatically.</p>
                   </div>
+                  <!-- Config Backup / Restore + Push Position -->
+                  <div class="border-t border-base-300 pt-3"
+                       x-data="{ _restoring: false, _restoreErr: null, _restoreOk: false }">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="text-xs font-semibold opacity-60 uppercase tracking-wide">Radio Config</span>
+                      <span x-show="_restoring" class="badge badge-sm badge-warning animate-pulse">Restoring…</span>
+                      <span x-show="_restoreOk" class="badge badge-sm badge-success" x-transition>Restored</span>
+                      <span x-show="_restoreErr" class="badge badge-sm badge-error" x-text="_restoreErr || ''"></span>
+                    </div>
+                    <div class="flex gap-2 items-center flex-wrap">
+                      <button class="btn btn-xs btn-outline"
+                              :disabled="dev.ble_state !== 'ready'"
+                              title="Download all config sections and channels as JSON"
+                              @click="backupRadioConfig(dev.node_id)">
+                        Backup
+                      </button>
+                      <label class="btn btn-xs btn-outline"
+                             :class="(dev.ble_state !== 'ready' || _restoring) ? 'btn-disabled pointer-events-none' : ''"
+                             title="Restore config from a backup JSON file — device will reboot">
+                        Restore
+                        <input type="file" accept=".json" class="hidden"
+                               @change="async (e) => {
+                                 const f = e.target.files[0]; e.target.value = '';
+                                 if (!f) return;
+                                 let bk; try { bk = JSON.parse(await f.text()); } catch { _restoreErr = 'Invalid JSON'; return; }
+                                 if (!confirm('Restore all config to ' + dev.node_id + '?\n\nAll config sections and channels will be overwritten. Device will reboot.')) return;
+                                 _restoring = true; _restoreErr = null; _restoreOk = false;
+                                 try {
+                                   await fetchJSON('/' + dev.node_id + '/radio_restore', 'POST', bk);
+                                   _restoring = false; _restoreOk = true;
+                                   setTimeout(() => { _restoreOk = false; }, 3000);
+                                 } catch (err) { _restoring = false; _restoreErr = err.message || 'Restore failed'; }
+                               }">
+                      </label>
+                      <button class="btn btn-xs btn-outline"
+                              :disabled="dev.ble_state !== 'ready' || !deviceConfigs[dev.node_id]?.fixed_lat"
+                              :title="deviceConfigs[dev.node_id]?.fixed_lat != null
+                                ? 'Push ' + Number(deviceConfigs[dev.node_id].fixed_lat).toFixed(5) + ', ' + Number(deviceConfigs[dev.node_id].fixed_lon).toFixed(5) + ' to radio'
+                                : 'No fixed position configured — set it in Config → Radio → Device'"
+                              @click="pushFixedPosition(dev.node_id)">
+                        Push Position
+                      </button>
+                    </div>
+                    <p class="text-xs opacity-40 mt-1">Backup/restore all config and channels. Push Position sends the locally saved lat/lon to this radio.</p>
+                  </div>
                   <!-- Range Test TX -->
                   <div class="border-t border-base-300 pt-3">
                     <div class="flex items-center gap-2 mb-2">
