@@ -38,7 +38,7 @@ function _initTab() {
 function dashboard() {
   return {
     tab: _initTab(),
-    cfgTab: localStorage.getItem("activeCfgTab") || "device",
+    cfgTab: ["radio","bridge","rotator"].includes(localStorage.getItem("activeCfgTab")) ? localStorage.getItem("activeCfgTab") : "radio",
     drawerOpen: false,
     sidebarPinned: localStorage.getItem('sidebarPinned') !== 'false',
     activeNodeId: localStorage.getItem("activeNodeId") || "",
@@ -58,7 +58,9 @@ function dashboard() {
     unreadMessages: 0,
     _seenPacketIds: new Set(),
     availableDevices: [],
-    status: {},
+    deviceBleStates: {},    // nodeId → { ble_state, config_complete, config_saving, ble_connected, ... }
+    _readbackQueues: {},    // nodeId → [fn, fn, ...]
+    toasts: [],             // { id, message, type: 'success'|'error' }
     info: { my_info: {}, metadata: {} },
     nodeSelf: {},
     nodes: [],
@@ -80,8 +82,6 @@ function dashboard() {
     mqttProxy: false,
     mqttCfg: {},
     loraCfg: {},
-    ble_ready: false,
-    _readbackQueue: [],
     wsConnected: false,
     serverReachable: true,
     yagiAz: null,
@@ -187,10 +187,11 @@ function dashboard() {
     // Range test tab state
     rangeLog: [],
     rangeLoading: false,
-    rangeRadioId: "",
+    rangeRxFilter: "",
     rangeDuration: 10,
     rangeNodeFilter: "",
     _rangeStats: null,
+    _rangeChartCache: null,
     rangeTimer: { active: false, endsAt: null, nodeId: null, remaining: null },
     _rangeCountdown: null,
     _rangeAutoSync: null,
@@ -224,10 +225,31 @@ function dashboard() {
       return id ? "/" + id + path : path;
     },
 
-    // rd() — like d() but uses rangeRadioId for Range Test tab operations
-    rd(path) {
-      const id = this.rangeRadioId || this.activeNodeId;
-      return id ? "/" + id + path : path;
+    // -- per-device BLE state helpers -------------------------------------------
+    get primaryDeviceId() {
+      const e = Object.entries(this.deviceConfigs).find(([, c]) => c?.is_primary);
+      return e?.[0] || this.availableDevices[0]?.node_id || '';
+    },
+    get primaryDevBleState() {
+      return this.deviceBleStates[this.primaryDeviceId] || {};
+    },
+    devBleState(nodeId) {
+      const ds = this.deviceBleStates[nodeId];
+      if (ds?.ble_state) return ds.ble_state;
+      return this.availableDevices.find(d => d.node_id === nodeId)?.ble_state || 'idle';
+    },
+    devIsReady(nodeId) { return this.devBleState(nodeId) === 'ready'; },
+    devIsSaving(nodeId) { return !!this.deviceBleStates[nodeId]?.config_saving; },
+    devBleLabel(nodeId) {
+      const s = this.deviceBleStates[nodeId] || {};
+      if (s.config_saving) return 'Saving config…';
+      return { connecting: 'Connecting…', syncing: 'Syncing…', reconnecting: 'Reconnecting…', error: 'Error', idle: '' }[s.ble_state] || '';
+    },
+
+    showToast(message, type = 'success', duration = 4000) {
+      const id = Date.now() + Math.random();
+      this.toasts = [...this.toasts, { id, message, type }];
+      setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, duration);
     },
 
     // -- device management -------------------------------------------------------
@@ -235,6 +257,29 @@ function dashboard() {
       try {
         const data = await fetchJSON("/devices");
         this.availableDevices = (data.devices || []).filter(d => !String(d.node_id).startsWith("ble:"));
+        // Seed deviceBleStates from REST response.
+        // For new devices (no WS state yet): seed all fields including ble_state.
+        // For existing devices: update display/metadata fields only — ble_state is
+        // owned by live WS events and must not be overwritten by a stale REST poll.
+        const seeded = {};
+        for (const dev of this.availableDevices) {
+          const existing = this.deviceBleStates[dev.node_id];
+          if (!existing) {
+            seeded[dev.node_id] = { ...dev };
+          } else {
+            seeded[dev.node_id] = {
+              ...existing,
+              long_name: dev.long_name,
+              short_name: dev.short_name,
+              hw_model: dev.hw_model,
+              node_count: dev.node_count,
+              ble_rssi: dev.ble_rssi,
+              ble_rssi_pct: dev.ble_rssi_pct,
+              config_complete: dev.config_complete,
+            };
+          }
+        }
+        this.deviceBleStates = { ...this.deviceBleStates, ...seeded };
         if (!this.activeNodeId && this.availableDevices.length > 0) {
           this.activeNodeId = this.availableDevices[0].node_id;
           localStorage.setItem("activeNodeId", this.activeNodeId);
@@ -252,7 +297,6 @@ function dashboard() {
     },
 
     _clearDeviceState() {
-      this.status = {};
       this.info = { my_info: {}, metadata: {} };
       this.nodes = [];
       this.nodeSelf = {};
@@ -334,14 +378,11 @@ function dashboard() {
         const t = e.state?.tab ?? _PATH_TO_TAB[window.location.pathname] ?? 'overview';
         this.setNav(t);
       });
-      this.$watch('ble_ready', (ready, wasReady) => {
-        if (ready && !wasReady) this._drainReadbackQueue();
-      });
       this.$watch('activeNodeId', () => { this.loadTiltHistory(); this.loadEnvHistory(this.activeNodeId); });
       this.$watch('tiltWindow',        () => this.loadTiltHistory());
       this.$watch('envWindow',         () => this.loadEnvHistory(this.activeNodeId));
-      this.$watch('rangeNodeFilter',   () => { this._rangeStats = null; });
-      this.$watch('rangeRadioId',      () => { this._rangeStats = null; });
+      this.$watch('rangeNodeFilter',   () => { this._rangeStats = null; this._rangeChartCache = null; });
+      this.$watch('rangeRxFilter',      () => { this._rangeStats = null; this._rangeChartCache = null; this.rangeNodeFilter = ''; });
       this.$watch('tiltPeak', peak => {
         const stops = [0.25, 0.5, 1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90];
         const maxRing = stops.find(v => v >= Math.max(peak * 1.25, 0.5)) ?? 90;
@@ -578,12 +619,16 @@ function dashboard() {
 
     // -- polling / status -----------------------------------------------------
     async refreshStatus() {
-      if (!this.activeNodeId) return;
+      const nodeId = this.primaryDeviceId || this.activeNodeId;
+      if (!nodeId) return;
       try {
-        this.status = await fetchJSON(this.d("/status"));
-        this.mqttProxy = this.status.mqtt_proxy_connected;
-        this.ble_ready = !!this.status.ready;
+        const data = await fetchJSON(`/${nodeId}/status`);
+        this.mqttProxy = !!data.mqtt_proxy_connected;
         this.serverReachable = true;
+        this.deviceBleStates = {
+          ...this.deviceBleStates,
+          [nodeId]: { ...(this.deviceBleStates[nodeId] || {}), ...data },
+        };
       } catch (_) {
         this.serverReachable = false;
       }
@@ -880,8 +925,7 @@ function dashboard() {
 
     // -- websocket live feed ---------------------------------------------------
     connectWS() {
-      const path = this.activeNodeId ? `/${this.activeNodeId}/events` : '/events';
-      const ws = new WebSocket(location.origin.replace(/^http/, "ws") + path);
+      const ws = new WebSocket(location.origin.replace(/^http/, "ws") + '/events');
       this._ws = ws;
       ws.onopen  = () => {
         const wasDisconnected = !this.wsConnected;
@@ -1075,33 +1119,41 @@ function dashboard() {
     },
 
     _applyStateEvent(ev) {
+      const device = ev.device;
+      if (!device) return;
       const t = ev.type;
-      // Merge any status fields the event carries into this.status
+      const existing = this.deviceBleStates[device] || {};
       const fields = ["ble_state","ble_address","ble_error","ble_rssi","ble_rssi_pct",
-                      "config_complete","node_count","my_node_num","last_rx_snr","last_rx_rssi",
-                      "has_my_info","has_mqtt_config","mqtt_proxy"];
-      const patch = {};
+                      "ble_connected","config_complete","node_count","my_node_num",
+                      "last_rx_snr","last_rx_rssi","has_my_info","has_mqtt_config","mqtt_proxy"];
+      const patch = { ...existing };
       for (const f of fields) if (ev[f] !== undefined) patch[f] = ev[f];
-      if (Object.keys(patch).length) this.status = { ...this.status, ...patch };
 
-      if (t === "snapshot" || t === "ready") {
-        this.ble_ready = true;
-        this.mqttProxy = !!(ev.mqtt_proxy);
+      if (t === "config_save_start") {
+        patch.config_saving = true;
+      } else if (t === "ready") {
+        patch.config_saving = false;
         this.serverReachable = true;
-        if (t === "ready") {
-          this._drainReadbackQueue();
-          this.bootstrapDevice();
-        }
+        if (ev.mqtt_proxy != null) this.mqttProxy = !!ev.mqtt_proxy;
+        this._drainReadbackQueue(device);
+        const isPrimary = device === (this.primaryDeviceId || this.activeNodeId);
+        if (isPrimary) this.bootstrapDevice();
+      } else if (t === "snapshot") {
+        this.serverReachable = true;
+        if (ev.mqtt_proxy != null) this.mqttProxy = !!ev.mqtt_proxy;
       } else if (t === "mqtt_proxy_up") {
         this.mqttProxy = true;
       } else if (t === "mqtt_proxy_down") {
         this.mqttProxy = false;
+      } else if (t === "error") {
+        patch.config_saving = false;
+        this.serverReachable = true;
       } else {
-        // connecting | syncing | sync_progress | reconnecting | error | idle
-        // Don't collapse the dashboard during OTA — the bridge may reconnect mid-flash
-        if (!this.otaActive) this.ble_ready = false;
+        // connecting | syncing | reconnecting | idle | sync_progress
         this.serverReachable = true;
       }
+
+      this.deviceBleStates = { ...this.deviceBleStates, [device]: patch };
     },
 
     handleEvent(ev) {
@@ -1127,23 +1179,11 @@ function dashboard() {
         // fall through to event log
       }
 
-      // State-machine events from bridge — device-scoped
+      // State-machine events from bridge — applied per device, all devices
       if (["snapshot", "ready", "connecting", "syncing", "sync_progress",
-           "reconnecting", "error", "idle", "mqtt_proxy_up", "mqtt_proxy_down"].includes(ev.type)) {
-        if (!ev.device || ev.device === this.activeNodeId) {
-          this._applyStateEvent(ev);
-        }
-        return;
-      }
-
-      // Legacy status event — backward compat during transition
-      if (ev.type === "status") {
-        if (!ev.device || ev.device === this.activeNodeId) {
-          this.status = { ...this.status, ...ev.data };
-          this.mqttProxy = ev.data.mqtt_proxy_connected;
-          this.ble_ready = !!(ev.data.ready || (ev.data.ble_state === 'ready' && ev.data.config_complete));
-          this.serverReachable = true;
-        }
+           "reconnecting", "error", "idle", "mqtt_proxy_up", "mqtt_proxy_down",
+           "config_save_start"].includes(ev.type)) {
+        this._applyStateEvent(ev);
         return;
       }
 
@@ -1222,7 +1262,6 @@ function dashboard() {
         }
       }
 
-      if (ev.device && this.activeNodeId && ev.device !== this.activeNodeId) return;
       const time = new Date().toLocaleTimeString();
       const summary = summarizeEvent(ev);
       this.events.unshift({ type: ev.type, time, summary, device: ev.device || null });
@@ -1310,7 +1349,7 @@ function dashboard() {
         if (this.tab === "nodes" && portnum === "TELEMETRY_APP") this.sortNodes(this.nodeSort.key, true);
       }
       if (ev.type === 'range_test_entry') {
-        this._rangeStats = null;
+        this._rangeStats = null; this._rangeChartCache = null;
         if (this.tab === 'range') this.loadRangeTest();
       }
       if (ev.type === "mqtt_node" && ev.data && !this.scanMode) {
@@ -1433,21 +1472,24 @@ function dashboard() {
       }
     },
 
-    _drainReadbackQueue() {
-      const queue = this._readbackQueue.splice(0);
+    _drainReadbackQueue(nodeId) {
+      const queue = this._readbackQueues[nodeId];
+      if (!queue || !queue.length) return;
+      this._readbackQueues = { ...this._readbackQueues, [nodeId]: [] };
       for (const fn of queue) fn();
     },
 
     async saveSection(sec) {
-      this.ble_ready = false;
       sec.saved = false;
       sec.error = "";
+      const nodeId = this.cfgRadioId || this.activeNodeId;
       const el = document.getElementById("sec_" + sec.name);
       const payload = collectForm(el, sec.schema.fields);
       try {
         const res = await fetchJSON(this.cd(`/config/${sec.name}`), "PUT", payload);
         if (res.error) throw new Error(res.error.message);
-        this._readbackQueue.push(async () => {
+        if (!this._readbackQueues[nodeId]) this._readbackQueues[nodeId] = [];
+        this._readbackQueues[nodeId].push(async () => {
           try {
             const values = await fetchJSON(this.cd(`/config/${sec.name}`));
             sec.data = values[sec.name] || values || {};
@@ -1456,12 +1498,20 @@ function dashboard() {
               formEl.innerHTML = "";
               formEl.appendChild(buildForm(sec.schema.fields, sec.data, []));
             }
-          } catch (_) {}
-          sec.saved = true;
-          setTimeout(() => (sec.saved = false), 2500);
+            sec.saved = true;
+            setTimeout(() => (sec.saved = false), 2500);
+            this.showToast(`${sec.name.replace(/_/g, ' ')} saved & verified ✓`);
+          } catch (e) {
+            sec.error = "Readback failed — check device is connected";
+            this.showToast(`${sec.name.replace(/_/g, ' ')} — verification failed`, 'error');
+          }
         });
+        // Fast-reboot race: device may have rebooted and fired 'ready' before the
+        // PUT response reached the browser. Drain immediately if already ready.
+        if (!this.devIsSaving(nodeId) && this.devIsReady(nodeId)) {
+          this._drainReadbackQueue(nodeId);
+        }
       } catch (e) {
-        this.ble_ready = this.status.ble_state === 'active' && !!this.status.config_complete;
         sec.error = "Save failed: " + e;
       }
     },
@@ -1504,9 +1554,9 @@ function dashboard() {
     },
 
     async saveChannel(ch) {
-      this.ble_ready = false;
       ch.saved = false;
       ch.error = "";
+      const nodeId = this.cfgRadioId || this.activeNodeId;
       const el = document.getElementById("ch_" + ch.index);
       const payload = collectForm(el, this.channelSchema.fields);
       const body = { settings: { ...payload }, role: payload.role };
@@ -1514,7 +1564,8 @@ function dashboard() {
       try {
         const res = await fetchJSON(this.cd(`/channels/${ch.index}`), "PUT", body);
         if (res.error) throw new Error(res.error.message);
-        this._readbackQueue.push(async () => {
+        if (!this._readbackQueues[nodeId]) this._readbackQueues[nodeId] = [];
+        this._readbackQueues[nodeId].push(async () => {
           try {
             const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
             ch.data = live || {};
@@ -1525,12 +1576,18 @@ function dashboard() {
               formEl.dataset.formRoot = "1";
               formEl.appendChild(buildForm(this.channelSchema.fields, formData, []));
             }
-          } catch (_) {}
-          ch.saved = true;
-          setTimeout(() => (ch.saved = false), 2500);
+            ch.saved = true;
+            setTimeout(() => (ch.saved = false), 2500);
+            this.showToast(`Channel ${ch.index} saved & verified ✓`);
+          } catch (e) {
+            ch.error = "Readback failed — check device is connected";
+            this.showToast(`Channel ${ch.index} — verification failed`, 'error');
+          }
         });
+        if (!this.devIsSaving(nodeId) && this.devIsReady(nodeId)) {
+          this._drainReadbackQueue(nodeId);
+        }
       } catch (e) {
-        this.ble_ready = this.status.ble_state === 'active' && !!this.status.config_complete;
         ch.error = "Save failed: " + e;
       }
     },
@@ -1785,10 +1842,10 @@ function dashboard() {
 
     // -- Range test -----------------------------------------------------------
     async loadRangeTest() {
-      if (!this.rangeRadioId && this.activeNodeId) this.rangeRadioId = this.activeNodeId;
       this.rangeLoading = true;
       try {
-        const nodeIds = Object.keys(this.deviceConfigs);
+        const connectedIds = new Set(this.availableDevices.map(d => d.node_id));
+        const nodeIds = Object.keys(this.deviceConfigs).filter(id => connectedIds.has(id));
         const [data, ...loraCfgs] = await Promise.all([
           fetchJSON('/range_test/log'),
           ...nodeIds.map(id =>
@@ -1809,7 +1866,7 @@ function dashboard() {
           }
         }
         this.rangeLog = (data.log || []).slice().reverse();
-        this._rangeStats = null;
+        this._rangeStats = null; this._rangeChartCache = null;
       } catch (_) {
       } finally {
         this.rangeLoading = false;
@@ -1820,7 +1877,7 @@ function dashboard() {
       if (!confirm('Clear all range test data? This cannot be undone.')) return;
       await fetchJSON('/range_test/log', "DELETE");
       this.rangeLog = [];
-      this._rangeStats = null;
+      this._rangeStats = null; this._rangeChartCache = null;
     },
 
     async loadRangeTimer() {
@@ -1853,8 +1910,8 @@ function dashboard() {
       }, 1000);
     },
 
-    async startRangeTest() {
-      const nodeId = this.rangeRadioId || this.activeNodeId;
+    async startRangeTest(nodeId) {
+      if (!nodeId) nodeId = this.activeNodeId;
       if (!nodeId) return;
       try {
         const t = await fetchJSON('/range_test/start', 'POST', { nodeId, durationMin: this.rangeDuration });
@@ -1882,16 +1939,18 @@ function dashboard() {
     },
 
     filteredRangeLog() {
-      const rxId   = this.rangeRadioId || this.activeNodeId;
-      let log = rxId ? this.rangeLog.filter(e => e.rx_device === rxId) : this.rangeLog;
+      let log = this.rangeRxFilter
+        ? this.rangeLog.filter(e => e.rx_device === this.rangeRxFilter)
+        : [...this.rangeLog];
       if (this.rangeNodeFilter) log = log.filter(e => e.from_num === this.rangeNodeFilter);
       return log;
     },
 
     // Distinct sender nodes in the current (rx-filtered) log — for the node filter dropdown
     rangeLogNodes() {
-      const rxId  = this.rangeRadioId || this.activeNodeId;
-      const base  = rxId ? this.rangeLog.filter(e => e.rx_device === rxId) : this.rangeLog;
+      const base = this.rangeRxFilter
+        ? this.rangeLog.filter(e => e.rx_device === this.rangeRxFilter)
+        : this.rangeLog;
       const seen  = new Map();
       for (const e of base) {
         if (!seen.has(e.from_num)) {
@@ -1902,15 +1961,14 @@ function dashboard() {
       return Array.from(seen.entries()).map(([num, name]) => ({ num, name }));
     },
 
-    _loraFreqMHz() {
-      // Use the rx radio's region to pick the correct FSPL frequency
-      const cfg = this.deviceConfigs[this.rangeRadioId || this.activeNodeId] || {};
+    _loraFreqMHz(rxDevice) {
       const REGION_FREQ = {
         EU_868: 868, US: 915, EU_433: 433, CN: 470, JP: 920, ANZ: 915,
         KR: 920, TW: 923, RU: 868, IN: 865, NZ_865: 865, TH: 923,
         UA_433: 433, UA_868: 868, MY_433: 433, MY_919: 919, SG_923: 923,
       };
-      return REGION_FREQ[cfg.lora_region] ?? 868;
+      const id = rxDevice || this.rangeRxFilter || this.activeNodeId;
+      return REGION_FREQ[this.deviceConfigs[id]?.lora_region] ?? 868;
     },
 
     rangeEnrich(e) {
@@ -1919,7 +1977,7 @@ function dashboard() {
       const az     = node?._az ?? null;
       let expectedRssi = null, excessLoss = null;
       if (distKm != null && distKm > 0) {
-        const freq = this._loraFreqMHz();
+        const freq = this._loraFreqMHz(e.rx_device);
         const fspl = 20 * Math.log10(distKm) + 20 * Math.log10(freq) + 32.4;
         const txNodeId = "!" + (e.from_num >>> 0).toString(16);
         const txCfg = this.deviceConfigs[txNodeId] || {};
@@ -1933,8 +1991,90 @@ function dashboard() {
       return {
         ...e,
         nodeName: node?.user?.long_name || node?.user?.short_name || ("!" + (e.from_num ?? 0).toString(16).slice(-4)),
+        via: this.deviceLabel(e.rx_device) || (e.rx_device ? e.rx_device.slice(-4) : '–'),
         distKm, az: az != null ? Math.round(az) : null, expectedRssi, excessLoss,
       };
+    },
+
+    _rssiColor(rssi) {
+      if (rssi == null) return '#444';
+      // -130 = worst (red/hue 0), -40 = best (green/hue 120)
+      const t = Math.max(0, Math.min(1, (rssi + 130) / 90));
+      return `hsl(${Math.round(t * 120)},80%,50%)`;
+    },
+
+    rangeChartData() {
+      if (this._rangeChartCache !== null) return this._rangeChartCache;
+      const enriched = this.filteredRangeLog()
+        .map(e => this.rangeEnrich(e))
+        .filter(e => e.distKm != null && e.az != null && e.rssi != null);
+
+      // --- polar scatter ---
+      const maxDist = enriched.length
+        ? Math.max(2, Math.ceil(Math.max(...enriched.map(e => e.distKm)) / 5) * 5)
+        : 10;
+      const cx = 150, cy = 150, maxR = 118;
+      const points = enriched.map(e => {
+        const r  = (e.distKm / maxDist) * maxR;
+        const az = e.az * Math.PI / 180;
+        return {
+          x: cx + r * Math.sin(az),
+          y: cy - r * Math.cos(az),
+          color: this._rssiColor(e.rssi),
+          tip: `${e.nodeName}  ${e.rssi} dBm  ${e.distKm.toFixed(1)} km  ${e.az}°`,
+        };
+      });
+      const rings = [0.25, 0.5, 0.75, 1].map(f => ({
+        r: f * maxR,
+        label: (f * maxDist < 10 ? (f * maxDist).toFixed(1) : Math.round(f * maxDist)) + ' km',
+        ly: cy - f * maxR - 3,
+      }));
+
+      // --- azimuth ring (10° bins) ---
+      const bins = Array.from({ length: 36 }, () => []);
+      for (const e of enriched) {
+        const b = Math.floor(((e.az % 360) + 360) % 360 / 10);
+        bins[b].push(e.rssi);
+      }
+      const r1 = 72, r2 = 128;
+      const arcPaths = bins.map((b, i) => {
+        const avg  = b.length ? b.reduce((s, v) => s + v, 0) / b.length : null;
+        const a1   = (i * 10 - 90) * Math.PI / 180;
+        const a2   = ((i + 1) * 10 - 90) * Math.PI / 180;
+        const cos1 = Math.cos(a1), sin1 = Math.sin(a1);
+        const cos2 = Math.cos(a2), sin2 = Math.sin(a2);
+        const d = [
+          `M${cx + r1*cos1},${cy + r1*sin1}`,
+          `L${cx + r2*cos1},${cy + r2*sin1}`,
+          `A${r2},${r2} 0 0,1 ${cx + r2*cos2},${cy + r2*sin2}`,
+          `L${cx + r1*cos2},${cy + r1*sin2}`,
+          `A${r1},${r1} 0 0,0 ${cx + r1*cos1},${cy + r1*sin1}Z`,
+        ].join(' ');
+        return { d, color: avg != null ? this._rssiColor(avg) : '#1e1e1e', avg, deg: i * 10 };
+      });
+
+      this._rangeChartCache = { points, rings, maxDist, arcPaths, hasData: enriched.length > 0 };
+      return this._rangeChartCache;
+    },
+
+    rangeRingsSvg() {
+      return this.rangeChartData().rings.map(r =>
+        `<circle cx="150" cy="150" r="${r.r}" fill="none" stroke="currentColor" stroke-opacity="0.12" stroke-width="1" stroke-dasharray="3,3"/>` +
+        `<text x="153" y="${r.ly}" class="fill-current" style="font-size:8px;opacity:0.35">${r.label}</text>`
+      ).join('');
+    },
+    rangePointsSvg() {
+      const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return this.rangeChartData().points.map(pt =>
+        `<circle cx="${pt.x}" cy="${pt.y}" r="5" fill="${pt.color}" fill-opacity="0.85" stroke="rgba(255,255,255,0.3)" stroke-width="0.8">` +
+        `<title>${esc(pt.tip)}</title></circle>`
+      ).join('');
+    },
+    rangeArcsSvg() {
+      return this.rangeChartData().arcPaths.map(seg => {
+        const tip = `${seg.deg}° – ${seg.deg+10}°: ${seg.avg != null ? Math.round(seg.avg) + ' dBm avg' : 'no data'}`;
+        return `<path d="${seg.d}" fill="${seg.color}" stroke="#0a0a0a" stroke-width="0.6"><title>${tip}</title></path>`;
+      }).join('');
     },
 
     // Recompute stats only when rangeLog/filter changes (_rangeStats invalidated on change)
@@ -1980,7 +2120,7 @@ function dashboard() {
 
     // -- Signal bars ----------------------------------------------------------
     signalBarFill(n) {
-      const snr = this.status.last_rx_snr;
+      const snr = this.primaryDevBleState.last_rx_snr;
       const bars = snr == null ? 1 : snr > 0 ? 4 : snr > -7 ? 3 : snr > -14 ? 2 : 1;
       if (n > bars) return "oklch(var(--bc)/0.12)";
       if (bars >= 3) return "oklch(var(--su))";

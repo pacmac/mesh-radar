@@ -92,6 +92,18 @@ export function attachWsRelay(server) {
       }}));
     }
     ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
+    // Send current BLE status snapshot for each connected device so new subscribers
+    // are never blind on connect (mirrors what the per-device /!id/events WS does).
+    bridge.get('/devices').then(data => {
+      for (const dev of (data.devices || [])) {
+        if (!dev.node_id || dev.node_id.startsWith('ble:')) continue;
+        bridge.get(`/${dev.node_id}/status`).then(status => {
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'snapshot', device: dev.node_id, ...status }));
+          }
+        }).catch(() => {});
+      }
+    }).catch(() => {});
   });
 
   // -- Per-device /!{nodeId}/events — snapshot first, pre-filtered -----------

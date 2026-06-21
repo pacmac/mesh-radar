@@ -47,21 +47,6 @@
 <div class="drawer h-screen" :class="sidebarPinned ? 'lg:drawer-open' : ''" x-data="dashboard()" x-init="init()">
   <input id="nav-drawer" type="checkbox" class="drawer-toggle" x-model="drawerOpen" />
 
-  <!-- ===================== BLE REBOOT OVERLAY ===================== -->
-  <div x-show="!ble_ready && !otaActive && activeNodeId && status.ble_state && status.ble_state !== 'idle'"
-       x-transition:enter="transition ease-out duration-200"
-       x-transition:enter-start="opacity-0"
-       x-transition:enter-end="opacity-100"
-       x-transition:leave="transition ease-in duration-150"
-       x-transition:leave-start="opacity-100"
-       x-transition:leave-end="opacity-0"
-       class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-base-300/80 backdrop-blur-sm">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content font-semibold"
-       x-text="deviceLabel(activeNodeId) + ' — ' + (status.ble_state === 'ready' ? 'Verifying…' : status.ble_state === 'connecting' ? 'Connecting…' : 'Reconnecting…')"></p>
-    <p class="text-base-content/50 text-sm font-mono" x-text="activeNodeId"></p>
-  </div>
-
   <!-- ===================== OTA OVERLAY ===================== -->
   <div x-show="otaActive"
        x-transition:enter="transition ease-out duration-200"
@@ -132,25 +117,25 @@
               x-show="rotatorStatus.az != null"
               x-text="Number(rotatorStatus.az).toFixed(1) + '°'"></span>
         <!-- BLE signal -->
-        <div class="tooltip tooltip-bottom" :data-tip="signalQuality(status.last_rx_rssi, status.last_rx_snr).label + ' · SNR ' + (status.last_rx_snr != null ? status.last_rx_snr.toFixed(1) + ' dB' : 'n/a') + (status.ble_rssi != null ? ' · BLE ' + status.ble_rssi + ' dBm' : '')">
-          <div class="flex items-center gap-1.5 px-2 py-1 rounded border" :class="status.ble_connected ? 'border-success/40' : 'border-error/40'">
+        <div class="tooltip tooltip-bottom" :data-tip="signalQuality(primaryDevBleState.last_rx_rssi, primaryDevBleState.last_rx_snr).label + ' · SNR ' + (primaryDevBleState.last_rx_snr != null ? primaryDevBleState.last_rx_snr.toFixed(1) + ' dB' : 'n/a') + (primaryDevBleState.ble_rssi != null ? ' · BLE ' + primaryDevBleState.ble_rssi + ' dBm' : '')">
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded border" :class="primaryDevBleState.ble_state === 'ready' ? 'border-success/40' : 'border-error/40'">
             <svg width="16" height="13" viewBox="0 0 16 13" class="shrink-0">
               <rect x="0"  y="9"  width="3" height="4"  rx="0.8" :fill="signalBarFill(1)"/>
               <rect x="4"  y="6"  width="3" height="7"  rx="0.8" :fill="signalBarFill(2)"/>
               <rect x="8"  y="3"  width="3" height="10" rx="0.8" :fill="signalBarFill(3)"/>
               <rect x="12" y="0"  width="3" height="13" rx="0.8" :fill="signalBarFill(4)"/>
             </svg>
-            <span class="text-xs font-bold tracking-widest" :class="status.ble_connected ? 'text-success' : 'text-error'" style="font-family:'Oxanium',sans-serif;font-size:0.62rem">BLE</span>
-            <span class="inline-block w-1.5 h-1.5 rounded-full" :class="status.ble_connected ? 'bg-success animate-pulse' : 'bg-error'"></span>
+            <span class="text-xs font-bold tracking-widest" :class="primaryDevBleState.ble_state === 'ready' ? 'text-success' : 'text-error'" style="font-family:'Oxanium',sans-serif;font-size:0.62rem">BLE</span>
+            <span class="inline-block w-1.5 h-1.5 rounded-full" :class="primaryDevBleState.ble_state === 'ready' ? 'bg-success animate-pulse' : 'bg-error'"></span>
           </div>
         </div>
-        <!-- Non-active device reconnecting indicator -->
-        <template x-for="dev in availableDevices.filter(d => d.node_id !== activeNodeId && d.ble_state && d.ble_state !== 'ready' && d.ble_state !== 'idle')" :key="dev.node_id">
-          <div class="tooltip tooltip-bottom" :data-tip="dev.node_id + ' — ' + dev.ble_state"
+        <!-- Per-device not-ready indicator — all devices shown in header -->
+        <template x-for="dev in availableDevices.filter(d => devBleState(d.node_id) && devBleState(d.node_id) !== 'ready' && devBleState(d.node_id) !== 'idle')" :key="dev.node_id">
+          <div class="tooltip tooltip-bottom" :data-tip="dev.node_id + ' — ' + devBleLabel(dev.node_id)"
                @click="setNav('devices')" style="cursor:pointer">
             <div class="badge badge-warning gap-1 text-xs animate-pulse">
               <span class="font-mono" x-text="deviceLabel(dev.node_id)"></span>
-              <span x-text="dev.ble_state"></span>
+              <span x-text="devBleLabel(dev.node_id)"></span>
             </div>
           </div>
         </template>
@@ -160,7 +145,7 @@
             MQTT
           </div>
         </div>
-        <div class="badge badge-info" x-text="(status.node_count ?? '–') + ' nodes'"></div>
+        <div class="badge badge-info" x-text="(nodeCount || '–') + ' nodes'"></div>
         <div class="badge" :class="wsConnected ? 'badge-primary' : 'badge-ghost'" x-text="wsConnected ? 'live' : 'offline'"></div>
       </div>
     </div>
@@ -210,8 +195,8 @@
             </div>
             <div class="stat">
               <div class="stat-title">Config</div>
-              <div class="stat-value text-lg" :class="status.config_complete ? 'text-success' : 'text-warning'" x-text="status.config_complete ? 'complete' : 'syncing…'"></div>
-              <div class="stat-desc" x-text="(status.node_count ?? 0) + ' nodes in db'"></div>
+              <div class="stat-value text-lg" :class="primaryDevBleState.config_complete ? 'text-success' : 'text-warning'" x-text="primaryDevBleState.config_complete ? 'complete' : 'syncing…'"></div>
+              <div class="stat-desc" x-text="(primaryDevBleState.node_count ?? nodeCount ?? 0) + ' nodes in db'"></div>
             </div>
           </div>
 
@@ -1432,10 +1417,13 @@
                     <span class="loading loading-spinner loading-xs" x-show="sec.loading"></span>
                   </div>
                   <div class="collapse-content">
-                    <div x-ref="'sec_' + sec.name" :id="'sec_' + sec.name"></div>
+                    <fieldset :id="'sec_' + sec.name" class="border-0 p-0 m-0 w-full"
+                              :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)"
+                              :class="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
                     <div class="flex items-center gap-2 mt-3" x-show="sec.loaded">
-                      <button class="btn btn-sm btn-primary" @click="saveSection(sec)">Save</button>
+                      <button class="btn btn-sm btn-primary" :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)" @click="saveSection(sec)">Save</button>
                       <span class="text-success text-sm" x-show="sec.saved" x-transition>Saved ✓</span>
+                      <span class="text-warning text-sm animate-pulse" x-show="devIsSaving(cfgRadioId)" x-transition>Reconnecting…</span>
                       <span class="text-error text-sm" x-show="sec.error" x-text="sec.error"></span>
                     </div>
                     <div x-show="sec.name === 'position' && sec.loaded" class="col-span-1 sm:col-span-2 border border-base-300 rounded-lg p-3 mt-3">
@@ -1481,10 +1469,13 @@
                     <span class="loading loading-spinner loading-xs" x-show="ch.loading"></span>
                   </div>
                   <div class="collapse-content">
-                    <div :id="'ch_' + ch.index"></div>
+                    <fieldset :id="'ch_' + ch.index" class="border-0 p-0 m-0 w-full"
+                              :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)"
+                              :class="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
                     <div class="flex items-center gap-2 mt-3" x-show="ch.loaded">
-                      <button class="btn btn-sm btn-primary" @click="saveChannel(ch)">Save</button>
+                      <button class="btn btn-sm btn-primary" :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)" @click="saveChannel(ch)">Save</button>
                       <span class="text-success text-sm" x-show="ch.saved" x-transition>Saved ✓</span>
+                      <span class="text-warning text-sm animate-pulse" x-show="devIsSaving(cfgRadioId)" x-transition>Reconnecting…</span>
                       <span class="text-error text-sm" x-show="ch.error" x-text="ch.error"></span>
                     </div>
                   </div>
@@ -1648,92 +1639,151 @@
         <div x-show="tab==='range'" class="flex flex-col gap-4">
           <!-- Control bar -->
           <div class="card bg-base-100 shadow">
-            <div class="card-body py-3">
+            <div class="card-body py-3 gap-2">
               <div class="flex flex-wrap items-center gap-3">
-                <span class="text-sm opacity-60 shrink-0">Radio:</span>
-                <select class="select select-bordered select-sm"
-                        x-model="rangeRadioId"
-                        @change="loadRangeTest(); rangeNodeFilter = ''">
+                <!-- RX device filter pills -->
+                <div class="join">
+                  <button class="join-item btn btn-xs" :class="!rangeRxFilter ? 'btn-active' : 'btn-outline'"
+                          @click="rangeRxFilter = ''">All</button>
                   <template x-for="dev in availableDevices" :key="dev.node_id">
-                    <option :value="dev.node_id"
-                            x-text="deviceLabel(dev.node_id) + ' — ' + (dev.long_name || dev.short_name || dev.node_id)"></option>
+                    <button class="join-item btn btn-xs"
+                            :class="rangeRxFilter === dev.node_id ? 'btn-active' : 'btn-outline'"
+                            @click="rangeRxFilter = dev.node_id"
+                            x-text="deviceLabel(dev.node_id) || dev.short_name || dev.node_id"></button>
                   </template>
-                </select>
-                <span class="text-sm opacity-60 shrink-0">Duration:</span>
-                <select class="select select-bordered select-sm w-28" x-model.number="rangeDuration">
-                  <option value="5">5 min</option>
-                  <option value="10">10 min</option>
-                  <option value="15">15 min</option>
-                  <option value="30">30 min</option>
-                  <option value="60">60 min</option>
-                </select>
-                <template x-if="!rangeTimer.active">
-                  <button class="btn btn-sm btn-success" @click="startRangeTest()" :disabled="!rangeRadioId && !activeNodeId">Start</button>
+                </div>
+                <!-- Sender node filter -->
+                <template x-if="rangeLogNodes().length > 1">
+                  <select class="select select-bordered select-xs" x-model.number="rangeNodeFilter">
+                    <option value="">All nodes</option>
+                    <template x-for="n in rangeLogNodes()" :key="n.num">
+                      <option :value="n.num" x-text="n.name"></option>
+                    </template>
+                  </select>
                 </template>
-                <template x-if="rangeTimer.active">
-                  <div class="flex items-center gap-2">
-                    <button class="btn btn-sm btn-error" @click="stopRangeTest()">Stop</button>
-                    <span class="text-xs opacity-50">auto-off in</span>
-                    <span class="font-mono text-sm text-warning" x-text="rangeFmtCountdown(rangeTimer.remaining)"></span>
-                    <span class="text-xs opacity-40" x-text="'(' + (rangeTimer.nodeId || '') + ')'"></span>
-                  </div>
-                </template>
+                <div class="flex-1"></div>
+                <span class="loading loading-spinner loading-xs" x-show="rangeLoading"></span>
+                <button class="btn btn-xs btn-outline" @click="loadRangeTest()">Refresh</button>
+                <button class="btn btn-xs btn-outline btn-info" @click="exportRangeCsv()" :disabled="!filteredRangeLog().length">CSV</button>
+                <button class="btn btn-xs btn-outline btn-error" @click="clearRangeTest()" :disabled="!rangeLog.length">Clear</button>
               </div>
+              <!-- TX active strip — only when a sender test is running -->
+              <template x-if="rangeTimer.active">
+                <div class="flex items-center gap-2 text-sm border-t border-base-300 pt-2">
+                  <span class="text-warning font-bold">⚡</span>
+                  <span class="opacity-60">TX active —</span>
+                  <span class="font-semibold" x-text="deviceLabel(rangeTimer.nodeId) || rangeTimer.nodeId"></span>
+                  <span class="opacity-50">sending · auto-off in</span>
+                  <span class="font-mono text-warning" x-text="rangeFmtCountdown(rangeTimer.remaining)"></span>
+                  <button class="btn btn-xs btn-error ml-auto" @click="stopRangeTest()">Stop TX</button>
+                </div>
+              </template>
             </div>
           </div>
-          <!-- Stats panel — computed once via rangeStats() cache -->
+          <!-- Stats panel -->
           <template x-if="rangeStats()">
             <div class="flex flex-col gap-2">
-              <div class="flex items-center gap-3 px-1 text-sm flex-wrap">
-                <span class="font-semibold opacity-70" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.antenna_type || 'Unknown antenna'"></span>
-                <span class="badge badge-sm badge-outline" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.gain_dbi != null" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.gain_dbi + ' dBi'"></span>
-                <span class="badge badge-sm badge-outline badge-warning" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.cable_loss_db" x-text="'−' + deviceConfigs[rangeRadioId || activeNodeId]?.cable_loss_db + ' dB cable'"></span>
-                <span class="badge badge-sm badge-outline badge-info" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.tx_power_dbm != null" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.tx_power_dbm + ' dBm TX'"></span>
-                <span class="badge badge-sm badge-outline badge-ghost" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.lora_region" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.lora_region + ' · ' + _loraFreqMHz() + ' MHz'"></span>
-              </div>
-              <div class="stats stats-horizontal shadow bg-base-100 w-full overflow-x-auto" x-data="{ s: rangeStats() }">
-                <div class="stat"><div class="stat-title">Packets</div><div class="stat-value text-lg" x-text="s.count"></div><div class="stat-desc">range test rx</div></div>
-                <div class="stat"><div class="stat-title">Best RSSI</div><div class="stat-value text-lg text-success" x-text="s.bestRssi + ' dBm'"></div><div class="stat-desc" x-text="'median ' + s.medianRssi + ' dBm'"></div></div>
-                <div class="stat"><div class="stat-title">Best SNR</div><div class="stat-value text-lg text-info" x-text="s.bestSnr != null ? s.bestSnr + ' dB' : '–'"></div><div class="stat-desc" x-text="s.medianSnr != null ? 'median ' + s.medianSnr + ' dB' : 'no SNR data'"></div></div>
-                <div class="stat"><div class="stat-title">Max range</div><div class="stat-value text-lg" x-text="s.maxDistKm != null ? s.maxDistKm + ' km' : '–'"></div><div class="stat-desc">of heard packets with position</div></div>
-                <div class="stat"><div class="stat-title">Median excess loss</div><div class="stat-value text-lg" :class="s.medianExcessLoss != null && s.medianExcessLoss < 0 ? 'text-success' : 'text-warning'" x-text="s.medianExcessLoss != null ? s.medianExcessLoss + ' dB' : '–'"></div><div class="stat-desc">vs FSPL (−=better than theory)</div></div>
+              <!-- Antenna bar — only when a specific radio is selected -->
+              <template x-if="rangeRxFilter && deviceConfigs[rangeRxFilter]">
+                <div class="flex items-center gap-3 px-1 text-sm flex-wrap">
+                  <span class="font-semibold opacity-70" x-text="deviceConfigs[rangeRxFilter]?.antenna_type || 'Unknown antenna'"></span>
+                  <span class="badge badge-sm badge-outline" x-show="deviceConfigs[rangeRxFilter]?.gain_dbi != null" x-text="deviceConfigs[rangeRxFilter]?.gain_dbi + ' dBi'"></span>
+                  <span class="badge badge-sm badge-outline badge-warning" x-show="deviceConfigs[rangeRxFilter]?.cable_loss_db" x-text="'−' + deviceConfigs[rangeRxFilter]?.cable_loss_db + ' dB cable'"></span>
+                  <span class="badge badge-sm badge-outline badge-info" x-show="deviceConfigs[rangeRxFilter]?.tx_power_dbm != null" x-text="deviceConfigs[rangeRxFilter]?.tx_power_dbm + ' dBm TX'"></span>
+                  <span class="badge badge-sm badge-outline badge-ghost" x-show="deviceConfigs[rangeRxFilter]?.lora_region" x-text="deviceConfigs[rangeRxFilter]?.lora_region + ' · ' + _loraFreqMHz(rangeRxFilter) + ' MHz'"></span>
+                </div>
+              </template>
+              <div class="stats stats-horizontal shadow bg-base-100 w-full overflow-x-auto">
+                <div class="stat"><div class="stat-title">Packets</div><div class="stat-value text-lg" x-text="rangeStats().count"></div><div class="stat-desc">range test rx</div></div>
+                <div class="stat"><div class="stat-title">Best RSSI</div><div class="stat-value text-lg text-success" x-text="rangeStats().bestRssi + ' dBm'"></div><div class="stat-desc" x-text="'median ' + rangeStats().medianRssi + ' dBm'"></div></div>
+                <div class="stat"><div class="stat-title">Best SNR</div><div class="stat-value text-lg text-info" x-text="rangeStats().bestSnr != null ? rangeStats().bestSnr + ' dB' : '–'"></div><div class="stat-desc" x-text="rangeStats().medianSnr != null ? 'median ' + rangeStats().medianSnr + ' dB' : 'no SNR data'"></div></div>
+                <div class="stat"><div class="stat-title">Max range</div><div class="stat-value text-lg" x-text="rangeStats().maxDistKm != null ? rangeStats().maxDistKm + ' km' : '–'"></div><div class="stat-desc">of heard packets with position</div></div>
+                <div class="stat"><div class="stat-title">Median excess loss</div><div class="stat-value text-lg" :class="rangeStats().medianExcessLoss != null && rangeStats().medianExcessLoss < 0 ? 'text-success' : 'text-warning'" x-text="rangeStats().medianExcessLoss != null ? rangeStats().medianExcessLoss + ' dB' : '–'"></div><div class="stat-desc">vs FSPL (−=better than theory)</div></div>
               </div>
             </div>
           </template>
+          <!-- Charts -->
+          <div class="card bg-base-100 shadow">
+            <div class="card-body py-3 gap-4">
+              <div class="flex flex-wrap gap-8 justify-center items-start">
+
+                <!-- Polar range-bearing scatter -->
+                <div class="flex flex-col items-center gap-1">
+                  <span class="text-xs font-semibold opacity-50 uppercase tracking-wide">Range · Bearing</span>
+                  <svg width="300" height="300" viewBox="0 0 300 300" class="overflow-visible">
+                    <!-- Distance rings -->
+                    <g x-html="rangeRingsSvg()"></g>
+                    <!-- Cardinal spokes -->
+                    <g stroke="currentColor" stroke-opacity="0.12" stroke-width="1">
+                      <line x1="150" y1="28" x2="150" y2="272"/>
+                      <line x1="28"  y1="150" x2="272" y2="150"/>
+                      <line x1="67"  y1="67"  x2="233" y2="233"/>
+                      <line x1="233" y1="67"  x2="67"  y2="233"/>
+                    </g>
+                    <!-- Cardinal labels -->
+                    <text x="150" y="18"  text-anchor="middle" class="fill-current" style="font-size:10px;opacity:0.45">N</text>
+                    <text x="284" y="154" text-anchor="start"  class="fill-current" style="font-size:10px;opacity:0.45">E</text>
+                    <text x="150" y="290" text-anchor="middle" class="fill-current" style="font-size:10px;opacity:0.45">S</text>
+                    <text x="16"  y="154" text-anchor="end"    class="fill-current" style="font-size:10px;opacity:0.45">W</text>
+                    <!-- Data points -->
+                    <g x-html="rangePointsSvg()"></g>
+                    <!-- No data -->
+                    <text x="150" y="156" text-anchor="middle" class="fill-current" style="font-size:12px;opacity:0.25" x-show="!rangeChartData().hasData">awaiting data</text>
+                  </svg>
+                </div>
+
+                <!-- Azimuth RSSI ring -->
+                <div class="flex flex-col items-center gap-1">
+                  <span class="text-xs font-semibold opacity-50 uppercase tracking-wide">Signal by Bearing</span>
+                  <svg width="300" height="300" viewBox="0 0 300 300">
+                    <!-- Background ring -->
+                    <circle cx="150" cy="150" r="128" fill="none" stroke="currentColor" stroke-opacity="0.08" stroke-width="57"/>
+                    <!-- Bin arcs -->
+                    <g x-html="rangeArcsSvg()"></g>
+                    <!-- Cardinal labels -->
+                    <text x="150" y="10"  text-anchor="middle" class="fill-current" style="font-size:10px;opacity:0.45">N</text>
+                    <text x="292" y="154" text-anchor="start"  class="fill-current" style="font-size:10px;opacity:0.45">E</text>
+                    <text x="150" y="296" text-anchor="middle" class="fill-current" style="font-size:10px;opacity:0.45">S</text>
+                    <text x="8"   y="154" text-anchor="end"    class="fill-current" style="font-size:10px;opacity:0.45">W</text>
+                    <!-- Center label -->
+                    <text x="150" y="145" text-anchor="middle" class="fill-current" style="font-size:10px;opacity:0.4">avg</text>
+                    <text x="150" y="160" text-anchor="middle" class="fill-current" style="font-size:10px;opacity:0.4">RSSI</text>
+                    <!-- No data -->
+                    <text x="150" y="156" text-anchor="middle" class="fill-current" style="font-size:12px;opacity:0.25" x-show="!rangeChartData().hasData">awaiting data</text>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- RSSI colour scale -->
+              <div class="flex items-center gap-2 justify-center text-xs opacity-50">
+                <span>−130 dBm</span>
+                <div style="background:linear-gradient(to right,hsl(0,80%,50%),hsl(60,80%,50%),hsl(120,80%,50%));width:100px;height:7px;border-radius:3px"></div>
+                <span>−40 dBm</span>
+                <span class="ml-3 opacity-60">weak → strong</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Log table -->
           <div class="card bg-base-100 shadow">
             <div class="card-body py-3">
-              <div class="flex items-center justify-between flex-wrap gap-2">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <h2 class="card-title text-base">Range test log</h2>
-                  <span class="badge badge-neutral" x-text="filteredRangeLog().length"></span>
-                  <span class="loading loading-spinner loading-xs" x-show="rangeLoading"></span>
-                  <!-- Node filter -->
-                  <template x-if="rangeLogNodes().length > 1">
-                    <select class="select select-bordered select-xs" x-model.number="rangeNodeFilter">
-                      <option value="">All nodes</option>
-                      <template x-for="n in rangeLogNodes()" :key="n.num">
-                        <option :value="n.num" x-text="n.name"></option>
-                      </template>
-                    </select>
-                  </template>
-                </div>
-                <div class="flex gap-2">
-                  <button class="btn btn-xs btn-outline" @click="loadRangeTest()">Refresh</button>
-                  <button class="btn btn-xs btn-outline btn-info" @click="exportRangeCsv()" :disabled="!filteredRangeLog().length">CSV</button>
-                  <button class="btn btn-xs btn-outline btn-error" @click="clearRangeTest()" :disabled="!rangeLog.length">Clear</button>
-                </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <h2 class="card-title text-base">Range Test Log</h2>
+                <span class="badge badge-neutral" x-text="filteredRangeLog().length"></span>
               </div>
-              <div x-show="!filteredRangeLog().length && !rangeLoading" class="text-base-content/40 italic text-sm py-4 text-center">No range test packets received yet.</div>
-              <div x-show="filteredRangeLog().length > 0" class="overflow-x-auto max-h-[60vh]">
+              <div class="overflow-x-auto max-h-[60vh]">
                 <table class="table table-zebra table-xs">
                   <thead class="sticky top-0 bg-base-100 z-10">
-                    <tr><th>Time</th><th>Node</th><th>Seq</th><th>Dist (km)</th><th>Az (°)</th><th>RSSI (dBm)</th><th>SNR (dB)</th><th>Exp RSSI</th><th>Excess loss</th><th>Hops</th></tr>
+                    <tr><th>Time</th><th x-show="!rangeRxFilter">Via</th><th>Node</th><th>Seq</th><th>Dist (km)</th><th>Az (°)</th><th>RSSI (dBm)</th><th>SNR (dB)</th><th>Exp RSSI</th><th>Excess loss</th><th>Hops</th></tr>
                   </thead>
                   <tbody>
+                    <template x-if="!filteredRangeLog().length">
+                      <tr><td :colspan="rangeRxFilter ? 10 : 11" class="text-center py-8 opacity-30 italic">awaiting data</td></tr>
+                    </template>
                     <template x-for="raw in filteredRangeLog()" :key="raw.id">
                       <tr x-data="{ e: rangeEnrich(raw) }">
                         <td class="font-mono text-xs" x-text="fmtAge(e.ts)"></td>
+                        <td x-show="!rangeRxFilter" class="font-mono text-xs opacity-70" x-text="e.via"></td>
                         <td x-text="e.nodeName"></td>
                         <td class="font-mono text-xs" x-text="e.seq || '–'"></td>
                         <td x-text="e.distKm != null ? e.distKm.toFixed(1) : '–'"></td>
@@ -1824,8 +1874,8 @@
                     <span x-show="deviceConfigs[dev.node_id]?.is_primary" class="badge badge-sm badge-success">PRIMARY</span>
                     <span x-show="deviceConfigs[dev.node_id]?.is_rotator" class="badge badge-sm badge-warning">ROTATOR</span>
                     <span class="badge badge-sm ml-auto"
-                          :class="dev.ble_state==='ready'?'badge-success':dev.ble_state==='syncing'?'badge-warning':dev.ble_state==='error'?'badge-error':'badge-ghost'"
-                          x-text="dev.ble_state || 'connected'"></span>
+                          :class="devBleState(dev.node_id)==='ready'&&!devIsSaving(dev.node_id)?'badge-success':devBleState(dev.node_id)==='syncing'||devIsSaving(dev.node_id)?'badge-warning':devBleState(dev.node_id)==='error'?'badge-error':'badge-ghost'"
+                          x-text="devIsSaving(dev.node_id) ? 'Saving…' : (devBleState(dev.node_id) || 'connected')"></span>
                   </div>
                   <!-- BLE / network stats -->
                   <div class="flex gap-4 text-xs opacity-60 flex-wrap">
@@ -1986,6 +2036,37 @@
                     </div>
                     <p class="text-xs opacity-40 mt-1">Device disconnects, reboots into bootloader, flashes over BLE, reconnects automatically.</p>
                   </div>
+                  <!-- Range Test TX -->
+                  <div class="border-t border-base-300 pt-3">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="text-xs font-semibold opacity-60 uppercase tracking-wide">Range Test TX</span>
+                      <template x-if="rangeTimer.active && rangeTimer.nodeId === dev.node_id">
+                        <span class="badge badge-sm badge-warning animate-pulse">Sending</span>
+                      </template>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <template x-if="!(rangeTimer.active && rangeTimer.nodeId === dev.node_id)">
+                        <div class="flex items-center gap-2">
+                          <select class="select select-bordered select-xs w-24" x-model.number="rangeDuration">
+                            <option value="5">5 min</option>
+                            <option value="10">10 min</option>
+                            <option value="15">15 min</option>
+                            <option value="30">30 min</option>
+                            <option value="60">60 min</option>
+                          </select>
+                          <button class="btn btn-xs btn-success"
+                                  :disabled="dev.ble_state !== 'ready'"
+                                  @click="startRangeTest(dev.node_id)">Start TX</button>
+                        </div>
+                      </template>
+                      <template x-if="rangeTimer.active && rangeTimer.nodeId === dev.node_id">
+                        <div class="flex items-center gap-2">
+                          <span class="font-mono text-sm text-warning" x-text="rangeFmtCountdown(rangeTimer.remaining)"></span>
+                          <button class="btn btn-xs btn-error" @click="stopRangeTest()">Stop TX</button>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
                   <!-- Actions -->
                   <div class="flex gap-2 flex-wrap">
                     <button class="btn btn-xs btn-outline" :class="dev.node_id===activeNodeId&&'btn-success'" :disabled="dev.node_id===activeNodeId" @click="selectDevice(dev.node_id)">
@@ -2109,7 +2190,7 @@
         </div>
         <!-- Active device -->
         <div class="mt-2 flex items-center gap-1" x-show="activeNodeId">
-          <span class="inline-block w-1.5 h-1.5 rounded-full bg-success animate-pulse" x-show="status.ble_connected"></span>
+          <span class="inline-block w-1.5 h-1.5 rounded-full bg-success animate-pulse" x-show="primaryDevBleState.ble_state === 'ready'"></span>
           <span class="font-mono text-xs text-success" x-text="activeNodeId"></span>
         </div>
         <!-- Device selector (shown when multiple devices) -->
@@ -2184,5 +2265,16 @@
     });
   });
 </script>
+
+<!-- Toast notifications -->
+<div class="toast toast-top toast-end z-[9999] pointer-events-none" style="top:4rem">
+  <template x-for="t in toasts" :key="t.id">
+    <div class="alert shadow-lg text-sm py-2 px-4 pointer-events-auto"
+         :class="t.type === 'error' ? 'alert-error' : 'alert-success'">
+      <span x-text="t.message"></span>
+    </div>
+  </template>
+</div>
+
 </body>
 </html>
