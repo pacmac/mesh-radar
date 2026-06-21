@@ -2259,18 +2259,28 @@ function dashboard() {
     },
 
     _envScales(rows) {
-      let tMin = Infinity, tMax = -Infinity, tsMin = Infinity, tsMax = -Infinity;
+      let tMin = Infinity, tMax = -Infinity, rhMin = Infinity, rhMax = -Infinity, tsMin = Infinity, tsMax = -Infinity;
       for (const r of rows) {
         const dp = this.dewPoint(r.temperature, r.relative_humidity);
         for (const v of [r.temperature, dp].filter(v => v != null)) {
           if (v < tMin) tMin = v;
           if (v > tMax) tMax = v;
         }
+        if (r.relative_humidity != null) {
+          if (r.relative_humidity < rhMin) rhMin = r.relative_humidity;
+          if (r.relative_humidity > rhMax) rhMax = r.relative_humidity;
+        }
         if (r.ts < tsMin) tsMin = r.ts;
         if (r.ts > tsMax) tsMax = r.ts;
       }
-      const pad = Math.max(0.5, (tMax - tMin) * 0.08);
-      return { tMin: tMin - pad, tMax: tMax + pad, tsMin, tsMax };
+      const pad   = Math.max(0.5, (tMax - tMin) * 0.08);
+      const rhPad = Math.max(1,   (rhMax - rhMin) * 0.1);
+      return {
+        tMin: tMin - pad, tMax: tMax + pad,
+        rhMin: Math.max(0,   rhMin - rhPad),
+        rhMax: Math.min(100, rhMax + rhPad),
+        tsMin, tsMax,
+      };
     },
 
     // Chart coordinate system: viewBox 0 0 420 250
@@ -2282,8 +2292,9 @@ function dashboard() {
     _envY(val, sc, oy = 18, H = 200) {
       return oy + H * (1 - (val - sc.tMin) / (sc.tMax - sc.tMin));
     },
-    _envYh(rh, oy = 18, H = 200) {
-      return oy + H * (1 - rh / 100);
+    _envYh(rh, sc, oy = 18, H = 200) {
+      const lo = sc?.rhMin ?? 0, hi = sc?.rhMax ?? 100;
+      return oy + H * (1 - (rh - lo) / (hi - lo));
     },
 
     envTempPoints(nodeId) {
@@ -2307,7 +2318,7 @@ function dashboard() {
       const rows = (this.envHistory[nodeId] ?? []).filter(r => r.relative_humidity != null);
       if (rows.length < 2) return '';
       const sc = this._envScales(this.envHistory[nodeId] ?? []);
-      return rows.map(r => `${this._envX(r.ts, sc).toFixed(1)},${this._envYh(r.relative_humidity).toFixed(1)}`).join(' ');
+      return rows.map(r => `${this._envX(r.ts, sc).toFixed(1)},${this._envYh(r.relative_humidity, sc).toFixed(1)}`).join(' ');
     },
 
     envChartYLabels(nodeId) {
@@ -2321,10 +2332,13 @@ function dashboard() {
       }).join('');
     },
 
-    envChartRhLabels() {
-      return [0, 25, 50, 75, 100].map(rh => {
-        const y = (18 + 200 * (1 - rh / 100) + 3).toFixed(0);
-        return `<text x="387" y="${y}" text-anchor="start" font-size="8" fill="rgba(80,160,255,0.70)" font-family="monospace">${rh}%</text>`;
+    envChartRhLabels(nodeId) {
+      const rows = this.envHistory[nodeId] ?? [];
+      const sc = rows.length ? this._envScales(rows) : { rhMin: 0, rhMax: 100 };
+      return [0, 1, 2, 3, 4].map(i => {
+        const rh = sc.rhMin + (sc.rhMax - sc.rhMin) * i / 4;
+        const y  = (18 + 200 * (1 - i / 4) + 3).toFixed(0);
+        return `<text x="387" y="${y}" text-anchor="start" font-size="8" fill="rgba(80,160,255,0.70)" font-family="monospace">${rh.toFixed(0)}%</text>`;
       }).join('');
     },
 
