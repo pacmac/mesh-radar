@@ -29,9 +29,15 @@ const FILTER_CFG_KEY = {
   nodeSource: 'node_filters.node_source',
 };
 
+const _PATH_TO_TAB = { '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes', '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/devices': 'devices' };
+const _TAB_TO_PATH = { overview: '/', radar: '/radar', nodes: '/nodes', cfg: '/config', range: '/range', messages: '/messages', devices: '/devices' };
+function _initTab() {
+  return _PATH_TO_TAB[window.location.pathname] ?? localStorage.getItem('activeTab') ?? 'overview';
+}
+
 function dashboard() {
   return {
-    tab: localStorage.getItem("activeTab") || "overview",
+    tab: _initTab(),
     cfgTab: localStorage.getItem("activeCfgTab") || "device",
     drawerOpen: false,
     sidebarPinned: localStorage.getItem('sidebarPinned') !== 'false',
@@ -183,6 +189,8 @@ function dashboard() {
     rangeLoading: false,
     rangeRadioId: "",
     rangeDuration: 10,
+    rangeNodeFilter: "",
+    _rangeStats: null,
     rangeTimer: { active: false, endsAt: null, nodeId: null, remaining: null },
     _rangeCountdown: null,
     _rangeAutoSync: null,
@@ -196,6 +204,8 @@ function dashboard() {
       localStorage.setItem("activeTab", t);
       if (c) { this.cfgTab = c; localStorage.setItem("activeCfgTab", c); }
       this.drawerOpen = false;
+      const p = _TAB_TO_PATH[t] || '/';
+      if (window.location.pathname !== p) history.pushState({ tab: t }, '', p);
       if (t === "radar") this.$nextTick(() => this.initRadar());
       else if (t === "cfg") this.switchCfgTab(c || this.cfgTab || "radio");
       else if (t === "range") { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
@@ -320,12 +330,18 @@ function dashboard() {
       await this.loadRotatorState();
 
       this.connectWS();
+      window.addEventListener('popstate', e => {
+        const t = e.state?.tab ?? _PATH_TO_TAB[window.location.pathname] ?? 'overview';
+        this.setNav(t);
+      });
       this.$watch('ble_ready', (ready, wasReady) => {
         if (ready && !wasReady) this._drainReadbackQueue();
       });
       this.$watch('activeNodeId', () => { this.loadTiltHistory(); this.loadEnvHistory(this.activeNodeId); });
-      this.$watch('tiltWindow',   () => this.loadTiltHistory());
-      this.$watch('envWindow',    () => this.loadEnvHistory(this.activeNodeId));
+      this.$watch('tiltWindow',        () => this.loadTiltHistory());
+      this.$watch('envWindow',         () => this.loadEnvHistory(this.activeNodeId));
+      this.$watch('rangeNodeFilter',   () => { this._rangeStats = null; });
+      this.$watch('rangeRadioId',      () => { this._rangeStats = null; });
       this.$watch('tiltPeak', peak => {
         const stops = [0.25, 0.5, 1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90];
         const maxRing = stops.find(v => v >= Math.max(peak * 1.25, 0.5)) ?? 90;
@@ -339,7 +355,7 @@ function dashboard() {
 
       if (this.tab === "radar") this.$nextTick(() => this.initRadar());
       else if (this.tab === "cfg") this.switchCfgTab(this.cfgTab);
-      else if (this.tab === "range") this.loadRangeTest();
+      else if (this.tab === "range") { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
     },
 
     // Load node filter + radar prefs from /config (server-side SQLite)
@@ -362,6 +378,7 @@ function dashboard() {
         this.radarLogScale  = cfg['radar.log_scale']  ?? false;
         this.radarCrosshair = cfg['radar.crosshair']  ?? true;
         this.packetSources  = cfg['packet_sources']   ?? [];
+        if (cfg['range_test.duration']) this.rangeDuration = cfg['range_test.duration'];
       } catch (e) {
         console.warn('Failed to load config', e);
       }
@@ -1291,7 +1308,10 @@ function dashboard() {
           if (this.tab === "radar") this.drawRadar();
         }
         if (this.tab === "nodes" && portnum === "TELEMETRY_APP") this.sortNodes(this.nodeSort.key, true);
-        if (portnum === "RANGE_TEST_APP" && this.tab === "range") this.loadRangeTest();
+      }
+      if (ev.type === 'range_test_entry') {
+        this._rangeStats = null;
+        if (this.tab === 'range') this.loadRangeTest();
       }
       if (ev.type === "mqtt_node" && ev.data && !this.scanMode) {
         const upd = ev.data;
@@ -1772,16 +1792,24 @@ function dashboard() {
         const [data, ...loraCfgs] = await Promise.all([
           fetchJSON('/range_test/log'),
           ...nodeIds.map(id =>
-            fetchJSON(`/${id}/config`).then(r => ({ id, tx_power: r?.config?.lora?.tx_power ?? null })).catch(() => ({ id, tx_power: null }))
+            fetchJSON(`/${id}/config`).then(r => ({
+              id,
+              tx_power: r?.config?.lora?.tx_power ?? null,
+              region:   r?.config?.lora?.region   ?? null,
+            })).catch(() => ({ id, tx_power: null, region: null }))
           ),
         ]);
-        // Merge live tx_power into deviceConfigs (non-reactive, just for rangeEnrich lookup)
-        for (const { id, tx_power } of loraCfgs) {
-          if (tx_power != null && this.deviceConfigs[id]) {
-            this.deviceConfigs[id] = { ...this.deviceConfigs[id], tx_power_dbm: tx_power };
+        for (const { id, tx_power, region } of loraCfgs) {
+          if (this.deviceConfigs[id]) {
+            this.deviceConfigs[id] = {
+              ...this.deviceConfigs[id],
+              ...(tx_power != null ? { tx_power_dbm: tx_power } : {}),
+              ...(region   != null ? { lora_region:  region   } : {}),
+            };
           }
         }
         this.rangeLog = (data.log || []).slice().reverse();
+        this._rangeStats = null;
       } catch (_) {
       } finally {
         this.rangeLoading = false;
@@ -1789,8 +1817,10 @@ function dashboard() {
     },
 
     async clearRangeTest() {
+      if (!confirm('Clear all range test data? This cannot be undone.')) return;
       await fetchJSON('/range_test/log', "DELETE");
       this.rangeLog = [];
+      this._rangeStats = null;
     },
 
     async loadRangeTimer() {
@@ -1826,15 +1856,21 @@ function dashboard() {
     async startRangeTest() {
       const nodeId = this.rangeRadioId || this.activeNodeId;
       if (!nodeId) return;
-      const t = await fetchJSON('/range_test/start', 'POST', { nodeId, durationMin: this.rangeDuration });
-      this.rangeTimer = { active: true, endsAt: t.endsAt, nodeId, remaining: this.rangeDuration * 60 };
-      this._startRangeCountdown();
-      this._startRangeAutoSync();
-      await fetchJSON(`/config/range_test.duration`, 'PUT', { value: this.rangeDuration });
+      try {
+        const t = await fetchJSON('/range_test/start', 'POST', { nodeId, durationMin: this.rangeDuration });
+        if (t.error) { alert('Failed to start: ' + t.error); return; }
+        this.rangeTimer = { active: true, endsAt: t.endsAt, nodeId, remaining: this.rangeDuration * 60 };
+        this._startRangeCountdown();
+        this._startRangeAutoSync();
+        await fetchJSON(`/config/range_test.duration`, 'PUT', { value: this.rangeDuration });
+      } catch (err) {
+        alert('Failed to start range test: ' + err.message);
+      }
     },
 
     async stopRangeTest() {
       if (this._rangeCountdown) clearInterval(this._rangeCountdown);
+      if (this._rangeAutoSync)  { clearInterval(this._rangeAutoSync); this._rangeAutoSync = null; }
       this.rangeTimer = { active: false, endsAt: null, nodeId: null, remaining: null };
       await fetchJSON('/range_test/stop', 'POST', {});
     },
@@ -1846,9 +1882,35 @@ function dashboard() {
     },
 
     filteredRangeLog() {
-      const id = this.rangeRadioId || this.activeNodeId;
-      if (!id) return this.rangeLog;
-      return this.rangeLog.filter(e => e.rx_device === id);
+      const rxId   = this.rangeRadioId || this.activeNodeId;
+      let log = rxId ? this.rangeLog.filter(e => e.rx_device === rxId) : this.rangeLog;
+      if (this.rangeNodeFilter) log = log.filter(e => e.from_num === this.rangeNodeFilter);
+      return log;
+    },
+
+    // Distinct sender nodes in the current (rx-filtered) log — for the node filter dropdown
+    rangeLogNodes() {
+      const rxId  = this.rangeRadioId || this.activeNodeId;
+      const base  = rxId ? this.rangeLog.filter(e => e.rx_device === rxId) : this.rangeLog;
+      const seen  = new Map();
+      for (const e of base) {
+        if (!seen.has(e.from_num)) {
+          const node = this.nodes.find(n => n.num === e.from_num);
+          seen.set(e.from_num, node?.user?.short_name || node?.user?.long_name || ('!' + (e.from_num ?? 0).toString(16).slice(-4)));
+        }
+      }
+      return Array.from(seen.entries()).map(([num, name]) => ({ num, name }));
+    },
+
+    _loraFreqMHz() {
+      // Use the rx radio's region to pick the correct FSPL frequency
+      const cfg = this.deviceConfigs[this.rangeRadioId || this.activeNodeId] || {};
+      const REGION_FREQ = {
+        EU_868: 868, US: 915, EU_433: 433, CN: 470, JP: 920, ANZ: 915,
+        KR: 920, TW: 923, RU: 868, IN: 865, NZ_865: 865, TH: 923,
+        UA_433: 433, UA_868: 868, MY_433: 433, MY_919: 919, SG_923: 923,
+      };
+      return REGION_FREQ[cfg.lora_region] ?? 868;
     },
 
     rangeEnrich(e) {
@@ -1857,7 +1919,8 @@ function dashboard() {
       const az     = node?._az ?? null;
       let expectedRssi = null, excessLoss = null;
       if (distKm != null && distKm > 0) {
-        const fspl = 20 * Math.log10(distKm) + 20 * Math.log10(868) + 32.4;
+        const freq = this._loraFreqMHz();
+        const fspl = 20 * Math.log10(distKm) + 20 * Math.log10(freq) + 32.4;
         const txNodeId = "!" + (e.from_num >>> 0).toString(16);
         const txCfg = this.deviceConfigs[txNodeId] || {};
         const txPow  = txCfg.tx_power_dbm ?? 22;
@@ -1874,19 +1937,45 @@ function dashboard() {
       };
     },
 
+    // Recompute stats only when rangeLog/filter changes (_rangeStats invalidated on change)
     rangeStats() {
+      if (this._rangeStats !== null) return this._rangeStats;
       const enriched = this.filteredRangeLog().map(e => this.rangeEnrich(e)).filter(e => e.rssi != null);
-      if (!enriched.length) return null;
+      if (!enriched.length) { this._rangeStats = false; return null; }
       const rssis  = enriched.map(e => e.rssi).sort((a, b) => a - b);
+      const snrs   = enriched.filter(e => e.snr != null).map(e => e.snr).sort((a, b) => a - b);
       const losses = enriched.filter(e => e.excessLoss != null).map(e => e.excessLoss).sort((a, b) => a - b);
       const dists  = enriched.filter(e => e.distKm != null).map(e => e.distKm);
       const median = arr => arr[Math.floor(arr.length / 2)];
-      return {
+      this._rangeStats = {
         count: enriched.length,
         medianRssi: median(rssis), bestRssi: rssis[rssis.length - 1], worstRssi: rssis[0],
+        medianSnr:  snrs.length  ? parseFloat(median(snrs).toFixed(1))  : null,
+        bestSnr:    snrs.length  ? snrs[snrs.length - 1]                 : null,
         medianExcessLoss: losses.length ? parseFloat(median(losses).toFixed(1)) : null,
         maxDistKm: dists.length ? Math.max(...dists).toFixed(1) : null,
       };
+      return this._rangeStats;
+    },
+
+    exportRangeCsv() {
+      const log = this.filteredRangeLog();
+      if (!log.length) return;
+      const header = 'time,node,seq,dist_km,az_deg,rssi_dbm,snr_db,exp_rssi,excess_loss_db,hops,rx_device';
+      const rows = log.map(raw => {
+        const e = this.rangeEnrich(raw);
+        const t = new Date(e.ts * 1000).toISOString();
+        return [
+          t, `"${e.nodeName}"`, e.seq ?? '', e.distKm != null ? e.distKm.toFixed(2) : '',
+          e.az ?? '', e.rssi ?? '', e.snr ?? '', e.expectedRssi ?? '', e.excessLoss ?? '',
+          e.hops ?? '', e.rx_device ?? '',
+        ].join(',');
+      });
+      const csv = [header, ...rows].join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = `range-test-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.csv`;
+      a.click();
     },
 
     // -- Signal bars ----------------------------------------------------------

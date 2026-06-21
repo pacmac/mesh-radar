@@ -39,6 +39,19 @@ app.get('/utils.js', (req, res) => {
   res.type('application/javascript').set('Cache-Control', 'no-cache').send(out);
 });
 
+// -- SPA page routing --------------------------------------------------------
+// Browser navigations carry Accept: text/html; fetch() API calls do not.
+// Register page-serving stubs before conflicting API routes so the browser
+// gets index.html and JS handles the tab, while XHR still hits the API.
+const _servePage = (req, res, next) =>
+  req.headers.accept?.includes('text/html')
+    ? res.sendFile(path.join(PUBLIC_DIR, 'index.html'))
+    : next();
+
+for (const p of ['/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range']) {
+  app.get(p, _servePage);
+}
+
 // -- node-dash APIs ----------------------------------------------------------
 
 app.get('/status', async (req, res) => {
@@ -341,6 +354,9 @@ app.use(/^\/![0-9a-f]+/i, proxyToBridge);
 // -- static files -----------------------------------------------------------
 app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0 }));
 
+// Catch-all: serve index.html for any unrecognised path (SPA deep-links)
+app.use((req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
+
 // -- server + WS relay -------------------------------------------------------
 const server = http.createServer(app);
 attachWsRelay(server);
@@ -440,21 +456,19 @@ bridge.on('event', (ev) => {
         ts: Date.now(),
       });
     }
-    if (pkt?.decoded?.portnum === 'RANGE_TEST_APP') {
-      const seq = pkt.decoded.payload
-        ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8')
-        : null;
-      const hops = pkt.hop_start != null ? Math.max(0, pkt.hop_start - (pkt.hop_limit ?? 0)) : null;
-      insertRangeTestEntry({
-        ts:        Math.floor(Date.now() / 1000),
-        from_num:  pkt.from     ?? null,
-        rssi:      pkt.rx_rssi  ?? null,
-        snr:       pkt.rx_snr   ?? null,
-        hops,
-        seq,
-        rx_device: ev.device    ?? null,
-      });
-    }
+  }
+  // range_test_entry: broadcast by bridge with correctly decoded seq/hops from raw protobuf
+  if (ev.type === 'range_test_entry' && ev.data) {
+    const e = ev.data;
+    insertRangeTestEntry({
+      ts:        e.ts       ?? Math.floor(Date.now() / 1000),
+      from_num:  e.from_num ?? null,
+      rssi:      e.rssi     ?? null,
+      snr:       e.snr      ?? null,
+      hops:      e.hops     ?? null,
+      seq:       e.seq      ?? null,
+      rx_device: ev.device  ?? null,
+    });
   }
 });
 

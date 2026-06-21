@@ -1653,7 +1653,7 @@
                 <span class="text-sm opacity-60 shrink-0">Radio:</span>
                 <select class="select select-bordered select-sm"
                         x-model="rangeRadioId"
-                        @change="loadRangeTest()">
+                        @change="loadRangeTest(); rangeNodeFilter = ''">
                   <template x-for="dev in availableDevices" :key="dev.node_id">
                     <option :value="dev.node_id"
                             x-text="deviceLabel(dev.node_id) + ' — ' + (dev.long_name || dev.short_name || dev.node_id)"></option>
@@ -1675,35 +1675,52 @@
                     <button class="btn btn-sm btn-error" @click="stopRangeTest()">Stop</button>
                     <span class="text-xs opacity-50">auto-off in</span>
                     <span class="font-mono text-sm text-warning" x-text="rangeFmtCountdown(rangeTimer.remaining)"></span>
+                    <span class="text-xs opacity-40" x-text="'(' + (rangeTimer.nodeId || '') + ')'"></span>
                   </div>
                 </template>
               </div>
             </div>
           </div>
+          <!-- Stats panel — computed once via rangeStats() cache -->
           <template x-if="rangeStats()">
             <div class="flex flex-col gap-2">
-              <!-- Antenna info bar — reactive, no x-data wrapper -->
               <div class="flex items-center gap-3 px-1 text-sm flex-wrap">
                 <span class="font-semibold opacity-70" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.antenna_type || 'Unknown antenna'"></span>
                 <span class="badge badge-sm badge-outline" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.gain_dbi != null" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.gain_dbi + ' dBi'"></span>
                 <span class="badge badge-sm badge-outline badge-warning" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.cable_loss_db" x-text="'−' + deviceConfigs[rangeRadioId || activeNodeId]?.cable_loss_db + ' dB cable'"></span>
                 <span class="badge badge-sm badge-outline badge-info" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.tx_power_dbm != null" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.tx_power_dbm + ' dBm TX'"></span>
+                <span class="badge badge-sm badge-outline badge-ghost" x-show="deviceConfigs[rangeRadioId || activeNodeId]?.lora_region" x-text="deviceConfigs[rangeRadioId || activeNodeId]?.lora_region + ' · ' + _loraFreqMHz() + ' MHz'"></span>
               </div>
-              <!-- Stats panel -->
-              <div class="stats stats-horizontal shadow bg-base-100 w-full">
-                <div class="stat"><div class="stat-title">Packets</div><div class="stat-value text-lg" x-text="rangeStats().count"></div><div class="stat-desc">range test rx</div></div>
-                <div class="stat"><div class="stat-title">Best RSSI</div><div class="stat-value text-lg text-success" x-text="rangeStats().bestRssi != null ? rangeStats().bestRssi + ' dBm' : '–'"></div><div class="stat-desc" x-text="'median ' + (rangeStats().medianRssi ?? '–') + ' dBm'"></div></div>
-                <div class="stat"><div class="stat-title">Max range</div><div class="stat-value text-lg" x-text="rangeStats().maxDistKm != null ? rangeStats().maxDistKm + ' km' : '–'"></div><div class="stat-desc">of heard packets with position</div></div>
-                <div class="stat"><div class="stat-title">Median excess loss</div><div class="stat-value text-lg" :class="rangeStats().medianExcessLoss != null && rangeStats().medianExcessLoss < 0 ? 'text-success' : 'text-warning'" x-text="rangeStats().medianExcessLoss != null ? rangeStats().medianExcessLoss + ' dB' : '–'"></div><div class="stat-desc">vs free-space path loss (−=better)</div></div>
+              <div class="stats stats-horizontal shadow bg-base-100 w-full overflow-x-auto" x-data="{ s: rangeStats() }">
+                <div class="stat"><div class="stat-title">Packets</div><div class="stat-value text-lg" x-text="s.count"></div><div class="stat-desc">range test rx</div></div>
+                <div class="stat"><div class="stat-title">Best RSSI</div><div class="stat-value text-lg text-success" x-text="s.bestRssi + ' dBm'"></div><div class="stat-desc" x-text="'median ' + s.medianRssi + ' dBm'"></div></div>
+                <div class="stat"><div class="stat-title">Best SNR</div><div class="stat-value text-lg text-info" x-text="s.bestSnr != null ? s.bestSnr + ' dB' : '–'"></div><div class="stat-desc" x-text="s.medianSnr != null ? 'median ' + s.medianSnr + ' dB' : 'no SNR data'"></div></div>
+                <div class="stat"><div class="stat-title">Max range</div><div class="stat-value text-lg" x-text="s.maxDistKm != null ? s.maxDistKm + ' km' : '–'"></div><div class="stat-desc">of heard packets with position</div></div>
+                <div class="stat"><div class="stat-title">Median excess loss</div><div class="stat-value text-lg" :class="s.medianExcessLoss != null && s.medianExcessLoss < 0 ? 'text-success' : 'text-warning'" x-text="s.medianExcessLoss != null ? s.medianExcessLoss + ' dB' : '–'"></div><div class="stat-desc">vs FSPL (−=better than theory)</div></div>
               </div>
             </div>
           </template>
+          <!-- Log table -->
           <div class="card bg-base-100 shadow">
             <div class="card-body py-3">
               <div class="flex items-center justify-between flex-wrap gap-2">
-                <h2 class="card-title text-base">Range test log <span class="badge badge-neutral" x-text="filteredRangeLog().length"></span><span class="loading loading-spinner loading-xs" x-show="rangeLoading"></span></h2>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h2 class="card-title text-base">Range test log</h2>
+                  <span class="badge badge-neutral" x-text="filteredRangeLog().length"></span>
+                  <span class="loading loading-spinner loading-xs" x-show="rangeLoading"></span>
+                  <!-- Node filter -->
+                  <template x-if="rangeLogNodes().length > 1">
+                    <select class="select select-bordered select-xs" x-model.number="rangeNodeFilter">
+                      <option value="">All nodes</option>
+                      <template x-for="n in rangeLogNodes()" :key="n.num">
+                        <option :value="n.num" x-text="n.name"></option>
+                      </template>
+                    </select>
+                  </template>
+                </div>
                 <div class="flex gap-2">
                   <button class="btn btn-xs btn-outline" @click="loadRangeTest()">Refresh</button>
+                  <button class="btn btn-xs btn-outline btn-info" @click="exportRangeCsv()" :disabled="!filteredRangeLog().length">CSV</button>
                   <button class="btn btn-xs btn-outline btn-error" @click="clearRangeTest()" :disabled="!rangeLog.length">Clear</button>
                 </div>
               </div>
@@ -1714,7 +1731,7 @@
                     <tr><th>Time</th><th>Node</th><th>Seq</th><th>Dist (km)</th><th>Az (°)</th><th>RSSI (dBm)</th><th>SNR (dB)</th><th>Exp RSSI</th><th>Excess loss</th><th>Hops</th></tr>
                   </thead>
                   <tbody>
-                    <template x-for="(raw, i) in filteredRangeLog()" :key="i">
+                    <template x-for="raw in filteredRangeLog()" :key="raw.id">
                       <tr x-data="{ e: rangeEnrich(raw) }">
                         <td class="font-mono text-xs" x-text="fmtAge(e.ts)"></td>
                         <td x-text="e.nodeName"></td>
@@ -1725,7 +1742,7 @@
                         <td class="font-mono" x-text="e.snr ?? '–'"></td>
                         <td class="font-mono opacity-60" x-text="e.expectedRssi != null ? e.expectedRssi : '–'"></td>
                         <td class="font-mono font-semibold" :class="e.excessLoss == null ? '' : e.excessLoss <= 0 ? 'text-success' : e.excessLoss < 10 ? 'text-warning' : 'text-error'" x-text="e.excessLoss != null ? (e.excessLoss > 0 ? '+' : '') + e.excessLoss + ' dB' : '–'"></td>
-                        <td x-text="e.hops ?? '–'"></td>
+                        <td x-text="e.hops != null ? e.hops : '–'"></td>
                       </tr>
                     </template>
                   </tbody>
