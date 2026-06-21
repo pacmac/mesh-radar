@@ -444,7 +444,9 @@ bridge.on('event', (ev) => {
     activeTracker.handlePacket(ev);
     scanner.handlePacket(ev);
     const pkt = ev.data?.packet;
-    if (pkt?.from) nodeList.touchLastHeard(pkt.from, pkt.rx_time, ev.device ?? null);
+    const rotatorId = getRotatorDeviceId();
+    const yagiOnly = scanner.active && rotatorId && ev.device !== rotatorId;
+    if (pkt?.from && !yagiOnly) nodeList.touchLastHeard(pkt.from, pkt.rx_time, ev.device ?? null);
     if (pkt?.decoded?.portnum === 'TELEMETRY_APP' && pkt?.decoded?.telemetry?.environment_metrics && pkt?.from) {
       nodeList.setEnvironmentMetrics(pkt.from, pkt.decoded.telemetry.environment_metrics);
     }
