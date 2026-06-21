@@ -48,6 +48,7 @@ function dashboard() {
     msgReplyId: null,
     msgReplyFrom: null,
     msgInsertNode: null,
+    msgNodeCache: {},
     msgInputHistory: JSON.parse(localStorage.getItem('msgInputHistory') || '[]'),
     msgHistoryIdx: -1,
     msgDraft: '',
@@ -728,22 +729,30 @@ function dashboard() {
               .map(d => parseInt((d.node_id || '').replace('!', ''), 16))
               .filter(Boolean)
           );
-          this.messages = rows.map(r => ({
-            pktId:         r.packet_id,
-            replyId:       r.reply_id || null,
-            fromNum:       r.from_num,
-            fromShortName: r.short_name || null,
-            fromLongName:  r.long_name  || null,
-            to:            r.to_num >>> 0,
-            broadcast:     (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
-            channel:       r.channel ?? 0,
-            text:          r.text,
-            ts:            r.ts,
-            time:          new Date(r.ts * 1000).toLocaleTimeString(),
-            direction:     ownNums.has(r.from_num) ? 'tx' : 'rx',
-            ackStatus:     null,
-            src:           r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
-          }));
+          this.messages = rows.map(r => {
+            if (r.short_name || r.long_name) {
+              this.msgNodeCache[r.from_num] = { num: r.from_num, user: { short_name: r.short_name, long_name: r.long_name } };
+            }
+            return {
+              pktId:         r.packet_id,
+              replyId:       r.reply_id || null,
+              fromNum:       r.from_num,
+              fromShortName: r.short_name || null,
+              fromLongName:  r.long_name  || null,
+              hops:          r.hops ?? null,
+              rssi:          r.rssi ?? null,
+              snr:           r.snr  ?? null,
+              to:            r.to_num >>> 0,
+              broadcast:     (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
+              channel:       r.channel ?? 0,
+              text:          r.text,
+              ts:            r.ts,
+              time:          new Date(r.ts * 1000).toLocaleTimeString(),
+              direction:     ownNums.has(r.from_num) ? 'tx' : 'rx',
+              ackStatus:     null,
+              src:           r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
+            };
+          });
           this.messages.forEach(m => { if (m.pktId) this._seenPacketIds.add(m.pktId); });
           try { localStorage.setItem("msgHistory", JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
         }
@@ -884,6 +893,14 @@ function dashboard() {
     // Server applies all filters; this is a passthrough for callers
     filteredNodes() {
       return this.nodes;
+    },
+
+    // All nodes eligible for direct messaging: radar list union message-seen nodes.
+    // This is intentionally NOT filtered by radar/scan settings.
+    allMsgNodes() {
+      const nums = new Set(this.nodes.map(n => n.num));
+      const extra = Object.values(this.msgNodeCache).filter(n => !nums.has(n.num));
+      return [...this.nodes, ...extra];
     },
 
     setNodeSource(src) {
@@ -1391,11 +1408,22 @@ function dashboard() {
                 delete localTx._localTx;
               } else {
                 const toNum = pkt.to >>> 0;
-                const fromNode = this.nodes.find(n => n.num === (pkt.from ?? 0));
+                const fromNum = pkt.from ?? 0;
+                // User info: embedded by backend at receive time; fallback to node list
+                const injectedUser = pkt.decoded.user;
+                const fromNode = !injectedUser ? this.nodes.find(n => n.num === fromNum) : null;
+                const shortName = injectedUser?.short_name || fromNode?.user?.short_name || null;
+                const longName  = injectedUser?.long_name  || fromNode?.user?.long_name  || null;
+                const hops = (pkt.hop_start != null && pkt.hop_limit != null)
+                  ? Math.max(0, pkt.hop_start - pkt.hop_limit) : null;
+                if (shortName || longName) {
+                  this.msgNodeCache[fromNum] = { num: fromNum, user: { short_name: shortName, long_name: longName } };
+                }
                 this.messages.unshift({
-                  pktId, fromNum: pkt.from ?? 0, to: toNum,
-                  fromShortName: fromNode?.user?.short_name || null,
-                  fromLongName:  fromNode?.user?.long_name  || null,
+                  pktId, fromNum, to: toNum,
+                  fromShortName: shortName,
+                  fromLongName:  longName,
+                  hops, rssi: pkt.rx_rssi ?? null, snr: pkt.rx_snr ?? null,
                   broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
                   channel: pkt.channel ?? 0,
                   replyId: pkt.decoded.reply_id || null,
@@ -1702,7 +1730,7 @@ function dashboard() {
       const target = m.direction === 'tx' ? m.to : m.fromNum;
       this.msgInsertNode = target;
       if (target && (target >>> 0) !== 0xFFFFFFFF) {
-        const inList = this.filteredNodes().some(n => n.num === target);
+        const inList = this.allMsgNodes().some(n => n.num === target);
         this.msgDirectTo = inList ? target : '';
         this.msgIsDirect = inList && !m.broadcast;
       }

@@ -131,6 +131,9 @@ if (!existingCols.includes('reply_id')) {
   db.exec(`ALTER TABLE messages ADD COLUMN reply_id INTEGER`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_reply ON messages(reply_id) WHERE reply_id IS NOT NULL`);
 }
+if (!existingCols.includes('hops'))       db.exec(`ALTER TABLE messages ADD COLUMN hops INTEGER`);
+if (!existingCols.includes('short_name')) db.exec(`ALTER TABLE messages ADD COLUMN short_name TEXT`);
+if (!existingCols.includes('long_name'))  db.exec(`ALTER TABLE messages ADD COLUMN long_name TEXT`);
 const tiltCols = db.prepare(`PRAGMA table_info(tilt_history)`).all().map(r => r.name);
 if (!tiltCols.includes('ncal')) {
   db.exec(`ALTER TABLE tilt_history ADD COLUMN ncal INTEGER NOT NULL DEFAULT 0`);
@@ -169,8 +172,8 @@ for (const col of envCols) {
 
 export const stmts = {
   insertMessage: db.prepare(`
-    INSERT OR IGNORE INTO messages (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi, packet_id, reply_id, device, replay)
-    VALUES (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @reply_id, @device, @replay)
+    INSERT OR IGNORE INTO messages (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi, packet_id, reply_id, device, replay, hops, short_name, long_name)
+    VALUES (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name)
   `),
 
   upsertNodeinfo: db.prepare(`

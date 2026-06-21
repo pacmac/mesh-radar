@@ -884,7 +884,7 @@
               </div>
               <select x-show="msgIsDirect" class="select select-bordered select-xs flex-1" x-model="msgDirectTo">
                 <option value="" disabled>Select node…</option>
-                <template x-for="n in filteredNodes()" :key="n.num">
+                <template x-for="n in allMsgNodes()" :key="n.num">
                   <option :value="n.num" x-text="(n.user?.short_name || n.num) + ' — ' + (n.user?.long_name || '')"></option>
                 </template>
               </select>
@@ -1875,6 +1875,14 @@
                         <span x-show="m.isReply" class="text-base-content/40" title="Reply">↩</span>
                         <span class="font-semibold text-base-content" x-text="m.fromLongName || nodeLongName(m.fromNum)"></span>
                         <span class="badge badge-xs" :class="m.broadcast ? 'badge-ghost' : 'badge-info'" x-text="m.broadcast ? 'BC' : 'DM'"></span>
+                        <span x-show="m.hops != null" class="badge badge-xs badge-ghost font-mono"
+                              x-text="m.hops === 0 ? 'direct' : m.hops + (m.hops === 1 ? ' hop' : ' hops')"></span>
+                        <template x-if="m.rssi != null || m.snr != null">
+                          <span class="badge badge-xs"
+                                :class="signalQuality(m.rssi, m.snr).badgeCls"
+                                :title="'RSSI ' + (m.rssi != null ? m.rssi + ' dBm' : 'n/a') + ' · SNR ' + (m.snr != null ? m.snr.toFixed(1) + ' dB' : 'n/a')"
+                                x-text="signalQuality(m.rssi, m.snr).label"></span>
+                        </template>
                         <template x-for="d in (Array.isArray(m.src) ? m.src : (m.src ? [m.src] : []))" :key="d">
                           <span class="badge badge-xs badge-outline font-mono opacity-60" :title="d" x-text="deviceLabel(d)"></span>
                         </template>

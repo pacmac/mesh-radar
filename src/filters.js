@@ -21,21 +21,22 @@ export function queryMessages(limit = 100) {
 
   return db.prepare(`
     SELECT
-      MIN(m.id)                     AS id,
-      MIN(m.ts)                     AS ts,
-      MIN(m.from_num)               AS from_num,
-      MIN(m.to_num)                 AS to_num,
-      MIN(m.text)                   AS text,
-      MIN(m.channel)                AS channel,
-      MIN(m.is_dm)                  AS is_dm,
-      MIN(m.hop_limit)              AS hop_limit,
-      MAX(m.snr)                    AS snr,
-      MAX(m.rssi)                   AS rssi,
+      MIN(m.id)                                           AS id,
+      MIN(m.ts)                                           AS ts,
+      MIN(m.from_num)                                     AS from_num,
+      MIN(m.to_num)                                       AS to_num,
+      MIN(m.text)                                         AS text,
+      MIN(m.channel)                                      AS channel,
+      MIN(m.is_dm)                                        AS is_dm,
+      MIN(m.hop_limit)                                    AS hop_limit,
+      MAX(m.snr)                                          AS snr,
+      MAX(m.rssi)                                         AS rssi,
+      MAX(m.hops)                                         AS hops,
       m.packet_id, m.reply_id,
-      GROUP_CONCAT(m.device)        AS rx_devices,
-      MAX(m.replay)                 AS replay,
-      MIN(n.short_name)             AS short_name,
-      MIN(n.long_name)              AS long_name
+      GROUP_CONCAT(m.device)                              AS rx_devices,
+      MAX(m.replay)                                       AS replay,
+      COALESCE(MIN(m.short_name), MIN(n.short_name))     AS short_name,
+      COALESCE(MIN(m.long_name),  MIN(n.long_name))      AS long_name
     FROM messages m
     LEFT JOIN nodes n ON n.num = m.from_num
     ${where}
