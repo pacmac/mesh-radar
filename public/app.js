@@ -396,6 +396,7 @@ function dashboard() {
       const body = { latitude_i: Math.round(lat * 1e7), longitude_i: Math.round(lon * 1e7) };
       const res = await fetchJSON(`/${nodeId}/fixed_position`, 'PUT', body);
       if (res?.error) throw new Error(res.error?.message || 'Push failed');
+      if (res?.detail) throw new Error(res.detail);
       if (!res?.verified) throw new Error('Position not verified by device');
     },
 
@@ -1513,12 +1514,14 @@ function dashboard() {
         body.altitude = Math.round(this.fixedPosition.alt);
       const res = await fetchJSON(this.cd("/fixed_position"), "PUT", body);
       if (res?.error) throw new Error(res.error?.message || res.error);
+      if (res?.detail) throw new Error(res.detail);
       if (!res?.verified) throw new Error("Position not verified by device");
     },
 
     async clearFixedPosition() {
       const res = await fetchJSON(this.cd("/fixed_position"), "DELETE");
       if (res?.error) throw new Error(res.error?.message || res.error);
+      if (res?.detail) throw new Error(res.detail);
       if (!res?.verified) throw new Error("Clear not verified by device");
       this.fixedPosition.lat = null;
       this.fixedPosition.lon = null;
@@ -1538,6 +1541,7 @@ function dashboard() {
       const payload = collectForm(el, sec.schema.fields);
       const res = await fetchJSON(this.cd(`/config/${sec.name}`), "PUT", payload);
       if (res?.error) throw new Error(res.error?.message || res.error);
+      if (res?.detail) throw new Error(res.detail);
       if (!res?.verified) throw new Error("Device did not verify config");
       const values = await fetchJSON(this.cd(`/config/${sec.name}`));
       sec.data = values[sec.name] || values || {};
@@ -1592,6 +1596,7 @@ function dashboard() {
       delete body.settings.role;
       const res = await fetchJSON(this.cd(`/channels/${ch.index}`), "PUT", body);
       if (res?.error) throw new Error(res.error?.message || res.error);
+      if (res?.detail) throw new Error(res.detail);
       if (!res?.verified) throw new Error("Device did not verify channel config");
       const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
       ch.data = live || {};
@@ -1628,6 +1633,7 @@ function dashboard() {
         ["long_name", "short_name", "is_licensed"].includes(f.name)));
       const res = await fetchJSON(this.cd("/owner"), "PUT", payload);
       if (res?.error) throw new Error(res.error?.message || res.error);
+      if (res?.detail) throw new Error(res.detail);
       if (!res?.verified) throw new Error("Owner update not confirmed by device");
     },
 
