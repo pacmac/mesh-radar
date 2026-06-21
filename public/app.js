@@ -59,7 +59,7 @@ function dashboard() {
     _seenPacketIds: new Set(),
     availableDevices: [],
     deviceBleStates: {},    // nodeId → { ble_state, config_complete, config_saving, ble_connected, ... }
-    _readbackQueues: {},    // nodeId → [fn, fn, ...]
+    _readbackQueues: {},    // nodeId → [fn, fn, ...] — DEPRECATED, kept for safety
     toasts: [],             // { id, message, type: 'success'|'error' }
     ops: {},                // { key: { loading, ok, err } } — asyncOp state per button key
     info: { my_info: {}, metadata: {} },
@@ -395,7 +395,8 @@ function dashboard() {
       if (lat == null || lon == null) throw new Error('No fixed position configured — set it in Config → Radio → Device');
       const body = { latitude_i: Math.round(lat * 1e7), longitude_i: Math.round(lon * 1e7) };
       const res = await fetchJSON(`/${nodeId}/fixed_position`, 'PUT', body);
-      if (res?.error) throw new Error(res.error.message || 'Push failed');
+      if (res?.error) throw new Error(res.error?.message || 'Push failed');
+      if (!res?.verified) throw new Error('Position not verified by device');
     },
 
     async init() {
@@ -1187,7 +1188,6 @@ function dashboard() {
         patch.config_saving = false;
         this.serverReachable = true;
         if (ev.mqtt_proxy != null) this.mqttProxy = !!ev.mqtt_proxy;
-        this._drainReadbackQueue(device);
         const isPrimary = device === (this.primaryDeviceId || this.activeNodeId);
         if (isPrimary) this.bootstrapDevice();
       } else if (t === "snapshot") {
@@ -1503,42 +1503,26 @@ function dashboard() {
     },
 
     async saveFixedPosition() {
-      this.fixedPosition.saved = false;
-      this.fixedPosition.error = "";
-      if (this.fixedPosition.lat == null || this.fixedPosition.lon == null) {
-        this.fixedPosition.error = "Latitude and longitude are required";
-        return;
-      }
+      if (this.fixedPosition.lat == null || this.fixedPosition.lon == null)
+        throw new Error("Latitude and longitude are required");
       const body = {
         latitude_i: Math.round(this.fixedPosition.lat * 1e7),
         longitude_i: Math.round(this.fixedPosition.lon * 1e7),
       };
       if (this.fixedPosition.alt != null && this.fixedPosition.alt !== "")
         body.altitude = Math.round(this.fixedPosition.alt);
-      try {
-        const res = await fetchJSON(this.cd("/fixed_position"), "PUT", body);
-        if (res.error) throw new Error(res.error.message);
-        this.fixedPosition.saved = true;
-        setTimeout(() => (this.fixedPosition.saved = false), 2500);
-      } catch (e) {
-        this.fixedPosition.error = "Save failed: " + e;
-      }
+      const res = await fetchJSON(this.cd("/fixed_position"), "PUT", body);
+      if (res?.error) throw new Error(res.error?.message || res.error);
+      if (!res?.verified) throw new Error("Position not verified by device");
     },
 
     async clearFixedPosition() {
-      this.fixedPosition.saved = false;
-      this.fixedPosition.error = "";
-      try {
-        const res = await fetchJSON(this.cd("/fixed_position"), "DELETE");
-        if (res.error) throw new Error(res.error.message);
-        this.fixedPosition.lat = null;
-        this.fixedPosition.lon = null;
-        this.fixedPosition.alt = null;
-        this.fixedPosition.saved = true;
-        setTimeout(() => (this.fixedPosition.saved = false), 2500);
-      } catch (e) {
-        this.fixedPosition.error = "Clear failed: " + e;
-      }
+      const res = await fetchJSON(this.cd("/fixed_position"), "DELETE");
+      if (res?.error) throw new Error(res.error?.message || res.error);
+      if (!res?.verified) throw new Error("Clear not verified by device");
+      this.fixedPosition.lat = null;
+      this.fixedPosition.lon = null;
+      this.fixedPosition.alt = null;
     },
 
     _drainReadbackQueue(nodeId) {
@@ -1549,39 +1533,18 @@ function dashboard() {
     },
 
     async saveSection(sec) {
-      sec.saved = false;
-      sec.error = "";
       const nodeId = this.cfgRadioId || this.activeNodeId;
       const el = document.getElementById("sec_" + sec.name);
       const payload = collectForm(el, sec.schema.fields);
-      try {
-        const res = await fetchJSON(this.cd(`/config/${sec.name}`), "PUT", payload);
-        if (res.error) throw new Error(res.error.message);
-        if (!this._readbackQueues[nodeId]) this._readbackQueues[nodeId] = [];
-        this._readbackQueues[nodeId].push(async () => {
-          try {
-            const values = await fetchJSON(this.cd(`/config/${sec.name}`));
-            sec.data = values[sec.name] || values || {};
-            const formEl = document.getElementById("sec_" + sec.name);
-            if (formEl && !formEl.dataset.dirty) {
-              formEl.innerHTML = "";
-              formEl.appendChild(buildForm(sec.schema.fields, sec.data, []));
-            }
-            sec.saved = true;
-            setTimeout(() => (sec.saved = false), 2500);
-            this.showToast(`${sec.name.replace(/_/g, ' ')} saved & verified ✓`);
-          } catch (e) {
-            sec.error = "Readback failed — check device is connected";
-            this.showToast(`${sec.name.replace(/_/g, ' ')} — verification failed`, 'error');
-          }
-        });
-        // Fast-reboot race: device may have rebooted and fired 'ready' before the
-        // PUT response reached the browser. Drain immediately if already ready.
-        if (!this.devIsSaving(nodeId) && this.devIsReady(nodeId)) {
-          this._drainReadbackQueue(nodeId);
-        }
-      } catch (e) {
-        sec.error = "Save failed: " + e;
+      const res = await fetchJSON(this.cd(`/config/${sec.name}`), "PUT", payload);
+      if (res?.error) throw new Error(res.error?.message || res.error);
+      if (!res?.verified) throw new Error("Device did not verify config");
+      const values = await fetchJSON(this.cd(`/config/${sec.name}`));
+      sec.data = values[sec.name] || values || {};
+      const formEl = document.getElementById("sec_" + sec.name);
+      if (formEl && !formEl.dataset.dirty) {
+        formEl.innerHTML = "";
+        formEl.appendChild(buildForm(sec.schema.fields, sec.data, []));
       }
     },
 
@@ -1623,41 +1586,21 @@ function dashboard() {
     },
 
     async saveChannel(ch) {
-      ch.saved = false;
-      ch.error = "";
-      const nodeId = this.cfgRadioId || this.activeNodeId;
       const el = document.getElementById("ch_" + ch.index);
       const payload = collectForm(el, this.channelSchema.fields);
       const body = { settings: { ...payload }, role: payload.role };
       delete body.settings.role;
-      try {
-        const res = await fetchJSON(this.cd(`/channels/${ch.index}`), "PUT", body);
-        if (res.error) throw new Error(res.error.message);
-        if (!this._readbackQueues[nodeId]) this._readbackQueues[nodeId] = [];
-        this._readbackQueues[nodeId].push(async () => {
-          try {
-            const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
-            ch.data = live || {};
-            const formData = { ...(live?.settings || {}), role: live?.role };
-            const formEl = document.getElementById("ch_" + ch.index);
-            if (formEl && !formEl.dataset.dirty) {
-              formEl.innerHTML = "";
-              formEl.dataset.formRoot = "1";
-              formEl.appendChild(buildForm(this.channelSchema.fields, formData, []));
-            }
-            ch.saved = true;
-            setTimeout(() => (ch.saved = false), 2500);
-            this.showToast(`Channel ${ch.index} saved & verified ✓`);
-          } catch (e) {
-            ch.error = "Readback failed — check device is connected";
-            this.showToast(`Channel ${ch.index} — verification failed`, 'error');
-          }
-        });
-        if (!this.devIsSaving(nodeId) && this.devIsReady(nodeId)) {
-          this._drainReadbackQueue(nodeId);
-        }
-      } catch (e) {
-        ch.error = "Save failed: " + e;
+      const res = await fetchJSON(this.cd(`/channels/${ch.index}`), "PUT", body);
+      if (res?.error) throw new Error(res.error?.message || res.error);
+      if (!res?.verified) throw new Error("Device did not verify channel config");
+      const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
+      ch.data = live || {};
+      const formData = { ...(live?.settings || {}), role: live?.role };
+      const formEl = document.getElementById("ch_" + ch.index);
+      if (formEl && !formEl.dataset.dirty) {
+        formEl.innerHTML = "";
+        formEl.dataset.formRoot = "1";
+        formEl.appendChild(buildForm(this.channelSchema.fields, formData, []));
       }
     },
 
@@ -1680,19 +1623,12 @@ function dashboard() {
     },
 
     async saveOwner() {
-      this.ownerSaved = false;
-      this.ownerError = "";
       const el = document.getElementById("owner_form");
       const payload = collectForm(el, this.ownerSchema.fields.filter((f) =>
         ["long_name", "short_name", "is_licensed"].includes(f.name)));
-      try {
-        const res = await fetchJSON(this.cd("/owner"), "PUT", payload);
-        if (res.error) throw new Error(res.error.message);
-        this.ownerSaved = true;
-        setTimeout(() => (this.ownerSaved = false), 2500);
-      } catch (e) {
-        this.ownerError = "Save failed: " + e;
-      }
+      const res = await fetchJSON(this.cd("/owner"), "PUT", payload);
+      if (res?.error) throw new Error(res.error?.message || res.error);
+      if (!res?.verified) throw new Error("Owner update not confirmed by device");
     },
 
     // -- Messages ---------------------------------------------------------------

@@ -1439,10 +1439,14 @@
                               :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)"
                               :class="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
                     <div class="flex items-center gap-2 mt-3" x-show="sec.loaded">
-                      <button class="btn btn-sm btn-primary" :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)" @click="saveSection(sec)">Save</button>
-                      <span class="text-success text-sm" x-show="sec.saved" x-transition>Saved ✓</span>
+                      <button class="btn btn-sm btn-primary"
+                              :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) || opLoading('cfg_' + sec.name + '_' + cfgRadioId)"
+                              @click="asyncOp('cfg_' + sec.name + '_' + cfgRadioId, () => saveSection(sec), { successMsg: sec.name.replace(/_/g,' ') + ' saved & verified' })">
+                        <span x-show="opLoading('cfg_' + sec.name + '_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                        Save
+                      </button>
+                      <span class="text-success text-sm" x-show="opOk('cfg_' + sec.name + '_' + cfgRadioId)" x-transition>Saved ✓</span>
                       <span class="text-warning text-sm animate-pulse" x-show="devIsSaving(cfgRadioId)" x-transition>Reconnecting…</span>
-                      <span class="text-error text-sm" x-show="sec.error" x-text="sec.error"></span>
                     </div>
                     <div x-show="sec.name === 'position' && sec.loaded" class="col-span-1 sm:col-span-2 border border-base-300 rounded-lg p-3 mt-3">
                       <div class="text-xs font-semibold uppercase text-base-content/50 mb-2">Fixed Position (lat / lon / alt)</div>
@@ -1461,10 +1465,19 @@
                         </label>
                       </div>
                       <div class="flex items-center gap-2 mt-3">
-                        <button class="btn btn-sm btn-primary" @click="saveFixedPosition()">Save Position</button>
-                        <button class="btn btn-sm btn-outline" @click="clearFixedPosition()">Clear</button>
-                        <span class="text-success text-sm" x-show="fixedPosition.saved" x-transition>Saved ✓</span>
-                        <span class="text-error text-sm" x-show="fixedPosition.error" x-text="fixedPosition.error"></span>
+                        <button class="btn btn-sm btn-primary"
+                                :disabled="opLoading('fixedpos_save_' + cfgRadioId)"
+                                @click="asyncOp('fixedpos_save_' + cfgRadioId, () => saveFixedPosition(), { successMsg: 'Fixed position saved & verified' })">
+                          <span x-show="opLoading('fixedpos_save_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                          Save Position
+                        </button>
+                        <button class="btn btn-sm btn-outline"
+                                :disabled="opLoading('fixedpos_clear_' + cfgRadioId)"
+                                @click="asyncOp('fixedpos_clear_' + cfgRadioId, () => clearFixedPosition(), { successMsg: 'Fixed position cleared' })">
+                          <span x-show="opLoading('fixedpos_clear_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                          Clear
+                        </button>
+                        <span class="text-success text-sm" x-show="opOk('fixedpos_save_' + cfgRadioId) || opOk('fixedpos_clear_' + cfgRadioId)" x-transition>Done ✓</span>
                       </div>
                     </div>
                   </div>
@@ -1491,10 +1504,14 @@
                               :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)"
                               :class="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
                     <div class="flex items-center gap-2 mt-3" x-show="ch.loaded">
-                      <button class="btn btn-sm btn-primary" :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)" @click="saveChannel(ch)">Save</button>
-                      <span class="text-success text-sm" x-show="ch.saved" x-transition>Saved ✓</span>
+                      <button class="btn btn-sm btn-primary"
+                              :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) || opLoading('ch_' + ch.index + '_' + cfgRadioId)"
+                              @click="asyncOp('ch_' + ch.index + '_' + cfgRadioId, () => saveChannel(ch), { successMsg: 'Channel ' + ch.index + ' saved & verified' })">
+                        <span x-show="opLoading('ch_' + ch.index + '_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                        Save
+                      </button>
+                      <span class="text-success text-sm" x-show="opOk('ch_' + ch.index + '_' + cfgRadioId)" x-transition>Saved ✓</span>
                       <span class="text-warning text-sm animate-pulse" x-show="devIsSaving(cfgRadioId)" x-transition>Reconnecting…</span>
-                      <span class="text-error text-sm" x-show="ch.error" x-text="ch.error"></span>
                     </div>
                   </div>
                 </div>
@@ -1508,9 +1525,13 @@
                   <h2 class="card-title">Owner / Identity</h2>
                   <div id="owner_form"></div>
                   <div class="flex items-center gap-2 mt-3">
-                    <button class="btn btn-sm btn-primary" @click="saveOwner()">Save</button>
-                    <span class="text-success text-sm" x-show="ownerSaved" x-transition>Saved ✓</span>
-                    <span class="text-error text-sm" x-show="ownerError" x-text="ownerError"></span>
+                    <button class="btn btn-sm btn-primary"
+                            :disabled="opLoading('owner_' + cfgRadioId)"
+                            @click="asyncOp('owner_' + cfgRadioId, () => saveOwner(), { successMsg: 'Owner saved & verified' })">
+                      <span x-show="opLoading('owner_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                      Save
+                    </button>
+                    <span class="text-success text-sm" x-show="opOk('owner_' + cfgRadioId)" x-transition>Saved ✓</span>
                   </div>
                 </div>
               </div>
@@ -2073,9 +2094,11 @@
                                  asyncOp('restore_' + dev.node_id,
                                    async () => {
                                      if (!confirm('Restore all config to ' + dev.node_id + '?\n\nAll sections and channels will be overwritten. Device will reboot.')) return false;
-                                     await fetchJSON('/' + dev.node_id + '/radio_restore', 'POST', bk);
+                                     const r = await fetchJSON('/' + dev.node_id + '/radio_restore', 'POST', bk);
+                                     if (r?.error) throw new Error(r.error?.message || r.error);
+                                     if (!r?.verified) throw new Error('Restore not verified by device');
                                    },
-                                   { successMsg: 'Config restored — device is rebooting' }
+                                   { successMsg: 'Config restored & verified' }
                                  );
                                }">
                       </label>
@@ -2084,7 +2107,7 @@
                               :title="deviceConfigs[dev.node_id]?.fixed_lat != null
                                 ? 'Push ' + Number(deviceConfigs[dev.node_id].fixed_lat).toFixed(5) + ', ' + Number(deviceConfigs[dev.node_id].fixed_lon).toFixed(5) + ' to radio'
                                 : 'No fixed position configured — set it in Config → Radio → Device'"
-                              @click="asyncOp('pushPos_' + dev.node_id, () => pushFixedPosition(dev.node_id), { successMsg: 'Fixed position sent to radio' })">
+                              @click="asyncOp('pushPos_' + dev.node_id, () => pushFixedPosition(dev.node_id), { successMsg: 'Fixed position set & verified' })">
                         <span x-show="opLoading('pushPos_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Push Position
                       </button>
