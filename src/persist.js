@@ -1,4 +1,4 @@
-import { stmts } from './db.js';
+import { stmts, insertEnvHistory } from './db.js';
 
 function _validCoord(lat, lon) {
   return lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
@@ -66,29 +66,48 @@ function handlePacket(packet, device, ts, replay) {
 
   if (portnum === 'TELEMETRY_APP') {
     const telem = packet.decoded.telemetry;
-    if (!telem?.device_metrics) return;
-    const m = telem.device_metrics;
-    stmts.upsertNode.run({
-      num:           packet.from || 0,
-      node_id:       null,
-      short_name:    null,
-      long_name:     null,
-      hw_model:      null,
-      role:          null,
-      last_heard:    packet.rx_time || Math.floor(Date.now() / 1000),
-      snr:           packet.rx_snr  ?? null,
-      rssi:          packet.rx_rssi ?? null,
-      hops:          null,
-      lat:           null,
-      lon:           null,
-      alt:           null,
-      battery:       m.battery_level  ?? null,
-      voltage:       m.voltage        ?? null,
-      channel_util:  m.channel_utilization ?? null,
-      air_util_tx:   m.air_util_tx    ?? null,
-      uptime_seconds: m.uptime_seconds ?? null,
-      device,
-    });
+    if (telem?.device_metrics) {
+      const m = telem.device_metrics;
+      stmts.upsertNode.run({
+        num:           packet.from || 0,
+        node_id:       null,
+        short_name:    null,
+        long_name:     null,
+        hw_model:      null,
+        role:          null,
+        last_heard:    packet.rx_time || Math.floor(Date.now() / 1000),
+        snr:           packet.rx_snr  ?? null,
+        rssi:          packet.rx_rssi ?? null,
+        hops:          null,
+        lat:           null,
+        lon:           null,
+        alt:           null,
+        battery:       m.battery_level  ?? null,
+        voltage:       m.voltage        ?? null,
+        channel_util:  m.channel_utilization ?? null,
+        air_util_tx:   m.air_util_tx    ?? null,
+        uptime_seconds: m.uptime_seconds ?? null,
+        device,
+      });
+    } else if (telem?.environment_metrics) {
+      const m   = telem.environment_metrics;
+      const num = packet.from || 0;
+      const ts  = packet.rx_time || Math.floor(Date.now() / 1000);
+      stmts.upsertNodeEnvMetrics.run({
+        num,
+        temperature:         m.temperature         ?? null,
+        relative_humidity:   m.relative_humidity   ?? null,
+        barometric_pressure: m.barometric_pressure ?? null,
+        last_heard:          ts,
+      });
+      insertEnvHistory({
+        ts,
+        num,
+        temperature:         m.temperature         ?? null,
+        relative_humidity:   m.relative_humidity   ?? null,
+        barometric_pressure: m.barometric_pressure ?? null,
+      });
+    }
     return;
   }
 

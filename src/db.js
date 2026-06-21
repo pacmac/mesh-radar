@@ -105,6 +105,18 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tilt_ts   ON tilt_history(ts DESC);
   CREATE INDEX IF NOT EXISTS idx_tilt_node ON tilt_history(node_id, ts DESC);
 
+  CREATE TABLE IF NOT EXISTS environment_history (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                  INTEGER NOT NULL,
+    num                 INTEGER NOT NULL,
+    temperature         REAL,
+    relative_humidity   REAL,
+    barometric_pressure REAL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_env_history_num ON environment_history(num, ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_env_history_ts  ON environment_history(ts DESC);
+
   CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup  ON messages(packet_id, device) WHERE packet_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_messages_ts     ON messages(ts DESC);
   CREATE INDEX IF NOT EXISTS idx_messages_from   ON messages(from_num);
@@ -142,6 +154,14 @@ for (const col of yagiCols) {
 }
 if (!nodeinfoCols.includes('last_traceroute')) {
   db.exec(`ALTER TABLE nodeinfo ADD COLUMN last_traceroute TEXT`);
+}
+
+const nodeCols = db.prepare(`PRAGMA table_info(nodes)`).all().map(r => r.name);
+const envCols = ['temperature', 'relative_humidity', 'barometric_pressure'];
+for (const col of envCols) {
+  if (!nodeCols.includes(col)) {
+    db.exec(`ALTER TABLE nodes ADD COLUMN ${col} REAL`);
+  }
 }
 
 export const stmts = {
@@ -216,6 +236,16 @@ export const stmts = {
     UPDATE nodeinfo SET last_traceroute = @json, updated_at = unixepoch() WHERE num = @num
   `),
 
+  upsertNodeEnvMetrics: db.prepare(`
+    INSERT INTO nodes (num, temperature, relative_humidity, barometric_pressure, last_heard, updated_at)
+    VALUES (@num, @temperature, @relative_humidity, @barometric_pressure, @last_heard, unixepoch())
+    ON CONFLICT(num) DO UPDATE SET
+      temperature         = COALESCE(excluded.temperature,         temperature),
+      relative_humidity   = COALESCE(excluded.relative_humidity,   relative_humidity),
+      barometric_pressure = COALESCE(excluded.barometric_pressure, barometric_pressure),
+      updated_at          = unixepoch()
+  `),
+
   recordYagiTargeted: db.prepare(`
     UPDATE nodeinfo
     SET yagi_last_targeted = unixepoch(),
@@ -261,6 +291,17 @@ export const stmts = {
     WHERE node_id = ? AND ts BETWEEN ? AND ?
   `),
 
+  insertEnvHistory: db.prepare(`
+    INSERT INTO environment_history (ts, num, temperature, relative_humidity, barometric_pressure)
+    VALUES (@ts, @num, @temperature, @relative_humidity, @barometric_pressure)
+  `),
+
+  queryEnvHistory: db.prepare(`
+    SELECT ts, temperature, relative_humidity, barometric_pressure
+    FROM environment_history WHERE num = ? AND ts >= ?
+    ORDER BY ts ASC
+  `),
+
 };
 
 export function getConfig(key, fallback = null) {
@@ -298,6 +339,14 @@ export function recordYagiContact(num, rssi, snr) {
 
 export function insertTilt(entry) {
   stmts.insertTilt.run(entry);
+}
+
+export function insertEnvHistory(entry) {
+  stmts.insertEnvHistory.run(entry);
+}
+
+export function queryEnvHistory(num, sinceTs) {
+  return stmts.queryEnvHistory.all(num, sinceTs);
 }
 
 export function queryTiltHistory(nodeId, sinceTs) {

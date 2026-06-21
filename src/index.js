@@ -8,7 +8,7 @@ import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -197,6 +197,13 @@ app.post('/tilt_history/ncal', (req, res) => {
   res.json({ marked: changed });
 });
 
+app.get('/env_history', (req, res) => {
+  const num   = parseInt(req.query.num) || 0;
+  const hours = parseFloat(req.query.hours) || 24;
+  const since = Math.floor(Date.now() / 1000) - hours * 3600;
+  res.json(queryEnvHistory(num, since));
+});
+
 app.get('/range_test/log', (req, res) => {
   const limit = parseInt(req.query.limit) || 500;
   const rows = queryRangeTestLog(limit);
@@ -344,16 +351,38 @@ dashMode.on('change', ({ _mode }) => {
 if (dashMode.value === 1) activeTracker.start();
 
 // -- event handlers ----------------------------------------------------------
+const _lastEnvTs = new Map(); // num → last inserted ts (dedup node_update vs packet)
+
 bridge.on('event', (ev) => {
   handleEvent(ev);
   if (ev.type === 'node_update' || ev.type === 'node_info') {
     nodeList.handleNodeUpdate(ev);
+    const node = ev.data?.node_info ?? ev.data;
+    const em = node?.environment_metrics;
+    if (em && node?.num && (em.temperature != null || em.relative_humidity != null)) {
+      const now = Math.floor(Date.now() / 1000);
+      const last = _lastEnvTs.get(node.num) ?? 0;
+      if (now - last > 60) {
+        _lastEnvTs.set(node.num, now);
+        insertEnvHistory({
+          ts: now,
+          num: node.num,
+          temperature:         em.temperature         ?? null,
+          relative_humidity:   em.relative_humidity   ?? null,
+          barometric_pressure: em.barometric_pressure ?? null,
+        });
+        nodeList.setEnvironmentMetrics(node.num, em);
+      }
+    }
   }
   if (ev.type === 'packet') {
     activeTracker.handlePacket(ev);
     scanner.handlePacket(ev);
     const pkt = ev.data?.packet;
     if (pkt?.from) nodeList.touchLastHeard(pkt.from, pkt.rx_time, ev.device ?? null);
+    if (pkt?.decoded?.portnum === 'TELEMETRY_APP' && pkt?.decoded?.telemetry?.environment_metrics && pkt?.from) {
+      nodeList.setEnvironmentMetrics(pkt.from, pkt.decoded.telemetry.environment_metrics);
+    }
     if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery && pkt?.from) {
       const rd = pkt.decoded.route_discovery;
       // Snapshot relay node positions from nodeinfo so the radar can draw

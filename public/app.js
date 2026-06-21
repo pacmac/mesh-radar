@@ -101,6 +101,8 @@ function dashboard() {
     deviceNodes:   {},   // own-device self-telemetry keyed by !nodeId — never scan-filtered, Devices tab only
     scanProgress:  null,
     scanCurrentAz: null,
+    envHistory: {},   // keyed by !nodeId → array of {ts, temperature, relative_humidity, barometric_pressure}
+    envWindow: 24,
     tiltHistory: [],
     tiltWindow: 4,
     tiltPeak: 0,
@@ -321,8 +323,9 @@ function dashboard() {
       this.$watch('ble_ready', (ready, wasReady) => {
         if (ready && !wasReady) this._drainReadbackQueue();
       });
-      this.$watch('activeNodeId', () => this.loadTiltHistory());
+      this.$watch('activeNodeId', () => { this.loadTiltHistory(); this.loadEnvHistory(this.activeNodeId); });
       this.$watch('tiltWindow',   () => this.loadTiltHistory());
+      this.$watch('envWindow',    () => this.loadEnvHistory(this.activeNodeId));
       this.$watch('tiltPeak', peak => {
         const stops = [0.25, 0.5, 1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90];
         const maxRing = stops.find(v => v >= Math.max(peak * 1.25, 0.5)) ?? 90;
@@ -330,6 +333,7 @@ function dashboard() {
         this.tiltRings = [q, q*2, q*3, maxRing].map(v => +v.toFixed(2));
       });
       this.loadTiltHistory();
+      this.loadEnvHistory(this.activeNodeId);
       setInterval(() => { this.loadDevices(); }, 60000);
       setInterval(() => { if (this.yagiSignal.ts) this._sigTick++; }, 1000);
 
@@ -2000,6 +2004,107 @@ function dashboard() {
       } catch (_) {}
     },
 
+    async loadEnvHistory(nodeId) {
+      if (!nodeId?.startsWith('!')) return;
+      const num = parseInt(nodeId.slice(1), 16);
+      try {
+        const rows = await fetchJSON(`/env_history?num=${num}&hours=${this.envWindow}`);
+        const updated = { ...this.envHistory };
+        updated[nodeId] = Array.isArray(rows) ? rows : [];
+        this.envHistory = updated;
+      } catch (_) {}
+    },
+
+    async loadEnvHistoryAll() {
+      for (const dev of this.availableDevices) {
+        if (dev.node_id) await this.loadEnvHistory(dev.node_id);
+      }
+    },
+
+    _envScales(rows) {
+      let tMin = Infinity, tMax = -Infinity, tsMin = Infinity, tsMax = -Infinity;
+      for (const r of rows) {
+        const dp = this.dewPoint(r.temperature, r.relative_humidity);
+        for (const v of [r.temperature, dp].filter(v => v != null)) {
+          if (v < tMin) tMin = v;
+          if (v > tMax) tMax = v;
+        }
+        if (r.ts < tsMin) tsMin = r.ts;
+        if (r.ts > tsMax) tsMax = r.ts;
+      }
+      const pad = Math.max(0.5, (tMax - tMin) * 0.08);
+      return { tMin: tMin - pad, tMax: tMax + pad, tsMin, tsMax };
+    },
+
+    // Chart coordinate system: viewBox 0 0 420 250
+    // Plot area: x [36,384] W=348, y [18,218] H=200
+    _envX(ts, sc, ox = 36, W = 348) {
+      return sc.tsMax === sc.tsMin ? ox + W / 2
+        : ox + W * (ts - sc.tsMin) / (sc.tsMax - sc.tsMin);
+    },
+    _envY(val, sc, oy = 18, H = 200) {
+      return oy + H * (1 - (val - sc.tMin) / (sc.tMax - sc.tMin));
+    },
+    _envYh(rh, oy = 18, H = 200) {
+      return oy + H * (1 - rh / 100);
+    },
+
+    envTempPoints(nodeId) {
+      const rows = (this.envHistory[nodeId] ?? []).filter(r => r.temperature != null);
+      if (rows.length < 2) return '';
+      const sc = this._envScales(rows);
+      return rows.map(r => `${this._envX(r.ts, sc).toFixed(1)},${this._envY(r.temperature, sc).toFixed(1)}`).join(' ');
+    },
+
+    envDpPoints(nodeId) {
+      const rows = (this.envHistory[nodeId] ?? []).filter(r => r.temperature != null && r.relative_humidity != null);
+      if (rows.length < 2) return '';
+      const sc = this._envScales(this.envHistory[nodeId] ?? []);
+      return rows.map(r => {
+        const dp = this.dewPoint(r.temperature, r.relative_humidity);
+        return `${this._envX(r.ts, sc).toFixed(1)},${this._envY(dp, sc).toFixed(1)}`;
+      }).join(' ');
+    },
+
+    envHumPoints(nodeId) {
+      const rows = (this.envHistory[nodeId] ?? []).filter(r => r.relative_humidity != null);
+      if (rows.length < 2) return '';
+      const sc = this._envScales(this.envHistory[nodeId] ?? []);
+      return rows.map(r => `${this._envX(r.ts, sc).toFixed(1)},${this._envYh(r.relative_humidity).toFixed(1)}`).join(' ');
+    },
+
+    envChartYLabels(nodeId) {
+      const rows = this.envHistory[nodeId] ?? [];
+      if (!rows.length) return '';
+      const sc = this._envScales(rows);
+      return [0, 1, 2, 3, 4].map(i => {
+        const val = sc.tMin + (sc.tMax - sc.tMin) * i / 4;
+        const y   = (18 + 200 * (1 - i / 4) + 3).toFixed(0);
+        return `<text x="33" y="${y}" text-anchor="end" font-size="8" fill="rgba(0,255,80,0.70)" font-family="monospace">${val.toFixed(0)}</text>`;
+      }).join('');
+    },
+
+    envChartRhLabels() {
+      return [0, 25, 50, 75, 100].map(rh => {
+        const y = (18 + 200 * (1 - rh / 100) + 3).toFixed(0);
+        return `<text x="387" y="${y}" text-anchor="start" font-size="8" fill="rgba(80,160,255,0.70)" font-family="monospace">${rh}%</text>`;
+      }).join('');
+    },
+
+    envChartXLabels(nodeId) {
+      const rows = this.envHistory[nodeId] ?? [];
+      if (rows.length < 2) return '';
+      const tsMin = rows[0].ts, tsMax = rows[rows.length - 1].ts;
+      return [0, 1, 2, 3, 4].map(i => {
+        const ts = tsMin + (tsMax - tsMin) * i / 4;
+        const x  = (36 + 348 * i / 4).toFixed(0);
+        const d  = new Date(ts * 1000);
+        const s  = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+        const anchor = i === 0 ? 'start' : i === 4 ? 'end' : 'middle';
+        return `<text x="${x}" y="238" text-anchor="${anchor}" font-size="8" fill="rgba(0,255,80,0.70)" font-family="monospace">${s}</text>`;
+      }).join('');
+    },
+
     tiltLogPx(deg, maxPx = 130) {
       if (deg <= 0) return 0;
       const max = this.tiltMaxDeg();
@@ -2200,16 +2305,21 @@ function dashboard() {
         const tr = node.last_traceroute;
         if (!tr) continue;
 
-        // Age-based opacity: max 0.3 when fresh, fades to 0.10 over 24h
+        const isTargeted = node.num === this.yagiPointTarget;
+
+        // Targeted node: full brightness. Others: age-based fade (0.10–0.30).
         const ageSec = tr.ts ? (Date.now() - tr.ts) / 1000 : 0;
-        const fade = ageSec < 3600 ? 0.3 : Math.max(0.10, 0.3 - (ageSec - 3600) / (23 * 3600) * 0.20);
+        const fade = isTargeted ? 0.90
+          : (ageSec < 3600 ? 0.30 : Math.max(0.10, 0.30 - (ageSec - 3600) / (23 * 3600) * 0.20));
 
         const col = nodeColor(node.num);
 
         // Wrap each node's route in a group so hover can boost opacity uniformly
         const rg = svgElem('g', { style: `opacity:${fade.toFixed(2)};cursor:crosshair` });
-        rg.addEventListener('mouseenter', () => { rg.style.opacity = 1; });
-        rg.addEventListener('mouseleave', () => { rg.style.opacity = fade; });
+        if (!isTargeted) {
+          rg.addEventListener('mouseenter', () => { rg.style.opacity = 1; });
+          rg.addEventListener('mouseleave', () => { rg.style.opacity = fade; });
+        }
 
         // Full path: home(null) → route[0..n] → target(node.num)
         const chain  = [null, ...(tr.route ?? []), node.num];
@@ -2219,15 +2329,15 @@ function dashboard() {
         // Collect known-position waypoints; connect over unknown relay hops with gap styling
         const known = chain.map((_, i) => points[i] ? i : -1).filter(i => i >= 0);
 
+        const sw = isTargeted ? 2.5 : 2;
         for (let k = 0; k < known.length - 1; k++) {
           const ai = known[k], bi = known[k + 1];
           const p1 = points[ai], p2 = points[bi];
           const adjacent = (bi === ai + 1);
-          // Round-cap zero-length dashes = true round dots. Adjacent hops tighter, gaps looser.
           rg.appendChild(svgElem('line', {
             x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
             x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
-            style: `stroke:${col};stroke-width:2;stroke-linecap:round;stroke-dasharray:${adjacent ? '0,4' : '0,7'}`
+            style: `stroke:${col};stroke-width:${sw};stroke-linecap:round;stroke-dasharray:${adjacent ? '0,4' : '0,7'}`
           }));
 
           // SNR label at midpoint for adjacent (exact) segments
@@ -2253,6 +2363,30 @@ function dashboard() {
             cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: 3,
             style: `fill:${col};stroke:${col};stroke-width:1`
           }));
+        }
+
+        // Animated pulse dots for the targeted node only
+        if (isTargeted) {
+          const knownPts = known.map(i => points[i]);
+          if (knownPts.length >= 2) {
+            const pathD = 'M ' + knownPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+            const N = 3, dur = 1.8;
+            // Phase offset from wall clock so animation appears seamless on every redraw
+            const phase0 = (Date.now() / 1000) % dur;
+            for (let d = 0; d < N; d++) {
+              const phase = (phase0 + d * dur / N) % dur;
+              const dot = svgElem('circle', { r: '2.5', cx: '0', cy: '0', style: `fill:${col}` });
+              const anim = svgElem('animateMotion', {
+                path: pathD,
+                dur: `${dur}s`,
+                begin: `-${phase.toFixed(3)}s`,
+                repeatCount: 'indefinite',
+                calcMode: 'linear',
+              });
+              dot.appendChild(anim);
+              rg.appendChild(dot);
+            }
+          }
         }
 
         tg.appendChild(rg);
@@ -2340,7 +2474,7 @@ function dashboard() {
       const wx1 = CX + Math.sin(-HW) * R, wy1 = CY - Math.cos(-HW) * R;
       const wx2 = CX + Math.sin(HW) * R,  wy2 = CY - Math.cos(HW) * R;
       const az = Math.round(this._radarBeamAz ?? this.yagiAz);
-      beamG.innerHTML = `<path d="M ${CX} ${CY} L ${wx1.toFixed(1)} ${wy1.toFixed(1)} A ${R} ${R} 0 0 1 ${wx2.toFixed(1)} ${wy2.toFixed(1)} Z" style="fill:rgba(80,200,255,0.14);stroke:none;clip-path:url(#radarClip)"/><line x1="${CX}" y1="${CY}" x2="${CX}" y2="${CY - R}" style="stroke:rgba(80,200,255,0.85);stroke-width:2;opacity:0.9"/><text x="${CX}" y="${CY - R - 15}" style="fill:rgba(255,50,50,0.95);font-size:11px;font-weight:700;font-family:'Oxanium',monospace;text-anchor:middle;dominant-baseline:middle;pointer-events:none">${az}°</text>`;
+      beamG.innerHTML = `<path d="M ${CX} ${CY} L ${wx1.toFixed(1)} ${wy1.toFixed(1)} A ${R} ${R} 0 0 1 ${wx2.toFixed(1)} ${wy2.toFixed(1)} Z" style="fill:rgba(80,200,255,0.14);stroke:none;clip-path:url(#radarClip)"/><line x1="${CX}" y1="${CY}" x2="${CX}" y2="${CY - R}" style="stroke:rgba(80,200,255,0.85);stroke-width:1;opacity:0.9"/><text x="${CX}" y="${CY - R - 15}" style="fill:rgba(255,50,50,0.95);font-size:11px;font-weight:700;font-family:'Oxanium',monospace;text-anchor:middle;dominant-baseline:middle;pointer-events:none">${az}°</text>`;
     },
 
     _drawRadarNodes(maxKm) {
@@ -2396,7 +2530,7 @@ function dashboard() {
           g.appendChild(svgElem('line', { x1: x, y1: y+7,  x2: x, y2: y+17, style: rs }));
         }
         if (node.num === pointTarget) {
-          const rs = 'stroke:rgba(255,30,30,0.95);stroke-width:1.8';
+          const rs = 'stroke:rgba(255,30,30,0.70);stroke-width:1.5';
           g.appendChild(svgElem('circle', { cx: x, cy: y, r: 16, style: `fill:none;${rs};stroke-dasharray:4 3` }));
           g.appendChild(svgElem('line', { x1: x-22, y1: y, x2: x-10, y2: y, style: rs }));
           g.appendChild(svgElem('line', { x1: x+10, y1: y, x2: x+22, y2: y, style: rs }));
@@ -2404,7 +2538,7 @@ function dashboard() {
           g.appendChild(svgElem('line', { x1: x, y1: y+10, x2: x, y2: y+22, style: rs }));
           // Pulse ring — recreated on each refreshRadar() so SMIL restarts per packet
           if (this.yagiSignal.num === node.num && this.signalAge() != null && this.signalAge() < 30) {
-            const pulse = svgElem('circle', { cx: x, cy: y, r: '16', style: 'fill:none;stroke:rgba(255,30,30,0.85);stroke-width:1.5;pointer-events:none' });
+            const pulse = svgElem('circle', { cx: x, cy: y, r: '16', style: 'fill:none;stroke:rgba(255,30,30,0.70);stroke-width:1.2;pointer-events:none' });
             const aR = svgElem('animate');
             aR.setAttribute('attributeName', 'r');
             aR.setAttribute('values', '16;40');

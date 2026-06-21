@@ -152,6 +152,22 @@ class NodeList extends EventEmitter {
     this._scheduleEmit();
   }
 
+  // Patch environment_metrics onto the in-memory entry (own devices and regular cache)
+  setEnvironmentMetrics(num, data) {
+    if (this._ownDevices.has(num)) {
+      this._ownDevices.set(num, { ...this._ownDevices.get(num), environment_metrics: data });
+      this._scheduleEmit();
+      return;
+    }
+    const existing = this._cache.get(num) ?? this._pending.get(num);
+    if (existing) {
+      const patched = { ...existing, environment_metrics: data };
+      if (this._cache.has(num)) this._cache.set(num, patched);
+      else                       this._pending.set(num, patched);
+      this._scheduleEmit();
+    }
+  }
+
   // Save a traceroute result for a node — persists to SQLite and patches in-memory entry
   setTraceroute(num, data) {
     stmts.upsertTraceroute.run({ num, json: JSON.stringify(data) });

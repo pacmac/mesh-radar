@@ -215,26 +215,9 @@
             </div>
           </div>
 
-          <!-- Environment sensor stats -->
-          <div class="stats stats-vertical sm:stats-horizontal shadow lg:col-span-3 bg-base-100" x-show="nodeSelf.environment_metrics">
-            <div class="stat">
-              <div class="stat-title">Temperature</div>
-              <div class="stat-value text-lg" x-text="nodeSelf.environment_metrics?.temperature != null ? nodeSelf.environment_metrics.temperature.toFixed(1) + ' °C' : '–'"></div>
-              <div class="stat-desc">onboard sensor</div>
-            </div>
-            <div class="stat">
-              <div class="stat-title">Humidity</div>
-              <div class="stat-value text-lg" x-text="nodeSelf.environment_metrics?.relative_humidity != null ? nodeSelf.environment_metrics.relative_humidity.toFixed(1) + ' %' : '–'"></div>
-              <div class="stat-desc">relative</div>
-            </div>
-            <div class="stat">
-              <div class="stat-title">Dew Point</div>
-              <div class="stat-value text-lg" x-text="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity) != null ? dewPoint(nodeSelf.environment_metrics.temperature, nodeSelf.environment_metrics.relative_humidity).toFixed(1) + ' °C' : '–'"></div>
-              <div class="stat-desc">calculated</div>
-            </div>
-          </div>
 
-          <!-- Mast Tilt Radar + MQTT Proxy side by side -->
+
+          <!-- Row 1: Mast Tilt + Env History -->
           <div class="lg:col-span-3 grid lg:grid-cols-2 gap-4">
 
           <!-- Mast Tilt Radar (half width) -->
@@ -354,7 +337,108 @@
             </div>
           </div>
 
-          <!-- MQTT Proxy (half width, next to tilt) -->
+          <!-- Env History chart (half width, next to tilt) -->
+          <div class="rounded-lg overflow-hidden flex flex-col" x-show="nodeSelf.environment_metrics"
+               style="box-shadow:0 0 0 1px rgba(0,255,80,0.12),0 6px 32px rgba(0,0,0,0.7)">
+            <!-- header -->
+            <div class="flex items-center gap-2 px-3 py-2 flex-wrap"
+                 style="background:#0a1a0a;border-bottom:1px solid rgba(0,255,80,0.12)">
+              <span style="font-family:'Oxanium',monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.2em;color:rgba(0,255,80,0.75)">ENCLOSURE ENVIRONMENT</span>
+              <span class="ml-auto" style="font-family:monospace;font-size:0.6rem;color:rgba(0,255,80,0.28)"
+                    x-text="(envHistory[activeNodeId]?.length ?? 0) + ' pts'"></span>
+              <template x-for="w in [6, 24, 72]">
+                <button @click="envWindow=w; loadEnvHistory(activeNodeId)"
+                        :style="envWindow===w ? 'color:rgba(0,255,80,0.95);border-color:rgba(0,255,80,0.45);background:rgba(0,255,80,0.08)' : 'color:rgba(0,255,80,0.32);border-color:rgba(0,255,80,0.14);background:transparent'"
+                        style="font-family:'Oxanium',monospace;font-size:0.58rem;letter-spacing:0.12em;border:1px solid;padding:1px 7px;cursor:pointer;transition:all 0.15s"
+                        x-text="w+'H'"></button>
+              </template>
+            </div>
+            <!-- body -->
+            <div class="flex-1 flex flex-col min-h-0 p-4"
+                 style="background:radial-gradient(ellipse at 35% 40%,#0c1a0c 0%,#050e05 55%,#020802 100%)">
+              <!-- live readings -->
+              <div class="flex gap-6 mb-4 shrink-0" style="font-family:'Oxanium',monospace;font-size:0.72rem">
+                <div>
+                  <div style="color:rgba(255,175,40,0.50);font-size:0.55rem;letter-spacing:0.1em">TEMP</div>
+                  <div style="color:rgba(255,175,40,0.92)" x-text="nodeSelf.environment_metrics?.temperature?.toFixed(1) + ' °C'"></div>
+                </div>
+                <div>
+                  <div style="color:rgba(80,160,255,0.50);font-size:0.55rem;letter-spacing:0.1em">HUMIDITY</div>
+                  <div style="color:rgba(80,160,255,0.85)" x-text="nodeSelf.environment_metrics?.relative_humidity?.toFixed(1) + ' %'"></div>
+                </div>
+                <div>
+                  <div style="color:rgba(0,210,170,0.50);font-size:0.55rem;letter-spacing:0.1em">DEW PT</div>
+                  <div :style="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity) >= nodeSelf.environment_metrics?.temperature - 3 ? 'color:rgba(255,100,60,0.95)' : 'color:rgba(0,210,170,0.85)'"
+                       x-text="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity)?.toFixed(1) + ' °C'"></div>
+                </div>
+                <div x-show="nodeSelf.environment_metrics?.barometric_pressure != null">
+                  <div style="color:rgba(0,255,80,0.35);font-size:0.55rem;letter-spacing:0.1em">PRESSURE</div>
+                  <div style="color:rgba(0,255,80,0.70)" x-text="nodeSelf.environment_metrics?.barometric_pressure?.toFixed(1) + ' hPa'"></div>
+                </div>
+                <div x-show="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity) >= nodeSelf.environment_metrics?.temperature - 3"
+                     style="color:rgba(255,100,60,0.90);font-size:0.6rem;letter-spacing:0.05em;align-self:flex-end">⚠ condensation risk</div>
+              </div>
+              <!-- history chart -->
+              <div class="flex-1 min-h-0 flex flex-col" x-show="(envHistory[activeNodeId]?.length ?? 0) > 1">
+                <svg viewBox="0 0 420 250" class="w-full flex-1" preserveAspectRatio="none" style="display:block">
+                  <!-- border -->
+                  <rect x="36" y="18" width="348" height="200" fill="none" stroke="rgba(0,255,80,0.10)" stroke-width="0.5"/>
+                  <!-- horizontal grid lines -->
+                  <line x1="36" y1="68"  x2="384" y2="68"  stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <line x1="36" y1="118" x2="384" y2="118" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <line x1="36" y1="168" x2="384" y2="168" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <!-- vertical grid lines -->
+                  <line x1="123" y1="18" x2="123" y2="218" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <line x1="210" y1="18" x2="210" y2="218" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <line x1="297" y1="18" x2="297" y2="218" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <!-- axis labels -->
+                  <g x-html="envChartYLabels(activeNodeId)"></g>
+                  <g x-html="envChartRhLabels()"></g>
+                  <g x-html="envChartXLabels(activeNodeId)"></g>
+                  <!-- data lines: humidity behind, dew point, temp on top -->
+                  <polyline :points="envHumPoints(activeNodeId)" fill="none" stroke="rgba(80,160,255,0.42)" stroke-width="0.9"/>
+                  <polyline :points="envDpPoints(activeNodeId)"  fill="none" stroke="rgba(0,210,170,0.65)"  stroke-width="0.9" stroke-dasharray="4,2"/>
+                  <polyline :points="envTempPoints(activeNodeId)" fill="none" stroke="rgba(255,175,40,0.80)" stroke-width="1.1"/>
+                  <!-- legend -->
+                  <line x1="38"  y1="10" x2="52"  y2="10" stroke="rgba(255,175,40,0.72)" stroke-width="1"/>
+                  <text x="54"  y="13"  font-size="8" fill="rgba(255,175,40,0.60)" font-family="monospace">temp</text>
+                  <line x1="96"  y1="10" x2="110" y2="10" stroke="rgba(0,210,170,0.60)" stroke-width="0.9" stroke-dasharray="4,2"/>
+                  <text x="112" y="13"  font-size="8" fill="rgba(0,210,170,0.55)" font-family="monospace">dew pt</text>
+                  <line x1="162" y1="10" x2="176" y2="10" stroke="rgba(80,160,255,0.47)" stroke-width="0.9"/>
+                  <text x="178" y="13"  font-size="8" fill="rgba(80,160,255,0.50)" font-family="monospace">humidity</text>
+                </svg>
+              </div>
+              <div class="flex-1 flex items-center justify-center" x-show="(envHistory[activeNodeId]?.length ?? 0) <= 1"
+                   style="color:rgba(0,255,80,0.25);font-family:monospace;font-size:0.65rem">
+                waiting for history…
+              </div>
+            </div>
+          </div>
+
+          </div><!-- end row 1: tilt + env -->
+
+          <!-- Row 2: Live Feed + MQTT Proxy -->
+          <div class="lg:col-span-3 grid lg:grid-cols-2 gap-4">
+
+          <!-- Live Event Feed (half width) -->
+          <div class="card bg-base-100 shadow">
+            <div class="card-body">
+              <h2 class="card-title">Live Event Feed</h2>
+              <div class="overflow-y-auto max-h-[480px] font-mono text-xs flex flex-col gap-1" x-ref="feed">
+                <template x-for="(ev, i) in events" :key="i">
+                  <div class="flex gap-2 items-start border-b border-base-200 pb-1">
+                    <span class="text-base-content/40 shrink-0" x-text="ev.time"></span>
+                    <span class="badge badge-sm" :class="badgeForType(ev.type)" x-text="ev.type"></span>
+                    <span x-show="ev.device" class="badge badge-xs badge-ghost font-mono shrink-0 opacity-60" x-text="deviceLabel(ev.device)"></span>
+                    <span class="text-base-content/80" x-text="ev.summary"></span>
+                  </div>
+                </template>
+                <div x-show="events.length===0" class="text-base-content/40 italic">Waiting for events…</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MQTT Proxy (half width) -->
           <div class="card bg-base-100 shadow">
             <div class="card-body">
               <h2 class="card-title">MQTT Proxy</h2>
@@ -381,25 +465,7 @@
             </div>
           </div>
 
-          </div><!-- end tilt+mqtt sub-grid -->
-
-          <!-- Live Event Feed (full width) -->
-          <div class="card bg-base-100 shadow lg:col-span-3">
-            <div class="card-body">
-              <h2 class="card-title">Live Event Feed</h2>
-              <div class="overflow-y-auto max-h-[480px] font-mono text-xs flex flex-col gap-1" x-ref="feed">
-                <template x-for="(ev, i) in events" :key="i">
-                  <div class="flex gap-2 items-start border-b border-base-200 pb-1">
-                    <span class="text-base-content/40 shrink-0" x-text="ev.time"></span>
-                    <span class="badge badge-sm" :class="badgeForType(ev.type)" x-text="ev.type"></span>
-                    <span x-show="ev.device" class="badge badge-xs badge-ghost font-mono shrink-0 opacity-60" x-text="deviceLabel(ev.device)"></span>
-                    <span class="text-base-content/80" x-text="ev.summary"></span>
-                  </div>
-                </template>
-                <div x-show="events.length===0" class="text-base-content/40 italic">Waiting for events…</div>
-              </div>
-            </div>
-          </div>
+          </div><!-- end row 2: live feed + mqtt -->
 
         </div>
 
@@ -1699,13 +1765,29 @@
                       <div class="opacity-50 mb-0.5">Packets RX / TX</div>
                       <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_packets_rx + ' / ' + nodeById(dev.node_id).local_stats.num_packets_tx : '–'"></div>
                     </div>
-                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null">
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null"
+                         x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
                       <div class="opacity-50 mb-0.5">Temperature</div>
-                      <div x-text="nodeById(dev.node_id)?.environment_metrics?.temperature?.toFixed(1) + ' °C'"></div>
+                      <div x-text="_em?.temperature?.toFixed(1) + ' °C'"></div>
                     </div>
-                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null">
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
+                         x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
                       <div class="opacity-50 mb-0.5">Humidity</div>
-                      <div x-text="nodeById(dev.node_id)?.environment_metrics?.relative_humidity?.toFixed(1) + ' %'"></div>
+                      <div x-text="_em?.relative_humidity?.toFixed(1) + ' %'"></div>
+                    </div>
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null && nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
+                         x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                      <div class="opacity-50 mb-0.5">Dew point</div>
+                      <div class="flex items-center gap-1">
+                        <span x-text="dewPoint(_em?.temperature, _em?.relative_humidity)?.toFixed(1) + ' °C'"></span>
+                        <span x-show="dewPoint(_em?.temperature, _em?.relative_humidity) >= _em?.temperature - 3"
+                              class="badge badge-xs badge-warning">condensation risk</span>
+                      </div>
+                    </div>
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.barometric_pressure != null"
+                         x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                      <div class="opacity-50 mb-0.5">Pressure</div>
+                      <div x-text="_em?.barometric_pressure?.toFixed(1) + ' hPa'"></div>
                     </div>
                   </div>
                   <!-- Config -->
