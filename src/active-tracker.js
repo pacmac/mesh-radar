@@ -1,13 +1,16 @@
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { getRotatorDeviceId, getDeviceCfg } from './device-config.js';
-import { stmts, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
+import { stmts, getConfig, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
 import { nodeList } from './node-list.js';
 import { bearing } from './utils.js';
 
-const YAGI_DEVICE_ID = '!fa39f7b4';
-const HOLD_MS        = 90_000;   // dwell time at each target
-const RETRY_MS       = 30_000;   // retry delay when no eligible nodes available
+const RETRY_MS = 30_000;
+
+function getHoldMs() {
+  const cfg = getConfig('actv_config', {});
+  return (cfg.dwell_sec ?? 90) * 1000;
+}
 
 let _holdTimer = null;
 let _firedNum  = null;
@@ -84,7 +87,7 @@ function pointAt(node) {
   }
 
   if (_holdTimer) clearTimeout(_holdTimer);
-  _holdTimer = setTimeout(advance, HOLD_MS);
+  _holdTimer = setTimeout(advance, getHoldMs());
 }
 
 function advance() {
@@ -105,7 +108,8 @@ export const activeTracker = {
   },
 
   handlePacket(ev) {
-    if (ev.device !== YAGI_DEVICE_ID) return;
+    const rotatorId = getRotatorDeviceId();
+    if (!rotatorId || ev.device !== rotatorId) return;
 
     if (ev.type === 'packet') {
       const pkt = ev.data?.packet;
@@ -120,7 +124,7 @@ export const activeTracker = {
       rotator.emit('signal_update', { signal_num: _firedNum, rssi, snr, ts: Date.now() });
       try {
         recordYagiContact(_firedNum, rssi, snr);
-        insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: _firedNum, rssi, snr, hops: null, seq: null, rx_device: YAGI_DEVICE_ID });
+        insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: _firedNum, rssi, snr, hops: null, seq: null, rx_device: rotatorId });
       } catch (err) { log.error('contact record failed:', err.message); }
     }
   },

@@ -103,6 +103,7 @@ function dashboard() {
     scanMode:      false,
     scanStep:      5,
     scanDwell:     60,
+    actvDwell:     90,
     scanData:      {},   // kept for WS resume compat only — display uses this.nodes
     deviceNodes:   {},   // own-device self-telemetry keyed by !nodeId — never scan-filtered, Devices tab only
     scanProgress:  null,
@@ -1021,6 +1022,7 @@ function dashboard() {
         const cfg = await fetchJSON("/rotator/firmware_config");
         if (cfg?.scan?.step_deg  != null) this.scanStep  = Number(cfg.scan.step_deg);
         if (cfg?.scan?.dwell_sec != null) this.scanDwell = Number(cfg.scan.dwell_sec);
+        if (cfg?.actv?.dwell_sec != null) this.actvDwell = Number(cfg.actv.dwell_sec);
       } catch (_) {}
     },
 
@@ -1067,6 +1069,7 @@ function dashboard() {
         // Sync scan params from firmware config so startScan uses the rotator page values
         if (data?.scan?.step_deg  != null) this.scanStep  = Number(data.scan.step_deg);
         if (data?.scan?.dwell_sec != null) this.scanDwell = Number(data.scan.dwell_sec);
+        if (data?.actv?.dwell_sec != null) this.actvDwell = Number(data.actv.dwell_sec);
         await nextFrame();
         const el = document.getElementById("rotator_cfg_form");
         if (el && !el.dataset.dirty) {
@@ -1089,6 +1092,7 @@ function dashboard() {
         el.removeAttribute("data-dirty");
         if (payload?.scan?.step_deg  != null) this.scanStep  = Number(payload.scan.step_deg);
         if (payload?.scan?.dwell_sec != null) this.scanDwell = Number(payload.scan.dwell_sec);
+        if (payload?.actv?.dwell_sec != null) this.actvDwell = Number(payload.actv.dwell_sec);
         this.rotatorCfgSaved = true;
         setTimeout(() => { this.rotatorCfgSaved = false; }, 2000);
       } catch (e) {

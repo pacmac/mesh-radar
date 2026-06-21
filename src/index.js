@@ -161,6 +161,7 @@ app.post('/rotator/offset', (req, res) => {
 app.get('/rotator/firmware_config', (req, res) => {
   const s = rotator.status;
   const savedScan = getConfig('scan_config', {});
+  const savedActv = getConfig('actv_config', {});
   res.json({
     motor: {
       pwm_min:        s.pwmMin  ?? null,
@@ -171,11 +172,14 @@ app.get('/rotator/firmware_config', (req, res) => {
       step_deg:  savedScan.step_deg  ?? 5,
       dwell_sec: savedScan.dwell_sec ?? 60,
     },
+    actv: {
+      dwell_sec: savedActv.dwell_sec ?? 90,
+    },
   });
 });
 
 app.post('/rotator/firmware_config', (req, res) => {
-  const { motor = {}, scan = {} } = req.body;
+  const { motor = {}, scan = {}, actv = {} } = req.body;
   if (motor.pwm_min        != null) rotator.sendAction('pwmMin', [Math.round(motor.pwm_min)]);
   if (motor.pwm_run        != null) rotator.sendAction('pwmRun', [Math.round(motor.pwm_run)]);
   if (motor.pulses_per_deg != null) rotator.sendAction('ppd',    [Number(motor.pulses_per_deg)]);
@@ -184,6 +188,9 @@ app.post('/rotator/firmware_config', (req, res) => {
     if (scan.step_deg  != null) current.step_deg  = Number(scan.step_deg);
     if (scan.dwell_sec != null) current.dwell_sec = Number(scan.dwell_sec);
     setConfig('scan_config', current);
+  }
+  if (actv.dwell_sec != null) {
+    setConfig('actv_config', { dwell_sec: Number(actv.dwell_sec) });
   }
   res.json({ sent: true });
 });
@@ -381,6 +388,7 @@ onHomePosChange(() => nodeList.refilter());
 
 // -- scanner lifecycle -------------------------------------------------------
 scanner.on('start', () => {
+  activeTracker.stop();   // ACTV and SCAN are mutually exclusive
   dashMode.set(2);
   nodeList.setScanActive(true);
 });
@@ -396,8 +404,12 @@ scanner.on('end', () => {
 
 // -- ACTV mode lifecycle -----------------------------------------------------
 dashMode.on('change', ({ _mode }) => {
-  if (_mode === 1) activeTracker.start();
-  else             activeTracker.stop();
+  if (_mode === 1) {
+    if (scanner.active) return;  // SCAN takes precedence; refuse silent ACTV start
+    activeTracker.start();
+  } else {
+    activeTracker.stop();
+  }
 });
 
 // Resume active mode if it was persisted before restart

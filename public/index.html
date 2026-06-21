@@ -613,10 +613,13 @@
                         title="360° polar SNR sweep — YAGI radio only"></button>
               </div>
 
-              <!-- Scan step/dwell badge -->
-              <span class="text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode"
+              <!-- Scan/ACTV config badge -->
+              <span class="text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode && rotatorMode !== 1"
                     style="color:rgba(0,255,80,0.30)"
                     x-text="scanStep + '°/' + scanDwell + 's'"></span>
+              <span class="text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode && rotatorMode === 1"
+                    style="color:rgba(0,255,80,0.30)"
+                    x-text="actvDwell + 's/node'"></span>
 
               <!-- Scan progress -->
               <div class="flex items-center gap-2" x-show="scanMode">

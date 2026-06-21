@@ -17,5 +17,12 @@ export const ROTATOR_CONFIG_SCHEMA = {
         { name: 'dwell_sec', type: 'float' },
       ],
     },
+    {
+      name: 'actv',
+      type: 'object',
+      fields: [
+        { name: 'dwell_sec', type: 'float' },
+      ],
+    },
   ],
 };
