@@ -678,18 +678,20 @@ function dashboard() {
               .filter(Boolean)
           );
           this.messages = rows.map(r => ({
-            pktId:     r.packet_id,
-            replyId:   r.reply_id || null,
-            fromNum:   r.from_num,
-            to:        r.to_num >>> 0,
-            broadcast: (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
-            channel:   r.channel ?? 0,
-            text:      r.text,
-            ts:        r.ts,
-            time:      new Date(r.ts * 1000).toLocaleTimeString(),
-            direction: ownNums.has(r.from_num) ? 'tx' : 'rx',
-            ackStatus: null,
-            src:       r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
+            pktId:         r.packet_id,
+            replyId:       r.reply_id || null,
+            fromNum:       r.from_num,
+            fromShortName: r.short_name || null,
+            fromLongName:  r.long_name  || null,
+            to:            r.to_num >>> 0,
+            broadcast:     (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
+            channel:       r.channel ?? 0,
+            text:          r.text,
+            ts:            r.ts,
+            time:          new Date(r.ts * 1000).toLocaleTimeString(),
+            direction:     ownNums.has(r.from_num) ? 'tx' : 'rx',
+            ackStatus:     null,
+            src:           r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
           }));
           this.messages.forEach(m => { if (m.pktId) this._seenPacketIds.add(m.pktId); });
           try { localStorage.setItem("msgHistory", JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
@@ -1327,8 +1329,11 @@ function dashboard() {
                 delete localTx._localTx;
               } else {
                 const toNum = pkt.to >>> 0;
+                const fromNode = this.nodes.find(n => n.num === (pkt.from ?? 0));
                 this.messages.unshift({
                   pktId, fromNum: pkt.from ?? 0, to: toNum,
+                  fromShortName: fromNode?.user?.short_name || null,
+                  fromLongName:  fromNode?.user?.long_name  || null,
                   broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
                   channel: pkt.channel ?? 0,
                   replyId: pkt.decoded.reply_id || null,
@@ -1640,8 +1645,11 @@ function dashboard() {
 
       // Add optimistic TX entry BEFORE the POST so the WS echo (which arrives
       // almost immediately) can be absorbed rather than creating a duplicate.
+      const txNode = this.nodes.find(n => n.num === fromNum);
       const txEntry = {
         fromNum, to: to >>> 0,
+        fromShortName: txNode?.user?.short_name || this.availableDevices.find(d => d.node_id === fromId)?.short_name || null,
+        fromLongName:  txNode?.user?.long_name  || this.availableDevices.find(d => d.node_id === fromId)?.long_name  || null,
         broadcast: to === 0xFFFFFFFF, channel, text,
         ts: Math.floor(Date.now() / 1000), time, direction: 'tx', ackStatus: 'sending',
         src: fromId ? [fromId] : [], replyId: this.msgReplyId || null,

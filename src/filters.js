@@ -21,23 +21,26 @@ export function queryMessages(limit = 100) {
 
   return db.prepare(`
     SELECT
-      MIN(id)                       AS id,
-      MIN(ts)                       AS ts,
-      MIN(from_num)                 AS from_num,
-      MIN(to_num)                   AS to_num,
-      MIN(text)                     AS text,
-      MIN(channel)                  AS channel,
-      MIN(is_dm)                    AS is_dm,
-      MIN(hop_limit)                AS hop_limit,
-      MAX(snr)                      AS snr,
-      MAX(rssi)                     AS rssi,
-      packet_id, reply_id,
-      GROUP_CONCAT(device)          AS rx_devices,
-      MAX(replay)                   AS replay
-    FROM messages
+      MIN(m.id)                     AS id,
+      MIN(m.ts)                     AS ts,
+      MIN(m.from_num)               AS from_num,
+      MIN(m.to_num)                 AS to_num,
+      MIN(m.text)                   AS text,
+      MIN(m.channel)                AS channel,
+      MIN(m.is_dm)                  AS is_dm,
+      MIN(m.hop_limit)              AS hop_limit,
+      MAX(m.snr)                    AS snr,
+      MAX(m.rssi)                   AS rssi,
+      m.packet_id, m.reply_id,
+      GROUP_CONCAT(m.device)        AS rx_devices,
+      MAX(m.replay)                 AS replay,
+      MIN(n.short_name)             AS short_name,
+      MIN(n.long_name)              AS long_name
+    FROM messages m
+    LEFT JOIN nodes n ON n.num = m.from_num
     ${where}
-    GROUP BY CASE WHEN packet_id IS NOT NULL THEN packet_id ELSE id END
-    ORDER BY ts DESC LIMIT ?
+    GROUP BY CASE WHEN m.packet_id IS NOT NULL THEN m.packet_id ELSE m.id END
+    ORDER BY m.ts DESC LIMIT ?
   `).all(...params);
 }
 

@@ -1821,11 +1821,11 @@
                        :class="m.isReply ? 'border-l-2 border-base-300 pl-2' : ''"
                        >
                     <span class="relative inline-block shrink-0 cursor-pointer"
-                          :title="'Reply to ' + nodeShortName(m.fromNum)"
+                          :title="'Reply to ' + (m.fromShortName || nodeShortName(m.fromNum))"
                           @click="replyTo(m)">
                       <span class="node-avatar"
                             :style="`background:${avatarColor(m.fromNum)}`"
-                            x-text="nodeShortName(m.fromNum)"></span>
+                            x-text="m.fromShortName || nodeShortName(m.fromNum)"></span>
                       <span class="absolute top-0 right-0 -translate-y-1 translate-x-1 w-3.5 h-3.5 rounded-full flex items-center justify-center text-white text-[9px] font-bold leading-none pointer-events-none"
                             :class="m.direction === 'tx' ? 'bg-success text-white' : 'bg-info text-white'"
                             x-text="m.direction === 'tx' ? '↑' : '↓'">
@@ -1834,7 +1834,7 @@
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-1.5 text-xs">
                         <span x-show="m.isReply" class="text-base-content/40" title="Reply">↩</span>
-                        <span class="font-semibold text-base-content" x-text="nodeLongName(m.fromNum)"></span>
+                        <span class="font-semibold text-base-content" x-text="m.fromLongName || nodeLongName(m.fromNum)"></span>
                         <span class="badge badge-xs" :class="m.broadcast ? 'badge-ghost' : 'badge-info'" x-text="m.broadcast ? 'BC' : 'DM'"></span>
                         <template x-for="d in (Array.isArray(m.src) ? m.src : (m.src ? [m.src] : []))" :key="d">
                           <span class="badge badge-xs badge-outline font-mono opacity-60" :title="d" x-text="deviceLabel(d)"></span>
