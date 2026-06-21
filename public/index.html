@@ -2046,45 +2046,46 @@
                     <p class="text-xs opacity-40 mt-1">Device disconnects, reboots into bootloader, flashes over BLE, reconnects automatically.</p>
                   </div>
                   <!-- Config Backup / Restore + Push Position -->
-                  <div class="border-t border-base-300 pt-3"
-                       x-data="{ _restoring: false, _restoreErr: null, _restoreOk: false }">
+                  <div class="border-t border-base-300 pt-3">
                     <div class="flex items-center gap-2 mb-2">
                       <span class="text-xs font-semibold opacity-60 uppercase tracking-wide">Radio Config</span>
-                      <span x-show="_restoring" class="badge badge-sm badge-warning animate-pulse">Restoring…</span>
-                      <span x-show="_restoreOk" class="badge badge-sm badge-success" x-transition>Restored</span>
-                      <span x-show="_restoreErr" class="badge badge-sm badge-error" x-text="_restoreErr || ''"></span>
+                      <span x-show="opLoading('restore_' + dev.node_id)" class="badge badge-sm badge-warning animate-pulse">Restoring…</span>
                     </div>
                     <div class="flex gap-2 items-center flex-wrap">
                       <button class="btn btn-xs btn-outline"
-                              :disabled="dev.ble_state !== 'ready'"
+                              :disabled="dev.ble_state !== 'ready' || opLoading('backup_' + dev.node_id)"
                               title="Download all config sections and channels as JSON"
-                              @click="backupRadioConfig(dev.node_id)">
+                              @click="asyncOp('backup_' + dev.node_id, () => backupRadioConfig(dev.node_id))">
+                        <span x-show="opLoading('backup_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Backup
                       </button>
                       <label class="btn btn-xs btn-outline"
-                             :class="(dev.ble_state !== 'ready' || _restoring) ? 'btn-disabled pointer-events-none' : ''"
+                             :class="(dev.ble_state !== 'ready' || opLoading('restore_' + dev.node_id)) ? 'btn-disabled pointer-events-none' : ''"
                              title="Restore config from a backup JSON file — device will reboot">
+                        <span x-show="opLoading('restore_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Restore
                         <input type="file" accept=".json" class="hidden"
                                @change="async (e) => {
                                  const f = e.target.files[0]; e.target.value = '';
                                  if (!f) return;
-                                 let bk; try { bk = JSON.parse(await f.text()); } catch { _restoreErr = 'Invalid JSON'; return; }
-                                 if (!confirm('Restore all config to ' + dev.node_id + '?\n\nAll config sections and channels will be overwritten. Device will reboot.')) return;
-                                 _restoring = true; _restoreErr = null; _restoreOk = false;
-                                 try {
-                                   await fetchJSON('/' + dev.node_id + '/radio_restore', 'POST', bk);
-                                   _restoring = false; _restoreOk = true;
-                                   setTimeout(() => { _restoreOk = false; }, 3000);
-                                 } catch (err) { _restoring = false; _restoreErr = err.message || 'Restore failed'; }
+                                 let bk;
+                                 try { bk = JSON.parse(await f.text()); } catch { showToast('Invalid backup JSON', 'error'); return; }
+                                 asyncOp('restore_' + dev.node_id,
+                                   async () => {
+                                     if (!confirm('Restore all config to ' + dev.node_id + '?\n\nAll sections and channels will be overwritten. Device will reboot.')) return false;
+                                     await fetchJSON('/' + dev.node_id + '/radio_restore', 'POST', bk);
+                                   },
+                                   { successMsg: 'Config restored — device is rebooting' }
+                                 );
                                }">
                       </label>
                       <button class="btn btn-xs btn-outline"
-                              :disabled="dev.ble_state !== 'ready' || !deviceConfigs[dev.node_id]?.fixed_lat"
+                              :disabled="dev.ble_state !== 'ready' || !deviceConfigs[dev.node_id]?.fixed_lat || opLoading('pushPos_' + dev.node_id)"
                               :title="deviceConfigs[dev.node_id]?.fixed_lat != null
                                 ? 'Push ' + Number(deviceConfigs[dev.node_id].fixed_lat).toFixed(5) + ', ' + Number(deviceConfigs[dev.node_id].fixed_lon).toFixed(5) + ' to radio'
                                 : 'No fixed position configured — set it in Config → Radio → Device'"
-                              @click="pushFixedPosition(dev.node_id)">
+                              @click="asyncOp('pushPos_' + dev.node_id, () => pushFixedPosition(dev.node_id), { successMsg: 'Fixed position sent to radio' })">
+                        <span x-show="opLoading('pushPos_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Push Position
                       </button>
                     </div>
@@ -2126,8 +2127,18 @@
                     <button class="btn btn-xs btn-outline" :class="dev.node_id===activeNodeId&&'btn-success'" :disabled="dev.node_id===activeNodeId" @click="selectDevice(dev.node_id)">
                       <span x-text="dev.node_id===activeNodeId ? 'Active' : 'Set Active'"></span>
                     </button>
-                    <button class="btn btn-xs btn-outline btn-warning" @click="wipeNodeDb(dev.node_id)">Wipe NodeDB</button>
-                    <button class="btn btn-xs btn-outline btn-error" @click="disconnectDevice(dev.node_id)">Disconnect</button>
+                    <button class="btn btn-xs btn-outline btn-warning"
+                            :disabled="opLoading('wipe_' + dev.node_id)"
+                            @click="asyncOp('wipe_' + dev.node_id, () => wipeNodeDb(dev.node_id), { successMsg: 'Node DB wiped' })">
+                      <span x-show="opLoading('wipe_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
+                      Wipe NodeDB
+                    </button>
+                    <button class="btn btn-xs btn-outline btn-error"
+                            :disabled="opLoading('disconnect_' + dev.node_id)"
+                            @click="asyncOp('disconnect_' + dev.node_id, () => disconnectDevice(dev.node_id))">
+                      <span x-show="opLoading('disconnect_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
+                      Disconnect
+                    </button>
                   </div>
                 </div>
               </template>
@@ -2323,9 +2334,11 @@
 <!-- Toast notifications -->
 <div class="toast toast-top toast-end z-[9999] pointer-events-none" style="top:4rem">
   <template x-for="t in toasts" :key="t.id">
-    <div class="alert shadow-lg text-sm py-2 px-4 pointer-events-auto"
-         :class="t.type === 'error' ? 'alert-error' : 'alert-success'">
-      <span x-text="t.message"></span>
+    <div class="alert shadow-lg text-sm py-2 px-3 pointer-events-auto flex items-start gap-2 max-w-xs"
+         :class="t.type === 'error' ? 'alert-error' : 'alert-success'"
+         x-transition>
+      <span class="flex-1" x-text="t.message"></span>
+      <button @click="dismissToast(t.id)" class="btn btn-xs btn-ghost shrink-0 opacity-70 hover:opacity-100 -mr-1">✕</button>
     </div>
   </template>
 </div>

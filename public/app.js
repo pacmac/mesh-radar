@@ -61,6 +61,7 @@ function dashboard() {
     deviceBleStates: {},    // nodeId → { ble_state, config_complete, config_saving, ble_connected, ... }
     _readbackQueues: {},    // nodeId → [fn, fn, ...]
     toasts: [],             // { id, message, type: 'success'|'error' }
+    ops: {},                // { key: { loading, ok, err } } — asyncOp state per button key
     info: { my_info: {}, metadata: {} },
     nodeSelf: {},
     nodes: [],
@@ -251,11 +252,37 @@ function dashboard() {
       return { connecting: 'Connecting…', syncing: 'Syncing…', reconnecting: 'Reconnecting…', error: 'Error', idle: '' }[s.ble_state] || '';
     },
 
-    showToast(message, type = 'success', duration = 4000) {
+    showToast(message, type = 'success', duration) {
       const id = Date.now() + Math.random();
+      const ms = duration !== undefined ? duration : (type === 'error' ? 0 : 4000);
       this.toasts = [...this.toasts, { id, message, type }];
-      setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, duration);
+      if (ms > 0) setTimeout(() => this.dismissToast(id), ms);
     },
+
+    dismissToast(id) {
+      this.toasts = this.toasts.filter(t => t.id !== id);
+    },
+
+    // Tracks loading/ok/err state per key; auto-dismisses ok after 2.5s.
+    // fn returning false = user cancelled — silently resets (no toast).
+    async asyncOp(key, fn, opts = {}) {
+      if (this.ops[key]?.loading) return;
+      this.ops = { ...this.ops, [key]: { loading: true, ok: false, err: null } };
+      try {
+        const result = await fn();
+        if (result === false) { this.ops = { ...this.ops, [key]: { loading: false, ok: false, err: null } }; return; }
+        this.ops = { ...this.ops, [key]: { loading: false, ok: true, err: null } };
+        if (opts.successMsg) this.showToast(opts.successMsg, 'success');
+        setTimeout(() => { if (this.ops[key]?.ok) this.ops = { ...this.ops, [key]: { loading: false, ok: false, err: null } }; }, 2500);
+      } catch (e) {
+        const msg = opts.errorMsg || e.message || String(e);
+        this.ops = { ...this.ops, [key]: { loading: false, ok: false, err: msg } };
+        this.showToast(msg, 'error');
+      }
+    },
+
+    opLoading(key) { return !!this.ops[key]?.loading; },
+    opOk(key)      { return !!this.ops[key]?.ok; },
 
     // -- device management -------------------------------------------------------
     async loadDevices() {
@@ -333,62 +360,42 @@ function dashboard() {
     },
 
     async wipeNodeDb(nodeId) {
-      if (!confirm(`Wipe node database on ${nodeId}?\n\nThis will:\n1. Clear the dashboard node cache (SQLite nodes table + in-memory)\n2. Send nodedb_reset to the radio\n\nThe radio will rebuild from scratch.`)) return;
-      try {
-        await fetchJSON('/nodes', 'DELETE');
-        await fetchJSON(`/${nodeId}/admin`, 'POST', { message: { nodedb_reset: true }, want_response: false });
-      } catch (e) {
-        alert('Wipe failed: ' + e.message);
-      }
+      if (!confirm(`Wipe node database on ${nodeId}?\n\nThis will:\n1. Clear the dashboard node cache (SQLite nodes table + in-memory)\n2. Send nodedb_reset to the radio\n\nThe radio will rebuild from scratch.`)) return false;
+      await fetchJSON('/nodes', 'DELETE');
+      await fetchJSON(`/${nodeId}/admin`, 'POST', { message: { nodedb_reset: true }, want_response: false });
     },
 
     async disconnectDevice(nodeId) {
-      this.bleError = "";
-      try {
-        await fetchJSON("/devices/" + encodeURIComponent(nodeId), "DELETE");
-        if (this.activeNodeId === nodeId) this.activeNodeId = "";
-        await this.loadDevices();
-        if (!this.activeNodeId && this.availableDevices.length > 0) {
-          await this.selectDevice(this.availableDevices[0].node_id);
-        }
-      } catch (e) {
-        this.bleError = "Disconnect failed: " + e;
+      await fetchJSON("/devices/" + encodeURIComponent(nodeId), "DELETE");
+      if (this.activeNodeId === nodeId) this.activeNodeId = "";
+      await this.loadDevices();
+      if (!this.activeNodeId && this.availableDevices.length > 0) {
+        await this.selectDevice(this.availableDevices[0].node_id);
       }
     },
 
     async backupRadioConfig(nodeId) {
-      try {
-        const data = await fetchJSON(`/${nodeId}/radio_backup`);
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = Object.assign(document.createElement('a'), {
-          href: url,
-          download: `meshtastic-${nodeId}-${new Date().toISOString().slice(0, 10)}.json`,
-        });
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        alert('Backup failed: ' + (e.message || e));
-      }
+      const data = await fetchJSON(`/${nodeId}/radio_backup`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement('a'), {
+        href: url,
+        download: `meshtastic-${nodeId}-${new Date().toISOString().slice(0, 10)}.json`,
+      });
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     },
 
     async pushFixedPosition(nodeId) {
       const cfg = this.deviceConfigs[nodeId] || {};
       const lat = cfg.fixed_lat;
       const lon = cfg.fixed_lon;
-      if (lat == null || lon == null) {
-        alert(`No fixed position configured for ${nodeId}.\nSet it in Config → Radio → Device.`);
-        return;
-      }
-      try {
-        const body = { latitude_i: Math.round(lat * 1e7), longitude_i: Math.round(lon * 1e7) };
-        const res = await fetchJSON(`/${nodeId}/fixed_position`, 'PUT', body);
-        if (res?.error) throw new Error(res.error.message || 'Push failed');
-      } catch (e) {
-        alert('Push position failed: ' + (e.message || e));
-      }
+      if (lat == null || lon == null) throw new Error('No fixed position configured — set it in Config → Radio → Device');
+      const body = { latitude_i: Math.round(lat * 1e7), longitude_i: Math.round(lon * 1e7) };
+      const res = await fetchJSON(`/${nodeId}/fixed_position`, 'PUT', body);
+      if (res?.error) throw new Error(res.error.message || 'Push failed');
     },
 
     async init() {
