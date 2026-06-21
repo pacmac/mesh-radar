@@ -97,9 +97,13 @@ function dashboard() {
     pwmRunPctInput: null,
     pwmFreqInput: null,
     otaActive: false,
+    otaDone: false,
     otaPct: 0,
     otaBleAddr: null,
+    otaProtocol: null,
     otaError: null,
+    deviceOtaState: {},
+    _otaSeq: 0,
     scanMode:      false,
     scanStep:      5,
     scanDwell:     60,
@@ -1168,20 +1172,34 @@ function dashboard() {
       }
 
       if (ev.type === "ota_start") {
+        this._otaSeq++;
         this.otaActive = true;
+        this.otaDone = false;
         this.otaPct = 0;
         this.otaBleAddr = ev.ble_addr || ev.device || null;
+        this.otaProtocol = ev.protocol || null;
         this.otaError = null;
+        if (ev.device) this.deviceOtaState[ev.device] = { state: 'flashing', pct: 0 };
         // fall through to event log
       }
       if (ev.type === "ota_progress") {
-        if (!this.otaActive) { this.otaActive = true; this.otaBleAddr = ev.ble_addr || ev.device || null; }
+        if (!this.otaActive) { this.otaActive = true; this.otaDone = false; this.otaBleAddr = ev.ble_addr || ev.device || null; }
         this.otaPct = ev.data?.pct ?? this.otaPct;
+        if (ev.device) this.deviceOtaState[ev.device] = { state: 'flashing', pct: this.otaPct };
         return;
       }
-      if (ev.type === "ota_complete" || ev.type === "ota_error") {
-        this.otaActive = false;
-        this.otaError = ev.type === "ota_error" ? (ev.data?.error || "OTA failed") : null;
+      if (ev.type === "ota_complete") {
+        this.otaDone = true;
+        this.otaError = null;
+        if (ev.device) this.deviceOtaState[ev.device] = { state: 'done', pct: 100 };
+        const seq = ++this._otaSeq;
+        setTimeout(() => { if (this._otaSeq === seq) { this.otaActive = false; this.otaDone = false; } }, 2500);
+        // fall through to event log
+      }
+      if (ev.type === "ota_error") {
+        this.otaError = ev.data?.error || "OTA failed";
+        if (ev.device) this.deviceOtaState[ev.device] = { state: 'error', pct: this.otaPct };
+        // overlay stays open — user must dismiss
         // fall through to event log
       }
 

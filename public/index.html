@@ -56,13 +56,28 @@
        x-transition:leave-start="opacity-100"
        x-transition:leave-end="opacity-0"
        class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-base-300/80 backdrop-blur-sm">
-    <span class="loading loading-rings loading-lg text-warning"></span>
-    <p class="text-base-content font-semibold">Flashing firmware…</p>
-    <p class="text-base-content/50 text-sm font-mono" x-text="otaBleAddr || ''"></p>
-    <div class="w-64 bg-base-200 rounded-full h-3 overflow-hidden">
+    <!-- Flashing -->
+    <span class="loading loading-rings loading-lg text-warning" x-show="!otaDone && !otaError"></span>
+    <p class="text-base-content font-semibold" x-show="!otaDone && !otaError">Flashing firmware…</p>
+    <!-- Done -->
+    <svg x-show="otaDone" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+    </svg>
+    <p x-show="otaDone" class="text-success font-semibold text-lg">Flash complete</p>
+    <!-- Error -->
+    <svg x-show="otaError" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+    <p x-show="otaError" class="text-error font-semibold text-lg">Flash failed</p>
+    <p x-show="otaError" class="text-base-content/60 text-sm font-mono text-center max-w-xs" x-text="otaError || ''"></p>
+    <button x-show="otaError" class="btn btn-sm btn-ghost mt-2" @click="otaActive = false; otaError = null">Dismiss</button>
+    <!-- Shared: BLE addr + protocol + progress bar -->
+    <p class="text-base-content/50 text-sm font-mono" x-show="!otaError" x-text="otaBleAddr || ''"></p>
+    <p x-show="otaProtocol && !otaDone && !otaError" class="text-base-content/30 text-xs font-mono" x-text="otaProtocol || ''"></p>
+    <div class="w-64 bg-base-200 rounded-full h-3 overflow-hidden" x-show="!otaDone && !otaError">
       <div class="bg-warning h-3 rounded-full transition-all duration-300" :style="`width:${otaPct}%`"></div>
     </div>
-    <p class="text-base-content/70 text-sm font-mono" x-text="otaPct + '%'"></p>
+    <p class="text-base-content/70 text-sm font-mono" x-show="!otaDone && !otaError" x-text="otaPct + '%'"></p>
   </div>
 
   <!-- ===================== DRAWER CONTENT ===================== -->
@@ -1998,27 +2013,18 @@
                       </label>
                     </div>
                   </div>
-                  <!-- OTA firmware update (nRF52 BLE DFU) -->
+                  <!-- OTA firmware update -->
                   <div class="border-t border-base-300 pt-3"
                        x-data="{
                          _fwPath: localStorage.getItem('otaFwPath_' + dev.node_id) || '',
-                         _otaState: null,
-                         _otaPct: 0,
                          _savePath(v) { localStorage.setItem('otaFwPath_' + dev.node_id, v); }
-                       }"
-                       x-effect="$watch('events', evs => {
-                         const last = evs.find(e => e.device === dev.node_id && ['ota_progress','ota_complete','ota_error'].includes(e.type));
-                         if (!last) return;
-                         if (last.type === 'ota_progress') { _otaState = 'flashing'; _otaPct = last.data?.pct ?? 0; }
-                         else if (last.type === 'ota_complete') { _otaState = 'done'; _otaPct = 100; }
-                         else if (last.type === 'ota_error') { _otaState = 'error'; }
-                       })">
+                       }">
                     <div class="flex items-center gap-2 mb-2">
                       <span class="text-xs font-semibold opacity-60 uppercase tracking-wide"
                             x-text="'Firmware OTA' + (dev.hw_model ? ' — ' + dev.hw_model : '')"></span>
-                      <span x-show="_otaState === 'flashing'" class="badge badge-sm badge-warning animate-pulse">Flashing <span x-text="_otaPct + '%'"></span></span>
-                      <span x-show="_otaState === 'done'" class="badge badge-sm badge-success">Done</span>
-                      <span x-show="_otaState === 'error'" class="badge badge-sm badge-error">Error — check bridge log</span>
+                      <span x-show="deviceOtaState[dev.node_id]?.state === 'flashing'" class="badge badge-sm badge-warning animate-pulse">Flashing <span x-text="(deviceOtaState[dev.node_id]?.pct ?? 0) + '%'"></span></span>
+                      <span x-show="deviceOtaState[dev.node_id]?.state === 'done'" class="badge badge-sm badge-success">Done</span>
+                      <span x-show="deviceOtaState[dev.node_id]?.state === 'error'" class="badge badge-sm badge-error">Error — check bridge log</span>
                     </div>
                     <div class="flex gap-2 items-end flex-wrap">
                       <div class="form-control flex-1 min-w-48">
@@ -2031,9 +2037,9 @@
                                :placeholder="dev.ota_protocol === 'nrf52-dfu' ? '/path/to/firmware-rak4631-x.y.z.zip' : '/path/to/firmware-heltec-ht62-esp32c3-sx1262-x.y.z.bin'">
                       </div>
                       <button class="btn btn-sm btn-warning"
-                              :disabled="_otaState === 'flashing' || !_fwPath.trim() || dev.ble_state !== 'ready'"
+                              :disabled="deviceOtaState[dev.node_id]?.state === 'flashing' || !_fwPath.trim() || dev.ble_state !== 'ready'"
                               :title="dev.ble_state !== 'ready' ? 'Device must be connected (ready) before flashing' : 'Flash firmware via BLE'"
-                              @click="fetchJSON('/ota', 'POST', {node_id: dev.node_id, ble_addr: dev.ble_address, firmware: _fwPath.trim()}).then(d=>{ if(d.started) { _otaState='flashing'; _otaPct=0; } else { _otaState='error'; } }).catch(e=>{ _otaState='error'; })">
+                              @click="fetchJSON('/ota', 'POST', {node_id: dev.node_id, ble_addr: dev.ble_address, firmware: _fwPath.trim()}).then(d=>{ if(d.started) { deviceOtaState[dev.node_id]={state:'flashing',pct:0}; } else { deviceOtaState[dev.node_id]={state:'error',pct:0}; } }).catch(()=>{ deviceOtaState[dev.node_id]={state:'error',pct:0}; })">
                         Flash OTA
                       </button>
                     </div>
