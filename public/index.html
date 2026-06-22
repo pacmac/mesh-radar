@@ -359,16 +359,16 @@
               <!-- live readings -->
               <div class="flex gap-6 mb-4 shrink-0" style="font-family:'Oxanium',monospace;font-size:0.72rem">
                 <div>
-                  <div style="color:rgba(255,175,40,0.50);font-size:0.55rem;letter-spacing:0.1em">TEMP</div>
-                  <div style="color:rgba(255,175,40,0.92)" x-text="nodeSelf.environment_metrics?.temperature?.toFixed(1) + ' °C'"></div>
+                  <div style="color:rgba(255,70,70,0.50);font-size:0.55rem;letter-spacing:0.1em">TEMP</div>
+                  <div style="color:rgba(255,70,70,0.92)" x-text="nodeSelf.environment_metrics?.temperature?.toFixed(1) + ' °C'"></div>
                 </div>
                 <div>
-                  <div style="color:rgba(80,160,255,0.50);font-size:0.55rem;letter-spacing:0.1em">HUMIDITY</div>
-                  <div style="color:rgba(80,160,255,0.85)" x-text="nodeSelf.environment_metrics?.relative_humidity?.toFixed(1) + ' %'"></div>
+                  <div style="color:rgba(255,165,40,0.50);font-size:0.55rem;letter-spacing:0.1em">HUMIDITY</div>
+                  <div style="color:rgba(255,165,40,0.85)" x-text="nodeSelf.environment_metrics?.relative_humidity?.toFixed(1) + ' %'"></div>
                 </div>
                 <div>
-                  <div style="color:rgba(0,210,170,0.50);font-size:0.55rem;letter-spacing:0.1em">DEW PT</div>
-                  <div :style="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity) >= nodeSelf.environment_metrics?.temperature - 3 ? 'color:rgba(255,100,60,0.95)' : 'color:rgba(0,210,170,0.85)'"
+                  <div style="color:rgba(0,210,100,0.50);font-size:0.55rem;letter-spacing:0.1em">DEW PT</div>
+                  <div :style="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity) >= nodeSelf.environment_metrics?.temperature - 3 ? 'color:rgba(255,100,60,0.95)' : 'color:rgba(0,210,100,0.85)'"
                        x-text="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity)?.toFixed(1) + ' °C'"></div>
                 </div>
                 <div x-show="nodeSelf.environment_metrics?.barometric_pressure != null">
@@ -396,16 +396,16 @@
                   <g x-html="envChartRhLabels(activeNodeId)"></g>
                   <g x-html="envChartXLabels(activeNodeId)"></g>
                   <!-- data lines -->
-                  <polyline :points="envHumPoints(activeNodeId)" fill="none" stroke="rgba(80,160,255,0.85)" stroke-width="1.2"/>
-                  <polyline :points="envDpPoints(activeNodeId)"  fill="none" stroke="rgba(0,210,170,0.85)"  stroke-width="1.2" stroke-dasharray="4,2"/>
-                  <polyline :points="envTempPoints(activeNodeId)" fill="none" stroke="rgba(255,175,40,0.85)" stroke-width="1.2"/>
+                  <polyline :points="envHumPoints(activeNodeId)" fill="none" stroke="rgba(255,165,40,0.85)" stroke-width="1.2"/>
+                  <polyline :points="envDpPoints(activeNodeId)"  fill="none" stroke="rgba(0,210,100,0.85)"   stroke-width="1.2" stroke-dasharray="4,2"/>
+                  <polyline :points="envTempPoints(activeNodeId)" fill="none" stroke="rgba(255,70,70,0.85)"  stroke-width="1.2"/>
                   <!-- legend -->
-                  <line x1="38"  y1="10" x2="52"  y2="10" stroke="rgba(255,175,40,0.85)" stroke-width="1.2"/>
-                  <text x="54"  y="13"  font-size="8" fill="rgba(255,175,40,0.85)" font-family="monospace">temp</text>
-                  <line x1="96"  y1="10" x2="110" y2="10" stroke="rgba(0,210,170,0.85)" stroke-width="1.2" stroke-dasharray="4,2"/>
-                  <text x="112" y="13"  font-size="8" fill="rgba(0,210,170,0.85)" font-family="monospace">dew pt</text>
-                  <line x1="162" y1="10" x2="176" y2="10" stroke="rgba(80,160,255,0.85)" stroke-width="1.2"/>
-                  <text x="178" y="13"  font-size="8" fill="rgba(80,160,255,0.85)" font-family="monospace">humidity</text>
+                  <line x1="38"  y1="10" x2="52"  y2="10" stroke="rgba(255,70,70,0.85)"   stroke-width="1.2"/>
+                  <text x="54"  y="13"  font-size="8" fill="rgba(255,70,70,0.85)"   font-family="monospace">temp</text>
+                  <line x1="96"  y1="10" x2="110" y2="10" stroke="rgba(0,210,100,0.85)"   stroke-width="1.2" stroke-dasharray="4,2"/>
+                  <text x="112" y="13"  font-size="8" fill="rgba(0,210,100,0.85)"   font-family="monospace">dew pt</text>
+                  <line x1="162" y1="10" x2="176" y2="10" stroke="rgba(255,165,40,0.85)"  stroke-width="1.2"/>
+                  <text x="178" y="13"  font-size="8" fill="rgba(255,165,40,0.85)"  font-family="monospace">humidity</text>
                 </svg>
               </div>
               <div class="flex-1 flex items-center justify-center" x-show="(envHistory[activeNodeId]?.length ?? 0) <= 1"
@@ -1854,7 +1854,7 @@
             <div class="card-body">
               <h2 class="card-title">Message Feed</h2>
               <div class="overflow-y-auto max-h-[400px] divide-y divide-base-200">
-                <template x-for="m in displayMessages()" :key="m.pktId || (m.fromNum + '_' + m.ts + '_' + (m.text||'').slice(0,20))">
+                <template x-for="m in displayMessages()" :key="'msg_' + (m._txKey || m.pktId || m.fromNum + '_' + m.ts)">
                   <div class="flex items-start gap-3 py-2"
                        :style="m.replyDepth > 0 ? `margin-left:${m.replyDepth * 2}rem` : ''"
                        :class="m.isReply ? 'border-l-2 border-base-300 pl-2' : ''"
@@ -1871,25 +1871,27 @@
                       </span>
                     </span>
                     <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-1.5 text-xs">
+                      <div class="flex items-center gap-1.5 text-sm">
                         <span x-show="m.isReply" class="text-base-content/40" title="Reply">↩</span>
                         <span class="font-semibold text-base-content" x-text="m.fromLongName || nodeLongName(m.fromNum)"></span>
                         <span class="badge badge-xs" :class="m.broadcast ? 'badge-ghost' : 'badge-info'" x-text="m.broadcast ? 'BC' : 'DM'"></span>
-                        <span x-show="m.hops != null" class="badge badge-xs badge-ghost font-mono"
-                              x-text="m.hops === 0 ? 'direct' : m.hops + (m.hops === 1 ? ' hop' : ' hops')"></span>
-                        <span x-show="m.rssi != null || m.snr != null" x-html="sigBars(m.rssi, m.snr)"></span>
+                        <span x-show="m.hops != null" class="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold font-mono shrink-0"
+                              :class="m.hops === 0 ? 'bg-success text-success-content' : m.hops === 1 ? 'bg-info text-info-content' : m.hops === 2 ? 'bg-warning text-warning-content' : 'bg-error text-error-content'"
+                              :title="m.hops === 0 ? 'Direct' : m.hops + (m.hops === 1 ? ' hop' : ' hops')"
+                              x-text="m.hops"></span>
                         <template x-for="d in (Array.isArray(m.src) ? m.src : (m.src ? [m.src] : []))" :key="d">
                           <span class="badge badge-xs badge-outline font-mono opacity-60" :title="d" x-text="deviceLabel(d)"></span>
                         </template>
+                        <span x-show="m.rssi != null || m.snr != null" x-html="sigBars(m.rssi, m.snr)"></span>
                         <span class="ml-auto text-base-content/50 shrink-0" x-text="m.time"></span>
                         <template x-if="m.direction==='tx'">
-                          <span class="shrink-0"
-                                :class="m.ackStatus==='confirmed' ? 'text-success' : m.ackStatus==='sent' ? 'text-base-content/40' : m.ackStatus==='failed' ? 'text-error' : 'text-base-content/30'"
-                                :title="m.ackStatus==='confirmed' ? 'Confirmed by radio' : m.ackStatus==='sent' ? 'Queued (awaiting radio echo)' : m.ackStatus==='failed' ? ('Send failed: ' + (m._sendError||'unknown error')) : 'Sending…'"
-                                x-text="m.ackStatus==='confirmed' ? '✓✓' : m.ackStatus==='sent' ? '✓' : m.ackStatus==='failed' ? '✕' : '…'"></span>
+                          <span class="shrink-0 font-bold text-sm"
+                                :class="(m.ackStatus==='confirmed'||m.ackStatus==='sent') ? 'text-success' : m.ackStatus==='failed' ? 'text-error' : 'text-warning'"
+                                :title="m.ackStatus==='confirmed' ? 'Sent & echo confirmed' : m.ackStatus==='sent' ? 'Sent to radio' : m.ackStatus==='retrying' ? ('Retrying… attempt ' + (m._retryCount||1) + ' of 3') : m.ackStatus==='failed' ? ('Send failed: ' + (m._sendError||'unknown error')) : 'Sending…'"
+                                x-text="m.ackStatus==='failed' ? '✕' : m.ackStatus==='retrying' ? '↻' : m.ackStatus ? '✓' : '…'"></span>
                         </template>
                       </div>
-                      <div class="text-sm text-base-content mt-0.5 break-words" x-text="m.text"></div>
+                      <div class="text-base text-base-content mt-0.5 break-words" x-text="m.text"></div>
                     </div>
                   </div>
                 </template>
@@ -2171,6 +2173,18 @@
                       Disconnect
                     </button>
                   </div>
+                  <!-- Auto-purge -->
+                  <div class="flex items-center gap-2 text-xs text-base-content/70 mt-1">
+                    <input type="checkbox" class="checkbox checkbox-xs"
+                           :checked="autoPurgeSetting(dev.node_id).enabled"
+                           @change="autoPurge[dev.node_id] = {...autoPurgeSetting(dev.node_id), enabled: $event.target.checked}; saveAutoPurge(dev.node_id)">
+                    <span>Auto-purge daily at</span>
+                    <input type="time" class="input input-xs w-24"
+                           :value="autoPurgeSetting(dev.node_id).purge_time"
+                           :disabled="!autoPurgeSetting(dev.node_id).enabled"
+                           @change="autoPurge[dev.node_id] = {...autoPurgeSetting(dev.node_id), purge_time: $event.target.value}; saveAutoPurge(dev.node_id)">
+                    <span class="opacity-50" x-text="'· Last: ' + autoPurgeLastStr(dev.node_id)"></span>
+                  </div>
                 </div>
               </template>
             </div>
@@ -2211,20 +2225,23 @@
               </div>
 
               <div x-show="bleDevices.length > 0" class="overflow-x-auto mb-4">
-                <table class="table table-sm w-full max-w-2xl">
-                  <thead><tr><th>Name</th><th>Address</th><th>RSSI</th><th>PIN</th><th></th></tr></thead>
+                <table class="table table-sm w-full max-w-3xl">
+                  <thead><tr><th>Name</th><th>Address</th><th>RSSI</th><th class="text-center">Paired</th><th class="text-center">Trusted</th><th>PIN</th><th></th></tr></thead>
                   <tbody>
                     <template x-for="d in bleDevices" :key="d.address">
                       <tr>
                         <td class="font-semibold" x-text="d.name"></td>
                         <td class="font-mono text-xs" x-text="d.address"></td>
                         <td class="inline-flex items-center gap-1"><span x-html="sigBars(d.rssi, null)"></span><span x-text="d.rssi + ' dBm'"></span></td>
+                        <td class="text-center"><input type="checkbox" class="checkbox checkbox-xs" :checked="d.paired" disabled></td>
+                        <td class="text-center"><input type="checkbox" class="checkbox checkbox-xs" :checked="d.trusted" disabled></td>
                         <td><input class="input input-bordered input-xs font-mono w-24" x-model="blePin" placeholder="123456" type="text" inputmode="numeric" maxlength="6" :disabled="bleConnecting"></td>
-                        <td>
+                        <td class="flex gap-1">
                           <button class="btn btn-xs btn-primary gap-1" @click="bleConnect(d.address)" :disabled="bleConnecting || bleScanning">
                             <span x-show="bleConnecting && bleAddress === d.address" class="loading loading-spinner loading-xs" x-cloak></span>
                             Connect
                           </button>
+                          <button x-show="d.paired || d.trusted" class="btn btn-xs btn-error btn-outline" @click="bleRemove(d.address)" :disabled="bleConnecting || bleScanning" title="Remove BlueZ bonding">✕</button>
                         </td>
                       </tr>
                     </template>

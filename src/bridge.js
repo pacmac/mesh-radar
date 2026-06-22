@@ -48,6 +48,12 @@ class BridgeClient extends EventEmitter {
       } catch {
         return;
       }
+      const BLE_LOG_TYPES = ['connecting','syncing','reconnecting','error','ready','idle'];
+      if (BLE_LOG_TYPES.includes(event.type)) {
+        const dev = event.device || '?';
+        const msg = event.message ? `: ${event.message}` : '';
+        console.log(`[ble] ${dev} → ${event.type}${msg}`);
+      }
       this.emit('event', event);
       if (event.type) this.emit(event.type, event);
     });

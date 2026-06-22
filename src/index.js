@@ -8,7 +8,7 @@ import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -334,6 +334,26 @@ app.post('/:nodeId/traceroute', async (req, res) => {
   }
 });
 
+// -- auto-purge settings + scheduler ----------------------------------------
+
+app.get('/auto-purge', (req, res) => {
+  const nodeId = req.query.device;
+  if (!nodeId) return res.status(400).json({ error: 'device required' });
+  res.json({
+    enabled:     getConfig(`auto_purge_enabled_${nodeId}`, false),
+    purge_time:  getConfig(`auto_purge_time_${nodeId}`, '02:00'),
+    last_run_ts: getConfig(`auto_purge_last_run_ts_${nodeId}`, null),
+  });
+});
+
+app.put('/auto-purge', (req, res) => {
+  const { device: nodeId, enabled, purge_time } = req.body;
+  if (!nodeId) return res.status(400).json({ error: 'device required' });
+  setConfig(`auto_purge_enabled_${nodeId}`, !!enabled);
+  if (purge_time && /^\d{2}:\d{2}$/.test(purge_time)) setConfig(`auto_purge_time_${nodeId}`, purge_time);
+  res.json({ ok: true });
+});
+
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 
 async function proxyToBridge(req, res) {
@@ -366,7 +386,14 @@ app.use((req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 // -- server + WS relay -------------------------------------------------------
 const server = http.createServer(app);
-attachWsRelay(server);
+const wss = attachWsRelay(server);
+
+function broadcastAll(msg) {
+  const data = JSON.stringify(msg);
+  for (const client of wss.clients) {
+    if (client.readyState === 1) client.send(data);
+  }
+}
 
 server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);
@@ -506,6 +533,37 @@ rotator.on('point_target', (data) => {
   if (!sender) return;
   bridge.post(`/${sender}/traceroute`, { to: num }).catch(() => {});
 });
+
+// -- auto-purge scheduler ---------------------------------------------------
+async function runAutoPurge(nodeId) {
+  console.log(`[auto-purge] wiping nodedb on ${nodeId}`);
+  try {
+    await bridge.post(`/${nodeId}/admin`, { message: { nodedb_reset: true }, want_response: false });
+    const ts = Math.floor(Date.now() / 1000);
+    setConfig(`auto_purge_last_run_ts_${nodeId}`, ts);
+    broadcastAll({ type: 'auto_purge_complete', device: nodeId, ts });
+    console.log(`[auto-purge] done`);
+  } catch (e) {
+    console.error(`[auto-purge] failed on ${nodeId}:`, e.message);
+    broadcastAll({ type: 'auto_purge_error', device: nodeId, error: e.message });
+  }
+}
+
+setInterval(() => {
+  const now = new Date();
+  const hhmm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const today = now.toDateString();
+  const enabled = getConfigByPrefix('auto_purge_enabled_');
+  for (const [nodeId, isEnabled] of Object.entries(enabled)) {
+    if (!isEnabled) continue;
+    const purgeTime = getConfig(`auto_purge_time_${nodeId}`, '02:00');
+    if (hhmm !== purgeTime) continue;
+    const lastRun = getConfig(`auto_purge_last_run_ts_${nodeId}`, null);
+    const lastRunDate = lastRun ? new Date(lastRun * 1000).toDateString() : null;
+    if (lastRunDate === today) continue; // already ran today
+    runAutoPurge(nodeId);
+  }
+}, 60 * 1000);
 
 bridge.on('connected', async () => {
   const primaryId = getPrimaryDeviceId();

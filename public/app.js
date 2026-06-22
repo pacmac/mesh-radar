@@ -60,6 +60,7 @@ function dashboard() {
     _seenPacketIds: new Set(),
     availableDevices: [],
     deviceBleStates: {},    // nodeId → { ble_state, config_complete, ble_connected, ... }
+    autoPurge: {},          // nodeId → { enabled, interval_hrs, last_run_ts }
     _readbackQueues: {},    // nodeId → [fn, fn, ...] — DEPRECATED, kept for safety
     toasts: [],             // { id, message, type: 'success'|'error' }
     ops: {},                // { key: { loading, ok, err } } — asyncOp state per button key
@@ -363,9 +364,38 @@ function dashboard() {
     },
 
     async wipeNodeDb(nodeId) {
-      if (!confirm(`Wipe node database on ${nodeId}?\n\nThis will:\n1. Clear the dashboard node cache (SQLite nodes table + in-memory)\n2. Send nodedb_reset to the radio\n\nThe radio will rebuild from scratch.`)) return false;
-      await fetchJSON('/nodes', 'DELETE');
+      if (!confirm(`Wipe node database on ${nodeId}?\n\nThis will send nodedb_reset to the radio. The radio will rebuild its node list from scratch.`)) return false;
       await fetchJSON(`/${nodeId}/admin`, 'POST', { message: { nodedb_reset: true }, want_response: false });
+    },
+
+    async loadAutoPurge(nodeId) {
+      try {
+        const r = await fetchJSON(`/auto-purge?device=${encodeURIComponent(nodeId)}`);
+        this.autoPurge = { ...this.autoPurge, [nodeId]: r };
+      } catch (_) {}
+    },
+
+    async saveAutoPurge(nodeId) {
+      const s = this.autoPurge[nodeId];
+      if (!s) return;
+      try {
+        await fetchJSON('/auto-purge', 'PUT', { device: nodeId, enabled: s.enabled, purge_time: s.purge_time });
+      } catch (e) {
+        this.showToast('Failed to save auto-purge settings', 'error');
+      }
+    },
+
+    autoPurgeSetting(nodeId) {
+      return this.autoPurge[nodeId] || { enabled: false, purge_time: '02:00', last_run_ts: null };
+    },
+
+    autoPurgeLastStr(nodeId) {
+      const ts = this.autoPurge[nodeId]?.last_run_ts;
+      if (!ts) return 'never';
+      const diffSec = Math.floor(Date.now() / 1000) - ts;
+      if (diffSec < 120) return 'just now';
+      if (diffSec < 3600) return Math.round(diffSec / 60) + 'm ago';
+      return Math.round(diffSec / 3600) + 'h ago';
     },
 
     async disconnectDevice(nodeId) {
@@ -414,6 +444,7 @@ function dashboard() {
       } catch (_) {}
 
       await this.loadDevices();
+      for (const dev of this.availableDevices) await this.loadAutoPurge(dev.node_id);
       await this.loadConfig();           // node filters, radar prefs, packet_sources
       await this.loadDeviceConfigs();    // per-device labels + roles → may override activeNodeId
       await this.loadBridgeConfig();
@@ -749,7 +780,7 @@ function dashboard() {
               ts:            r.ts,
               time:          new Date(r.ts * 1000).toLocaleTimeString(),
               direction:     ownNums.has(r.from_num) ? 'tx' : 'rx',
-              ackStatus:     null,
+              ackStatus:     ownNums.has(r.from_num) ? 'confirmed' : null,
               src:           r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
             };
           });
@@ -759,6 +790,19 @@ function dashboard() {
       } catch (e) {
         console.warn('loadMessages failed', e);
       }
+      // Restore pending TX messages that haven't been confirmed (echoed) yet.
+      // Runs after every loadMessages regardless of whether rows came back.
+      try {
+        const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
+        if (_pt.length) {
+          const _rem = _pt.filter(p => {
+            if (this.messages.some(m => m.fromNum === p.fromNum && m.text === p.text && Math.abs((m.ts||0) - (p.ts||0)) < 120)) return false;
+            this.messages.unshift(p);
+            return true;
+          });
+          sessionStorage.setItem('pendingTx', JSON.stringify(_rem));
+        }
+      } catch (_) {}
     },
 
     displayMessages() {
@@ -822,6 +866,16 @@ function dashboard() {
       }
     },
 
+    async bleRemove(address) {
+      try {
+        await fetchJSON(`/ble/known/${encodeURIComponent(address)}`, "DELETE");
+        const dev = this.bleDevices.find(d => d.address?.toUpperCase() === address.toUpperCase());
+        if (dev) { dev.paired = false; dev.trusted = false; }
+      } catch (e) {
+        this.bleError = "Remove failed: " + (e.message || e);
+      }
+    },
+
     async bleConnect(address) {
       const addr = address || this.bleAddress;
       if (!addr) return;
@@ -831,14 +885,34 @@ function dashboard() {
       try {
         await fetchJSON("/devices", "POST", { address: addr, pin: this.blePin || "" });
         const deadline = Date.now() + 60000;
+        const bleKey = "ble:" + addr.toUpperCase();
+        const addrUpper = addr.toUpperCase();
+        let connected = false;
         while (Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 2000));
-          await this.loadDevices();
-          const dev = this.availableDevices.find(d => d.ble_address?.toUpperCase() === addr.toUpperCase());
-          if (dev) {
-            if (!this.activeNodeId) await this.selectDevice(dev.node_id);
-            if (dev.ble_state !== "connecting") break;
+          await new Promise((r) => setTimeout(r, 1000));
+          // deviceBleStates is updated in real-time via WebSocket — no HTTP polling needed.
+          // Pending devices use the "ble:ADDR" key; promoted devices use "!nodeId".
+          const pending = this.deviceBleStates[bleKey];
+          if (pending?.ble_state === "error") {
+            this.bleError = "Connect failed: " + (pending.ble_error || "device disconnected");
+            break;
           }
+          // Once promoted to a real node_id, the device appears in availableDevices.
+          const dev = this.availableDevices.find(d => d.ble_address?.toUpperCase() === addrUpper);
+          if (dev) {
+            if (dev.ble_state === "error") {
+              this.bleError = "Connect failed: " + (dev.ble_error || "device disconnected");
+              break;
+            }
+            if (dev.ble_state === "ready") {
+              if (!this.activeNodeId) await this.selectDevice(dev.node_id);
+              connected = true;
+              break;
+            }
+          }
+        }
+        if (!connected && !this.bleError) {
+          this.bleError = "Connect timed out — check device and try again";
         }
       } catch (e) {
         this.bleError = "Connect failed: " + (e.message || e);
@@ -1406,7 +1480,12 @@ function dashboard() {
               if (localTx) {
                 localTx.pktId = pktId;
                 localTx.ackStatus = 'confirmed';
+                const _txKey = localTx._txKey;
                 delete localTx._localTx;
+                try {
+                  const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
+                  sessionStorage.setItem('pendingTx', JSON.stringify(_pt.filter(x => x._txKey !== _txKey)));
+                } catch (_) {}
               } else {
                 const toNum = pkt.to >>> 0;
                 const fromNum = pkt.from ?? 0;
@@ -1447,6 +1526,14 @@ function dashboard() {
       if (ev.type === 'range_test_entry') {
         this._rangeStats = null; this._rangeChartCache = null;
         if (this.tab === 'range') this.loadRangeTest();
+      }
+      if (ev.type === 'auto_purge_complete') {
+        if (this.autoPurge[ev.device]) this.autoPurge[ev.device].last_run_ts = ev.ts;
+        this.nodes = [];
+        this.showToast(`Auto-purge complete on ${ev.device}`, 'success');
+      }
+      if (ev.type === 'auto_purge_error') {
+        this.showToast(`Auto-purge failed on ${ev.device}: ${ev.error}`, 'error');
       }
       if (ev.type === "mqtt_node" && ev.data && !this.scanMode) {
         const upd = ev.data;
@@ -1677,8 +1764,12 @@ function dashboard() {
 
       // Add optimistic TX entry BEFORE the POST so the WS echo (which arrives
       // almost immediately) can be absorbed rather than creating a duplicate.
+      // _txKey is a stable primitive used to find the entry through Alpine's proxy
+      // (reference equality === fails on proxied objects; primitive === is transparent).
+      const txKey = Date.now();
       const txNode = this.nodes.find(n => n.num === fromNum);
       const txEntry = {
+        _txKey: txKey,
         fromNum, to: to >>> 0,
         fromShortName: txNode?.user?.short_name || this.availableDevices.find(d => d.node_id === fromId)?.short_name || null,
         fromLongName:  txNode?.user?.long_name  || this.availableDevices.find(d => d.node_id === fromId)?.long_name  || null,
@@ -1689,6 +1780,11 @@ function dashboard() {
       };
       this.messages.unshift(txEntry);
       if (this.messages.length > 50) this.messages.pop();
+      try {
+        const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
+        _pt.unshift({...txEntry});
+        sessionStorage.setItem('pendingTx', JSON.stringify(_pt.slice(0, 20)));
+      } catch (_) {}
 
       // Clear compose immediately
       this.msgInputHistory = [text, ...this.msgInputHistory.filter(t => t !== text)].slice(0, 50);
@@ -1700,17 +1796,42 @@ function dashboard() {
       this.msgReplyFrom = null;
       if (this.msgIsModal) this.closeMessageModal();
 
-      try {
-        const res = await fetchJSON("/" + fromId + "/messages", "POST", body);
-        if (res?.error) throw new Error(res.error?.message || String(res.error));
-        if (res?.detail) throw new Error(res.detail);
-        // BLE write queued — radio echo (when it arrives via WS) upgrades to 'confirmed'
-        txEntry.ackStatus = 'sent';
-        this.msgSent = true;
-        setTimeout(() => (this.msgSent = false), 2000);
-      } catch (e) {
-        txEntry.ackStatus = 'failed';
-        txEntry._sendError = e.message;
+      let _lastErr = null;
+      for (let _attempt = 1; _attempt <= 3; _attempt++) {
+        try {
+          const res = await fetchJSON("/" + fromId + "/messages", "POST", body);
+          if (res?.error) throw new Error(res.error?.message || String(res.error));
+          if (res?.detail) throw new Error(res.detail);
+          const m = this.messages.find(x => x._txKey === txKey);
+          if (m && (m.ackStatus === 'sending' || m.ackStatus === 'retrying')) m.ackStatus = 'sent';
+          try {
+            const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
+            const _p = _pt.find(x => x._txKey === txKey);
+            if (_p) _p.ackStatus = 'sent';
+            sessionStorage.setItem('pendingTx', JSON.stringify(_pt));
+          } catch (_) {}
+          this.msgSent = true;
+          setTimeout(() => (this.msgSent = false), 2000);
+          _lastErr = null;
+          break;
+        } catch (e) {
+          _lastErr = e;
+          if (_attempt < 3) {
+            const m = this.messages.find(x => x._txKey === txKey);
+            if (m) { m.ackStatus = 'retrying'; m._retryCount = _attempt; }
+            await new Promise(r => setTimeout(r, 1000 * _attempt));
+          }
+        }
+      }
+      if (_lastErr) {
+        const m = this.messages.find(x => x._txKey === txKey);
+        if (m) { m.ackStatus = 'failed'; m._sendError = _lastErr.message; }
+        try {
+          const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
+          const _p = _pt.find(x => x._txKey === txKey);
+          if (_p) { _p.ackStatus = 'failed'; _p._sendError = _lastErr.message; }
+          sessionStorage.setItem('pendingTx', JSON.stringify(_pt));
+        } catch (_) {}
       }
     },
 
@@ -3146,7 +3267,12 @@ async function fetchJSON(url, method = "GET", body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(url, opts);
-  return res.json();
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const msg = data?.detail || data?.error?.message || data?.message || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
 }
 
 function b64ToUtf8(b64) {
