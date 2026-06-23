@@ -153,6 +153,7 @@ if (!existingCols.includes('reply_id')) {
 if (!existingCols.includes('hops'))       db.exec(`ALTER TABLE messages ADD COLUMN hops INTEGER`);
 if (!existingCols.includes('short_name')) db.exec(`ALTER TABLE messages ADD COLUMN short_name TEXT`);
 if (!existingCols.includes('long_name'))  db.exec(`ALTER TABLE messages ADD COLUMN long_name TEXT`);
+if (!existingCols.includes('alerted_at')) db.exec(`ALTER TABLE messages ADD COLUMN alerted_at INTEGER`);
 const tiltCols = db.prepare(`PRAGMA table_info(tilt_history)`).all().map(r => r.name);
 if (!tiltCols.includes('ncal')) {
   db.exec(`ALTER TABLE tilt_history ADD COLUMN ncal INTEGER NOT NULL DEFAULT 0`);
@@ -471,6 +472,26 @@ export function consumeReplyToken(token) {
 }
 export function pruneExpiredTokens() {
   _pruneReplyTokens.run(Math.floor(Date.now() / 1000));
+}
+
+// -- Packet alert deduplication -----------------------------------------------
+// Records that an alert has been sent for a given packet_id so the same packet
+// never triggers a second email even if the bridge echoes the event again.
+const _markAlerted = db.prepare(
+  `UPDATE messages SET alerted_at = ? WHERE packet_id = ? AND alerted_at IS NULL`
+);
+const _isAlerted = db.prepare(
+  `SELECT 1 FROM messages WHERE packet_id = ? AND alerted_at IS NOT NULL LIMIT 1`
+);
+
+export function markPacketAlerted(packetId) {
+  if (packetId == null) return;
+  _markAlerted.run(Math.floor(Date.now() / 1000), packetId);
+}
+
+export function isPacketAlerted(packetId) {
+  if (packetId == null) return false;
+  return !!_isAlerted.get(packetId);
 }
 
 export default db;

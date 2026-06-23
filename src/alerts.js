@@ -1,6 +1,6 @@
 // Alert evaluator — polling (node_offline, temp_high, condensation)
 // and event-driven (dm_received, broadcast_direct, tilt_high, ble_disconnect).
-import { getAlertRule, touchAlertLastSent, createReplyToken, pruneExpiredTokens } from './db.js';
+import { getAlertRule, touchAlertLastSent, createReplyToken, pruneExpiredTokens, isPacketAlerted, markPacketAlerted } from './db.js';
 import db from './db.js';
 import { sendAlert } from './mailer.js';
 import { randomUUID } from 'crypto';
@@ -147,7 +147,9 @@ function _dispatchAlertEvent(ev) {
     if (isDm) {
       const rule = getAlertRule('dm_received');
       if (!canSend(rule)) return;
+      if (pktId != null && isPacketAlerted(pktId)) return;
       touchAlertLastSent('dm_received');
+      markPacketAlerted(pktId);
       const token = randomUUID();
       createReplyToken(token, ev.device, pkt.from >>> 0, pktId, pkt.channel ?? 0);
       sendAlert('dm_received',
@@ -161,7 +163,9 @@ function _dispatchAlertEvent(ev) {
     if (!isDm && hops === 0) {
       const rule = getAlertRule('broadcast_direct');
       if (!canSend(rule)) return;
+      if (pktId != null && isPacketAlerted(pktId)) return;
       touchAlertLastSent('broadcast_direct');
+      markPacketAlerted(pktId);
       const token = randomUUID();
       createReplyToken(token, ev.device, BROADCAST_NUM, pktId, pkt.channel ?? 0);
       sendAlert('broadcast_direct',
