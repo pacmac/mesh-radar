@@ -38,6 +38,7 @@ export const configMixin = {
       else if (this.radioTab === 'owner')    this.loadOwner();
     } else if (name === 'bridge')  this.loadBridgeConfig();
     else if (name === 'rotator')   this.loadRotatorCfg();
+    else if (name === 'alerts')    this.loadAlertRules();
   },
 
   resetRadioCfg() {
@@ -268,6 +269,66 @@ export const configMixin = {
       setTimeout(() => { this.bridgeConfigSaved = false; }, 2000);
     } catch (e) {
       this.bridgeConfigError = String(e);
+    }
+  },
+
+  // -- Alerts ------------------------------------------------------------------
+
+  async loadAlertRules() {
+    try {
+      const [rules, smtp] = await Promise.all([
+        fetchJSON('/alerts/rules'),
+        fetchJSON('/alerts/config'),
+      ]);
+      this.alertRules = rules;
+      this.alertSmtp = {
+        host:      smtp['alerts.smtp_host'] ?? '',
+        port:      smtp['alerts.smtp_port'] ?? 587,
+        user:      smtp['alerts.smtp_user'] ?? '',
+        pass:      smtp['alerts.smtp_pass'] ?? '',
+        from:      smtp['alerts.smtp_from'] ?? '',
+        to:        smtp['alerts.smtp_to']   ?? '',
+        imap_host: smtp['alerts.imap_host'] ?? '',
+        imap_port: smtp['alerts.imap_port'] ?? 993,
+      };
+    } catch (e) {
+      console.warn('loadAlertRules failed', e);
+    }
+  },
+
+  async saveSmtp(key, value) {
+    try {
+      await fetchJSON('/alerts/config', 'PUT', { [key]: value });
+      const field = key.replace('alerts.smtp_', '').replace('alerts.imap_', 'imap_');
+      if (this.alertSmtp) this.alertSmtp[field] = value;
+    } catch (e) {
+      console.warn('saveSmtp failed', e);
+    }
+  },
+
+  async updateAlertRule(type, changes) {
+    try {
+      await fetchJSON(`/alerts/rules/${type}`, 'PUT', changes);
+      const r = this.alertRules.find(x => x.type === type);
+      if (r) Object.assign(r, changes);
+    } catch (e) {
+      console.warn('updateAlertRule failed', e);
+    }
+  },
+
+  async sendTestAlert() {
+    this.alertTestSending = true;
+    this.alertTestResult = '';
+    try {
+      await fetchJSON('/alerts/test', 'POST', {});
+      this.alertTestOk = true;
+      this.alertTestResult = 'Sent!';
+    } catch (e) {
+      this.alertTestOk = false;
+      this.alertTestResult = e.message || 'Failed';
+    } finally {
+      this.alertTestSending = false;
+      setTimeout(() => { this.alertTestResult = ''; }, 4000);
     }
   },
 };

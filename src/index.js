@@ -9,6 +9,7 @@ import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule } from './db.js';
+const ALERT_SMTP_KEYS = ['alerts.smtp_host','alerts.smtp_port','alerts.smtp_user','alerts.smtp_pass','alerts.smtp_from','alerts.smtp_to','alerts.imap_host','alerts.imap_port'];
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -425,6 +426,19 @@ for (const prefix of BRIDGE_PREFIXES) {
 app.use(/^\/![0-9a-f]+/i, proxyToBridge);
 
 // -- alerts API --------------------------------------------------------------
+
+app.get('/alerts/config', (req, res) => {
+  const result = {};
+  for (const k of ALERT_SMTP_KEYS) result[k] = getConfig(k, null);
+  res.json(result);
+});
+
+app.put('/alerts/config', (req, res) => {
+  for (const [k, v] of Object.entries(req.body)) {
+    if (ALERT_SMTP_KEYS.includes(k)) setConfig(k, v);
+  }
+  res.json({ ok: true });
+});
 
 app.get('/alerts/rules', (req, res) => {
   const rules = getAlertRules().map(r => ({

@@ -121,6 +121,12 @@ function dashboard() {
     msgInsertNode: null,
     msgNodeCache:  {},
     _knownNodes:   [],
+    msgEmojiSet: [
+      {e:'👍',t:'Thumbs up'},{e:'👋',t:'Hello / goodbye'},{e:'🙂',t:'Smile'},
+      {e:'✅',t:'Yes / confirmed'},{e:'❌',t:'No / cancel'},{e:'❓',t:'Question'},
+      {e:'😎',t:'Cool'},{e:'🤔',t:'Thinking'},{e:'🌞',t:'Good morning'},
+      {e:'🍻',t:'Cheers'},{e:'📻',t:'Radio'},{e:'73',t:'73 — best regards (ham)'},
+    ],
     msgInputHistory: persistGet('msgInputHistory', []),
     msgHistoryIdx: -1,
     msgDraft: '',
@@ -158,6 +164,13 @@ function dashboard() {
     tiltRings:   [1, 2, 3, 4],
     tiltZero:       persistGet('tiltZero', null),
     tiltNorthAngle: persistGet('tiltNorthAngle', null),
+
+    // -- Alerts ---------------------------------------------------------------
+    alertRules:       [],
+    alertSmtp:        {},
+    alertTestSending: false,
+    alertTestResult:  '',
+    alertTestOk:      false,
 
     // -- Config tab -----------------------------------------------------------
     allSections: [],

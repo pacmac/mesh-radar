@@ -176,9 +176,9 @@
       No device selected — go to Devices to connect
     </div>
 
-    <!-- Main content — radar gets no padding/scroll so it fills the viewport -->
-    <div class="flex-1 min-h-0" :class="tab==='radar' ? 'overflow-hidden' : 'overflow-y-auto'">
-      <div :class="tab==='radar' ? 'h-full flex flex-col' : 'p-4 max-w-[1400px] w-full mx-auto'">
+    <!-- Main content — radar+messages fill viewport; all others scroll -->
+    <div class="flex-1 min-h-0" :class="(tab==='radar'||tab==='messages') ? 'overflow-hidden' : 'overflow-y-auto'">
+      <div :class="tab==='radar' ? 'h-full flex flex-col' : tab==='messages' ? 'h-full p-4 flex flex-col max-w-[1400px] w-full mx-auto' : 'p-4 max-w-[1400px] w-full mx-auto'">
 
         <!-- ===================== OVERVIEW ===================== -->
         <div x-show="tab==='overview'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -970,12 +970,20 @@
                   <span class="font-semibold" x-text="nodeShortName(msgReplyFrom) || '?'"></span>
                   <button class="ml-auto btn btn-xs btn-ghost py-0 h-auto min-h-0 opacity-50" @click="msgReplyId = null; msgReplyFrom = null">✕</button>
                 </div>
-                <textarea class="textarea textarea-bordered w-full" rows="3" x-model="msgText" placeholder="Type a message… (@name to mention)"
+                <textarea class="textarea textarea-bordered w-full" rows="3" x-model="msgText" placeholder="Type a message… (@name to mention)" x-ref="msgInput"
                   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                   @keydown="handleMsgKeydown($event)"
                   @input="handleMsgInput($event)"
                   @blur="$nextTick(() => { mentionOpen = false })"></textarea>
               </div>
+            </div>
+
+            <!-- Quick-insert emoji -->
+            <div class="flex w-full">
+              <template x-for="em in msgEmojiSet" :key="em.e">
+                <button class="btn btn-sm btn-ghost text-xl px-0 flex-1" x-text="em.e" :title="em.t"
+                        @click="insertAtCursor($refs.msgInput, em.e)"></button>
+              </template>
             </div>
 
             <!-- Send -->
@@ -993,7 +1001,7 @@
             <h3 class="font-bold text-lg font-oxanium"
                 x-text="msgIsDirect ? 'Message → ' + (nodeLongName(msgDirectTo) || msgDirectTo) : 'Broadcast'"></h3>
             <div class="mt-3"
-                 x-init="$nextTick(() => { const f = document.getElementById('msg-compose').content.cloneNode(true); const r = f.firstElementChild; $el.append(f); Alpine.initTree(r); })">
+                 x-init="$nextTick(() => { const f = document.getElementById('msg-compose').content.cloneNode(true); $el.append(f); })">
             </div>
             <div class="modal-action">
               <button class="btn btn-sm" @click="closeMessageModal()">Close</button>
@@ -1292,9 +1300,8 @@
                                      x-text="fmtAge(n.last_heard)"></div>
                               </div>
                             </div>
-                            <!-- Hops · distance -->
-                            <div class="flex flex-wrap gap-1">
-                              <span class="contents" x-html="hopsBadge(nodeHops(n))"></span>
+                            <!-- distance · device · hops -->
+                            <div class="flex flex-wrap items-center gap-1">
                               <span x-show="nodeKm(n) != null"
                                     class="badge badge-xs badge-ghost"
                                     x-text="nodeKm(n)?.toFixed(1) + ' km'"></span>
@@ -1303,6 +1310,7 @@
                                       :style="deviceConfigs[devId]?.color ? `color:${themeColor(deviceConfigs[devId].color)}` : ''"
                                       x-text="deviceConfigs[devId]?.label || deviceLabel(devId)"></span>
                               </template>
+                              <span class="contents" x-html="hopsBadge(nodeHops(n))"></span>
                             </div>
                           </div>
                         </div>
@@ -1321,6 +1329,7 @@
             <a class="tab" :class="cfgTab==='radio'   && 'tab-active font-semibold'" @click="switchCfgTab('radio')">Radio</a>
             <a class="tab" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
             <a class="tab" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
+            <a class="tab" :class="cfgTab==='alerts'  && 'tab-active font-semibold'" @click="switchCfgTab('alerts')">Alerts</a>
           </div>
 
           <!-- ======== RADIO tab — single selector, inner sub-tabs ======== -->
@@ -1699,6 +1708,123 @@
 
         </div>
 
+          <!-- ===================== ALERTS ===================== -->
+          <div x-show="cfgTab==='alerts'" x-effect="cfgTab==='alerts' && !alertRules.length && loadAlertRules()"
+               class="flex flex-col gap-3 max-w-2xl">
+
+            <!-- SMTP config -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">Email (SMTP)</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">SMTP host</span></div>
+                    <input type="text" class="input input-bordered input-sm font-mono"
+                           :value="alertSmtp.host" @change="saveSmtp('alerts.smtp_host', $event.target.value)">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">Port</span></div>
+                    <input type="number" class="input input-bordered input-sm font-mono"
+                           :value="alertSmtp.port" @change="saveSmtp('alerts.smtp_port', Number($event.target.value))">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">Username</span></div>
+                    <input type="text" class="input input-bordered input-sm font-mono"
+                           :value="alertSmtp.user" @change="saveSmtp('alerts.smtp_user', $event.target.value)">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">Password</span></div>
+                    <input type="password" class="input input-bordered input-sm font-mono"
+                           :value="alertSmtp.pass" @change="saveSmtp('alerts.smtp_pass', $event.target.value)">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">From address</span></div>
+                    <input type="email" class="input input-bordered input-sm font-mono"
+                           :value="alertSmtp.from" @change="saveSmtp('alerts.smtp_from', $event.target.value)">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">To address</span></div>
+                    <input type="email" class="input input-bordered input-sm font-mono"
+                           :value="alertSmtp.to" @change="saveSmtp('alerts.smtp_to', $event.target.value)">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">IMAP host</span></div>
+                    <input type="text" class="input input-bordered input-sm font-mono"
+                           :value="alertSmtp.imap_host" @change="saveSmtp('alerts.imap_host', $event.target.value)">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">IMAP port</span></div>
+                    <input type="number" class="input input-bordered input-sm font-mono"
+                           :value="alertSmtp.imap_port" @change="saveSmtp('alerts.imap_port', Number($event.target.value))">
+                  </label>
+                </div>
+                <div class="flex items-center gap-3 mt-3">
+                  <button class="btn btn-sm btn-outline" @click="sendTestAlert()"
+                          :disabled="alertTestSending">
+                    <span x-show="!alertTestSending">Send test email</span>
+                    <span x-show="alertTestSending" class="loading loading-spinner loading-xs"></span>
+                  </button>
+                  <span x-show="alertTestResult" x-text="alertTestResult"
+                        :class="alertTestOk ? 'text-success text-sm' : 'text-error text-sm'"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Alert rules table -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">Alert Rules</h2>
+                <div class="overflow-x-auto mt-1">
+                  <table class="table table-sm">
+                    <thead>
+                      <tr>
+                        <th class="w-8">On</th>
+                        <th>Alert</th>
+                        <th class="w-28">Threshold</th>
+                        <th class="w-28">Cooldown (min)</th>
+                        <th>Last triggered</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="r in alertRules" :key="r.type">
+                        <tr>
+                          <td>
+                            <input type="checkbox" class="checkbox checkbox-sm"
+                                   :checked="r.enabled"
+                                   @change="updateAlertRule(r.type, { enabled: $event.target.checked })">
+                          </td>
+                          <td>
+                            <div class="font-medium text-sm" x-text="r.label"></div>
+                            <div class="text-xs opacity-50" x-text="r.desc"></div>
+                          </td>
+                          <td>
+                            <template x-if="r.unit">
+                              <div class="flex items-center gap-1">
+                                <input type="number" class="input input-bordered input-xs w-20 font-mono"
+                                       :value="r.threshold"
+                                       @change="updateAlertRule(r.type, { threshold: Number($event.target.value) })">
+                                <span class="text-xs opacity-60" x-text="r.unit"></span>
+                              </div>
+                            </template>
+                            <template x-if="!r.unit"><span class="opacity-30 text-xs">–</span></template>
+                          </td>
+                          <td>
+                            <input type="number" class="input input-bordered input-xs w-20 font-mono"
+                                   :value="r.cooldown_minutes"
+                                   @change="updateAlertRule(r.type, { cooldown_minutes: Number($event.target.value) })">
+                          </td>
+                          <td class="text-xs opacity-60 font-mono"
+                              x-text="r.last_sent ? new Date(r.last_sent * 1000).toLocaleString() : 'never'"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
         <!-- ===================== RANGE TEST ===================== -->
         <div x-show="tab==='range'" class="flex flex-col gap-4">
           <!-- Control bar -->
@@ -1867,22 +1993,22 @@
         </div>
 
         <!-- ===================== MESSAGES ===================== -->
-        <div x-show="tab==='messages'" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div class="card bg-base-100 shadow">
-            <div class="card-body">
-              <h2 class="card-title">Send Text</h2>
-              <div x-init="$nextTick(() => { const f = document.getElementById('msg-compose').content.cloneNode(true); const r = f.firstElementChild; $el.append(f); Alpine.initTree(r); })">
+        <div x-show="tab==='messages'" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
+          <div class="card bg-base-100 shadow flex flex-col min-h-0">
+            <div class="card-body flex flex-col min-h-0">
+              <h2 class="card-title shrink-0">Send Text</h2>
+              <div x-init="$nextTick(() => { const f = document.getElementById('msg-compose').content.cloneNode(true); $el.append(f); })">
               </div>
             </div>
           </div>
-          <div class="card bg-base-100 shadow">
-            <div class="card-body">
-              <h2 class="card-title">Message Feed</h2>
-              <div class="overflow-y-auto max-h-[400px] divide-y divide-base-200">
+          <div class="card bg-base-100 shadow flex flex-col min-h-0">
+            <div class="card-body flex flex-col min-h-0">
+              <h2 class="card-title shrink-0">Message Feed</h2>
+              <div class="overflow-y-auto flex-1 min-h-0">
                 <template x-for="m in displayMessages()" :key="'msg_' + (m._txKey || m.pktId || m.fromNum + '_' + m.ts)">
                   <div class="flex items-start gap-3 py-2"
                        :style="m.replyDepth > 0 ? `margin-left:${m.replyDepth * 2}rem` : ''"
-                       :class="m.isReply ? 'border-l-2 border-base-300 pl-2' : ''"
+                       :class="m.isReply ? 'pl-2' : 'border-t border-base-200'"
                        >
                     <span class="relative inline-block shrink-0 cursor-pointer"
                           :title="'Reply to ' + (m.fromShortName || nodeShortName(m.fromNum))"
@@ -1898,10 +2024,7 @@
                         <span x-show="m.isReply" class="text-base-content/40" title="Reply">↩</span>
                         <span class="font-semibold text-base-content" x-text="m.fromLongName || nodeLongName(m.fromNum)"></span>
                         <span class="badge badge-xs" :class="m.broadcast ? 'badge-ghost' : 'badge-info'" x-text="m.broadcast ? 'BC' : 'DM'"></span>
-                        <span x-show="m.hops != null" class="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold font-mono shrink-0"
-                              :class="m.hops === 0 ? 'bg-success text-success-content' : m.hops === 1 ? 'bg-info text-info-content' : m.hops === 2 ? 'bg-warning text-warning-content' : 'bg-error text-error-content'"
-                              :title="m.hops === 0 ? 'Direct' : m.hops + (m.hops === 1 ? ' hop' : ' hops')"
-                              x-text="m.hops"></span>
+                        <span x-show="m.hops != null" x-html="hopsBadge(m.hops)"></span>
                         <template x-for="d in (Array.isArray(m.src) ? m.src : (m.src ? [m.src] : []))" :key="d">
                           <span class="badge badge-xs badge-outline font-mono opacity-60" :title="d" x-text="deviceLabel(d)"></span>
                         </template>
@@ -2349,6 +2472,7 @@
               <li><a :class="tab==='cfg'&&cfgTab==='radio'&&'active'"    @click="setNav('cfg','radio')">Radio</a></li>
               <li><a :class="tab==='cfg'&&cfgTab==='bridge'&&'active'"   @click="setNav('cfg','bridge')">Bridge</a></li>
               <li><a :class="tab==='cfg'&&cfgTab==='rotator'&&'active'"  @click="setNav('cfg','rotator')">Rotator</a></li>
+              <li><a :class="tab==='cfg'&&cfgTab==='alerts'&&'active'"   @click="setNav('cfg','alerts')">Alerts</a></li>
             </ul>
           </details>
         </li>
