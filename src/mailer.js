@@ -11,7 +11,7 @@ async function getMailer() {
 function getSmtpConfig() {
   return {
     host: getConfig('alerts.smtp_host', ''),
-    port: getConfig('alerts.smtp_port', 587),
+    port: getConfig('alerts.smtp_port', 465),
     user: getConfig('alerts.smtp_user', ''),
     pass: getConfig('alerts.smtp_pass', ''),
     from: getConfig('alerts.smtp_from', ''),
@@ -31,6 +31,9 @@ export async function sendAlert(type, subject, body, _opts = {}) {
     port: cfg.port,
     secure: cfg.port === 465,
     auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
+    connectionTimeout: 10_000,
+    socketTimeout:     15_000,
+    greetingTimeout:   10_000,
   });
   await transport.sendMail({
     from:    cfg.from || cfg.user,
@@ -38,6 +41,7 @@ export async function sendAlert(type, subject, body, _opts = {}) {
     subject,
     text:    body,
   });
+  transport.close();
 }
 
 export async function sendTestAlert() {

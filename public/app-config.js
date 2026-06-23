@@ -296,6 +296,39 @@ export const configMixin = {
     }
   },
 
+  async saveSmtpAll() {
+    const r = this.$refs;
+    const payload = {
+      'alerts.smtp_host': r.smtpHost?.value ?? '',
+      'alerts.smtp_port': Number(r.smtpPort?.value ?? 465),
+      'alerts.smtp_user': r.smtpUser?.value ?? '',
+      'alerts.smtp_pass': r.smtpPass?.value ?? '',
+      'alerts.smtp_from': r.smtpFrom?.value ?? '',
+      'alerts.smtp_to':   r.smtpTo?.value   ?? '',
+      'alerts.imap_host': r.imapHost?.value  ?? '',
+      'alerts.imap_port': Number(r.imapPort?.value ?? 993),
+    };
+    this.alertSmtpSaving = true;
+    this.alertSmtpSaved  = false;
+    this.alertSmtpError  = '';
+    try {
+      await fetchJSON('/alerts/config', 'PUT', payload);
+      Object.assign(this.alertSmtp, {
+        host: payload['alerts.smtp_host'], port: payload['alerts.smtp_port'],
+        user: payload['alerts.smtp_user'], pass: payload['alerts.smtp_pass'],
+        from: payload['alerts.smtp_from'], to:   payload['alerts.smtp_to'],
+        imap_host: payload['alerts.imap_host'], imap_port: payload['alerts.imap_port'],
+      });
+      this.alertSmtpSaved = true;
+      setTimeout(() => { this.alertSmtpSaved = false; }, 3000);
+    } catch (e) {
+      this.alertSmtpError = e.message || 'Save failed';
+      setTimeout(() => { this.alertSmtpError = ''; }, 5000);
+    } finally {
+      this.alertSmtpSaving = false;
+    }
+  },
+
   async saveSmtp(key, value) {
     try {
       await fetchJSON('/alerts/config', 'PUT', { [key]: value });

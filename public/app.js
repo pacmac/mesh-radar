@@ -168,6 +168,9 @@ function dashboard() {
     // -- Alerts ---------------------------------------------------------------
     alertRules:       [],
     alertSmtp:        {},
+    alertSmtpSaving:  false,
+    alertSmtpSaved:   false,
+    alertSmtpError:   '',
     alertTestSending: false,
     alertTestResult:  '',
     alertTestOk:      false,

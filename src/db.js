@@ -431,9 +431,18 @@ const _updateAlertRule   = db.prepare(`
 `);
 const _touchAlertSent    = db.prepare(`UPDATE alert_rules SET last_sent = @ts WHERE type = @type`);
 
-export function getAlertRules()         { return _getAllAlertRules.all(); }
-export function getAlertRule(type)      { return _getAlertRule.get(type) ?? null; }
-export function updateAlertRule(rule)   { return _updateAlertRule.run(rule).changes; }
+export function getAlertRules()    { return _getAllAlertRules.all(); }
+export function getAlertRule(type) { return _getAlertRule.get(type) ?? null; }
+export function updateAlertRule({ type, enabled, threshold, cooldown_minutes }) {
+  const existing = _getAlertRule.get(type);
+  if (!existing) return 0;
+  return _updateAlertRule.run({
+    type,
+    enabled:          enabled          !== undefined ? (enabled ? 1 : 0)   : existing.enabled,
+    threshold:        threshold        !== undefined ? threshold             : existing.threshold,
+    cooldown_minutes: cooldown_minutes !== undefined ? cooldown_minutes      : existing.cooldown_minutes,
+  }).changes;
+}
 export function touchAlertLastSent(type, ts = Math.floor(Date.now() / 1000)) {
   _touchAlertSent.run({ type, ts });
 }

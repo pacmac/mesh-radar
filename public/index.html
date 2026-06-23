@@ -1719,51 +1719,58 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
                   <label class="form-control">
                     <div class="label py-0"><span class="label-text text-xs">SMTP host</span></div>
-                    <input type="text" class="input input-bordered input-sm font-mono"
-                           :value="alertSmtp.host" @change="saveSmtp('alerts.smtp_host', $event.target.value)">
+                    <input type="text" class="input input-bordered input-sm font-mono" x-ref="smtpHost"
+                           :value="alertSmtp.host">
                   </label>
                   <label class="form-control">
                     <div class="label py-0"><span class="label-text text-xs">Port</span></div>
-                    <input type="number" class="input input-bordered input-sm font-mono"
-                           :value="alertSmtp.port" @change="saveSmtp('alerts.smtp_port', Number($event.target.value))">
+                    <input type="number" class="input input-bordered input-sm font-mono" x-ref="smtpPort"
+                           :value="alertSmtp.port ?? 465">
                   </label>
                   <label class="form-control">
                     <div class="label py-0"><span class="label-text text-xs">Username</span></div>
-                    <input type="text" class="input input-bordered input-sm font-mono"
-                           :value="alertSmtp.user" @change="saveSmtp('alerts.smtp_user', $event.target.value)">
+                    <input type="text" class="input input-bordered input-sm font-mono" x-ref="smtpUser"
+                           :value="alertSmtp.user">
                   </label>
                   <label class="form-control">
                     <div class="label py-0"><span class="label-text text-xs">Password</span></div>
-                    <input type="password" class="input input-bordered input-sm font-mono"
-                           :value="alertSmtp.pass" @change="saveSmtp('alerts.smtp_pass', $event.target.value)">
+                    <input type="password" class="input input-bordered input-sm font-mono" x-ref="smtpPass"
+                           :value="alertSmtp.pass">
                   </label>
                   <label class="form-control">
                     <div class="label py-0"><span class="label-text text-xs">From address</span></div>
-                    <input type="email" class="input input-bordered input-sm font-mono"
-                           :value="alertSmtp.from" @change="saveSmtp('alerts.smtp_from', $event.target.value)">
+                    <input type="email" class="input input-bordered input-sm font-mono" x-ref="smtpFrom"
+                           :value="alertSmtp.from">
                   </label>
                   <label class="form-control">
                     <div class="label py-0"><span class="label-text text-xs">To address</span></div>
-                    <input type="email" class="input input-bordered input-sm font-mono"
-                           :value="alertSmtp.to" @change="saveSmtp('alerts.smtp_to', $event.target.value)">
+                    <input type="email" class="input input-bordered input-sm font-mono" x-ref="smtpTo"
+                           :value="alertSmtp.to">
                   </label>
                   <label class="form-control">
                     <div class="label py-0"><span class="label-text text-xs">IMAP host</span></div>
-                    <input type="text" class="input input-bordered input-sm font-mono"
-                           :value="alertSmtp.imap_host" @change="saveSmtp('alerts.imap_host', $event.target.value)">
+                    <input type="text" class="input input-bordered input-sm font-mono" x-ref="imapHost"
+                           :value="alertSmtp.imap_host">
                   </label>
                   <label class="form-control">
                     <div class="label py-0"><span class="label-text text-xs">IMAP port</span></div>
-                    <input type="number" class="input input-bordered input-sm font-mono"
-                           :value="alertSmtp.imap_port" @change="saveSmtp('alerts.imap_port', Number($event.target.value))">
+                    <input type="number" class="input input-bordered input-sm font-mono" x-ref="imapPort"
+                           :value="alertSmtp.imap_port ?? 993">
                   </label>
                 </div>
-                <div class="flex items-center gap-3 mt-3">
+                <div class="flex items-center gap-3 mt-3 flex-wrap">
+                  <button class="btn btn-sm btn-primary" @click="saveSmtpAll()"
+                          :disabled="alertSmtpSaving">
+                    <span x-show="!alertSmtpSaving">Save</span>
+                    <span x-show="alertSmtpSaving" class="loading loading-spinner loading-xs"></span>
+                  </button>
                   <button class="btn btn-sm btn-outline" @click="sendTestAlert()"
-                          :disabled="alertTestSending">
+                          :disabled="alertTestSending || alertSmtpSaving">
                     <span x-show="!alertTestSending">Send test email</span>
                     <span x-show="alertTestSending" class="loading loading-spinner loading-xs"></span>
                   </button>
+                  <span x-show="alertSmtpSaved"  class="text-success text-sm">Saved ✓</span>
+                  <span x-show="alertSmtpError"  x-text="alertSmtpError" class="text-error text-sm"></span>
                   <span x-show="alertTestResult" x-text="alertTestResult"
                         :class="alertTestOk ? 'text-success text-sm' : 'text-error text-sm'"></span>
                 </div>
