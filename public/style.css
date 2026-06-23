@@ -720,6 +720,36 @@ footer {
   }
 }
 
+/* ── Utility classes ─────────────────────────────────────────────────── */
+
+/* Font shorthand — replaces 38 inline style="font-family:'Oxanium'..." */
+.font-oxanium { font-family: 'Oxanium', sans-serif; }
+
+/* Hop count circle — single definition used everywhere */
+.hop-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* Radar / telemetry stats grid */
+.radar-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: 0.22rem;
+  column-gap: 1rem;
+  font-family: 'Oxanium', sans-serif;
+  font-size: 12px;
+}
+
 /* Signal quality bars widget */
 .sig-bars {
   display: inline-flex;

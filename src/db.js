@@ -85,7 +85,8 @@ db.exec(`
     snr       REAL,
     hops      INTEGER,
     seq       TEXT,
-    rx_device TEXT
+    rx_device TEXT,
+    via_mqtt  INTEGER DEFAULT 0
   );
 
   CREATE INDEX IF NOT EXISTS idx_range_test_ts ON range_test_log(ts DESC);
@@ -224,12 +225,12 @@ export const stmts = {
   `),
 
   insertRangeTest: db.prepare(`
-    INSERT INTO range_test_log (ts, from_num, rssi, snr, hops, seq, rx_device)
-    VALUES (@ts, @from_num, @rssi, @snr, @hops, @seq, @rx_device)
+    INSERT INTO range_test_log (ts, from_num, rssi, snr, hops, seq, rx_device, via_mqtt)
+    VALUES (@ts, @from_num, @rssi, @snr, @hops, @seq, @rx_device, @via_mqtt)
   `),
 
   queryRangeTest: db.prepare(`
-    SELECT id, ts, from_num, rssi, snr, hops, seq, rx_device
+    SELECT id, ts, from_num, rssi, snr, hops, seq, rx_device, via_mqtt
     FROM range_test_log ORDER BY ts DESC LIMIT ?
   `),
 

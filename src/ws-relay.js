@@ -6,10 +6,6 @@ import { nodeList } from './node-list.js';
 import { insertTilt } from './db.js';
 import { dashMode } from './dash-mode.js';
 
-// Returns a wrapper that throttles rotator status pushes:
-//   - state change (busy/stall/dir flip) → immediate
-//   - busy=true  → at most every 100ms  (10 Hz)
-//   - busy=false → at most every 1000ms ( 1 Hz heartbeat)
 function makeRotatorThrottle(sendFn) {
   let lastMs    = 0;
   let lastBusy  = undefined;
@@ -26,12 +22,24 @@ function makeRotatorThrottle(sendFn) {
   };
 }
 
-export function attachWsRelay(server) {
-  // Both WSSes use noServer so they never compete on the upgrade event.
-  // All routing is done manually in the server 'upgrade' handler below.
+// State event types from the bridge BLE state machine — buffered per device
+const STATE_EVENT_TYPES = new Set([
+  'snapshot', 'ready', 'connecting', 'syncing', 'reconnecting',
+  'error', 'idle', 'failed', 'sync_progress',
+]);
 
-  // -- Unified /events — all devices (backward compat) -----------------------
+export function attachWsRelay(server) {
   const wss = new WebSocketServer({ noServer: true });
+
+  // Last-known BLE state per device (node_id → event object).
+  // Seeded from HTTP once on bridge (re)connect, then kept live by WS events.
+  // Replayed to new frontend clients on connect — no per-client HTTP calls.
+  const lastDeviceState = {};
+
+  // Last-known device list — replayed to new frontend clients on connect.
+  // Refreshed via one HTTP call whenever the set of connected devices changes.
+  let lastDeviceList = null;
+  const activeDeviceIds = new Set();
 
   function broadcast(msg) {
     const data = JSON.stringify(msg);
@@ -40,7 +48,36 @@ export function attachWsRelay(server) {
     }
   }
 
+  bridge.on('connected',    () => broadcast({ type: 'bridge_connected' }));
+  bridge.on('disconnected', () => broadcast({ type: 'bridge_disconnected' }));
+
+  function broadcastDeviceList() {
+    const devices = Object.entries(lastDeviceState)
+      .filter(([k]) => !k.startsWith('ble:'))
+      .map(([nodeId, s]) => ({ node_id: nodeId, ...s }));
+    lastDeviceList = { type: 'device_list', devices };
+    broadcast(lastDeviceList);
+  }
+
   bridge.on('event', (ev) => {
+    // Keep last-known state current as events flow through
+    if (ev.device && STATE_EVENT_TYPES.has(ev.type)) {
+      // Merge so identity fields (short_name, long_name, hw_model) from 'ready'
+      // are preserved across subsequent state events that don't include them.
+      lastDeviceState[ev.device] = { ...lastDeviceState[ev.device], ...ev };
+
+      // Detect device list changes and broadcast device_list
+      const isActive = ev.type !== 'idle' && ev.type !== 'failed';
+      const wasActive = activeDeviceIds.has(ev.device);
+      if (isActive && !wasActive) {
+        activeDeviceIds.add(ev.device);
+        broadcastDeviceList();
+      } else if (!isActive && wasActive) {
+        activeDeviceIds.delete(ev.device);
+        broadcastDeviceList();
+      }
+    }
+
     if (ev.type === 'tilt_update' && ev.data) {
       try {
         insertTilt({
@@ -56,6 +93,7 @@ export function attachWsRelay(server) {
     }
     broadcast(ev);
   });
+
   rotator.on('status', makeRotatorThrottle((data) => broadcast({ type: 'rotator', data })));
   let lastPointTarget  = null;
   let lastSignalUpdate = null;
@@ -76,6 +114,21 @@ export function attachWsRelay(server) {
   nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
 
   wss.on('connection', (ws) => {
+    // Send current bridge connection state immediately
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: bridge.connected ? 'bridge_connected' : 'bridge_disconnected' }));
+    }
+    // Replay last-known BLE state for each device — no HTTP
+    for (const state of Object.values(lastDeviceState)) {
+      if (ws.readyState === 1) ws.send(JSON.stringify(state));
+    }
+    // Replay device list — no HTTP
+    if (lastDeviceList && ws.readyState === 1) {
+      ws.send(JSON.stringify(lastDeviceList));
+    }
+
+    // Always send current dash mode — rotator may be offline but mode is persisted
+    ws.send(JSON.stringify({ type: 'rotator', data: { _mode: dashMode.value } }));
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
       ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
     }
@@ -92,32 +145,26 @@ export function attachWsRelay(server) {
       }}));
     }
     ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
-    // Send current BLE status snapshot for each connected device so new subscribers
-    // are never blind on connect (mirrors what the per-device /!id/events WS does).
-    bridge.get('/devices').then(data => {
-      for (const dev of (data.devices || [])) {
-        if (!dev.node_id || dev.node_id.startsWith('ble:')) continue;
-        bridge.get(`/${dev.node_id}/status`).then(status => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'snapshot', device: dev.node_id, ...status }));
-          }
-        }).catch(() => {});
-      }
-    }).catch(() => {});
+
+    // All named nodes from cache — unfiltered, for message addressing only
+    const knownNodes = Array.from(nodeList._cache.values())
+      .filter(n => n.user?.long_name)
+      .map(n => ({ num: n.num, user: { short_name: n.user.short_name, long_name: n.user.long_name } }));
+    ws.send(JSON.stringify({ type: 'known_nodes', nodes: knownNodes }));
   });
 
   // -- Per-device /!{nodeId}/events — snapshot first, pre-filtered -----------
   const wssDevice = new WebSocketServer({ noServer: true });
 
   function attachDeviceClient(ws, nodeId) {
-    // Send snapshot immediately so the client is never blind on connect
-    bridge.get(`/${nodeId}/status`).then(status => {
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'snapshot', device: nodeId, ...status }));
-      }
-    }).catch(() => {});
+    // Replay last-known state for this device — no HTTP
+    const state = lastDeviceState[nodeId];
+    if (state && ws.readyState === 1) {
+      ws.send(JSON.stringify(state));
+    }
 
-    // Rotator status
+    // Always send current dash mode — rotator may be offline but mode is persisted
+    ws.send(JSON.stringify({ type: 'rotator', data: { _mode: dashMode.value } }));
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
       ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
     }
@@ -127,13 +174,11 @@ export function attachWsRelay(server) {
     if (lastSignalUpdate) {
       ws.send(JSON.stringify({ type: 'signal_update', data: lastSignalUpdate }));
     }
-    // Scan state resume
     if (scanner.active) {
       ws.send(JSON.stringify({ type: 'scan_start', data: {
         resumed: true, az: scanner.az, dwell_az: scanner.dwellAz, contacts: scanner.contacts,
       }}));
     }
-    // Node list snapshot
     ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
 
     function onEvent(ev) {
@@ -211,7 +256,6 @@ export function attachWsRelay(server) {
       return;
     }
 
-    // Unknown WS path — reject cleanly
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
   });

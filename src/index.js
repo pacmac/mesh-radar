@@ -81,6 +81,7 @@ app.get('/nodes', (req, res) => {
   res.json({ nodes: nodeMap, count: nodes.length, total: nodeList._cache.size, homePos: nodeList.homePos });
 });
 
+
 app.use('/config', configRouter);
 app.use('/device-config', deviceConfigRouter);
 
@@ -509,6 +510,7 @@ bridge.on('event', (ev) => {
       hops:      e.hops     ?? null,
       seq:       e.seq      ?? null,
       rx_device: ev.device  ?? null,
+      via_mqtt:  e.via_mqtt ? 1 : 0,
     });
   }
 });

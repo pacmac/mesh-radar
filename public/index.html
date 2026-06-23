@@ -17,6 +17,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><text y=%22.9em%22 font-size=%2220%22>📡</text></svg>">
 <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
 <script src="https://cdn.tailwindcss.com"></script>
+<script type="module" src="app.js?v=20260622a"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 <style>
   /* Reusable node avatar — set size via --sz custom property or modifier class.
@@ -94,7 +95,7 @@
         </label>
         <!-- Desktop expand (only when sidebar collapsed) -->
         <button class="btn btn-square btn-ghost hidden" :class="!sidebarPinned && 'lg:flex'"
-                @click="sidebarPinned = true; localStorage.setItem('sidebarPinned', 'true')" title="Expand sidebar">
+                @click="sidebarPinned = true; persistSet('sidebarPinned', true)" title="Expand sidebar">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
         </button>
         <!-- Rotator mode buttons (always visible when rotator known) -->
@@ -155,13 +156,13 @@
           </div>
         </template>
         <div class="tooltip tooltip-bottom" data-tip="MQTT proxy to broker">
-          <div class="badge gap-1" :class="mqttProxy ? 'badge-success' : 'badge-ghost'">
+          <div class="badge badge-sm gap-1" :class="mqttProxy ? 'badge-success' : 'badge-ghost'">
             <span class="inline-block w-2 h-2 rounded-full" :class="mqttProxy ? 'bg-success-content animate-pulse' : ''"></span>
             MQTT
           </div>
         </div>
-        <div class="badge badge-info" x-text="(nodeCount || '–') + ' nodes'"></div>
-        <div class="badge" :class="wsConnected ? 'badge-primary' : 'badge-ghost'" x-text="wsConnected ? 'live' : 'offline'"></div>
+        <div class="badge badge-sm badge-info" x-text="(nodeCount || '–') + ' nodes'"></div>
+        <div class="badge badge-sm" :class="wsConnected ? 'badge-primary' : 'badge-ghost'" x-text="wsConnected ? 'live' : 'offline'"></div>
       </div>
     </div>
 
@@ -234,7 +235,7 @@
               <!-- time window -->
               <div class="flex gap-1">
                 <template x-for="w in [1,4,24]">
-                  <button @click="tiltWindow=w"
+                  <button @click="tiltWindow=w; persistSet('tiltWindow',w)"
                           :style="tiltWindow===w ? 'color:rgba(0,255,80,0.95);border-color:rgba(0,255,80,0.45);background:rgba(0,255,80,0.08)' : 'color:rgba(0,255,80,0.32);border-color:rgba(0,255,80,0.14);background:transparent'"
                           style="font-family:'Oxanium',monospace;font-size:0.58rem;letter-spacing:0.12em;border:1px solid;padding:1px 7px;cursor:pointer;transition:all 0.15s"
                           x-text="w+'H'"></button>
@@ -347,7 +348,7 @@
               <span class="ml-auto" style="font-family:monospace;font-size:0.6rem;color:rgba(0,255,80,0.28)"
                     x-text="(envHistory[activeNodeId]?.length ?? 0) + ' pts'"></span>
               <template x-for="w in [6, 24, 72]">
-                <button @click="envWindow=w; loadEnvHistory(activeNodeId)"
+                <button @click="envWindow=w; persistSet('envWindow',w); loadEnvHistory(activeNodeId)"
                         :style="envWindow===w ? 'color:rgba(0,255,80,0.95);border-color:rgba(0,255,80,0.45);background:rgba(0,255,80,0.08)' : 'color:rgba(0,255,80,0.32);border-color:rgba(0,255,80,0.14);background:transparent'"
                         style="font-family:'Oxanium',monospace;font-size:0.58rem;letter-spacing:0.12em;border:1px solid;padding:1px 7px;cursor:pointer;transition:all 0.15s"
                         x-text="w+'H'"></button>
@@ -423,13 +424,34 @@
           <!-- Live Event Feed (half width) -->
           <div class="card bg-base-100 shadow">
             <div class="card-body">
-              <h2 class="card-title">Live Event Feed</h2>
+              <div class="flex items-center justify-between mb-1">
+                <h2 class="card-title">Live Event Feed</h2>
+                <div class="dropdown dropdown-end">
+                  <label tabindex="0" class="btn btn-xs btn-ghost gap-1 opacity-70 hover:opacity-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/></svg>
+                    Filter
+                    <span x-show="feedVisible.length < feedFilterOptions.length" class="badge badge-warning badge-xs" x-text="feedFilterOptions.length - feedVisible.length"></span>
+                  </label>
+                  <ul tabindex="0" class="dropdown-content z-10 p-2 shadow-lg bg-base-100 border border-base-300 rounded-box w-48 flex flex-col gap-0.5 mt-1">
+                    <template x-for="opt in feedFilterOptions" :key="opt.id">
+                      <li>
+                        <label class="flex items-center gap-2 cursor-pointer hover:bg-base-200 rounded px-2 py-1">
+                          <input type="checkbox" class="checkbox checkbox-xs"
+                                 name="feedVisible" :value="opt.id"
+                                 x-model="feedVisible">
+                          <span class="text-xs" x-text="opt.label"></span>
+                        </label>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+              </div>
               <div class="overflow-y-auto max-h-[480px] font-mono text-xs flex flex-col gap-1" x-ref="feed">
-                <template x-for="(ev, i) in events" :key="i">
+                <template x-for="(ev, i) in filteredFeedEvents()" :key="i">
                   <div class="flex gap-2 items-start border-b border-base-200 pb-1">
                     <span class="text-base-content/40 shrink-0" x-text="ev.time"></span>
                     <span class="badge badge-sm" :class="badgeForType(ev.type)" x-text="ev.type"></span>
-                    <span x-show="ev.device" class="badge badge-xs badge-ghost font-mono shrink-0 opacity-60" x-text="deviceLabel(ev.device)"></span>
+                    <span x-show="ev.device" x-html="radioBadge(ev.device, 'shrink-0')"></span>
                     <span class="text-base-content/80" x-text="ev.summary"></span>
                   </div>
                 </template>
@@ -444,7 +466,7 @@
               <h2 class="card-title">MQTT Proxy</h2>
               <div class="text-sm flex flex-col gap-2">
                 <div class="flex justify-between"><span class="text-base-content/60">Status</span>
-                  <span class="badge" :class="mqttProxy ? 'badge-success' : 'badge-ghost'" x-text="mqttProxy ? 'connected' : 'inactive'"></span>
+                  <span class="badge badge-sm" :class="mqttProxy ? 'badge-success' : 'badge-ghost'" x-text="mqttProxy ? 'connected' : 'inactive'"></span>
                 </div>
                 <div class="flex justify-between"><span class="text-base-content/60">Broker</span><span x-text="mqttCfg.address || '–'"></span></div>
                 <div class="flex justify-between"><span class="text-base-content/60">Root topic</span><span class="font-mono" x-text="mqttCfg.root || '–'"></span></div>
@@ -477,7 +499,7 @@
                style="background:#0a1a0a;border-bottom:1px solid rgba(0,255,80,0.12)">
 
             <!-- Status badges -->
-            <span class="font-mono text-xs px-2 py-0.5 rounded" style="color:rgba(0,255,80,0.6);border:1px solid rgba(0,255,80,0.2)" x-text="radarNodes.length + ' plotted'"></span>
+            <span class="badge badge-sm badge-ghost font-mono" x-text="radarNodes.length + ' plotted'"></span>
             <span class="font-mono text-xs" style="color:rgba(0,255,80,0.45)" x-text="homePos ? homePos.lat.toFixed(4)+', '+homePos.lon.toFixed(4) : 'no fix'"></span>
             <span class="font-mono text-xs animate-pulse" style="color:rgba(0,255,80,0.5)" x-show="geocoding">geocoding…</span>
 
@@ -820,7 +842,7 @@
                 <div style="height:1px;background:rgba(255,30,30,0.18);margin:0.35rem 0"></div>
 
                 <!-- stats grid -->
-                <div style="display:grid;grid-template-columns:1fr auto;row-gap:0.22rem;column-gap:1rem;font-family:'Oxanium',monospace;font-size:12px">
+                <div class="radar-stat-grid">
                   <span style="color:rgba(0,255,80,0.45)">Distance</span>
                   <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="targetNode._km != null ? targetNode._km.toFixed(1)+' km' : '–'"></span>
                   <span style="color:rgba(0,255,80,0.45)">Bearing</span>
@@ -835,7 +857,7 @@
                 <template x-if="yagiTargetMeta.target_count > 0">
                   <div>
                     <div style="height:1px;background:rgba(255,30,30,0.18);margin:0.35rem 0"></div>
-                    <div style="display:grid;grid-template-columns:1fr auto;row-gap:0.22rem;column-gap:1rem;font-family:'Oxanium',monospace;font-size:12px">
+                    <div class="radar-stat-grid">
                       <span style="color:rgba(0,255,80,0.45)">Visits</span>
                       <span style="color:rgba(0,255,80,0.9);text-align:right"
                             x-text="yagiTargetMeta.contact_count+'/'+yagiTargetMeta.target_count
@@ -868,8 +890,8 @@
                 <template x-for="dev in availableDevices" :key="dev.node_id">
                   <button class="join-item btn btn-xs"
                           :class="msgFrom === dev.node_id ? 'btn-primary' : 'btn-outline'"
-                          @click="msgFrom = dev.node_id; localStorage.setItem('msgFrom', dev.node_id)"
-                          x-text="dev.short_name || dev.node_id">
+                          @click="msgFrom = dev.node_id; persistSet('msgFrom', dev.node_id)"
+                          x-text="deviceLabel(dev.node_id)">
                   </button>
                 </template>
               </div>
@@ -935,9 +957,7 @@
                         <a :class="idx === mentionIdx ? 'active' : ''"
                            @mousedown.prevent="selectMention(n)"
                            class="flex items-center gap-2">
-                          <span class="node-avatar node-avatar-sm"
-                                :style="`background:${avatarColor(n.num)}`"
-                                x-text="n.user?.short_name || '?'"></span>
+                          <span class="contents" x-html="nodeAvatar(n.num, n.user?.short_name, 'sm')"></span>
                           <span class="font-mono font-semibold text-xs" x-text="'@' + (n.user?.short_name || '?')"></span>
                           <span class="text-base-content/50 text-xs truncate" x-text="n.user?.long_name || ''"></span>
                         </a>
@@ -1255,9 +1275,7 @@
                             <!-- Avatar + name + freshness -->
                             <div class="flex items-center gap-2 min-w-0 pr-8">
                               <div class="relative shrink-0">
-                                <span class="node-avatar"
-                                      :style="`background:${avatarColor(n.num)}`"
-                                      x-text="n.user?.short_name || '?'"></span>
+                                <span class="contents" x-html="nodeAvatar(n.num, n.user?.short_name)"></span>
                                 <span x-show="n._new"
                                       class="absolute top-0 right-0 text-yellow-400 leading-none pointer-events-none select-none"
                                       style="font-size:0.7rem;transform:translate(30%,30%)"
@@ -1276,10 +1294,7 @@
                             </div>
                             <!-- Hops · distance -->
                             <div class="flex flex-wrap gap-1">
-                              <span x-show="nodeHops(n) != null"
-                                    class="badge badge-xs"
-                                    :class="nodeHops(n) === 0 ? 'badge-info' : 'badge-ghost'"
-                                    x-text="nodeHops(n) === 0 ? 'dir' : nodeHops(n) + ' hop'"></span>
+                              <span class="contents" x-html="hopsBadge(nodeHops(n))"></span>
                               <span x-show="nodeKm(n) != null"
                                     class="badge badge-xs badge-ghost"
                                     x-text="nodeKm(n)?.toFixed(1) + ' km'"></span>
@@ -1432,12 +1447,20 @@
                   <div class="collapse-title text-md font-semibold capitalize flex items-center gap-2">
                     <span x-text="sec.name.replace(/_/g,' ')"></span>
                     <span class="badge badge-ghost badge-sm" x-text="sec.kind"></span>
+                    <span class="badge badge-warning badge-sm" x-show="sec.rebootRequired">reboot</span>
                     <span class="loading loading-spinner loading-xs" x-show="sec.loading"></span>
                   </div>
                   <div class="collapse-content">
+                    <template x-if="sec.notes && sec.notes.length">
+                      <div class="alert alert-info py-2 px-3 mb-3 text-xs">
+                        <template x-for="note in sec.notes" :key="note">
+                          <span x-text="note"></span>
+                        </template>
+                      </div>
+                    </template>
                     <fieldset :id="'sec_' + sec.name" class="border-0 p-0 m-0 w-full"
-                              :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)"
-                              :class="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
+                              :disabled="devIsSaving(cfgRadioId)"
+                              :class="devIsSaving(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
                     <div class="flex items-center gap-2 mt-3" x-show="sec.loaded">
                       <button class="btn btn-sm btn-primary"
                               :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) || opLoading('cfg_' + sec.name + '_' + cfgRadioId)"
@@ -1447,6 +1470,7 @@
                       </button>
                       <span class="text-success text-sm" x-show="opOk('cfg_' + sec.name + '_' + cfgRadioId)" x-transition>Saved ✓</span>
                       <span class="text-warning text-sm animate-pulse" x-show="devIsSaving(cfgRadioId)" x-transition>Reconnecting…</span>
+                      <span class="text-warning/70 text-xs" x-show="sec.rebootRequired && !devIsSaving(cfgRadioId)">⚠ Save will reboot device</span>
                     </div>
                     <div x-show="sec.name === 'position' && sec.loaded" class="col-span-1 sm:col-span-2 border border-base-300 rounded-lg p-3 mt-3">
                       <div class="text-xs font-semibold uppercase text-base-content/50 mb-2">Fixed Position (lat / lon / alt)</div>
@@ -1495,14 +1519,14 @@
                   <input type="checkbox" @change="onChannelToggle(ch)" />
                   <div class="collapse-title text-md font-semibold flex items-center gap-2">
                     <span x-text="'Channel ' + ch.index"></span>
-                    <span class="badge badge-sm" :class="ch.data.role==='PRIMARY' ? 'badge-primary' : (ch.data.role==='SECONDARY' ? 'badge-secondary':'badge-ghost')" x-text="ch.data.role || 'DISABLED'"></span>
+                    <span class="contents" x-html="channelRoleBadge(ch.data.role)"></span>
                     <span class="text-sm text-base-content/50" x-text="ch.data.settings?.name || ''"></span>
                     <span class="loading loading-spinner loading-xs" x-show="ch.loading"></span>
                   </div>
                   <div class="collapse-content">
                     <fieldset :id="'ch_' + ch.index" class="border-0 p-0 m-0 w-full"
-                              :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId)"
-                              :class="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
+                              :disabled="devIsSaving(cfgRadioId)"
+                              :class="devIsSaving(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
                     <div class="flex items-center gap-2 mt-3" x-show="ch.loaded">
                       <button class="btn btn-sm btn-primary"
                               :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) || opLoading('ch_' + ch.index + '_' + cfgRadioId)"
@@ -1532,6 +1556,7 @@
                       Save
                     </button>
                     <span class="text-success text-sm" x-show="opOk('owner_' + cfgRadioId)" x-transition>Saved ✓</span>
+                    <span class="text-warning/70 text-xs" x-show="ownerData?.__reboot && !devIsSaving(cfgRadioId)">⚠ Role change will reboot device</span>
                   </div>
                 </div>
               </div>
@@ -1688,7 +1713,7 @@
                     <button class="join-item btn btn-xs"
                             :class="rangeRxFilter === dev.node_id ? 'btn-active' : 'btn-outline'"
                             @click="rangeRxFilter = dev.node_id"
-                            x-text="deviceLabel(dev.node_id) || dev.short_name || dev.node_id"></button>
+                            x-text="deviceLabel(dev.node_id)"></button>
                   </template>
                 </div>
                 <!-- Sender node filter -->
@@ -1862,9 +1887,7 @@
                     <span class="relative inline-block shrink-0 cursor-pointer"
                           :title="'Reply to ' + (m.fromShortName || nodeShortName(m.fromNum))"
                           @click="replyTo(m)">
-                      <span class="node-avatar"
-                            :style="`background:${avatarColor(m.fromNum)}`"
-                            x-text="m.fromShortName || nodeShortName(m.fromNum)"></span>
+                      <span class="contents" x-html="nodeAvatar(m.fromNum, m.fromShortName || nodeShortName(m.fromNum))"></span>
                       <span class="absolute top-0 right-0 -translate-y-1 translate-x-1 w-3.5 h-3.5 rounded-full flex items-center justify-center text-white text-[9px] font-bold leading-none pointer-events-none"
                             :class="m.direction === 'tx' ? 'bg-success text-white' : 'bg-info text-white'"
                             x-text="m.direction === 'tx' ? '↑' : '↓'">
@@ -1919,17 +1942,15 @@
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="font-mono text-xs opacity-50" x-text="dev.node_id"></span>
                     <span class="font-semibold" x-text="dev.long_name || dev.short_name || dev.node_id"></span>
-                    <span x-show="deviceConfigs[dev.node_id]?.label" class="badge badge-sm badge-primary font-mono" x-text="deviceConfigs[dev.node_id]?.label"></span>
-                    <span x-show="deviceConfigs[dev.node_id]?.is_primary" class="badge badge-sm badge-success">PRIMARY</span>
-                    <span x-show="deviceConfigs[dev.node_id]?.is_rotator" class="badge badge-sm badge-warning">ROTATOR</span>
-                    <span class="badge badge-sm ml-auto"
-                          :class="devBleState(dev.node_id)==='ready'&&!devIsSaving(dev.node_id)?'badge-success':devBleState(dev.node_id)==='syncing'||devIsSaving(dev.node_id)?'badge-warning':devBleState(dev.node_id)==='error'?'badge-error':'badge-ghost'"
-                          x-text="devIsSaving(dev.node_id) ? 'Saving…' : (devBleState(dev.node_id) || 'connected')"></span>
+                    <span class="contents" x-show="deviceConfigs[dev.node_id]?.label" x-html="labelBadge(deviceConfigs[dev.node_id]?.label, deviceConfigs[dev.node_id]?.color)"></span>
+                    <span class="contents" x-show="deviceConfigs[dev.node_id]?.is_primary" x-html="roleBadge('PRIMARY')"></span>
+                    <span class="contents" x-show="deviceConfigs[dev.node_id]?.is_rotator" x-html="roleBadge('ROTATOR')"></span>
+                    <span class="ml-auto" x-html="devStateBadge(dev.node_id)"></span>
                   </div>
                   <!-- BLE / network stats -->
                   <div class="flex gap-4 text-xs opacity-60 flex-wrap">
-                    <span x-show="dev.ble_rssi != null" class="inline-flex items-center gap-1"><span x-html="sigBars(dev.ble_rssi, null)"></span><span x-text="dev.ble_rssi + ' dBm'"></span></span>
-                    <span x-show="dev.node_count != null" x-text="dev.node_count + ' nodes'"></span>
+                    <span x-show="deviceBleStates[dev.node_id]?.ble_rssi != null" class="inline-flex items-center gap-1"><span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span><span x-text="deviceBleStates[dev.node_id]?.ble_rssi + ' dBm'"></span></span>
+                    <span x-show="deviceBleStates[dev.node_id]?.node_count != null" x-text="deviceBleStates[dev.node_id]?.node_count + ' nodes'"></span>
                     <span x-show="dev.ble_address" x-text="dev.ble_address"></span>
                     <span x-show="dev.tcp_port" x-text="'TCP :' + dev.tcp_port + ' (' + dev.tcp_clients + ' clients)'"></span>
                   </div>
@@ -2068,8 +2089,8 @@
                                :placeholder="dev.ota_protocol === 'nrf52-dfu' ? '/path/to/firmware-rak4631-x.y.z.zip' : '/path/to/firmware-heltec-ht62-esp32c3-sx1262-x.y.z.bin'">
                       </div>
                       <button class="btn btn-sm btn-warning"
-                              :disabled="deviceOtaState[dev.node_id]?.state === 'flashing' || !_fwPath.trim() || dev.ble_state !== 'ready'"
-                              :title="dev.ble_state !== 'ready' ? 'Device must be connected (ready) before flashing' : 'Flash firmware via BLE'"
+                              :disabled="deviceOtaState[dev.node_id]?.state === 'flashing' || !_fwPath.trim() || devBleState(dev.node_id) !== 'ready'"
+                              :title="devBleState(dev.node_id) !== 'ready' ? 'Device must be connected (ready) before flashing' : 'Flash firmware via BLE'"
                               @click="fetchJSON('/ota', 'POST', {node_id: dev.node_id, ble_addr: dev.ble_address, firmware: _fwPath.trim()}).then(d=>{ if(d.started) { deviceOtaState[dev.node_id]={state:'flashing',pct:0}; } else { deviceOtaState[dev.node_id]={state:'error',pct:0}; } }).catch(()=>{ deviceOtaState[dev.node_id]={state:'error',pct:0}; })">
                         Flash OTA
                       </button>
@@ -2084,14 +2105,14 @@
                     </div>
                     <div class="flex gap-2 items-center flex-wrap">
                       <button class="btn btn-xs btn-outline"
-                              :disabled="dev.ble_state !== 'ready' || opLoading('backup_' + dev.node_id)"
+                              :disabled="devBleState(dev.node_id) !== 'ready' || opLoading('backup_' + dev.node_id)"
                               title="Download all config sections and channels as JSON"
                               @click="asyncOp('backup_' + dev.node_id, () => backupRadioConfig(dev.node_id))">
                         <span x-show="opLoading('backup_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Backup
                       </button>
                       <label class="btn btn-xs btn-outline"
-                             :class="(dev.ble_state !== 'ready' || opLoading('restore_' + dev.node_id)) ? 'btn-disabled pointer-events-none' : ''"
+                             :class="(devBleState(dev.node_id) !== 'ready' || opLoading('restore_' + dev.node_id)) ? 'btn-disabled pointer-events-none' : ''"
                              title="Restore config from a backup JSON file — device will reboot">
                         <span x-show="opLoading('restore_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Restore
@@ -2113,7 +2134,7 @@
                                }">
                       </label>
                       <button class="btn btn-xs btn-outline"
-                              :disabled="dev.ble_state !== 'ready' || !deviceConfigs[dev.node_id]?.fixed_lat || opLoading('pushPos_' + dev.node_id)"
+                              :disabled="devBleState(dev.node_id) !== 'ready' || !deviceConfigs[dev.node_id]?.fixed_lat || opLoading('pushPos_' + dev.node_id)"
                               :title="deviceConfigs[dev.node_id]?.fixed_lat != null
                                 ? 'Push ' + Number(deviceConfigs[dev.node_id].fixed_lat).toFixed(5) + ', ' + Number(deviceConfigs[dev.node_id].fixed_lon).toFixed(5) + ' to radio'
                                 : 'No fixed position configured — set it in Config → Radio → Device'"
@@ -2143,7 +2164,7 @@
                             <option value="60">60 min</option>
                           </select>
                           <button class="btn btn-xs btn-success"
-                                  :disabled="dev.ble_state !== 'ready'"
+                                  :disabled="devBleState(dev.node_id) !== 'ready'"
                                   @click="startRangeTest(dev.node_id)">Start TX</button>
                         </div>
                       </template>
@@ -2297,7 +2318,7 @@
             <span class="text-xs text-base-content/50" x-text="info.metadata.firmware_version ? ('fw ' + info.metadata.firmware_version) : 'dashboard'"></span>
           </div>
           <!-- Desktop collapse button -->
-          <button class="btn btn-ghost btn-xs hidden lg:flex" @click="sidebarPinned = false; localStorage.setItem('sidebarPinned', 'false')" title="Collapse sidebar">
+          <button class="btn btn-ghost btn-xs hidden lg:flex" @click="sidebarPinned = false; persistSet('sidebarPinned', false)" title="Collapse sidebar">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7M18 19l-7-7 7-7"/></svg>
           </button>
         </div>
@@ -2310,7 +2331,7 @@
         <div class="mt-2" x-show="availableDevices.length > 1">
           <select class="select select-xs select-bordered w-full font-mono" x-model="activeNodeId" @change="selectDevice(activeNodeId)">
             <template x-for="d in availableDevices" :key="d.node_id">
-              <option :value="d.node_id" x-text="d.node_id"></option>
+              <option :value="d.node_id" x-text="deviceLabel(d.node_id)"></option>
             </template>
           </select>
         </div>
@@ -2352,9 +2373,9 @@
           <div class="flex items-center justify-between gap-2">
             <span class="font-mono opacity-50 shrink-0" x-text="deviceLabel(dev.node_id)"></span>
             <span class="inline-flex items-center gap-1 min-w-0">
-              <span x-html="sigBars(dev.ble_rssi, null)"></span>
-              <span :class="dev.ble_state==='ready'?'text-success opacity-70':dev.ble_state==='error'?'text-error':'text-warning'"
-                    x-text="dev.ble_state || '–'"></span>
+              <span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span>
+              <span :class="devBleState(dev.node_id)==='ready'?'text-success opacity-70':devBleState(dev.node_id)==='error'?'text-error':'text-warning'"
+                    x-text="devBleState(dev.node_id) || '–'"></span>
             </span>
           </div>
         </template>
@@ -2383,7 +2404,6 @@
 </div>
 
 <script src="/utils.js"></script>
-<script src="app.js?v=20260620a"></script>
 <script>
   document.addEventListener('click', e => {
     document.querySelectorAll('details.dropdown[open]').forEach(d => {
