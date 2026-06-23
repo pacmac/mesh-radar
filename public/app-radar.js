@@ -1,6 +1,6 @@
 // Radar SVG rendering mixin.
 // Mode rules:
-//   PASV (0): nodes, route overlays (aged fade), NO red crosshairs, NO animated dots, NO target arm
+//   PASV (0): nodes, route overlays (aged fade), animated dots on active trace, green crosshairs on traced node
 //   ACTV (1): nodes, route overlay for targeted node (animated dots), red crosshairs, target arm
 //   SCAN (2): nodes only, NO route overlays, target arm shows scan position
 import { fetchJSON, svgElem, ageColor, themeColor, geocodeNode, haversine, bearing } from './app-helpers.js';
@@ -9,6 +9,11 @@ export const radarMixin = {
   get targetNode() {
     if (!this.yagiPointTarget) return null;
     return this.nodes.find(n => n.num === this.yagiPointTarget) || null;
+  },
+
+  get passiveNode() {
+    if (!this.passiveTraceNum) return null;
+    return this.nodes.find(n => n.num === this.passiveTraceNum) || null;
   },
 
   async initRadar() {
@@ -49,6 +54,7 @@ export const radarMixin = {
     const ag = document.getElementById('radar-scan-arm-g');
     if (!ag) return;
     ag.innerHTML = '';
+    if (this.rotatorMode === 1) return;
     const target = this.rotatorStatus?.target;
     if (target == null) return;
     const CX = 300, CY = 300, MAX_R = 230;
@@ -91,14 +97,18 @@ export const radarMixin = {
 
     for (const node of this.nodes) {
       const tr = node.last_traceroute;
-      if (!tr) continue;
 
       // ACTV mode: targeted node is fully lit; others are not drawn in ACTV
       const isTargeted = this.rotatorMode === 1 && node.num === this.yagiPointTarget;
       if (this.rotatorMode === 1 && !isTargeted) continue;
+      // PASV mode: recently passive-traced node gets full opacity and animated dots
+      const isPassive  = this.rotatorMode === 0 && node.num === this.passiveTraceNum;
 
-      const ageSec = tr.ts ? (Date.now() - tr.ts) / 1000 : 0;
-      const fade = isTargeted ? 0.90
+      // Skip nodes with no route data unless actively being traced right now
+      if (!tr && !isPassive) continue;
+
+      const ageSec = tr?.ts ? (Date.now() - tr.ts) / 1000 : 0;
+      const fade = isTargeted || isPassive ? 0.90
         : (ageSec < 3600 ? 0.30 : Math.max(0.10, 0.30 - (ageSec - 3600) / (23 * 3600) * 0.20));
 
       const col = nodeColor(node.num);
@@ -109,9 +119,9 @@ export const radarMixin = {
         rg.addEventListener('mouseleave', () => { rg.style.opacity = fade; });
       }
 
-      const chain  = [null, ...(tr.route ?? []), node.num];
-      const snrs   = tr.snr_towards ?? [];
-      const points = chain.map(n => numToXY(n, tr.relay_positions));
+      const chain  = [null, ...(tr?.route ?? []), node.num];
+      const snrs   = tr?.snr_towards ?? [];
+      const points = chain.map(n => numToXY(n, tr?.relay_positions));
 
       const known = chain.map((_, i) => points[i] ? i : -1).filter(i => i >= 0);
 
@@ -148,8 +158,8 @@ export const radarMixin = {
         }));
       }
 
-      // Animated pulse dots — ACTV mode only, targeted node only
-      if (isTargeted) {
+      // Animated pulse dots — ACTV targeted node, or PASV recently-traced node
+      if (isTargeted || isPassive) {
         const knownPts = known.map(i => points[i]);
         if (knownPts.length >= 2) {
           const pathD = 'M ' + knownPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
@@ -308,7 +318,7 @@ export const radarMixin = {
         g.appendChild(svgElem('line', { x1: x, y1: y+7,  x2: x, y2: y+17, style: rs }));
       }
 
-      // Red target crosshairs — ACTV mode only
+      // Crosshairs — ACTV: red with live signal overlay; PASV traced node: green
       if (node.num === pointTarget && isActv) {
         this.appendCrosshair(g, x, y);
 
@@ -329,6 +339,8 @@ export const radarMixin = {
           sigTxt.textContent = parts.join(' · ');
           g.appendChild(sigTxt);
         }
+      } else if (node.num === this.passiveTraceNum && this.rotatorMode === 0) {
+        this.appendCrosshair(g, x, y, 'rgba(0,255,80,0.80)');
       }
 
       if (isSelected)

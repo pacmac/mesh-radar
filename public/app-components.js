@@ -4,6 +4,21 @@
 
 export const componentsMixin = {
 
+  // ── Active overlay card descriptor ──────────────────────────────────────
+  // SSOT: returns { node, mode, label, border, accent, nameclr, divider } or null.
+  // Template uses this to drive the unified PASV/ACTV/SCAN overlay card.
+  get activeCard() {
+    if (this.rotatorMode === 1 && this.targetNode)
+      return { node: this.targetNode,  mode: 'actv', label: 'TARGET',
+               border:  'rgba(255,30,30,0.40)', accent:  'rgba(255,30,30,0.75)',
+               nameclr: 'rgba(255,30,30,0.95)', divider: 'rgba(255,30,30,0.18)' };
+    if (this.rotatorMode === 0 && this.passiveNode)
+      return { node: this.passiveNode, mode: 'pasv', label: 'TRACING',
+               border:  'rgba(0,255,80,0.35)',  accent:  'rgba(0,255,80,0.75)',
+               nameclr: 'rgba(0,255,80,0.95)',  divider: 'rgba(0,255,80,0.15)' };
+    return null;
+  },
+
   // ── Avatar ──────────────────────────────────────────────────────────────
   nodeAvatar(num, name, size = '') {
     const bg = this.avatarColor(num);
@@ -14,10 +29,10 @@ export const componentsMixin = {
   // ── Hops circle ─────────────────────────────────────────────────────────
   hopsBadge(hops) {
     if (hops == null) return '';
-    const cls = hops === 0 ? 'bg-success text-success-content'
-              : hops === 1 ? 'bg-info text-info-content'
-              : hops === 2 ? 'bg-warning text-warning-content'
-              :              'bg-error text-error-content';
+    const cls = hops === 0 ? 'text-success'
+              : hops === 1 ? 'text-info'
+              : hops === 2 ? 'text-warning'
+              :              'text-error';
     const tip = hops === 0 ? 'Direct' : `${hops} ${hops === 1 ? 'hop' : 'hops'}`;
     return `<span class="hop-circle ${cls}" title="${tip}">${hops}</span>`;
   },

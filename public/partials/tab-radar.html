@@ -247,16 +247,16 @@
               </div>
               <template x-for="n in radarNodeList()" :key="n.num">
                 <div @click="openNodeInfo(n)"
-                     @mouseenter="$el.style.background = n.num===yagiPointTarget ? 'rgba(255,160,0,0.10)' : 'rgba(0,255,80,0.05)'"
-                     @mouseleave="$el.style.background = n.num===yagiPointTarget ? 'rgba(255,160,0,0.05)' : 'transparent'"
+                     @mouseenter="$el.style.background = n.num===yagiPointTarget ? 'rgba(255,160,0,0.10)' : n.num===passiveTraceNum ? 'rgba(0,255,80,0.12)' : 'rgba(0,255,80,0.05)'"
+                     @mouseleave="$el.style.background = n.num===yagiPointTarget ? 'rgba(255,160,0,0.05)' : n.num===passiveTraceNum ? 'rgba(0,255,80,0.08)' : 'transparent'"
                      :style="{ display:'flex', alignItems:'center', gap:'0.4rem',
                                padding:'0.18rem 0.3rem', borderRadius:'0.25rem', margin:'0 -0.3rem',
                                cursor:'pointer', userSelect:'none',
-                               background: n.num===yagiPointTarget ? 'rgba(255,160,0,0.05)' : 'transparent',
-                               borderLeft: n.num===yagiPointTarget ? '2px solid rgba(255,160,0,0.75)' : '2px solid transparent',
-                               paddingLeft: n.num===yagiPointTarget ? '0.5rem' : '0.3rem' }">
+                               background: n.num===yagiPointTarget ? 'rgba(255,160,0,0.05)' : n.num===passiveTraceNum ? 'rgba(0,255,80,0.08)' : 'transparent',
+                               borderLeft: n.num===yagiPointTarget ? '2px solid rgba(255,160,0,0.75)' : n.num===passiveTraceNum ? '2px solid rgba(0,255,80,0.75)' : '2px solid transparent',
+                               paddingLeft: n.num===yagiPointTarget || n.num===passiveTraceNum ? '0.5rem' : '0.3rem' }">
                   <span style="font-family:'Oxanium',monospace;font-size:12px;font-weight:700;min-width:3rem;flex-shrink:0"
-                        :style="{ color: n.num===yagiPointTarget ? 'rgba(255,160,0,0.95)' : 'rgba(0,255,80,0.88)' }"
+                        :style="{ color: n.num===yagiPointTarget ? 'rgba(255,160,0,0.95)' : n.num===passiveTraceNum ? 'rgba(0,255,80,0.95)' : 'rgba(0,255,80,0.88)' }"
                         x-text="nodeShortName(n.num)"></span>
                   <template x-if="scanMode">
                     <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
@@ -310,60 +310,67 @@
                    x-text="'R ' + (nodeSelf.tilt?.roll??0).toFixed(1) + '°  P ' + (nodeSelf.tilt?.pitch??0).toFixed(1) + '°'"></div>
             </div>
 
-            <!-- Active target card — bottom-right overlay, visible in ACTV mode when a target is locked -->
-            <template x-if="rotatorMode === 1 && targetNode">
+            <!-- Active node card — bottom-right overlay. Driven by activeCard (app-components.js SSOT).
+                 ACTV: red, TARGET label, live YAGI signal, visit history.
+                 PASV: green, TRACING label, static rssi/snr. SCAN: not yet implemented. -->
+            <template x-if="activeCard">
               <div style="position:absolute;bottom:1rem;right:1rem;z-index:10;
                           min-width:15rem;max-width:19rem;
                           background:rgba(4,10,4,0.93);
-                          border:1px solid rgba(255,30,30,0.40);
                           border-radius:0.5rem;
                           backdrop-filter:blur(6px);
                           padding:0.65rem 0.8rem;
                           pointer-events:none"
+                   :style="{ border: `1px solid ${activeCard?.border}` }"
                    x-data="{
-                     get _rssi() { return (yagiSignal.num===yagiPointTarget && yagiSignal.rssi!=null) ? yagiSignal.rssi : targetNode.rssi; },
-                     get _snr()  { return (yagiSignal.num===yagiPointTarget && yagiSignal.snr!=null)  ? yagiSignal.snr  : targetNode.snr;  },
-                     get _pct()  { return window.signalQuality(this._rssi, this._snr); },
-                     get _live() { return yagiSignal.num===yagiPointTarget && yagiSignal.ts!=null && signalAge()<30; }
+                     get _isActv() { return activeCard?.mode === 'actv'; },
+                     get _rssi()   { return this._isActv && yagiSignal.num===yagiPointTarget && yagiSignal.rssi!=null ? yagiSignal.rssi : activeCard?.node?.rssi; },
+                     get _snr()    { return this._isActv && yagiSignal.num===yagiPointTarget && yagiSignal.snr!=null  ? yagiSignal.snr  : activeCard?.node?.snr;  },
+                     get _pct()    { return window.signalQuality(this._rssi, this._snr); },
+                     get _live()   { return this._isActv && yagiSignal.num===yagiPointTarget && yagiSignal.ts!=null && signalAge()<30; }
                    }">
                 <!-- header -->
                 <div class="flex items-baseline gap-2 mb-1">
-                  <span style="font-family:'Oxanium',monospace;font-size:10px;font-weight:700;letter-spacing:0.18em;color:rgba(255,30,30,0.75)">TARGET</span>
-                  <span style="font-family:'Oxanium',monospace;font-size:17px;font-weight:700;color:rgba(255,30,30,0.95)" x-text="targetNode.user?.short_name || ('!'+targetNode.num?.toString(16))"></span>
-                  <span style="font-family:'Oxanium',monospace;font-size:11px;color:rgba(255,200,40,0.65);margin-left:auto" x-text="targetNode.user?.id || ''"></span>
+                  <span style="font-family:'Oxanium',monospace;font-size:10px;font-weight:700;letter-spacing:0.18em"
+                        :style="{ color: activeCard?.accent }" x-text="activeCard?.label"></span>
+                  <span style="font-family:'Oxanium',monospace;font-size:17px;font-weight:700"
+                        :style="{ color: activeCard?.nameclr }"
+                        x-text="activeCard?.node?.user?.short_name || ('!'+activeCard?.node?.num?.toString(16))"></span>
+                  <span style="font-family:'Oxanium',monospace;font-size:11px;color:rgba(255,200,40,0.65);margin-left:auto"
+                        x-text="activeCard?.node?.user?.id || ''"></span>
                 </div>
                 <div style="font-family:'Oxanium',monospace;font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:0.5rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
-                     x-text="targetNode.user?.long_name || '–'"></div>
+                     x-text="activeCard?.node?.user?.long_name || '–'"></div>
 
                 <!-- signal quality bar (full-width, heat-map coloured) -->
                 <div style="height:5px;border-radius:3px;background:rgba(255,255,255,0.07);overflow:hidden;margin-bottom:0.25rem">
                   <div :style="`width:${Math.max(_pct,3)}%;height:100%;border-radius:3px;transition:width 0.6s ease,background 0.6s ease;background:${sigQualColor(_pct)}`"></div>
                 </div>
-                <!-- live RSSI / SNR below bar -->
+                <!-- RSSI / SNR below bar -->
                 <div style="display:flex;justify-content:space-between;font-family:'Oxanium',monospace;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:0.45rem">
                   <span x-text="_rssi != null ? _rssi+' dBm' : '– dBm'"></span>
                   <span x-show="_live" style="color:rgba(255,100,40,0.55);font-size:9px;letter-spacing:0.1em">LIVE</span>
                   <span x-text="_snr != null ? _snr+' dB' : '– dB'"></span>
                 </div>
 
-                <div style="height:1px;background:rgba(255,30,30,0.18);margin:0.35rem 0"></div>
+                <div :style="`height:1px;background:${activeCard?.divider};margin:0.35rem 0`"></div>
 
                 <!-- stats grid -->
                 <div class="radar-stat-grid">
                   <span style="color:rgba(0,255,80,0.45)">Distance</span>
-                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="targetNode._km != null ? targetNode._km.toFixed(1)+' km' : '–'"></span>
+                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="activeCard?.node?._km != null ? activeCard.node._km.toFixed(1)+' km' : '–'"></span>
                   <span style="color:rgba(0,255,80,0.45)">Bearing</span>
-                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="targetNode._az != null ? targetNode._az.toFixed(0)+'°' : '–'"></span>
+                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="activeCard?.node?._az != null ? activeCard.node._az.toFixed(0)+'°' : '–'"></span>
                   <span style="color:rgba(0,255,80,0.45)">Hops</span>
-                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="nodeHops(targetNode) ?? '–'"></span>
+                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="nodeHops(activeCard?.node) ?? '–'"></span>
                   <span style="color:rgba(0,255,80,0.45)">Last heard</span>
-                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="fmtAge(targetNode.last_heard)"></span>
+                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="fmtAge(activeCard?.node?.last_heard)"></span>
                 </div>
 
-                <!-- yagi history (only if we have data) -->
-                <template x-if="yagiTargetMeta.target_count > 0">
+                <!-- yagi history — ACTV only -->
+                <template x-if="activeCard?.mode === 'actv' && yagiTargetMeta.target_count > 0">
                   <div>
-                    <div style="height:1px;background:rgba(255,30,30,0.18);margin:0.35rem 0"></div>
+                    <div :style="`height:1px;background:${activeCard?.divider};margin:0.35rem 0`"></div>
                     <div class="radar-stat-grid">
                       <span style="color:rgba(0,255,80,0.45)">Visits</span>
                       <span style="color:rgba(0,255,80,0.9);text-align:right"

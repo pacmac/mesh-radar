@@ -92,7 +92,8 @@ export const PORTNUM_LABELS = {
 // portnum:X hides packet events with that portnum.
 // event:X   hides events of that type.
 export const FEED_FILTER_OPTIONS = [
-  { id: 'portnum:POSITION_APP',      label: 'Position' },
+  { id: 'portnum:TEXT_MESSAGE_APP',   label: 'Messages' },
+  { id: 'portnum:POSITION_APP',       label: 'Position' },
   { id: 'portnum:NODEINFO_APP',       label: 'Node Info pkt' },
   { id: 'portnum:TELEMETRY_APP',      label: 'Telemetry' },
   { id: 'portnum:ROUTING_APP',        label: 'Routing' },

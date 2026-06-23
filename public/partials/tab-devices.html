@@ -261,6 +261,13 @@
                       <span x-show="opLoading('wipe_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                       Wipe NodeDB
                     </button>
+                    <button class="btn btn-xs btn-outline btn-info"
+                            x-show="['reconnecting','failed'].includes(devBleState(dev.node_id))"
+                            :disabled="opLoading('retry_' + dev.node_id)"
+                            @click="asyncOp('retry_' + dev.node_id, () => fetchJSON('/devices/' + encodeURIComponent(dev.node_id) + '/retry', 'POST', {}), { successMsg: 'Retry triggered' })">
+                      <span x-show="opLoading('retry_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
+                      Retry Now
+                    </button>
                     <button class="btn btn-xs btn-outline btn-error"
                             :disabled="opLoading('disconnect_' + dev.node_id)"
                             @click="asyncOp('disconnect_' + dev.node_id, () => disconnectDevice(dev.node_id))">

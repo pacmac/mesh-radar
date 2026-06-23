@@ -5,11 +5,12 @@ import { stmts, getConfig, insertRangeTestEntry, recordYagiTargeted, recordYagiC
 import { nodeList } from './node-list.js';
 import { bearing } from './utils.js';
 
-const RETRY_MS = 30_000;
-
-function getHoldMs() {
+function getActvConfig() {
   const cfg = getConfig('actv_config', {});
-  return (cfg.dwell_sec ?? 90) * 1000;
+  return {
+    hold_ms:  (cfg.dwell_sec  ?? 90) * 1000,
+    retry_ms: (cfg.retry_sec  ?? 30) * 1000,
+  };
 }
 
 let _holdTimer = null;
@@ -87,14 +88,14 @@ function pointAt(node) {
   }
 
   if (_holdTimer) clearTimeout(_holdTimer);
-  _holdTimer = setTimeout(advance, getHoldMs());
+  _holdTimer = setTimeout(advance, getActvConfig().hold_ms);
 }
 
 function advance() {
   const schedule = buildSchedule();
   if (schedule.length === 0) {
     log.warn('no eligible nodes in radar — retrying in 30s');
-    _holdTimer = setTimeout(advance, RETRY_MS);
+    _holdTimer = setTimeout(advance, getActvConfig().retry_ms);
     return;
   }
   // Pick the top of the freshly sorted schedule (least recently targeted)

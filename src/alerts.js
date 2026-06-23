@@ -1,6 +1,6 @@
 // Alert evaluator — polling (node_offline, temp_high, condensation)
 // and event-driven (dm_received, broadcast_direct, tilt_high, ble_disconnect).
-import { getAlertRule, touchAlertLastSent, createReplyToken, pruneExpiredTokens, isPacketAlerted, markPacketAlerted } from './db.js';
+import { getAlertRule, touchAlertLastSent, createReplyToken, pruneExpiredTokens, isPacketAlerted, markPacketAlerted, getTiltCal } from './db.js';
 import db from './db.js';
 import { sendAlert } from './mailer.js';
 import { randomUUID } from 'crypto';
@@ -121,14 +121,15 @@ function _dispatchAlertEvent(ev) {
   if (ev.type === 'tilt_update' && ev.data) {
     const rule = getAlertRule('tilt_high');
     if (!canSend(rule)) return;
-    const pitch = Math.abs(ev.data.pitch ?? 0);
-    const roll  = Math.abs(ev.data.roll  ?? 0);
-    const tilt  = Math.max(pitch, roll);
+    const cal   = getTiltCal();
+    const pitch = (ev.data.pitch ?? 0) - (cal.zero?.pitch ?? 0);
+    const roll  = (ev.data.roll  ?? 0) - (cal.zero?.roll  ?? 0);
+    const tilt  = Math.max(Math.abs(pitch), Math.abs(roll));
     if (tilt < (rule?.threshold ?? 10)) return;
     touchAlertLastSent('tilt_high');
     sendAlert('tilt_high',
       `[mesh] Mast tilt ${tilt.toFixed(1)}°`,
-      `Mast tilt detected: pitch ${(ev.data.pitch ?? 0).toFixed(1)}°, roll ${(ev.data.roll ?? 0).toFixed(1)}°.\nThreshold: ${rule.threshold}°`
+      `Mast tilt detected: pitch ${pitch.toFixed(1)}°, roll ${roll.toFixed(1)}°.\nThreshold: ${rule.threshold}°`
     ).catch(e => console.error('[alerts] tilt_high send failed:', e.message));
     return;
   }

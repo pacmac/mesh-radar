@@ -1,6 +1,9 @@
 // Telemetry mixin: tilt sensor display and environmental history charts.
 import { fetchJSON } from './app-helpers.js';
-import { persistSet } from './app-persist.js';
+
+function _saveTiltCal(body) {
+  fetch('/tilt_cal', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+}
 
 export const telemetryMixin = {
   async loadTiltHistory() {
@@ -42,15 +45,14 @@ export const telemetryMixin = {
     const p = this.nodeSelf?.tilt?.pitch ?? 0;
     const r = this.nodeSelf?.tilt?.roll  ?? 0;
     this.tiltZero = { pitch: p, roll: r };
-    persistSet('tiltZero', this.tiltZero);
+    _saveTiltCal({ zero: this.tiltZero });
     this._tiltRecomputePeak();
   },
 
   tiltClearZero() {
     this.tiltZero = null;
     this.tiltNorthAngle = null;
-    persistSet('tiltZero', null);
-    persistSet('tiltNorthAngle', null);
+    _saveTiltCal({ zero: null, north_angle: null });
     this._tiltRecomputePeak();
   },
 
@@ -63,7 +65,7 @@ export const telemetryMixin = {
     const t  = Math.sqrt(dp * dp + dr * dr);
     if (t < 0.05) return;
     this.tiltNorthAngle = Math.atan2(dr, dp);
-    persistSet('tiltNorthAngle', this.tiltNorthAngle);
+    _saveTiltCal({ north_angle: this.tiltNorthAngle });
     const now = Math.floor(Date.now() / 1000);
     try {
       await fetch('/tilt_history/ncal', {
@@ -78,14 +80,13 @@ export const telemetryMixin = {
   tiltClearCal() {
     this.tiltZero = null;
     this.tiltNorthAngle = null;
-    persistSet('tiltZero', null);
-    persistSet('tiltNorthAngle', null);
+    _saveTiltCal({ zero: null, north_angle: null });
     this._tiltRecomputePeak();
   },
 
   tiltClearNorth() {
     this.tiltNorthAngle = null;
-    persistSet('tiltNorthAngle', null);
+    _saveTiltCal({ north_angle: null });
   },
 
   _tiltRecomputePeak() {

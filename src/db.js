@@ -494,4 +494,18 @@ export function isPacketAlerted(packetId) {
   return !!_isAlerted.get(packetId);
 }
 
+// -- Tilt calibration ---------------------------------------------------------
+
+export function getTiltCal() {
+  return {
+    zero:        getConfig('tilt.zero', null),
+    north_angle: getConfig('tilt.north_angle', null),
+  };
+}
+
+export function saveTiltCal({ zero, north_angle }) {
+  if (zero !== undefined)        setConfig('tilt.zero', zero);
+  if (north_angle !== undefined) setConfig('tilt.north_angle', north_angle);
+}
+
 export default db;

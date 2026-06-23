@@ -730,14 +730,17 @@ footer {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1rem;
-  height: 1rem;
+  width: 1.1rem;
+  height: 1.1rem;
   border-radius: 9999px;
-  font-size: 0.625rem;
+  font-size: 0.7rem;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
   flex-shrink: 0;
   line-height: 1;
+  background: transparent;
+  border: 1.5px solid currentColor;
+  opacity: 0.85;
 }
 
 /* Radar / telemetry stats grid */

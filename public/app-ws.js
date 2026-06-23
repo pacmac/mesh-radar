@@ -67,6 +67,13 @@ export const wsMixin = {
     if (ev.type === 'bridge_connected')    { this.bridgeConnected = true;  return; }
     if (ev.type === 'bridge_disconnected') { this.bridgeConnected = false; return; }
 
+    if (ev.type === 'tilt_cal') {
+      this.tiltZero       = ev.zero        ?? null;
+      this.tiltNorthAngle = ev.north_angle ?? null;
+      this._tiltRecomputePeak();
+      return;
+    }
+
     if (ev.type === 'rotator') {
       this._onRotatorEvent(ev.data || {}); return;
     }
@@ -282,6 +289,33 @@ export const wsMixin = {
       this.scanProgress  = null;
       this.scanCurrentAz = null;
       if (this.tab === 'radar') this.drawRadar();
+      return;
+    }
+    if (ev.type === 'passive_trace_start') {
+      this.passiveTraceNum = ev.from;
+      if (this._passiveTraceTimer) clearTimeout(this._passiveTraceTimer);
+      if (this.tab === 'radar') this.refreshRadar();
+      return;
+    }
+    if (ev.type === 'route_discovered') {
+      const ni = this.nodes.findIndex(n => n.num === ev.from);
+      if (ni >= 0) {
+        this.nodes[ni] = { ...this.nodes[ni], last_traceroute: {
+          route:           ev.route           ?? [],
+          route_back:      ev.route_back      ?? [],
+          snr_towards:     ev.snr_towards     ?? [],
+          snr_back:        ev.snr_back        ?? [],
+          relay_positions: ev.relay_positions ?? {},
+          ts:              ev.ts              ?? Date.now(),
+        }};
+      }
+      this.passiveTraceNum = ev.from;
+      if (this._passiveTraceTimer) clearTimeout(this._passiveTraceTimer);
+      this._passiveTraceTimer = setTimeout(() => {
+        this.passiveTraceNum = null;
+        if (this.tab === 'radar') this.refreshRadar();
+      }, 30000);
+      if (this.tab === 'radar') this.refreshRadar();
       return;
     }
 

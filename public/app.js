@@ -110,6 +110,7 @@ function dashboard() {
     nodeInfo:       null,
     tracerouteResult:  null,
     traceroutePending: false,
+    passiveTraceNum:   null,
     lastHeardNum:   null,
 
     // -- Messages -------------------------------------------------------------
@@ -162,8 +163,8 @@ function dashboard() {
     tiltWindow:  persistGet('tiltWindow', 4),
     tiltPeak:    0,
     tiltRings:   [1, 2, 3, 4],
-    tiltZero:       persistGet('tiltZero', null),
-    tiltNorthAngle: persistGet('tiltNorthAngle', null),
+    tiltZero:       null,
+    tiltNorthAngle: null,
 
     // -- Alerts ---------------------------------------------------------------
     alertRules:       [],
@@ -190,6 +191,10 @@ function dashboard() {
     rotatorCfgSchema: null,
     rotatorCfgSaved:  false,
     rotatorCfgError:  '',
+    radarCfg:         { display: {}, pasv: {}, actv: {}, scan: {} },
+    radarCfgSaved:    false,
+    radarCfgError:    '',
+    radarCfgSaving:   false,
     rotatorCalSent:   false,
     rotatorCalError:  '',
     rotatorOffsetInput: '',
@@ -217,6 +222,24 @@ function dashboard() {
     async init() {
       initPersist();
       this.feedVisible = (window.feedFilterOptions || []).map(o => o.id);
+
+      // One-time migration: move tilt calibration from localStorage to server DB
+      const lsZero  = localStorage.getItem('tiltZero');
+      const lsNorth = localStorage.getItem('tiltNorthAngle');
+      if (lsZero !== null || lsNorth !== null) {
+        try {
+          await fetch('/tilt_cal', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              zero:        lsZero  !== null ? JSON.parse(lsZero)       : undefined,
+              north_angle: lsNorth !== null ? parseFloat(lsNorth)      : undefined,
+            }),
+          });
+        } catch (_) {}
+        localStorage.removeItem('tiltZero');
+        localStorage.removeItem('tiltNorthAngle');
+      }
 
       try {
         const saved = JSON.parse(localStorage.getItem('msgHistory') || '[]');

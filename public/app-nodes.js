@@ -53,7 +53,11 @@ export const nodesMixin = {
     const base = this._knownNodes.length ? this._knownNodes : this.nodes;
     const nums = new Set(base.map(n => n.num));
     const extra = Object.values(this.msgNodeCache).filter(n => !nums.has(n.num));
-    return [...base, ...extra];
+    return [...base, ...extra].sort((a, b) => {
+      const an = (a.user?.long_name || a.user?.short_name || '').toLowerCase();
+      const bn = (b.user?.long_name || b.user?.short_name || '').toLowerCase();
+      return an < bn ? -1 : an > bn ? 1 : 0;
+    });
   },
 
   setNodeSource(src) {
@@ -172,12 +176,16 @@ export const nodesMixin = {
   },
 
   nodeShortName(num) {
-    const n = this.nodes.find(n => n.num === num);
+    const n = this.nodes.find(n => n.num === num)
+           ?? this._knownNodes.find(n => n.num === num)
+           ?? this.msgNodeCache[num];
     return n?.user?.short_name || ('!' + (num & 0xFFFF).toString(16).toUpperCase());
   },
 
   nodeLongName(num) {
-    const n = this.nodes.find(n => n.num === num);
+    const n = this.nodes.find(n => n.num === num)
+           ?? this._knownNodes.find(n => n.num === num)
+           ?? this.msgNodeCache[num];
     return n?.user?.long_name || n?.user?.short_name || ('!' + (num & 0xFFFF).toString(16).toUpperCase());
   },
 

@@ -4,6 +4,7 @@
             <a class="tab" :class="cfgTab==='radio'   && 'tab-active font-semibold'" @click="switchCfgTab('radio')">Radio</a>
             <a class="tab" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
             <a class="tab" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
+            <a class="tab" :class="cfgTab==='radar'   && 'tab-active font-semibold'" @click="switchCfgTab('radar')">Radar</a>
             <a class="tab" :class="cfgTab==='alerts'  && 'tab-active font-semibold'" @click="switchCfgTab('alerts')">Alerts</a>
           </div>
 
@@ -379,6 +380,114 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- ===================== RADAR ===================== -->
+          <div x-show="cfgTab==='radar'" class="flex flex-col gap-3 max-w-2xl">
+
+            <!-- Display -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">Display</h2>
+                <p class="text-xs opacity-50 mb-2">Affects all modes.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Max range km</span><span class="label-text-alt text-xs opacity-50">0 = auto</span></div>
+                    <input type="number" min="0" step="1" class="input input-bordered input-sm w-full font-mono"
+                           x-model.number="radarCfg.display.max_range_km">
+                  </label>
+                  <label class="form-control w-full cursor-pointer">
+                    <div class="label py-1"><span class="label-text text-xs">Log scale</span></div>
+                    <input type="checkbox" class="toggle toggle-sm" x-model="radarCfg.display.log_scale">
+                  </label>
+                  <label class="form-control w-full cursor-pointer">
+                    <div class="label py-1"><span class="label-text text-xs">Crosshair</span></div>
+                    <input type="checkbox" class="toggle toggle-sm" x-model="radarCfg.display.crosshair">
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- PASV mode -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">PASV — Passive traceroute</h2>
+                <p class="text-xs opacity-50 mb-2">When a node is heard, automatically traceroute it if its route data is stale.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Stale after (success)</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
+                    <input type="number" min="60" step="60" class="input input-bordered input-sm w-full font-mono"
+                           x-model.number="radarCfg.pasv.stale_sec">
+                    <div class="label py-0"><span class="label-text-alt text-xs opacity-40" x-text="radarCfg.pasv.stale_sec ? (radarCfg.pasv.stale_sec / 60).toFixed(0) + ' min' : ''"></span></div>
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Retry after (fail/timeout)</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
+                    <input type="number" min="30" step="30" class="input input-bordered input-sm w-full font-mono"
+                           x-model.number="radarCfg.pasv.stale_fail_sec">
+                    <div class="label py-0"><span class="label-text-alt text-xs opacity-40" x-text="radarCfg.pasv.stale_fail_sec ? (radarCfg.pasv.stale_fail_sec / 60).toFixed(0) + ' min' : ''"></span></div>
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Trace timeout</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
+                    <input type="number" min="10" max="300" step="5" class="input input-bordered input-sm w-full font-mono"
+                           x-model.number="radarCfg.pasv.timeout_sec">
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- ACTV mode -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">ACTV — Active targeting</h2>
+                <p class="text-xs opacity-50 mb-2">Rotator steps through nodes automatically, dwelling at each before moving on.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Dwell per node</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
+                    <input type="number" min="5" step="5" class="input input-bordered input-sm w-full font-mono"
+                           x-model.number="radarCfg.actv.dwell_sec">
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Retry when no nodes</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
+                    <input type="number" min="5" step="5" class="input input-bordered input-sm w-full font-mono"
+                           x-model.number="radarCfg.actv.retry_sec">
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- SCAN mode -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">SCAN — Polar scan</h2>
+                <p class="text-xs opacity-50 mb-2">Systematic 360° sweep, recording the best SNR contact at each bearing.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Step</span><span class="label-text-alt text-xs opacity-50">°</span></div>
+                    <input type="number" min="1" max="45" step="1" class="input input-bordered input-sm w-full font-mono"
+                           x-model.number="radarCfg.scan.step_deg">
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Dwell per position</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
+                    <input type="number" min="5" step="5" class="input input-bordered input-sm w-full font-mono"
+                           x-model.number="radarCfg.scan.dwell_sec">
+                  </label>
+                </div>
+                <div class="mt-2 text-xs opacity-60 font-mono"
+                     x-text="'Full 360° scan: ~' + Math.ceil(360 / (radarCfg.scan?.step_deg || 5)) * (radarCfg.scan?.dwell_sec || 60) / 60 + ' min'">
+                </div>
+              </div>
+            </div>
+
+            <!-- Save -->
+            <div class="flex items-center gap-2">
+              <button class="btn btn-sm btn-primary" @click="saveRadarCfg()" :disabled="radarCfgSaving">
+                <span x-show="radarCfgSaving" class="loading loading-spinner loading-xs"></span>
+                Save all
+              </button>
+              <span x-show="radarCfgSaved" class="text-success text-sm" x-transition>Saved ✓</span>
+              <span x-show="radarCfgError" x-text="radarCfgError" class="text-error text-sm"></span>
+            </div>
+
           </div>
 
           <!-- ===================== ALERTS ===================== -->

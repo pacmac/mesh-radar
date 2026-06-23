@@ -8,7 +8,7 @@ import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule, getTiltCal, saveTiltCal } from './db.js';
 const ALERT_SMTP_KEYS = ['alerts.smtp_host','alerts.smtp_port','alerts.smtp_user','alerts.smtp_pass','alerts.smtp_from','alerts.smtp_to','alerts.imap_host','alerts.imap_port'];
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
@@ -21,6 +21,7 @@ import { ROTATOR_CONFIG_SCHEMA } from './rotator-config-schema.js';
 import { startAlertPoller, ALERT_META } from './alerts.js';
 import { sendTestAlert } from './mailer.js';
 import { startImapReceiver } from './imap-receiver.js';
+import { passiveTracer } from './passive-tracer.js';
 
 const PORT = process.env.PORT || 8000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
@@ -488,6 +489,19 @@ app.post('/alerts/test', async (req, res) => {
   }
 });
 
+// -- tilt calibration --------------------------------------------------------
+
+app.put('/tilt_cal', (req, res) => {
+  const body = req.body;
+  saveTiltCal({
+    zero:        'zero'        in body ? (body.zero        ?? null) : undefined,
+    north_angle: 'north_angle' in body ? (body.north_angle ?? null) : undefined,
+  });
+  const cal = getTiltCal();
+  broadcastAll({ type: 'tilt_cal', zero: cal.zero, north_angle: cal.north_angle });
+  res.json({ ok: true });
+});
+
 // -- static files -----------------------------------------------------------
 app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
 
@@ -625,6 +639,10 @@ bridge.on('event', (ev) => {
     });
   }
 });
+
+// Passive tracer — must init after main bridge.on('event') so TRACEROUTE_APP
+// storage (nodeList.setTraceroute) runs before the 'traced' emit is broadcast.
+passiveTracer.init();
 
 rotator.on('connected', () => {
 });

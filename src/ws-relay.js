@@ -3,9 +3,10 @@ import { bridge } from './bridge.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
-import { insertTilt } from './db.js';
+import { insertTilt, getTiltCal } from './db.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode } from './dash-mode.js';
+import { passiveTracer } from './passive-tracer.js';
 
 function makeRotatorThrottle(sendFn) {
   let lastMs    = 0;
@@ -64,6 +65,13 @@ export function attachWsRelay(server) {
   }
 
   bridge.on('event', (ev) => {
+    if (ev.type === 'device_removed' && ev.device) {
+      delete lastDeviceState[ev.device];
+      activeDeviceIds.delete(ev.device);
+      broadcastDeviceList();
+      return;
+    }
+
     // Keep last-known state current as events flow through
     if (ev.device && STATE_EVENT_TYPES.has(ev.type)) {
       // Merge so identity fields (short_name, long_name, hw_model) from 'ready'
@@ -116,6 +124,8 @@ export function attachWsRelay(server) {
   scanner.on('progress', (data) => broadcast({ type: 'scan_progress', data }));
   scanner.on('contact',  (data) => broadcast({ type: 'scan_contact',  data }));
   scanner.on('end',      (data) => broadcast({ type: 'scan_end',      data }));
+  passiveTracer.on('tracing', (data) => broadcast({ type: 'passive_trace_start', ...data }));
+  passiveTracer.on('traced',  (data) => broadcast({ type: 'route_discovered',    ...data }));
   nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
 
   wss.on('connection', (ws) => {
@@ -156,6 +166,10 @@ export function attachWsRelay(server) {
       .filter(n => n.user?.long_name)
       .map(n => ({ num: n.num, user: { short_name: n.user.short_name, long_name: n.user.long_name } }));
     ws.send(JSON.stringify({ type: 'known_nodes', nodes: knownNodes }));
+
+    // Tilt calibration — replayed so browser never needs HTTP for this
+    const cal = getTiltCal();
+    ws.send(JSON.stringify({ type: 'tilt_cal', zero: cal.zero, north_angle: cal.north_angle }));
   });
 
   // -- Per-device /!{nodeId}/events — snapshot first, pre-filtered -----------

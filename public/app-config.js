@@ -38,6 +38,7 @@ export const configMixin = {
       else if (this.radioTab === 'owner')    this.loadOwner();
     } else if (name === 'bridge')  this.loadBridgeConfig();
     else if (name === 'rotator')   this.loadRotatorCfg();
+    else if (name === 'radar')     this.loadRadarCfg();
     else if (name === 'alerts')    this.loadAlertRules();
   },
 
@@ -346,6 +347,30 @@ export const configMixin = {
       if (r) Object.assign(r, changes);
     } catch (e) {
       console.warn('updateAlertRule failed', e);
+    }
+  },
+
+  async loadRadarCfg() {
+    try {
+      this.radarCfg = await fetchJSON('/config/radar');
+    } catch (e) {
+      console.warn('loadRadarCfg failed', e);
+    }
+  },
+
+  async saveRadarCfg() {
+    this.radarCfgSaving = true;
+    this.radarCfgSaved  = false;
+    this.radarCfgError  = '';
+    try {
+      await fetchJSON('/config/radar', 'PUT', this.radarCfg);
+      this.radarCfgSaved = true;
+      setTimeout(() => { this.radarCfgSaved = false; }, 3000);
+    } catch (e) {
+      this.radarCfgError = e.message || 'Save failed';
+      setTimeout(() => { this.radarCfgError = ''; }, 5000);
+    } finally {
+      this.radarCfgSaving = false;
     }
   },
 

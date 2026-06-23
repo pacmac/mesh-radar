@@ -142,7 +142,12 @@ export const messagesMixin = {
         if (res?.error) throw new Error(res.error?.message || String(res.error));
         if (res?.detail) throw new Error(res.detail);
         const m = this.messages.find(x => x._txKey === txKey);
-        if (m && (m.ackStatus === 'sending' || m.ackStatus === 'retrying')) m.ackStatus = 'sent';
+        if (m) {
+          if (m.ackStatus === 'sending' || m.ackStatus === 'retrying') m.ackStatus = 'sent';
+          // Set pktId from the HTTP response immediately — don't wait for the BLE echo,
+          // which is unreliable. This is the authoritative packet ID for reply threading.
+          if (res?.id && !m.pktId) m.pktId = res.id;
+        }
         try {
           const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
           const _p = _pt.find(x => x._txKey === txKey);
@@ -187,6 +192,14 @@ export const messagesMixin = {
   closeMessageModal() {
     this.msgIsModal = false;
     this.$refs.msgModalDialog?.close();
+  },
+
+  insertAtCursor(el, text) {
+    if (!el) { this.msgText += text; return; }
+    const start = el.selectionStart ?? this.msgText.length;
+    const end   = el.selectionEnd   ?? start;
+    this.msgText = this.msgText.slice(0, start) + text + this.msgText.slice(end);
+    this.$nextTick(() => { el.focus(); el.setSelectionRange(start + text.length, start + text.length); });
   },
 
   replyTo(m) {
