@@ -1,0 +1,281 @@
+        <!-- ===================== SHARED COMPOSE TEMPLATE ===================== -->
+        <template id="msg-compose">
+          <div class="flex flex-col gap-3">
+
+            <!-- From device (hidden when only 1 device) -->
+            <div x-show="availableDevices.length > 1" class="flex items-center gap-2">
+              <span class="text-xs text-base-content/60 w-12 shrink-0">From</span>
+              <div class="join">
+                <template x-for="dev in availableDevices" :key="dev.node_id">
+                  <button class="join-item btn btn-xs"
+                          :class="msgFrom === dev.node_id ? 'btn-primary' : 'btn-outline'"
+                          @click="msgFrom = dev.node_id; persistSet('msgFrom', dev.node_id)"
+                          x-text="deviceLabel(dev.node_id)">
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            <!-- Direct / Broadcast toggle -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-base-content/60 w-12 shrink-0">To</span>
+              <div class="join">
+                <button class="join-item btn btn-xs" :class="!msgIsDirect ? 'btn-primary' : 'btn-outline'" @click="msgIsDirect = false">Broadcast</button>
+                <button class="join-item btn btn-xs" :class="msgIsDirect ? 'btn-primary' : 'btn-outline'" @click="msgIsDirect = true">Direct</button>
+              </div>
+              <select x-show="msgIsDirect" class="select select-bordered select-xs flex-1" x-model="msgDirectTo">
+                <option value="" disabled>Select node…</option>
+                <template x-for="n in allMsgNodes()" :key="n.num">
+                  <option :value="n.num" x-text="(n.user?.short_name || n.num) + ' — ' + (n.user?.long_name || '')"></option>
+                </template>
+              </select>
+              <span x-show="!msgIsDirect && msgDirectTo"
+                    class="text-xs text-base-content/50 italic cursor-pointer"
+                    @click="msgIsDirect = true"
+                    x-text="'→ ' + (nodeShortName(msgDirectTo) || msgDirectTo)"></span>
+            </div>
+
+            <!-- Channel -->
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Channel</span></label>
+              <select class="select select-bordered select-sm" x-model="msgChannel">
+                <option value="0">0 — Primary</option>
+                <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+                <option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
+              </select>
+            </div>
+
+            <!-- Message + insert dropdown + @mention -->
+            <div class="form-control">
+              <div class="flex items-center justify-between mb-1">
+                <label class="label py-0"><span class="label-text">Message</span></label>
+                <div class="dropdown dropdown-end">
+                  <label tabindex="0" class="btn btn-xs btn-ghost font-mono opacity-60 hover:opacity-100">{…}</label>
+                  <ul tabindex="0" class="dropdown-content menu menu-xs bg-base-200 rounded-box shadow-lg z-20 w-52 p-1">
+                    <li class="menu-title text-xs">My info</li>
+                    <li><a @click="insertText(availableDevices.find(d=>d.node_id===(msgFrom||activeNodeId))?.short_name)">Short name</a></li>
+                    <li><a @click="insertText(availableDevices.find(d=>d.node_id===(msgFrom||activeNodeId))?.long_name)">Long name</a></li>
+                    <li x-show="fixedPosition.lat != null"><a @click="insertText(fixedPosition.lat.toFixed(6) + ', ' + fixedPosition.lon.toFixed(6))">My position</a></li>
+                    <li><a @click="insertText(msgFrom || activeNodeId)">My node ID</a></li>
+                    <li><a @click="insertText(new Date().toLocaleTimeString())">Time</a></li>
+                    <li><a @click="insertText(new Date().toLocaleDateString())">Date</a></li>
+                    <li x-show="msgInsertNode" class="menu-title text-xs border-t border-base-300 mt-1 pt-1" x-text="'Node: ' + nodeShortName(msgInsertNode)"></li>
+                    <li x-show="msgInsertNode"><a @click="insertText(nodeShortName(msgInsertNode))">Short name</a></li>
+                    <li x-show="msgInsertNode"><a @click="insertText(nodeLongName(msgInsertNode))">Long name</a></li>
+                    <li x-show="msgInsertNode && insertNodeMeta()?.dist != null"><a @click="insertText(insertNodeMeta().dist + ' km')">Distance</a></li>
+                    <li x-show="msgInsertNode && insertNodeMeta()?.az != null"><a @click="insertText(insertNodeMeta().az + '°')">Azimuth</a></li>
+                  </ul>
+                </div>
+              </div>
+              <div class="relative">
+                <div x-show="mentionOpen" x-cloak
+                     class="absolute bottom-full left-0 right-0 mb-1 bg-base-200 border border-base-300 rounded-box shadow-lg z-30 overflow-hidden">
+                  <ul class="menu menu-xs p-1 max-h-48 overflow-y-auto">
+                    <template x-for="(n, idx) in mentionedNodes()" :key="n.num">
+                      <li>
+                        <a :class="idx === mentionIdx ? 'active' : ''"
+                           @mousedown.prevent="selectMention(n)"
+                           class="flex items-center gap-2">
+                          <span class="contents" x-html="nodeAvatar(n.num, n.user?.short_name, 'sm')"></span>
+                          <span class="font-mono font-semibold text-xs" x-text="'@' + (n.user?.short_name || '?')"></span>
+                          <span class="text-base-content/50 text-xs truncate" x-text="n.user?.long_name || ''"></span>
+                        </a>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+                <div x-show="msgReplyId" class="flex items-center gap-1 text-xs text-base-content/60 bg-base-200 rounded px-2 py-1 mb-1">
+                  <span class="opacity-70">↩ Replying to</span>
+                  <span class="font-semibold" x-text="nodeShortName(msgReplyFrom) || '?'"></span>
+                  <button class="ml-auto btn btn-xs btn-ghost py-0 h-auto min-h-0 opacity-50" @click="msgReplyId = null; msgReplyFrom = null">✕</button>
+                </div>
+                <textarea class="textarea textarea-bordered w-full" rows="3" x-model="msgText" placeholder="Type a message… (@name to mention)" x-ref="msgInput"
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                  @keydown="handleMsgKeydown($event)"
+                  @input="handleMsgInput($event)"
+                  @blur="$nextTick(() => { mentionOpen = false })"></textarea>
+              </div>
+            </div>
+
+            <!-- Quick-insert emoji -->
+            <div class="flex w-full">
+              <template x-for="em in msgEmojiSet" :key="em.e">
+                <button class="btn btn-sm btn-ghost text-xl px-0 flex-1" x-text="em.e" :title="em.t"
+                        @click="insertAtCursor($refs.msgInput, em.e)"></button>
+              </template>
+            </div>
+
+            <!-- Send -->
+            <div class="flex items-center gap-2">
+              <button class="btn btn-primary btn-sm" @click="sendMessage()" :disabled="!msgText.trim() || (msgIsDirect && !msgDirectTo)">Send</button>
+              <span class="text-success text-sm" x-show="msgSent" x-transition>Sent ✓</span>
+            </div>
+
+          </div>
+        </template>
+
+        <!-- ===================== MESSAGE MODAL ===================== -->
+        <dialog class="modal" x-ref="msgModalDialog" @close="closeMessageModal()">
+          <div class="modal-box">
+            <h3 class="font-bold text-lg font-oxanium"
+                x-text="msgIsDirect ? 'Message → ' + (nodeLongName(msgDirectTo) || msgDirectTo) : 'Broadcast'"></h3>
+            <div class="mt-3"
+                 x-init="$nextTick(() => { const f = document.getElementById('msg-compose').content.cloneNode(true); $el.append(f); })">
+            </div>
+            <div class="modal-action">
+              <button class="btn btn-sm" @click="closeMessageModal()">Close</button>
+            </div>
+          </div>
+          <form method="dialog" class="modal-backdrop"><button>close</button></form>
+        </dialog>
+
+        <!-- ===================== NODE INFO MODAL ===================== -->
+        <dialog class="modal" x-ref="nodeInfoDialog">
+          <div class="modal-box p-0 overflow-hidden max-w-sm"
+               style="background:rgba(2,7,2,0.98);border:1px solid rgba(0,255,80,0.18);
+                      border-radius:0.6rem;box-shadow:0 0 0 1px rgba(0,255,80,0.05),0 20px 60px rgba(0,0,0,0.95)">
+            <template x-if="nodeInfo">
+              <div>
+                <!-- Header -->
+                <div style="padding:1rem 1.1rem 0.8rem;border-bottom:1px solid rgba(0,255,80,0.10);
+                            background:linear-gradient(180deg,rgba(0,255,80,0.05) 0%,transparent 100%)">
+                  <div style="font-family:'Oxanium',monospace;font-size:9px;font-weight:700;
+                              letter-spacing:0.18em;color:rgba(0,255,80,0.32);margin-bottom:0.25rem">NODE INFO</div>
+                  <div style="font-family:'Oxanium',monospace;font-size:1.15rem;font-weight:700;
+                              color:rgba(0,255,80,0.92);line-height:1.2" x-text="nodeInfo?.user?.long_name || '–'"></div>
+                  <div style="font-family:monospace;font-size:0.68rem;color:rgba(0,255,80,0.28);margin-top:0.2rem"
+                       x-text="nodeInfo.user?.id || ('!' + (nodeInfo.num >>> 0).toString(16).padStart(8,'0'))"></div>
+                </div>
+                <!-- Stats 2-col grid -->
+                <div style="padding:0.7rem 1.1rem;display:grid;grid-template-columns:1fr 1fr;gap:0.55rem 1.2rem;
+                            border-bottom:1px solid rgba(0,255,80,0.08)">
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">DISTANCE</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo._km != null ? nodeInfo._km.toFixed(1)+' km' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">BEARING</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo._az != null ? nodeInfo._az.toFixed(0)+'°' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">RSSI</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo.rssi != null ? nodeInfo.rssi+' dBm' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">SNR</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo.snr != null ? (nodeInfo.snr>=0?'+':'')+nodeInfo.snr.toFixed(1)+' dB' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">HOPS</div>
+                    <div style="font-family:monospace;font-size:13px"
+                         :style="{ color: (nodeHops(nodeInfo)??1)===0 ? 'rgba(255,160,0,0.90)' : 'rgba(0,255,80,0.82)' }"
+                         x-text="nodeHops(nodeInfo) ?? '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">BATTERY</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)"
+                         x-text="nodeInfo.device_metrics?.battery_level != null ? nodeInfo.device_metrics.battery_level+'%' : '–'"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">LAST HEARD</div>
+                    <div style="font-family:monospace;font-size:13px;color:rgba(0,255,80,0.82)" x-text="fmtAge(nodeInfo.last_heard)"></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">HARDWARE</div>
+                    <div style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.65)" x-text="nodeInfo.user?.hw_model || '–'"></div>
+                  </div>
+                </div>
+                <!-- Location -->
+                <div style="padding:0.55rem 1.1rem;border-bottom:1px solid rgba(0,255,80,0.08)">
+                  <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32);margin-bottom:0.2rem">LOCATION</div>
+                  <div style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.62);line-height:1.5"
+                       x-text="nodeInfo._address || (nodeInfo.position ? (nodeInfo.position.latitude_i/1e7).toFixed(4)+', '+(nodeInfo.position.longitude_i/1e7).toFixed(4) : '–')"></div>
+                </div>
+                <!-- Route -->
+                <div style="padding:0.55rem 1.1rem;border-bottom:1px solid rgba(0,255,80,0.08)">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem">
+                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">ROUTE</div>
+                    <button style="font-family:'Oxanium',monospace;font-size:9px;letter-spacing:0.08em;
+                                   color:rgba(0,255,80,0.65);border:1px solid rgba(0,255,80,0.25);
+                                   border-radius:0.2rem;padding:0.1rem 0.45rem;background:transparent;cursor:pointer"
+                            :class="traceroutePending ? 'opacity-40 pointer-events-none' : ''"
+                            @click="sendTraceroute(nodeInfo)">
+                      <span x-show="!traceroutePending">TRACE</span><span x-show="traceroutePending">…</span>
+                    </button>
+                  </div>
+                  <template x-if="tracerouteResult && tracerouteResult.num === nodeInfo?.num">
+                    <div style="font-family:monospace;font-size:11px;display:flex;flex-wrap:wrap;gap:0.2rem;align-items:center">
+                      <template x-if="tracerouteResult.route.length === 0">
+                        <span style="color:rgba(0,255,80,0.38)">Direct — no intermediate hops</span>
+                      </template>
+                      <template x-if="tracerouteResult.route.length > 0">
+                        <span style="color:rgba(0,255,80,0.28)">→</span>
+                      </template>
+                      <template x-if="tracerouteResult.route.length > 0">
+                        <template x-for="(hop, i) in tracerouteResult.route" :key="i">
+                          <span style="display:inline-flex;align-items:center;gap:0.2rem">
+                            <span style="border:1px solid rgba(0,255,80,0.22);border-radius:0.2rem;padding:0 0.3rem;color:rgba(0,255,80,0.65)" x-text="tracerouteNodeName(hop)"></span>
+                            <span x-show="tracerouteResult.snr_towards[i] != null" style="font-size:9px;color:rgba(0,255,80,0.28)" x-text="tracerouteResult.snr_towards[i]?.toFixed(1)+'dB'"></span>
+                            <span style="color:rgba(0,255,80,0.28)">→</span>
+                          </span>
+                        </template>
+                      </template>
+                      <template x-if="tracerouteResult.route.length > 0">
+                        <span style="border:1px solid rgba(255,160,0,0.35);border-radius:0.2rem;padding:0 0.3rem;color:rgba(255,160,0,0.80)" x-text="tracerouteNodeName(tracerouteResult.num)"></span>
+                      </template>
+                      <template x-if="tracerouteResult.route_back.length > 0">
+                        <div style="width:100%;margin-top:0.2rem;display:flex;flex-wrap:wrap;gap:0.2rem;align-items:center;opacity:0.55">
+                          <span style="color:rgba(0,255,80,0.50)">↩</span>
+                          <template x-for="(hop, i) in tracerouteResult.route_back" :key="i">
+                            <span style="display:inline-flex;align-items:center;gap:0.2rem">
+                              <span style="border:1px solid rgba(0,255,80,0.18);border-radius:0.2rem;padding:0 0.3rem;font-size:10px;color:rgba(0,255,80,0.55)" x-text="tracerouteNodeName(hop)"></span>
+                              <span x-show="tracerouteResult.snr_back[i] != null" style="font-size:9px" x-text="tracerouteResult.snr_back[i]?.toFixed(1)+'dB'"></span>
+                              <span>→</span>
+                            </span>
+                          </template>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                  <div x-show="traceroutePending" style="font-size:11px;font-family:monospace;color:rgba(0,255,80,0.28)">Waiting for response…</div>
+                </div>
+                <!-- Actions -->
+                <div style="padding:0.65rem 1.1rem;display:flex;flex-wrap:wrap;gap:0.4rem">
+                  <button x-show="rotatorMode === 1"
+                          @click="manualTarget(nodeInfo.num); $refs.nodeInfoDialog?.close()"
+                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
+                                 letter-spacing:0.10em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
+                                 background:rgba(255,160,0,0.10);color:rgba(255,160,0,0.92);
+                                 border:1px solid rgba(255,160,0,0.38)">TARGET</button>
+                  <button @click="pointAtNode(nodeInfo); $refs.nodeInfoDialog?.close()"
+                          :disabled="nodeInfo._az == null"
+                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
+                                 letter-spacing:0.10em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
+                                 background:transparent;color:rgba(0,255,80,0.65);
+                                 border:1px solid rgba(0,255,80,0.22)">POINT</button>
+                  <button @click="openMessageModal('broadcast', nodeInfo)"
+                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
+                                 letter-spacing:0.08em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
+                                 background:transparent;color:rgba(0,255,80,0.65);
+                                 border:1px solid rgba(0,255,80,0.22)">BC MSG</button>
+                  <button @click="openMessageModal('direct', nodeInfo)"
+                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
+                                 letter-spacing:0.08em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
+                                 background:transparent;color:rgba(0,255,80,0.65);
+                                 border:1px solid rgba(0,255,80,0.22)">DIR MSG</button>
+                  <button @click="$refs.nodeInfoDialog?.close()"
+                          style="width:100%;font-family:'Oxanium',monospace;font-size:10px;
+                                 letter-spacing:0.12em;padding:0.35rem;border-radius:0.3rem;cursor:pointer;
+                                 background:transparent;color:rgba(0,255,80,0.28);
+                                 border:1px solid rgba(0,255,80,0.10)">CLOSE</button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <form method="dialog" class="modal-backdrop"><button>close</button></form>
+        </dialog>
+

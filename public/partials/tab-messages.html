@@ -1,0 +1,55 @@
+        <!-- ===================== MESSAGES ===================== -->
+        <div x-show="tab==='messages'" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
+          <div class="card bg-base-100 shadow flex flex-col min-h-0">
+            <div class="card-body flex flex-col min-h-0">
+              <h2 class="card-title shrink-0">Send Text</h2>
+              <div x-init="$nextTick(() => { const f = document.getElementById('msg-compose').content.cloneNode(true); $el.append(f); })">
+              </div>
+            </div>
+          </div>
+          <div class="card bg-base-100 shadow flex flex-col min-h-0">
+            <div class="card-body flex flex-col min-h-0">
+              <h2 class="card-title shrink-0">Message Feed</h2>
+              <div class="overflow-y-auto flex-1 min-h-0">
+                <template x-for="m in displayMessages()" :key="'msg_' + (m._txKey || m.pktId || m.fromNum + '_' + m.ts)">
+                  <div class="flex items-start gap-3 py-2"
+                       :style="m.replyDepth > 0 ? `margin-left:${m.replyDepth * 2}rem` : ''"
+                       :class="m.isReply ? 'pl-2' : 'border-t border-base-200'"
+                       >
+                    <span class="relative inline-block shrink-0 cursor-pointer"
+                          :title="'Reply to ' + (m.fromShortName || nodeShortName(m.fromNum))"
+                          @click="replyTo(m)">
+                      <span class="contents" x-html="nodeAvatar(m.fromNum, m.fromShortName || nodeShortName(m.fromNum))"></span>
+                      <span class="absolute top-0 right-0 -translate-y-1 translate-x-1 w-3.5 h-3.5 rounded-full flex items-center justify-center text-white text-[9px] font-bold leading-none pointer-events-none"
+                            :class="m.direction === 'tx' ? 'bg-success text-white' : 'bg-info text-white'"
+                            x-text="m.direction === 'tx' ? '↑' : '↓'">
+                      </span>
+                    </span>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-1.5 text-sm">
+                        <span x-show="m.isReply" class="text-base-content/40" title="Reply">↩</span>
+                        <span class="font-semibold text-base-content" x-text="m.fromLongName || nodeLongName(m.fromNum)"></span>
+                        <span class="badge badge-xs" :class="m.broadcast ? 'badge-ghost' : 'badge-info'" x-text="m.broadcast ? 'BC' : 'DM'"></span>
+                        <span x-show="m.hops != null" x-html="hopsBadge(m.hops)"></span>
+                        <template x-for="d in (Array.isArray(m.src) ? m.src : (m.src ? [m.src] : []))" :key="d">
+                          <span class="badge badge-xs badge-outline font-mono opacity-60" :title="d" x-text="deviceLabel(d)"></span>
+                        </template>
+                        <span x-show="m.rssi != null || m.snr != null" x-html="sigBars(m.rssi, m.snr)"></span>
+                        <span class="ml-auto text-base-content/50 shrink-0" x-text="m.time"></span>
+                        <template x-if="m.direction==='tx'">
+                          <span class="shrink-0 font-bold text-sm"
+                                :class="(m.ackStatus==='confirmed'||m.ackStatus==='sent') ? 'text-success' : m.ackStatus==='failed' ? 'text-error' : 'text-warning'"
+                                :title="m.ackStatus==='confirmed' ? 'Sent & echo confirmed' : m.ackStatus==='sent' ? 'Sent to radio' : m.ackStatus==='retrying' ? ('Retrying… attempt ' + (m._retryCount||1) + ' of 3') : m.ackStatus==='failed' ? ('Send failed: ' + (m._sendError||'unknown error')) : 'Sending…'"
+                                x-text="m.ackStatus==='failed' ? '✕' : m.ackStatus==='retrying' ? '↻' : m.ackStatus ? '✓' : '…'"></span>
+                        </template>
+                      </div>
+                      <div class="text-base text-base-content mt-0.5 break-words" x-text="m.text"></div>
+                    </div>
+                  </div>
+                </template>
+                <div x-show="messages.length===0" class="text-base-content/40 italic py-4">No messages yet…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+

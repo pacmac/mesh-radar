@@ -1,0 +1,371 @@
+        <!-- ===================== DEVICES ===================== -->
+        <div x-show="tab==='devices'" class="flex flex-col gap-4">
+
+          <!-- Connected Radios — operational + assignment config in one place -->
+          <div class="card bg-base-100 shadow">
+            <div class="card-body py-4 gap-4">
+              <div class="flex items-center justify-between flex-wrap gap-2">
+                <h2 class="card-title">Connected Radios</h2>
+                <button class="btn btn-sm btn-outline" @click="loadDevices()">Refresh</button>
+              </div>
+              <div x-show="!availableDevices.length" class="text-sm opacity-50 italic py-2">No radios connected.</div>
+              <template x-for="dev in availableDevices" :key="dev.node_id">
+                <div class="border border-base-300 rounded-lg p-3 flex flex-col gap-3"
+                     :class="dev.node_id === activeNodeId && 'border-success/40 bg-success/5'">
+                  <!-- Status row -->
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-mono text-xs opacity-50" x-text="dev.node_id"></span>
+                    <span class="font-semibold" x-text="dev.long_name || dev.short_name || dev.node_id"></span>
+                    <span class="contents" x-show="deviceConfigs[dev.node_id]?.label" x-html="labelBadge(deviceConfigs[dev.node_id]?.label, deviceConfigs[dev.node_id]?.color)"></span>
+                    <span class="contents" x-show="deviceConfigs[dev.node_id]?.is_primary" x-html="roleBadge('PRIMARY')"></span>
+                    <span class="contents" x-show="deviceConfigs[dev.node_id]?.is_rotator" x-html="roleBadge('ROTATOR')"></span>
+                    <span class="ml-auto" x-html="devStateBadge(dev.node_id)"></span>
+                  </div>
+                  <!-- BLE / network stats -->
+                  <div class="flex gap-4 text-xs opacity-60 flex-wrap">
+                    <span x-show="deviceBleStates[dev.node_id]?.ble_rssi != null" class="inline-flex items-center gap-1"><span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span><span x-text="deviceBleStates[dev.node_id]?.ble_rssi + ' dBm'"></span></span>
+                    <span x-show="deviceBleStates[dev.node_id]?.node_count != null" x-text="deviceBleStates[dev.node_id]?.node_count + ' nodes'"></span>
+                    <span x-show="dev.ble_address" x-text="dev.ble_address"></span>
+                    <span x-show="dev.tcp_port" x-text="'TCP :' + dev.tcp_port + ' (' + dev.tcp_clients + ' clients)'"></span>
+                  </div>
+                  <!-- Device metadata + telemetry (reactive via nodeById method) -->
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs border-t border-base-300 pt-2">
+                    <div>
+                      <div class="opacity-50 mb-0.5">Hardware</div>
+                      <div x-text="nodeById(dev.node_id)?.user?.hw_model || '–'"></div>
+                      <div class="opacity-50 text-xs" x-text="dev.firmware_version || ''"></div>
+                    </div>
+                    <div>
+                      <div class="opacity-50 mb-0.5">Uptime</div>
+                      <div x-text="nodeById(dev.node_id)?.device_metrics?.uptime_seconds != null ? fmtUptime(nodeById(dev.node_id).device_metrics.uptime_seconds) : '–'"></div>
+                    </div>
+                    <div>
+                      <div class="opacity-50 mb-0.5">Battery</div>
+                      <div x-text="nodeById(dev.node_id)?.device_metrics?.battery_level != null ? nodeById(dev.node_id).device_metrics.battery_level + '% / ' + (nodeById(dev.node_id).device_metrics.voltage?.toFixed(2) ?? '–') + ' V' : '–'"></div>
+                    </div>
+                    <div>
+                      <div class="opacity-50 mb-0.5">Ch util / Air TX</div>
+                      <div x-text="nodeById(dev.node_id)?.device_metrics?.channel_utilization != null ? nodeById(dev.node_id).device_metrics.channel_utilization.toFixed(1) + '% / ' + (nodeById(dev.node_id).device_metrics.air_util_tx?.toFixed(2) ?? '–') + '%' : '–'"></div>
+                    </div>
+                    <div x-show="nodeById(dev.node_id)?.local_stats">
+                      <div class="opacity-50 mb-0.5">Nodes seen</div>
+                      <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_online_nodes + ' online / ' + nodeById(dev.node_id).local_stats.num_total_nodes + ' total' : '–'"></div>
+                    </div>
+                    <div x-show="nodeById(dev.node_id)?.local_stats">
+                      <div class="opacity-50 mb-0.5">Packets RX / TX</div>
+                      <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_packets_rx + ' / ' + nodeById(dev.node_id).local_stats.num_packets_tx : '–'"></div>
+                    </div>
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null"
+                         x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                      <div class="opacity-50 mb-0.5">Temperature</div>
+                      <div x-text="_em?.temperature?.toFixed(1) + ' °C'"></div>
+                    </div>
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
+                         x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                      <div class="opacity-50 mb-0.5">Humidity</div>
+                      <div x-text="_em?.relative_humidity?.toFixed(1) + ' %'"></div>
+                    </div>
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null && nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
+                         x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                      <div class="opacity-50 mb-0.5">Dew point</div>
+                      <div class="flex items-center gap-1">
+                        <span x-text="dewPoint(_em?.temperature, _em?.relative_humidity)?.toFixed(1) + ' °C'"></span>
+                        <span x-show="dewPoint(_em?.temperature, _em?.relative_humidity) >= _em?.temperature - 3"
+                              class="badge badge-xs badge-warning">condensation risk</span>
+                      </div>
+                    </div>
+                    <div x-show="nodeById(dev.node_id)?.environment_metrics?.barometric_pressure != null"
+                         x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                      <div class="opacity-50 mb-0.5">Pressure</div>
+                      <div x-text="_em?.barometric_pressure?.toFixed(1) + ' hPa'"></div>
+                    </div>
+                  </div>
+                  <!-- Config -->
+                  <div class="pt-2 border-t border-base-300 flex flex-col gap-2"
+                       x-data="{ _labelVal: deviceConfigs[dev.node_id]?.label || '', _tcpVal: dev.tcp_port || '' }">
+                    <!-- Row 1: Alias · Colour · HW type -->
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <input type="text" maxlength="8" class="input input-xs input-bordered font-mono w-20"
+                             x-model="_labelVal" placeholder="Alias"
+                             @keydown.enter.prevent="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">
+                      <select class="select select-xs select-bordered w-24"
+                              @change="saveDeviceCfg(dev.node_id, 'color', $event.target.value || null)">
+                        <option value="" :selected="!deviceConfigs[dev.node_id]?.color">Colour…</option>
+                        <option value="primary"   :selected="deviceConfigs[dev.node_id]?.color==='primary'">Primary</option>
+                        <option value="secondary" :selected="deviceConfigs[dev.node_id]?.color==='secondary'">Secondary</option>
+                        <option value="accent"    :selected="deviceConfigs[dev.node_id]?.color==='accent'">Accent</option>
+                        <option value="info"      :selected="deviceConfigs[dev.node_id]?.color==='info'">Info</option>
+                        <option value="success"   :selected="deviceConfigs[dev.node_id]?.color==='success'">Success</option>
+                        <option value="warning"   :selected="deviceConfigs[dev.node_id]?.color==='warning'">Warning</option>
+                        <option value="error"     :selected="deviceConfigs[dev.node_id]?.color==='error'">Error</option>
+                      </select>
+                      <button class="btn btn-xs btn-primary"
+                              @click="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">Save</button>
+                    </div>
+                    <!-- Row 2: TCP port + flags inline -->
+                    <div class="flex items-center gap-3 flex-wrap">
+                      <div class="flex items-center gap-1">
+                        <span class="text-xs opacity-50">TCP</span>
+                        <input type="number" min="1024" max="65535" class="input input-xs input-bordered font-mono w-20"
+                               x-model="_tcpVal" placeholder="4403"
+                               @keydown.enter.prevent="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">
+                        <button class="btn btn-xs btn-primary"
+                                @click="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">Save</button>
+                      </div>
+                      <div class="w-px h-4 bg-base-300"></div>
+                      <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
+                               :checked="deviceConfigs[dev.node_id]?.is_primary || false"
+                               @change="saveDeviceCfg(dev.node_id, 'is_primary', $event.target.checked)">
+                        <span class="text-xs">Primary</span>
+                      </label>
+                      <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
+                               :checked="deviceConfigs[dev.node_id]?.is_rotator || false"
+                               @change="saveDeviceCfg(dev.node_id, 'is_rotator', $event.target.checked)">
+                        <span class="text-xs">Rotator</span>
+                      </label>
+                      <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
+                               :checked="dev.auto_connect !== false"
+                               @change="saveBleCfg(dev.ble_address, 'auto_connect', $event.target.checked)">
+                        <span class="text-xs">Auto-connect</span>
+                      </label>
+                      <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
+                               :checked="deviceConfigs[dev.node_id]?.load_nodes_on_boot || false"
+                               @change="saveDeviceCfg(dev.node_id, 'load_nodes_on_boot', $event.target.checked)">
+                        <span class="text-xs">Load nodes</span>
+                      </label>
+                    </div>
+                  </div>
+                  <!-- OTA firmware update -->
+                  <div class="border-t border-base-300 pt-3"
+                       x-data="{
+                         _fwPath: localStorage.getItem('otaFwPath_' + dev.node_id) || '',
+                         _savePath(v) { localStorage.setItem('otaFwPath_' + dev.node_id, v); }
+                       }">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="text-xs font-semibold opacity-60 uppercase tracking-wide"
+                            x-text="'Firmware OTA' + (dev.hw_model ? ' — ' + dev.hw_model : '')"></span>
+                      <span x-show="deviceOtaState[dev.node_id]?.state === 'flashing'" class="badge badge-sm badge-warning animate-pulse">Flashing <span x-text="(deviceOtaState[dev.node_id]?.pct ?? 0) + '%'"></span></span>
+                      <span x-show="deviceOtaState[dev.node_id]?.state === 'done'" class="badge badge-sm badge-success">Done</span>
+                      <span x-show="deviceOtaState[dev.node_id]?.state === 'error'" class="badge badge-sm badge-error">Error — check bridge log</span>
+                    </div>
+                    <div class="flex gap-2 items-end flex-wrap">
+                      <div class="form-control flex-1 min-w-48">
+                        <label class="label py-0">
+                          <span class="label-text text-xs" x-text="dev.ota_protocol === 'nrf52-dfu' ? 'Firmware .zip path (server-side)' : 'Firmware .bin path (server-side)'"></span>
+                        </label>
+                        <input type="text" class="input input-sm input-bordered font-mono text-xs"
+                               x-model="_fwPath"
+                               @input="_savePath(_fwPath)"
+                               :placeholder="dev.ota_protocol === 'nrf52-dfu' ? '/path/to/firmware-rak4631-x.y.z.zip' : '/path/to/firmware-heltec-ht62-esp32c3-sx1262-x.y.z.bin'">
+                      </div>
+                      <button class="btn btn-sm btn-warning"
+                              :disabled="deviceOtaState[dev.node_id]?.state === 'flashing' || !_fwPath.trim() || devBleState(dev.node_id) !== 'ready'"
+                              :title="devBleState(dev.node_id) !== 'ready' ? 'Device must be connected (ready) before flashing' : 'Flash firmware via BLE'"
+                              @click="fetchJSON('/ota', 'POST', {node_id: dev.node_id, ble_addr: dev.ble_address, firmware: _fwPath.trim()}).then(d=>{ if(d.started) { deviceOtaState[dev.node_id]={state:'flashing',pct:0}; } else { deviceOtaState[dev.node_id]={state:'error',pct:0}; } }).catch(()=>{ deviceOtaState[dev.node_id]={state:'error',pct:0}; })">
+                        Flash OTA
+                      </button>
+                    </div>
+                    <p class="text-xs opacity-40 mt-1">Device disconnects, reboots into bootloader, flashes over BLE, reconnects automatically.</p>
+                  </div>
+                  <!-- Config Backup / Restore + Push Position -->
+                  <div class="border-t border-base-300 pt-3">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="text-xs font-semibold opacity-60 uppercase tracking-wide">Radio Config</span>
+                      <span x-show="opLoading('restore_' + dev.node_id)" class="badge badge-sm badge-warning animate-pulse">Restoring…</span>
+                    </div>
+                    <div class="flex gap-2 items-center flex-wrap">
+                      <button class="btn btn-xs btn-outline"
+                              :disabled="devBleState(dev.node_id) !== 'ready' || opLoading('backup_' + dev.node_id)"
+                              title="Download all config sections and channels as JSON"
+                              @click="asyncOp('backup_' + dev.node_id, () => backupRadioConfig(dev.node_id))">
+                        <span x-show="opLoading('backup_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
+                        Backup
+                      </button>
+                      <label class="btn btn-xs btn-outline"
+                             :class="(devBleState(dev.node_id) !== 'ready' || opLoading('restore_' + dev.node_id)) ? 'btn-disabled pointer-events-none' : ''"
+                             title="Restore config from a backup JSON file — device will reboot">
+                        <span x-show="opLoading('restore_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
+                        Restore
+                        <input type="file" accept=".json" class="hidden"
+                               @change="async (e) => {
+                                 const f = e.target.files[0]; e.target.value = '';
+                                 if (!f) return;
+                                 let bk;
+                                 try { bk = JSON.parse(await f.text()); } catch { showToast('Invalid backup JSON', 'error'); return; }
+                                 asyncOp('restore_' + dev.node_id,
+                                   async () => {
+                                     if (!confirm('Restore all config to ' + dev.node_id + '?\n\nAll sections and channels will be overwritten. Device will reboot.')) return false;
+                                     const r = await fetchJSON('/' + dev.node_id + '/radio_restore', 'POST', bk);
+                                     if (r?.error) throw new Error(r.error?.message || r.error);
+                                     if (!r?.verified) throw new Error('Restore not verified by device');
+                                   },
+                                   { successMsg: 'Config restored & verified' }
+                                 );
+                               }">
+                      </label>
+                      <button class="btn btn-xs btn-outline"
+                              :disabled="devBleState(dev.node_id) !== 'ready' || !deviceConfigs[dev.node_id]?.fixed_lat || opLoading('pushPos_' + dev.node_id)"
+                              :title="deviceConfigs[dev.node_id]?.fixed_lat != null
+                                ? 'Push ' + Number(deviceConfigs[dev.node_id].fixed_lat).toFixed(5) + ', ' + Number(deviceConfigs[dev.node_id].fixed_lon).toFixed(5) + ' to radio'
+                                : 'No fixed position configured — set it in Config → Radio → Device'"
+                              @click="asyncOp('pushPos_' + dev.node_id, () => pushFixedPosition(dev.node_id), { successMsg: 'Fixed position set & verified' })">
+                        <span x-show="opLoading('pushPos_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
+                        Push Position
+                      </button>
+                    </div>
+                    <p class="text-xs opacity-40 mt-1">Backup/restore all config and channels. Push Position sends the locally saved lat/lon to this radio.</p>
+                  </div>
+                  <!-- Range Test TX -->
+                  <div class="border-t border-base-300 pt-3">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="text-xs font-semibold opacity-60 uppercase tracking-wide">Range Test TX</span>
+                      <template x-if="rangeTimer.active && rangeTimer.nodeId === dev.node_id">
+                        <span class="badge badge-sm badge-warning animate-pulse">Sending</span>
+                      </template>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <template x-if="!(rangeTimer.active && rangeTimer.nodeId === dev.node_id)">
+                        <div class="flex items-center gap-2">
+                          <select class="select select-bordered select-xs w-24" x-model.number="rangeDuration">
+                            <option value="5">5 min</option>
+                            <option value="10">10 min</option>
+                            <option value="15">15 min</option>
+                            <option value="30">30 min</option>
+                            <option value="60">60 min</option>
+                          </select>
+                          <button class="btn btn-xs btn-success"
+                                  :disabled="devBleState(dev.node_id) !== 'ready'"
+                                  @click="startRangeTest(dev.node_id)">Start TX</button>
+                        </div>
+                      </template>
+                      <template x-if="rangeTimer.active && rangeTimer.nodeId === dev.node_id">
+                        <div class="flex items-center gap-2">
+                          <span class="font-mono text-sm text-warning" x-text="rangeFmtCountdown(rangeTimer.remaining)"></span>
+                          <button class="btn btn-xs btn-error" @click="stopRangeTest()">Stop TX</button>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                  <!-- Actions -->
+                  <div class="flex gap-2 flex-wrap">
+                    <button class="btn btn-xs btn-outline" :class="dev.node_id===activeNodeId&&'btn-success'" :disabled="dev.node_id===activeNodeId" @click="selectDevice(dev.node_id)">
+                      <span x-text="dev.node_id===activeNodeId ? 'Active' : 'Set Active'"></span>
+                    </button>
+                    <button class="btn btn-xs btn-outline btn-warning"
+                            :disabled="opLoading('wipe_' + dev.node_id)"
+                            @click="asyncOp('wipe_' + dev.node_id, () => wipeNodeDb(dev.node_id), { successMsg: 'Node DB wiped' })">
+                      <span x-show="opLoading('wipe_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
+                      Wipe NodeDB
+                    </button>
+                    <button class="btn btn-xs btn-outline btn-error"
+                            :disabled="opLoading('disconnect_' + dev.node_id)"
+                            @click="asyncOp('disconnect_' + dev.node_id, () => disconnectDevice(dev.node_id))">
+                      <span x-show="opLoading('disconnect_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
+                      Disconnect
+                    </button>
+                  </div>
+                  <!-- Auto-purge -->
+                  <div class="flex items-center gap-2 text-xs text-base-content/70 mt-1">
+                    <input type="checkbox" class="checkbox checkbox-xs"
+                           :checked="autoPurgeSetting(dev.node_id).enabled"
+                           @change="autoPurge[dev.node_id] = {...autoPurgeSetting(dev.node_id), enabled: $event.target.checked}; saveAutoPurge(dev.node_id)">
+                    <span>Auto-purge daily at</span>
+                    <input type="time" class="input input-xs w-24"
+                           :value="autoPurgeSetting(dev.node_id).purge_time"
+                           :disabled="!autoPurgeSetting(dev.node_id).enabled"
+                           @change="autoPurge[dev.node_id] = {...autoPurgeSetting(dev.node_id), purge_time: $event.target.value}; saveAutoPurge(dev.node_id)">
+                    <span class="opacity-50" x-text="'· Last: ' + autoPurgeLastStr(dev.node_id)"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Packet sources (only relevant with multiple radios) -->
+          <div class="card bg-base-100 shadow" x-show="availableDevices.length > 1">
+            <div class="card-body py-4 gap-3">
+              <h2 class="card-title text-base">Packet Sources</h2>
+              <p class="text-sm opacity-60">Which radios feed the node list and overview. None selected = all radios.</p>
+              <div class="flex flex-col gap-2">
+                <template x-for="dev in availableDevices" :key="dev.node_id">
+                  <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
+                           :checked="!packetSources.length || packetSources.includes(dev.node_id)"
+                           @change="togglePacketSource(dev.node_id, $event.target.checked)">
+                    <span class="badge badge-sm badge-outline font-mono" x-text="deviceLabel(dev.node_id)"></span>
+                    <span class="text-sm opacity-70" x-text="dev.long_name || dev.short_name || ''"></span>
+                  </label>
+                </template>
+              </div>
+              <div class="text-xs" :class="packetSources.length ? 'text-warning' : 'text-success'"
+                   x-text="packetSources.length ? 'Active: ' + packetSources.map(id => deviceLabel(id)).join(', ') : 'All radios active'"></div>
+            </div>
+          </div>
+
+          <!-- Connect new device -->
+          <div class="card bg-base-100 shadow">
+            <div class="card-body py-4">
+              <h2 class="card-title">Connect Device</h2>
+
+              <div class="flex flex-wrap gap-2 items-center mb-3">
+                <button class="btn btn-sm btn-outline gap-2" @click="bleScan()" :disabled="bleScanning">
+                  <span x-show="bleScanning" class="loading loading-spinner loading-xs"></span>
+                  <span x-text="bleScanning ? 'Scanning…' : 'Scan for devices'"></span>
+                </button>
+                <span class="text-xs opacity-40" x-show="bleDevices.length > 0" x-text="bleDevices.length + ' Meshtastic device' + (bleDevices.length!==1?'s':'') + ' found'"></span>
+              </div>
+
+              <div x-show="bleDevices.length > 0" class="overflow-x-auto mb-4">
+                <table class="table table-sm w-full max-w-3xl">
+                  <thead><tr><th>Name</th><th>Address</th><th>RSSI</th><th class="text-center">Paired</th><th class="text-center">Trusted</th><th>PIN</th><th></th></tr></thead>
+                  <tbody>
+                    <template x-for="d in bleDevices" :key="d.address">
+                      <tr>
+                        <td class="font-semibold" x-text="d.name"></td>
+                        <td class="font-mono text-xs" x-text="d.address"></td>
+                        <td class="inline-flex items-center gap-1"><span x-html="sigBars(d.rssi, null)"></span><span x-text="d.rssi + ' dBm'"></span></td>
+                        <td class="text-center"><input type="checkbox" class="checkbox checkbox-xs" :checked="d.paired" disabled></td>
+                        <td class="text-center"><input type="checkbox" class="checkbox checkbox-xs" :checked="d.trusted" disabled></td>
+                        <td><input class="input input-bordered input-xs font-mono w-24" x-model="blePin" placeholder="123456" type="text" inputmode="numeric" maxlength="6" :disabled="bleConnecting"></td>
+                        <td class="flex gap-1">
+                          <button class="btn btn-xs btn-primary gap-1" @click="bleConnect(d.address)" :disabled="bleConnecting || bleScanning">
+                            <span x-show="bleConnecting && bleAddress === d.address" class="loading loading-spinner loading-xs" x-cloak></span>
+                            Connect
+                          </button>
+                          <button x-show="d.paired || d.trusted" class="btn btn-xs btn-error btn-outline" @click="bleRemove(d.address)" :disabled="bleConnecting || bleScanning" title="Remove BlueZ bonding">✕</button>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+
+              <details class="text-sm" :open="bleDevices.length === 0">
+                <summary class="cursor-pointer opacity-50 hover:opacity-80 select-none text-xs mb-2">Enter address manually</summary>
+                <div class="flex flex-wrap gap-3 items-end mt-2">
+                  <div class="form-control">
+                    <label class="label py-0.5"><span class="label-text text-xs">BLE Address</span></label>
+                    <input class="input input-bordered input-sm font-mono w-52" x-model="bleAddress" placeholder="AA:BB:CC:DD:EE:FF" :disabled="bleConnecting">
+                  </div>
+                  <div class="form-control">
+                    <label class="label py-0.5"><span class="label-text text-xs">PIN</span></label>
+                    <input class="input input-bordered input-sm w-28" x-model="blePin" placeholder="123456" type="text" inputmode="numeric" maxlength="6" :disabled="bleConnecting">
+                  </div>
+                  <button class="btn btn-sm btn-primary gap-2 self-end" @click="bleConnect()" :disabled="!bleAddress || bleConnecting || bleScanning">
+                    <span x-show="bleConnecting" class="loading loading-spinner loading-xs"></span>
+                    <span x-text="bleConnecting ? 'Connecting…' : 'Connect'"></span>
+                  </button>
+                </div>
+              </details>
+
+              <div x-show="bleError" class="alert alert-error mt-3 py-2 text-sm flex items-center gap-2">
+                <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3C7.03 3 3 7.03 3 12s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9z"/></svg>
+                <span x-text="bleError"></span>
+              </div>
+            </div>
+          </div>
+        </div>

@@ -1,0 +1,310 @@
+        <!-- ===================== OVERVIEW ===================== -->
+        <div x-show="tab==='overview'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+          <div class="stats stats-vertical sm:stats-horizontal shadow lg:col-span-3 bg-base-100">
+            <div class="stat">
+              <div class="stat-title">Device</div>
+              <div class="stat-value text-lg" x-text="(nodeSelf.user && nodeSelf.user.long_name) || '–'"></div>
+              <div class="stat-desc" x-text="info.metadata.hw_model || ''"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Battery</div>
+              <div class="stat-value text-lg" x-text="(nodeSelf.device_metrics?.battery_level ?? '–') + '%'"></div>
+              <div class="stat-desc" x-text="nodeSelf.device_metrics ? (nodeSelf.device_metrics.voltage.toFixed(2) + ' V') : ''"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Uptime</div>
+              <div class="stat-value text-lg" x-text="fmtUptime(nodeSelf.device_metrics?.uptime_seconds)"></div>
+              <div class="stat-desc">since last boot</div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Channel Util</div>
+              <div class="stat-value text-lg" x-text="(nodeSelf.device_metrics?.channel_utilization?.toFixed(1) ?? '–') + '%'"></div>
+              <div class="stat-desc" x-text="'air tx ' + (nodeSelf.device_metrics?.air_util_tx?.toFixed(2) ?? '–') + '%'"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Heap Free</div>
+              <div class="stat-value text-lg" x-text="fmtBytes(nodeSelf.local_stats?.heap_free_bytes)"></div>
+              <div class="stat-desc" x-text="'of ' + fmtBytes(nodeSelf.local_stats?.heap_total_bytes)"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Config</div>
+              <div class="stat-value text-lg" :class="primaryDevBleState.config_complete ? 'text-success' : 'text-warning'" x-text="primaryDevBleState.config_complete ? 'complete' : 'syncing…'"></div>
+              <div class="stat-desc" x-text="(primaryDevBleState.node_count ?? nodeCount ?? 0) + ' nodes in db'"></div>
+            </div>
+          </div>
+
+
+
+          <!-- Row 1: Mast Tilt + Env History -->
+          <div class="lg:col-span-3 grid lg:grid-cols-2 gap-4">
+
+          <!-- Mast Tilt Radar (half width) -->
+          <div class="rounded-lg overflow-hidden" x-show="nodeSelf.tilt"
+               style="box-shadow:0 0 0 1px rgba(0,255,80,0.12),0 6px 32px rgba(0,0,0,0.7)">
+            <!-- header -->
+            <div class="flex items-center gap-2 px-3 py-2 flex-wrap"
+                 style="background:#0a1a0a;border-bottom:1px solid rgba(0,255,80,0.12)">
+              <span style="font-family:'Oxanium',monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.2em;color:rgba(0,255,80,0.75)">MAST TILT</span>
+              <!-- cal state indicator -->
+              <span x-show="tiltNorthAngle != null" style="font-family:monospace;font-size:0.55rem;color:rgba(0,255,80,0.65);letter-spacing:0.1em">● N CAL</span>
+              <span x-show="tiltZero && tiltNorthAngle == null" style="font-family:monospace;font-size:0.55rem;color:rgba(255,200,40,0.65);letter-spacing:0.1em">● ZEROED</span>
+              <span class="ml-auto" style="font-family:monospace;font-size:0.6rem;color:rgba(0,255,80,0.28)" x-text="tiltHistory.length + ' pts'"></span>
+              <!-- time window -->
+              <div class="flex gap-1">
+                <template x-for="w in [1,4,24]">
+                  <button @click="tiltWindow=w; persistSet('tiltWindow',w)"
+                          :style="tiltWindow===w ? 'color:rgba(0,255,80,0.95);border-color:rgba(0,255,80,0.45);background:rgba(0,255,80,0.08)' : 'color:rgba(0,255,80,0.32);border-color:rgba(0,255,80,0.14);background:transparent'"
+                          style="font-family:'Oxanium',monospace;font-size:0.58rem;letter-spacing:0.12em;border:1px solid;padding:1px 7px;cursor:pointer;transition:all 0.15s"
+                          x-text="w+'H'"></button>
+                </template>
+              </div>
+              <!-- step 1: SET ZERO (mast plumb vertical) -->
+              <button @click="tiltZero ? tiltClearCal() : tiltSetZero()"
+                      :style="tiltZero ? 'color:rgba(255,80,80,0.75);border-color:rgba(255,80,80,0.35)' : 'color:rgba(0,255,80,0.45);border-color:rgba(0,255,80,0.22)'"
+                      style="font-family:'Oxanium',monospace;font-size:0.58rem;letter-spacing:0.1em;border:1px solid;padding:1px 8px;cursor:pointer;background:transparent;transition:all 0.15s"
+                      :title="tiltZero ? 'Clear all calibration' : 'Step 1 — mast plumb vertical, press to set zero'"
+                      x-text="tiltZero ? 'CLR CAL' : 'SET ZERO'"></button>
+              <!-- step 2: SET NORTH (only after zero; hold antenna north then press) -->
+              <button x-show="tiltZero && tiltNorthAngle == null"
+                      @click="tiltSetNorth()"
+                      style="font-family:'Oxanium',monospace;font-size:0.58rem;letter-spacing:0.1em;border:1px solid;padding:1px 8px;cursor:pointer;background:transparent;transition:all 0.15s;color:rgba(255,200,40,0.75);border-color:rgba(255,200,40,0.35)"
+                      title="Step 2 — hold antenna pointing north, then press">SET NORTH</button>
+            </div>
+            <!-- body -->
+            <div class="flex gap-4 p-4 items-center"
+                 style="background:radial-gradient(ellipse at 35% 40%,#0c1a0c 0%,#050e05 55%,#020802 100%)">
+              <!-- SVG radar — grows to fill card width -->
+              <div class="flex-1 min-w-0" style="aspect-ratio:1/1;max-height:420px">
+                <svg viewBox="0 0 300 300" class="w-full h-full">
+                  <defs>
+                    <filter id="tilt-glow" x="-60%" y="-60%" width="220%" height="220%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+                      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                  </defs>
+                  <!-- rings: 4 explicit circles (x-for doesn't work on SVG elements) -->
+                  <circle cx="150" cy="150" :r="tiltLogPx(tiltRings[0])" fill="none" stroke="rgba(0,255,80,0.75)" stroke-width="1.5"/>
+                  <circle cx="150" cy="150" :r="tiltLogPx(tiltRings[1])" fill="none" stroke="rgba(0,255,80,0.50)" stroke-width="1"/>
+                  <circle cx="150" cy="150" :r="tiltLogPx(tiltRings[2])" fill="none" stroke="rgba(0,255,80,0.50)" stroke-width="1"/>
+                  <circle cx="150" cy="150" :r="tiltLogPx(tiltRings[3])" fill="none" stroke="rgba(0,255,80,0.70)" stroke-width="1.5"/>
+                  <!-- crosshairs -->
+                  <line x1="150" y1="18" x2="150" y2="282" stroke="rgba(0,255,80,0.07)" stroke-width="1"/>
+                  <line x1="18"  y1="150" x2="282" y2="150" stroke="rgba(0,255,80,0.07)" stroke-width="1"/>
+                  <!-- compass bearing ticks (30° intervals, shown when north-calibrated) -->
+                  <path x-show="tiltNorthAngle != null"
+                        :d="tiltTicksMinorPath()"
+                        stroke="#00ff50" stroke-opacity="0.22" stroke-width="1" fill="none"/>
+                  <path x-show="tiltNorthAngle != null"
+                        :d="tiltTicksMajorPath()"
+                        stroke="#00ff50" stroke-opacity="0.45" stroke-width="1.5" fill="none"/>
+                  <!-- ring labels: 4 explicit text elements -->
+                  <text :x="153 + tiltLogPx(tiltRings[0])" y="147" text-anchor="start" font-size="9" fill="#00ff50" fill-opacity="0.50" font-family="monospace" x-text="tiltRings[0]+'°'"></text>
+                  <text :x="153 + tiltLogPx(tiltRings[1])" y="147" text-anchor="start" font-size="9" fill="#00ff50" fill-opacity="0.45" font-family="monospace" x-text="tiltRings[1]+'°'"></text>
+                  <text :x="153 + tiltLogPx(tiltRings[2])" y="147" text-anchor="start" font-size="9" fill="#00ff50" fill-opacity="0.45" font-family="monospace" x-text="tiltRings[2]+'°'"></text>
+                  <text :x="153 + tiltLogPx(tiltRings[3])" y="147" text-anchor="start" font-size="9" fill="#00ff50" fill-opacity="0.50" font-family="monospace" x-text="tiltRings[3]+'°'"></text>
+                  <!-- axis labels -->
+                  <g x-show="tiltNorthAngle == null">
+                    <text x="150" y="14"  text-anchor="middle" font-size="9" fill="#00ff50" fill-opacity="0.60" font-family="monospace">P+</text>
+                    <text x="150" y="292" text-anchor="middle" font-size="9" fill="#00ff50" fill-opacity="0.50" font-family="monospace">P−</text>
+                    <text x="286" y="154" text-anchor="end"    font-size="9" fill="#00ff50" fill-opacity="0.50" font-family="monospace">R+</text>
+                    <text x="14"  y="154" text-anchor="start"  font-size="9" fill="#00ff50" fill-opacity="0.50" font-family="monospace">R−</text>
+                  </g>
+                  <g x-show="tiltNorthAngle != null">
+                    <text x="150" y="14"  text-anchor="middle" font-size="10" fill="#00ff50" fill-opacity="0.85" font-family="monospace" font-weight="bold">N</text>
+                    <text x="150" y="292" text-anchor="middle" font-size="10" fill="#00ff50" fill-opacity="0.60" font-family="monospace">S</text>
+                    <text x="286" y="154" text-anchor="end"    font-size="10" fill="#00ff50" fill-opacity="0.60" font-family="monospace">E</text>
+                    <text x="14"  y="154" text-anchor="start"  font-size="10" fill="#00ff50" fill-opacity="0.60" font-family="monospace">W</text>
+                  </g>
+                  <!-- history trace -->
+                  <polyline :points="tiltPolylinePoints()" fill="none" stroke="rgba(0,255,80,0.20)" stroke-width="1"/>
+                  <!-- recent fade dots -->
+                  <g x-html="tiltDotsSvg('rgba(0,255,80,1)', 0.55)"></g>
+                  <!-- peak ring (amber) -->
+                  <circle x-show="tiltPeak > 0.05" cx="150" cy="150"
+                          :r="tiltLogPx(tiltPeak)" fill="none"
+                          stroke="rgba(255,200,40,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+                  <!-- live dot with glow -->
+                  <circle :cx="tiltToSvg(nodeSelf.tilt?.pitch??0, nodeSelf.tilt?.roll??0).x"
+                          :cy="tiltToSvg(nodeSelf.tilt?.pitch??0, nodeSelf.tilt?.roll??0).y"
+                          r="7" fill="rgba(0,255,80,0.95)" filter="url(#tilt-glow)"
+                          style="transition:cx 0.5s,cy 0.5s"/>
+                  <!-- centre pip -->
+                  <circle cx="150" cy="150" r="2.5" fill="rgba(0,255,80,0.5)"/>
+                </svg>
+              </div>
+              <!-- readout -->
+              <div style="font-family:'Oxanium',monospace;font-size:0.75rem;color:rgba(0,255,80,0.85);display:flex;flex-direction:column;gap:6px;min-width:90px">
+                <div style="display:grid;grid-template-columns:auto auto;gap:2px 12px;align-items:baseline">
+                  <span style="color:rgba(0,255,80,0.40);font-size:0.62rem;letter-spacing:0.1em">ROLL</span>
+                  <span style="text-align:right" x-text="(tiltApplyZero(nodeSelf.tilt?.pitch??0,nodeSelf.tilt?.roll??0).roll).toFixed(2)+'°'"></span>
+                  <span style="color:rgba(0,255,80,0.40);font-size:0.62rem;letter-spacing:0.1em">PITCH</span>
+                  <span style="text-align:right" x-text="(tiltApplyZero(nodeSelf.tilt?.pitch??0,nodeSelf.tilt?.roll??0).pitch).toFixed(2)+'°'"></span>
+                  <span style="color:rgba(0,255,80,0.40);font-size:0.62rem;letter-spacing:0.1em">TOTAL</span>
+                  <span style="text-align:right" x-text="(()=>{ const z=tiltApplyZero(nodeSelf.tilt?.pitch??0,nodeSelf.tilt?.roll??0); return Math.sqrt(z.pitch**2+z.roll**2).toFixed(2)+'°'; })()"></span>
+                  <span style="color:rgba(255,200,40,0.50);font-size:0.62rem;letter-spacing:0.1em">PEAK</span>
+                  <span style="text-align:right;color:rgba(255,200,40,0.80)" x-text="tiltPeak.toFixed(2)+'°'"></span>
+                </div>
+                <div style="border-top:1px solid rgba(0,255,80,0.10);padding-top:6px;display:grid;grid-template-columns:auto auto;gap:2px 10px;font-size:0.62rem;color:rgba(0,255,80,0.35)">
+                  <span>x</span><span style="text-align:right" x-text="(nodeSelf.tilt?.x??0).toFixed(3)+' g'"></span>
+                  <span>y</span><span style="text-align:right" x-text="(nodeSelf.tilt?.y??0).toFixed(3)+' g'"></span>
+                  <span>z</span><span style="text-align:right" x-text="(nodeSelf.tilt?.z??0).toFixed(3)+' g'"></span>
+                </div>
+                <div style="border-top:1px solid rgba(0,255,80,0.10);padding-top:4px;font-size:0.58rem;color:rgba(0,255,80,0.25)"
+                     x-text="'rings: '+tiltRings.join(' / ')+'°'"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Env History chart (half width, next to tilt) -->
+          <div class="rounded-lg overflow-hidden flex flex-col" x-show="nodeSelf.environment_metrics"
+               style="box-shadow:0 0 0 1px rgba(0,255,80,0.12),0 6px 32px rgba(0,0,0,0.7)">
+            <!-- header -->
+            <div class="flex items-center gap-2 px-3 py-2 flex-wrap"
+                 style="background:#0a1a0a;border-bottom:1px solid rgba(0,255,80,0.12)">
+              <span style="font-family:'Oxanium',monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.2em;color:rgba(0,255,80,0.75)">ENCLOSURE ENVIRONMENT</span>
+              <span class="ml-auto" style="font-family:monospace;font-size:0.6rem;color:rgba(0,255,80,0.28)"
+                    x-text="(envHistory[activeNodeId]?.length ?? 0) + ' pts'"></span>
+              <template x-for="w in [6, 24, 72]">
+                <button @click="envWindow=w; persistSet('envWindow',w); loadEnvHistory(activeNodeId)"
+                        :style="envWindow===w ? 'color:rgba(0,255,80,0.95);border-color:rgba(0,255,80,0.45);background:rgba(0,255,80,0.08)' : 'color:rgba(0,255,80,0.32);border-color:rgba(0,255,80,0.14);background:transparent'"
+                        style="font-family:'Oxanium',monospace;font-size:0.58rem;letter-spacing:0.12em;border:1px solid;padding:1px 7px;cursor:pointer;transition:all 0.15s"
+                        x-text="w+'H'"></button>
+              </template>
+            </div>
+            <!-- body -->
+            <div class="flex-1 flex flex-col min-h-0 p-4"
+                 style="background:radial-gradient(ellipse at 35% 40%,#0c1a0c 0%,#050e05 55%,#020802 100%)">
+              <!-- live readings -->
+              <div class="flex gap-6 mb-4 shrink-0" style="font-family:'Oxanium',monospace;font-size:0.72rem">
+                <div>
+                  <div style="color:rgba(255,70,70,0.50);font-size:0.55rem;letter-spacing:0.1em">TEMP</div>
+                  <div style="color:rgba(255,70,70,0.92)" x-text="nodeSelf.environment_metrics?.temperature?.toFixed(1) + ' °C'"></div>
+                </div>
+                <div>
+                  <div style="color:rgba(255,165,40,0.50);font-size:0.55rem;letter-spacing:0.1em">HUMIDITY</div>
+                  <div style="color:rgba(255,165,40,0.85)" x-text="nodeSelf.environment_metrics?.relative_humidity?.toFixed(1) + ' %'"></div>
+                </div>
+                <div>
+                  <div style="color:rgba(0,210,100,0.50);font-size:0.55rem;letter-spacing:0.1em">DEW PT</div>
+                  <div :style="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity) >= nodeSelf.environment_metrics?.temperature - 3 ? 'color:rgba(255,100,60,0.95)' : 'color:rgba(0,210,100,0.85)'"
+                       x-text="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity)?.toFixed(1) + ' °C'"></div>
+                </div>
+                <div x-show="nodeSelf.environment_metrics?.barometric_pressure != null">
+                  <div style="color:rgba(0,255,80,0.35);font-size:0.55rem;letter-spacing:0.1em">PRESSURE</div>
+                  <div style="color:rgba(0,255,80,0.70)" x-text="nodeSelf.environment_metrics?.barometric_pressure?.toFixed(1) + ' hPa'"></div>
+                </div>
+                <div x-show="dewPoint(nodeSelf.environment_metrics?.temperature, nodeSelf.environment_metrics?.relative_humidity) >= nodeSelf.environment_metrics?.temperature - 3"
+                     style="color:rgba(255,100,60,0.90);font-size:0.6rem;letter-spacing:0.05em;align-self:flex-end">⚠ condensation risk</div>
+              </div>
+              <!-- history chart -->
+              <div class="flex-1 min-h-0 flex flex-col" x-show="(envHistory[activeNodeId]?.length ?? 0) > 1">
+                <svg viewBox="0 0 420 250" class="w-full flex-1" preserveAspectRatio="none" style="display:block">
+                  <!-- border -->
+                  <rect x="36" y="18" width="348" height="200" fill="none" stroke="rgba(0,255,80,0.10)" stroke-width="0.5"/>
+                  <!-- horizontal grid lines -->
+                  <line x1="36" y1="68"  x2="384" y2="68"  stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <line x1="36" y1="118" x2="384" y2="118" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <line x1="36" y1="168" x2="384" y2="168" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <!-- vertical grid lines -->
+                  <line x1="123" y1="18" x2="123" y2="218" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <line x1="210" y1="18" x2="210" y2="218" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <line x1="297" y1="18" x2="297" y2="218" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>
+                  <!-- axis labels -->
+                  <g x-html="envChartYLabels(activeNodeId)"></g>
+                  <g x-html="envChartRhLabels(activeNodeId)"></g>
+                  <g x-html="envChartXLabels(activeNodeId)"></g>
+                  <!-- data lines -->
+                  <polyline :points="envHumPoints(activeNodeId)" fill="none" stroke="rgba(255,165,40,0.85)" stroke-width="1.2"/>
+                  <polyline :points="envDpPoints(activeNodeId)"  fill="none" stroke="rgba(0,210,100,0.85)"   stroke-width="1.2" stroke-dasharray="4,2"/>
+                  <polyline :points="envTempPoints(activeNodeId)" fill="none" stroke="rgba(255,70,70,0.85)"  stroke-width="1.2"/>
+                  <!-- legend -->
+                  <line x1="38"  y1="10" x2="52"  y2="10" stroke="rgba(255,70,70,0.85)"   stroke-width="1.2"/>
+                  <text x="54"  y="13"  font-size="8" fill="rgba(255,70,70,0.85)"   font-family="monospace">temp</text>
+                  <line x1="96"  y1="10" x2="110" y2="10" stroke="rgba(0,210,100,0.85)"   stroke-width="1.2" stroke-dasharray="4,2"/>
+                  <text x="112" y="13"  font-size="8" fill="rgba(0,210,100,0.85)"   font-family="monospace">dew pt</text>
+                  <line x1="162" y1="10" x2="176" y2="10" stroke="rgba(255,165,40,0.85)"  stroke-width="1.2"/>
+                  <text x="178" y="13"  font-size="8" fill="rgba(255,165,40,0.85)"  font-family="monospace">humidity</text>
+                </svg>
+              </div>
+              <div class="flex-1 flex items-center justify-center" x-show="(envHistory[activeNodeId]?.length ?? 0) <= 1"
+                   style="color:rgba(0,255,80,0.25);font-family:monospace;font-size:0.65rem">
+                waiting for history…
+              </div>
+            </div>
+          </div>
+
+          </div><!-- end row 1: tilt + env -->
+
+          <!-- Row 2: Live Feed + MQTT Proxy -->
+          <div class="lg:col-span-3 grid lg:grid-cols-2 gap-4">
+
+          <!-- Live Event Feed (half width) -->
+          <div class="card bg-base-100 shadow">
+            <div class="card-body">
+              <div class="flex items-center justify-between mb-1">
+                <h2 class="card-title">Live Event Feed</h2>
+                <div class="dropdown dropdown-end">
+                  <label tabindex="0" class="btn btn-xs btn-ghost gap-1 opacity-70 hover:opacity-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/></svg>
+                    Filter
+                    <span x-show="feedVisible.length < feedFilterOptions.length" class="badge badge-warning badge-xs" x-text="feedFilterOptions.length - feedVisible.length"></span>
+                  </label>
+                  <ul tabindex="0" class="dropdown-content z-10 p-2 shadow-lg bg-base-100 border border-base-300 rounded-box w-48 flex flex-col gap-0.5 mt-1">
+                    <template x-for="opt in feedFilterOptions" :key="opt.id">
+                      <li>
+                        <label class="flex items-center gap-2 cursor-pointer hover:bg-base-200 rounded px-2 py-1">
+                          <input type="checkbox" class="checkbox checkbox-xs"
+                                 name="feedVisible" :value="opt.id"
+                                 x-model="feedVisible">
+                          <span class="text-xs" x-text="opt.label"></span>
+                        </label>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+              </div>
+              <div class="overflow-y-auto max-h-[480px] font-mono text-xs flex flex-col gap-1" x-ref="feed">
+                <template x-for="(ev, i) in filteredFeedEvents()" :key="i">
+                  <div class="flex gap-2 items-start border-b border-base-200 pb-1">
+                    <span class="text-base-content/40 shrink-0" x-text="ev.time"></span>
+                    <span class="badge badge-sm" :class="badgeForType(ev.type)" x-text="ev.type"></span>
+                    <span x-show="ev.device" x-html="radioBadge(ev.device, 'shrink-0')"></span>
+                    <span class="text-base-content/80" x-text="ev.summary"></span>
+                  </div>
+                </template>
+                <div x-show="events.length===0" class="text-base-content/40 italic">Waiting for events…</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MQTT Proxy (half width) -->
+          <div class="card bg-base-100 shadow">
+            <div class="card-body">
+              <h2 class="card-title">MQTT Proxy</h2>
+              <div class="text-sm flex flex-col gap-2">
+                <div class="flex justify-between"><span class="text-base-content/60">Status</span>
+                  <span class="badge badge-sm" :class="mqttProxy ? 'badge-success' : 'badge-ghost'" x-text="mqttProxy ? 'connected' : 'inactive'"></span>
+                </div>
+                <div class="flex justify-between"><span class="text-base-content/60">Broker</span><span x-text="mqttCfg.address || '–'"></span></div>
+                <div class="flex justify-between"><span class="text-base-content/60">Root topic</span><span class="font-mono" x-text="mqttCfg.root || '–'"></span></div>
+                <div class="flex justify-between"><span class="text-base-content/60">Encryption</span><span x-text="mqttCfg.encryption_enabled ? 'on' : 'off'"></span></div>
+                <div class="flex justify-between"><span class="text-base-content/60">JSON output</span><span x-text="mqttCfg.json_enabled ? 'on' : 'off'"></span></div>
+              </div>
+              <div class="divider my-1"></div>
+              <p class="text-xs opacity-60 mb-2">If the proxy failed to connect after changing the password on the radio, click Reconnect to re-read credentials and retry.</p>
+              <button class="btn btn-sm btn-outline" @click="restartMqttProxy()">Reconnect proxy</button>
+              <div class="divider my-1"></div>
+              <h3 class="font-semibold text-sm mb-1">Node identity</h3>
+              <div class="text-sm flex flex-col gap-2">
+                <div class="flex justify-between"><span class="text-base-content/60">Node ID</span><span class="font-mono" x-text="(nodeSelf.user && nodeSelf.user.id) || '–'"></span></div>
+                <div class="flex justify-between"><span class="text-base-content/60">Num</span><span class="font-mono" x-text="info.my_info.my_node_num ?? '–'"></span></div>
+                <div class="flex justify-between"><span class="text-base-content/60">Region</span><span x-text="loraCfg.region || '–'"></span></div>
+                <div class="flex justify-between"><span class="text-base-content/60">Modem preset</span><span x-text="loraCfg.modem_preset || '–'"></span></div>
+              </div>
+            </div>
+          </div>
+
+          </div><!-- end row 2: live feed + mqtt -->
+
+        </div>

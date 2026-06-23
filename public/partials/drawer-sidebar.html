@@ -1,0 +1,98 @@
+  <!-- ===================== DRAWER SIDEBAR ===================== -->
+  <div class="drawer-side z-50">
+    <label for="nav-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+    <aside class="w-56 bg-base-100 min-h-screen flex flex-col">
+
+      <!-- Logo -->
+      <div class="px-4 py-4 border-b border-base-200">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">📡</span>
+          <div class="flex flex-col leading-tight flex-1">
+            <span class="text-sm font-bold tracking-widest uppercase" style="font-family:'Oxanium',sans-serif">mesh radar</span>
+            <span class="text-xs text-base-content/50" x-text="info.metadata.firmware_version ? ('fw ' + info.metadata.firmware_version) : 'dashboard'"></span>
+          </div>
+          <!-- Desktop collapse button -->
+          <button class="btn btn-ghost btn-xs hidden lg:flex" @click="sidebarPinned = false; persistSet('sidebarPinned', false)" title="Collapse sidebar">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7M18 19l-7-7 7-7"/></svg>
+          </button>
+        </div>
+        <!-- Active device -->
+        <div class="mt-2 flex items-center gap-1" x-show="activeNodeId">
+          <span class="inline-block w-1.5 h-1.5 rounded-full bg-success animate-pulse" x-show="primaryDevBleState.ble_state === 'ready'"></span>
+          <span class="font-mono text-xs text-success" x-text="activeNodeId"></span>
+        </div>
+        <!-- Device selector (shown when multiple devices) -->
+        <div class="mt-2" x-show="availableDevices.length > 1">
+          <select class="select select-xs select-bordered w-full font-mono" x-model="activeNodeId" @change="selectDevice(activeNodeId)">
+            <template x-for="d in availableDevices" :key="d.node_id">
+              <option :value="d.node_id" x-text="deviceLabel(d.node_id)"></option>
+            </template>
+          </select>
+        </div>
+      </div>
+
+      <!-- Nav menu -->
+      <ul class="menu menu-sm px-2 py-3 gap-0.5 flex-1">
+        <li><a :class="tab==='overview' && 'active'" @click="setNav('overview')">Overview</a></li>
+        <li><a :class="tab==='radar' && 'active'" @click="setNav('radar')">Radar</a></li>
+        <li><a :class="tab==='nodes' && 'active'" @click="setNav('nodes')">Nodes</a></li>
+        <li>
+          <details :open="tab==='cfg'">
+            <summary @click.prevent="setNav('cfg')">Config</summary>
+            <ul>
+              <li><a :class="tab==='cfg'&&cfgTab==='radio'&&'active'"    @click="setNav('cfg','radio')">Radio</a></li>
+              <li><a :class="tab==='cfg'&&cfgTab==='bridge'&&'active'"   @click="setNav('cfg','bridge')">Bridge</a></li>
+              <li><a :class="tab==='cfg'&&cfgTab==='rotator'&&'active'"  @click="setNav('cfg','rotator')">Rotator</a></li>
+              <li><a :class="tab==='cfg'&&cfgTab==='alerts'&&'active'"   @click="setNav('cfg','alerts')">Alerts</a></li>
+            </ul>
+          </details>
+        </li>
+        <li><a :class="tab==='range' && 'active'" @click="setNav('range')">Range Test</a></li>
+        <li>
+          <a :class="tab==='messages' && 'active'" @click="setNav('messages')" class="flex justify-between items-center">
+            Messages
+            <span x-show="unreadMessages > 0" class="badge badge-error badge-sm" x-text="unreadMessages"></span>
+          </a>
+        </li>
+        <li class="mt-2 border-t border-base-200 pt-2">
+          <a :class="tab==='devices' && 'active'" @click="setNav('devices')">
+            Devices
+            <span class="badge badge-sm ml-auto" :class="availableDevices.length ? 'badge-success' : 'badge-ghost'" x-text="availableDevices.length"></span>
+          </a>
+        </li>
+      </ul>
+
+      <!-- Status footer inside sidebar -->
+      <div class="p-3 border-t border-base-200 text-xs flex flex-col gap-1.5">
+        <template x-for="dev in availableDevices" :key="dev.node_id">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-mono opacity-50 shrink-0" x-text="deviceLabel(dev.node_id)"></span>
+            <span class="inline-flex items-center gap-1 min-w-0">
+              <span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span>
+              <span :class="devBleState(dev.node_id)==='ready'?'text-success opacity-70':devBleState(dev.node_id)==='error'?'text-error':'text-warning'"
+                    x-text="devBleState(dev.node_id) || '–'"></span>
+            </span>
+          </div>
+        </template>
+        <div x-show="!availableDevices.length" class="opacity-50 italic">No radios</div>
+        <div class="flex justify-between border-t border-base-200 pt-1 mt-0.5 opacity-50">
+          <span>WS</span>
+          <span :class="wsConnected ? 'text-success' : 'text-error'" x-text="wsConnected ? 'live' : 'offline'"></span>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Toast notifications — must be inside x-data scope -->
+    <div class="toast toast-top toast-end z-[9999] pointer-events-none" style="top:4rem">
+      <template x-for="t in toasts" :key="t.id">
+        <div class="alert shadow-lg text-sm py-2 px-3 pointer-events-auto flex items-start gap-2 max-w-xs"
+             :class="t.type === 'error' ? 'alert-error' : 'alert-success'"
+             x-transition>
+          <span class="flex-1" x-text="t.message"></span>
+          <button @click="dismissToast(t.id)" class="btn btn-xs btn-ghost shrink-0 opacity-70 hover:opacity-100 -mr-1">✕</button>
+        </div>
+      </template>
+    </div>
+
+  </div>

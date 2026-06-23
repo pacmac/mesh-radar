@@ -1,0 +1,388 @@
+        <!-- ===================== RADAR ===================== -->
+        <div x-show="tab==='radar'" data-theme="business"
+             class="flex flex-col flex-1 min-h-0 overflow-hidden"
+             style="box-shadow:0 0 0 1px rgba(0,255,80,0.10),0 8px 40px rgba(0,0,0,0.6)">
+          <div class="flex flex-wrap gap-3 items-center shrink-0 px-4 py-2"
+               style="background:#0a1a0a;border-bottom:1px solid rgba(0,255,80,0.12)">
+
+            <!-- Status badges -->
+            <span class="badge badge-sm badge-ghost font-mono" x-text="radarNodes.length + ' plotted'"></span>
+            <span class="font-mono text-xs" style="color:rgba(0,255,80,0.45)" x-text="homePos ? homePos.lat.toFixed(4)+', '+homePos.lon.toFixed(4) : 'no fix'"></span>
+            <span class="font-mono text-xs animate-pulse" style="color:rgba(0,255,80,0.5)" x-show="geocoding">geocoding…</span>
+
+            <!-- Radar prefs gear dropdown -->
+            <details class="dropdown">
+              <summary class="btn btn-xs btn-ghost gap-1 font-mono opacity-60 hover:opacity-100">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+                Radar
+              </summary>
+              <ul class="dropdown-content z-20 p-3 shadow-lg rounded-box text-xs flex flex-col gap-3"
+                  style="background:#0d1f0d;border:1px solid rgba(0,255,80,0.18);min-width:11rem;margin-top:0.25rem">
+                <li class="flex items-center justify-between gap-3">
+                  <span class="font-mono opacity-60 uppercase tracking-wider">Range</span>
+                  <select class="select select-bordered select-xs font-mono" x-model="radarRange" @change="saveRadarPref('max_range_km', Number(radarRange)); drawRadar()">
+                    <option value="25">25 km</option>
+                    <option value="50">50 km</option>
+                    <option value="100">100 km</option>
+                    <option value="250">250 km</option>
+                    <option value="0">Auto</option>
+                  </select>
+                </li>
+                <li class="flex items-center justify-between gap-3">
+                  <span class="font-mono opacity-60 uppercase tracking-wider">Scale</span>
+                  <button class="btn btn-xs font-mono tracking-widest"
+                          :class="radarLogScale ? 'btn-outline btn-success' : 'btn-ghost opacity-40'"
+                          @click="radarLogScale = !radarLogScale; saveRadarPref('log_scale', radarLogScale); drawRadar()"
+                          x-text="radarLogScale ? 'PWR' : 'LIN'"></button>
+                </li>
+                <li class="flex items-center justify-between gap-3">
+                  <span class="font-mono opacity-60 uppercase tracking-wider">XHair</span>
+                  <input type="checkbox" class="toggle toggle-xs toggle-success" :checked="radarCrosshair" @change="toggleRadarCrosshair()">
+                </li>
+              </ul>
+            </details>
+
+            <!-- Shared Filters dropdown (same state as node table) -->
+            <details class="dropdown">
+              <summary class="btn btn-xs btn-ghost gap-1.5 font-mono opacity-70 hover:opacity-100">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4-2A1 1 0 018 15v-4.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd"/></svg>
+                Filters
+                <span class="badge badge-sm badge-primary" x-show="activeFilterCount() > 0" x-text="activeFilterCount()"></span>
+              </summary>
+              <div class="dropdown-content z-20 p-3 shadow-lg rounded-box flex flex-col gap-2.5"
+                   style="background:#0d1f0d;border:1px solid rgba(0,255,80,0.18);min-width:14rem;margin-top:0.25rem">
+                <!-- Source -->
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-mono opacity-60 uppercase tracking-wide">Source</span>
+                  <div class="join">
+                    <button class="join-item btn btn-xs" :class="nodeSource==='both' ? 'btn-primary' : 'btn-ghost opacity-50'" @click="setNodeSource('both')">Both</button>
+                    <button class="join-item btn btn-xs" :class="nodeSource==='yagi' ? 'btn-warning' : 'btn-ghost opacity-50'" @click="setNodeSource('yagi')">YAGI</button>
+                    <button class="join-item btn btn-xs" :class="nodeSource==='omni' ? 'btn-info' : 'btn-ghost opacity-50'" @click="setNodeSource('omni')">OMNI</button>
+                  </div>
+                </div>
+                <div class="divider my-0"></div>
+                <!-- Max hops -->
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-mono opacity-60">Max hops</span>
+                  <select class="select select-xs select-bordered" :value="nodeFilters.maxHops" @change="saveNodeFilter('maxHops', parseInt($event.target.value))">
+                    <option value="99">Any</option>
+                    <option value="0">Direct (0)</option>
+                    <option value="1">≤ 1</option>
+                    <option value="2">≤ 2</option>
+                  </select>
+                </div>
+                <!-- Last heard -->
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-mono opacity-60">Last heard</span>
+                  <select class="select select-xs select-bordered" :value="nodeFilters.maxAge" @change="saveNodeFilter('maxAge', parseInt($event.target.value))">
+                    <option value="0">Any</option>
+                    <option value="1800">30 m</option>
+                    <option value="3600">1 h</option>
+                    <option value="21600">6 h</option>
+                    <option value="86400">24 h</option>
+                  </select>
+                </div>
+                <!-- Checkboxes -->
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.namedOnly" @change="saveNodeFilter('namedOnly', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Named only</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasPos" @change="saveNodeFilter('hasPos', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Has position</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs checkbox-error" :checked="nodeFilters.hideMqtt" @change="saveNodeFilter('hideMqtt', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Hide MQTT</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasSignal" @change="saveNodeFilter('hasSignal', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">RF signal</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasTelem" @change="saveNodeFilter('hasTelem', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Telemetry</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.msgOnly" @change="saveNodeFilter('msgOnly', $event.target.checked)">
+                  <span class="text-xs font-mono opacity-80">Messagable only</span>
+                </label>
+                <!-- Role sub-dropdown -->
+                <details class="dropdown dropdown-right">
+                  <summary class="btn btn-xs btn-ghost w-full justify-between font-mono font-normal">
+                    <span class="text-xs" x-text="nodeFilters.nodeRoles?.length ? 'Role: ' + nodeFilters.nodeRoles.length + ' selected' : 'Role: All'"></span>
+                    <svg class="w-3 h-3 opacity-50" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+                  </summary>
+                  <ul class="dropdown-content z-30 menu p-2 shadow bg-base-200 rounded-box w-44 text-xs gap-0.5" style="margin-left:0.25rem">
+                    <template x-for="role in ['CLIENT','CLIENT_BASE','CLIENT_MUTE','ROUTER','ROUTER_CLIENT','ROUTER_LATE','TRACKER','SENSOR','REPEATER']" :key="role">
+                      <li>
+                        <label class="flex items-center gap-2 cursor-pointer py-1">
+                          <input type="checkbox" class="checkbox checkbox-xs"
+                                 :checked="!nodeFilters.nodeRoles?.length || nodeFilters.nodeRoles.includes(role)"
+                                 @change="toggleNodeRole(role, $event.target.checked)">
+                          <span x-text="role.replace(/_/g,' ')"></span>
+                        </label>
+                      </li>
+                    </template>
+                  </ul>
+                </details>
+                <div class="divider my-0"></div>
+                <button class="btn btn-xs btn-ghost opacity-50 w-full font-mono" @click="resetNodeFilters()">Reset all</button>
+              </div>
+            </details>
+
+            <!-- Rotator strip -->
+            <div class="flex items-center gap-3 ml-auto pl-3"
+                 style="border-left:1px solid rgba(0,255,80,0.15)">
+              <!-- Rotator connection dot -->
+              <span class="inline-block w-1.5 h-1.5 rounded-full"
+                    :class="rotatorConnected ? 'bg-success animate-pulse' : 'bg-error opacity-60'"
+                    :title="rotatorConnected ? 'Rotator connected' : 'Rotator offline'"></span>
+
+              <!-- Mode buttons: PASV / ACTV / SCAN -->
+              <div class="flex gap-1">
+                <button class="btn btn-xs font-mono tracking-widest"
+                        :class="rotatorMode === 0 && !scanMode ? 'btn-outline btn-info' : 'btn-ghost opacity-50'"
+                        :disabled="scanMode"
+                        @click="setRotatorMode(0)" title="Passive — manual Point only">PASV</button>
+                <button class="btn btn-xs font-mono tracking-widest"
+                        :class="rotatorMode === 1 && !scanMode ? 'btn-error' : 'btn-ghost opacity-50'"
+                        :disabled="scanMode"
+                        @click="setRotatorMode(1)" title="Active — follow last heard node">ACTV</button>
+                <button class="btn btn-xs font-mono tracking-widest"
+                        :class="scanMode ? 'btn-warning btn-outline' : 'btn-ghost opacity-50'"
+                        :disabled="!rotatorConnected || !rotatorDeviceId()"
+                        @click="scanMode ? abortScan() : startScan()"
+                        x-text="scanMode ? 'ABORT' : 'SCAN'"
+                        title="360° polar SNR sweep — YAGI radio only"></button>
+              </div>
+
+              <!-- Scan/ACTV config badge -->
+              <span class="text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode && rotatorMode !== 1"
+                    style="color:rgba(0,255,80,0.30)"
+                    x-text="scanStep + '°/' + scanDwell + 's'"></span>
+              <span class="text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode && rotatorMode === 1"
+                    style="color:rgba(0,255,80,0.30)"
+                    x-text="actvDwell + 's/node'"></span>
+
+              <!-- Scan progress -->
+              <div class="flex items-center gap-2" x-show="scanMode">
+                <span class="text-xs font-mono animate-pulse" style="color:rgba(255,200,40,0.85)"
+                      x-text="'SCAN ' + (scanProgress ?? 0) + '°'"></span>
+                <div class="rounded-full overflow-hidden" style="width:56px;height:4px;background:rgba(255,200,40,0.15)">
+                  <div class="h-full rounded-full" style="background:rgba(255,200,40,0.70);transition:width 0.4s"
+                       :style="'width:' + ((scanProgress ?? 0) / 360 * 100).toFixed(0) + '%'"></div>
+                </div>
+              </div>
+
+              <!-- Current az -->
+              <span class="font-mono text-sm font-bold tabular-nums"
+                    style="color:rgba(80,200,255,0.90);min-width:3.5rem;text-align:right"
+                    x-text="rotatorStatus.az != null ? Number(rotatorStatus.az).toFixed(1) + '°' : '–°'"></span>
+              <span x-show="rotatorStatus.busy && !scanMode"
+                    class="text-xs font-mono animate-pulse"
+                    style="color:rgba(255,200,40,0.85)">moving</span>
+
+              <!-- Manual point input (PASV only) -->
+              <div class="flex items-center gap-1.5" x-show="rotatorConnected && rotatorMode === 0 && !scanMode">
+                <input type="number" min="0" max="360" step="1" placeholder="0–360"
+                       class="input input-xs w-20 font-mono text-center"
+                       style="background:rgba(80,200,255,0.07);border:1px solid rgba(80,200,255,0.25);color:rgba(80,200,255,0.9);border-radius:0.25rem"
+                       x-model.number="rotatorManualAz">
+                <button class="btn btn-xs font-mono"
+                        style="background:rgba(80,200,255,0.12);border:1px solid rgba(80,200,255,0.30);color:rgba(80,200,255,0.9);min-width:3.5rem"
+                        :disabled="rotatorManualAz == null"
+                        @click="moveRotator(rotatorManualAz)">Point</button>
+              </div>
+            </div>
+          </div>
+          <div class="flex-1 min-h-0 flex items-center justify-center relative" id="radar-wrap"
+               style="background:radial-gradient(ellipse at 40% 35%,#0c1a0c 0%,#050e05 55%,#020802 100%)">
+            <div x-show="!homePos" class="font-mono text-xs text-center" style="color:rgba(0,255,80,0.35)">
+              NO HOME POSITION<br><span class="opacity-60">set a fixed lat/lon via Device Config</span>
+            </div>
+            <svg x-show="homePos" id="radar-svg" viewBox="0 0 600 600" class="w-full max-h-full"
+                 style="display:block;margin:auto;overflow:visible">
+              <defs>
+                <radialGradient id="radarBg" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="rgba(0,30,8,1)"/>
+                  <stop offset="60%" stop-color="rgba(0,15,4,1)"/>
+                  <stop offset="100%" stop-color="rgba(0,5,2,1)"/>
+                </radialGradient>
+                <filter id="rimGlow" x="-10%" y="-10%" width="120%" height="120%">
+                  <feGaussianBlur stdDeviation="3" result="blur"/>
+                  <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+                <filter id="blipGlow" x="-80%" y="-80%" width="260%" height="260%">
+                  <feGaussianBlur stdDeviation="2.5" result="blur"/>
+                  <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+                <clipPath id="radarClip"><circle cx="300" cy="300" r="256"/></clipPath>
+              </defs>
+              <g id="radar-bg-g"></g>
+              <g id="radar-beam-g" style="transform-box:view-box;transform-origin:300px 300px;transition:transform 1.2s ease"></g>
+              <g id="radar-scan-arm-g" clip-path="url(#radarClip)"></g>
+              <g id="radar-traceroute-g" clip-path="url(#radarClip)"></g>
+              <g id="radar-nodes-g"></g>
+            </svg>
+
+            <!-- Node list overlay — top-left -->
+            <div x-show="radarNodeList().length > 0" x-transition
+                 style="position:absolute;top:0.75rem;left:0.75rem;z-index:10;
+                        background:rgba(2,7,2,0.94);
+                        border:1px solid rgba(0,255,80,0.16);
+                        border-radius:0.5rem;backdrop-filter:blur(8px);
+                        padding:0.45rem 0.55rem;min-width:15rem;max-width:21rem;
+                        max-height:55%;overflow-y:auto;pointer-events:auto;
+                        box-shadow:0 0 0 1px rgba(0,255,80,0.04),0 8px 32px rgba(0,0,0,0.85)">
+              <!-- header row -->
+              <div style="display:flex;align-items:center;gap:0.4rem;
+                          padding-bottom:0.3rem;margin-bottom:0.15rem;
+                          border-bottom:1px solid rgba(0,255,80,0.10)">
+                <span style="font-family:'Oxanium',monospace;font-size:10px;font-weight:700;
+                              letter-spacing:0.14em;color:rgba(0,255,80,0.38)"
+                      x-text="scanMode ? 'SCAN CONTACTS' : 'RADAR NODES'"></span>
+                <span style="font-family:monospace;font-size:10px;color:rgba(0,255,80,0.22);margin-left:auto"
+                      x-text="radarNodeList().length"></span>
+              </div>
+              <template x-for="n in radarNodeList()" :key="n.num">
+                <div @click="openNodeInfo(n)"
+                     @mouseenter="$el.style.background = n.num===yagiPointTarget ? 'rgba(255,160,0,0.10)' : 'rgba(0,255,80,0.05)'"
+                     @mouseleave="$el.style.background = n.num===yagiPointTarget ? 'rgba(255,160,0,0.05)' : 'transparent'"
+                     :style="{ display:'flex', alignItems:'center', gap:'0.4rem',
+                               padding:'0.18rem 0.3rem', borderRadius:'0.25rem', margin:'0 -0.3rem',
+                               cursor:'pointer', userSelect:'none',
+                               background: n.num===yagiPointTarget ? 'rgba(255,160,0,0.05)' : 'transparent',
+                               borderLeft: n.num===yagiPointTarget ? '2px solid rgba(255,160,0,0.75)' : '2px solid transparent',
+                               paddingLeft: n.num===yagiPointTarget ? '0.5rem' : '0.3rem' }">
+                  <span style="font-family:'Oxanium',monospace;font-size:12px;font-weight:700;min-width:3rem;flex-shrink:0"
+                        :style="{ color: n.num===yagiPointTarget ? 'rgba(255,160,0,0.95)' : 'rgba(0,255,80,0.88)' }"
+                        x-text="nodeShortName(n.num)"></span>
+                  <template x-if="scanMode">
+                    <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
+                  </template>
+                  <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.5rem;flex-shrink:0" x-text="n._az != null ? Math.round(n._az)+'°' : '–'"></span>
+                  <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.8rem;flex-shrink:0" x-text="n._km != null ? n._km.toFixed(1)+'km' : '–'"></span>
+                  <span style="font-family:monospace;font-size:11px;min-width:1.4rem;flex-shrink:0"
+                        :style="{ color: (nodeHops(n)??1)===0 ? 'rgba(255,160,0,0.85)' : 'rgba(0,255,80,0.30)' }"
+                        x-text="(nodeHops(n)??0)+'h'"></span>
+                  <template x-if="n.num === yagiPointTarget && yagiSignal.num === n.num">
+                    <span style="flex:1;font-family:monospace;font-size:10px;font-weight:600;white-space:nowrap"
+                          :style="{ color: signalAge()!=null && signalAge()>=30 ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)' }">
+                      <span x-text="yagiSignal.rssi != null ? yagiSignal.rssi+'dBm' : ''"></span>
+                      <span x-text="yagiSignal.snr != null ? ' / '+(yagiSignal.snr>=0?'+':'')+yagiSignal.snr.toFixed(1) : ''"></span>
+                    </span>
+                  </template>
+                  <template x-if="!(n.num === yagiPointTarget && yagiSignal.num === n.num)">
+                    <span style="font-family:monospace;font-size:10px;color:rgba(0,255,80,0.28);flex:1"
+                          x-text="n.last_heard ? new Date(n.last_heard*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''"></span>
+                  </template>
+                  <span x-html="n.num===yagiPointTarget && yagiSignal.num===n.num ? sigBars(yagiSignal.rssi,yagiSignal.snr) : sigBars(n._scanRssi??n.rssi,n._scanSnr??n.snr)" style="flex-shrink:0"></span>
+                </div>
+              </template>
+            </div>
+
+            <!-- Tilt overlay — top-right, visible when active device has tilt data -->
+            <div x-show="nodeSelf.tilt" x-transition
+                 style="position:absolute;top:0.75rem;right:0.75rem;z-index:10;
+                        background:rgba(4,10,4,0.88);
+                        border:1px solid rgba(0,255,80,0.18);
+                        border-radius:0.5rem;
+                        backdrop-filter:blur(6px);
+                        padding:0.5rem;
+                        pointer-events:none">
+              <svg viewBox="0 0 300 300" style="width:130px;height:130px;display:block">
+                <g x-html="tiltRingsSvg()"></g>
+                <line x1="150" y1="20" x2="150" y2="280" stroke="rgba(0,255,80,0.06)" stroke-width="1"/>
+                <line x1="20" y1="150" x2="280" y2="150" stroke="rgba(0,255,80,0.06)" stroke-width="1"/>
+                <polyline :points="tiltPolylinePoints()" fill="none" stroke="rgba(0,255,80,0.25)" stroke-width="1"/>
+                <g x-html="tiltDotsSvg('#4ade80', 0.6)"></g>
+                <circle x-show="tiltPeak > tiltRings[0] * 0.3" cx="150" cy="150"
+                        :r="tiltLogPx(tiltPeak)" fill="none" stroke="rgba(245,158,11,0.35)"
+                        stroke-width="1" stroke-dasharray="3,3"/>
+                <circle :cx="tiltToSvg(nodeSelf.tilt?.pitch??0, nodeSelf.tilt?.roll??0).x"
+                        :cy="tiltToSvg(nodeSelf.tilt?.pitch??0, nodeSelf.tilt?.roll??0).y"
+                        r="8" :fill="tiltDotColor(nodeSelf.tilt?.pitch??0, nodeSelf.tilt?.roll??0)"
+                        style="transition:cx 0.5s,cy 0.5s"/>
+                <circle cx="150" cy="150" r="2.5" fill="rgba(0,255,80,0.4)"/>
+              </svg>
+              <div style="font-family:'Oxanium',monospace;font-size:10px;color:rgba(0,255,80,0.55);text-align:center;margin-top:2px"
+                   x-text="'R ' + (nodeSelf.tilt?.roll??0).toFixed(1) + '°  P ' + (nodeSelf.tilt?.pitch??0).toFixed(1) + '°'"></div>
+            </div>
+
+            <!-- Active target card — bottom-right overlay, visible in ACTV mode when a target is locked -->
+            <template x-if="rotatorMode === 1 && targetNode">
+              <div style="position:absolute;bottom:1rem;right:1rem;z-index:10;
+                          min-width:15rem;max-width:19rem;
+                          background:rgba(4,10,4,0.93);
+                          border:1px solid rgba(255,30,30,0.40);
+                          border-radius:0.5rem;
+                          backdrop-filter:blur(6px);
+                          padding:0.65rem 0.8rem;
+                          pointer-events:none"
+                   x-data="{
+                     get _rssi() { return (yagiSignal.num===yagiPointTarget && yagiSignal.rssi!=null) ? yagiSignal.rssi : targetNode.rssi; },
+                     get _snr()  { return (yagiSignal.num===yagiPointTarget && yagiSignal.snr!=null)  ? yagiSignal.snr  : targetNode.snr;  },
+                     get _pct()  { return window.signalQuality(this._rssi, this._snr); },
+                     get _live() { return yagiSignal.num===yagiPointTarget && yagiSignal.ts!=null && signalAge()<30; }
+                   }">
+                <!-- header -->
+                <div class="flex items-baseline gap-2 mb-1">
+                  <span style="font-family:'Oxanium',monospace;font-size:10px;font-weight:700;letter-spacing:0.18em;color:rgba(255,30,30,0.75)">TARGET</span>
+                  <span style="font-family:'Oxanium',monospace;font-size:17px;font-weight:700;color:rgba(255,30,30,0.95)" x-text="targetNode.user?.short_name || ('!'+targetNode.num?.toString(16))"></span>
+                  <span style="font-family:'Oxanium',monospace;font-size:11px;color:rgba(255,200,40,0.65);margin-left:auto" x-text="targetNode.user?.id || ''"></span>
+                </div>
+                <div style="font-family:'Oxanium',monospace;font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:0.5rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+                     x-text="targetNode.user?.long_name || '–'"></div>
+
+                <!-- signal quality bar (full-width, heat-map coloured) -->
+                <div style="height:5px;border-radius:3px;background:rgba(255,255,255,0.07);overflow:hidden;margin-bottom:0.25rem">
+                  <div :style="`width:${Math.max(_pct,3)}%;height:100%;border-radius:3px;transition:width 0.6s ease,background 0.6s ease;background:${sigQualColor(_pct)}`"></div>
+                </div>
+                <!-- live RSSI / SNR below bar -->
+                <div style="display:flex;justify-content:space-between;font-family:'Oxanium',monospace;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:0.45rem">
+                  <span x-text="_rssi != null ? _rssi+' dBm' : '– dBm'"></span>
+                  <span x-show="_live" style="color:rgba(255,100,40,0.55);font-size:9px;letter-spacing:0.1em">LIVE</span>
+                  <span x-text="_snr != null ? _snr+' dB' : '– dB'"></span>
+                </div>
+
+                <div style="height:1px;background:rgba(255,30,30,0.18);margin:0.35rem 0"></div>
+
+                <!-- stats grid -->
+                <div class="radar-stat-grid">
+                  <span style="color:rgba(0,255,80,0.45)">Distance</span>
+                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="targetNode._km != null ? targetNode._km.toFixed(1)+' km' : '–'"></span>
+                  <span style="color:rgba(0,255,80,0.45)">Bearing</span>
+                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="targetNode._az != null ? targetNode._az.toFixed(0)+'°' : '–'"></span>
+                  <span style="color:rgba(0,255,80,0.45)">Hops</span>
+                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="nodeHops(targetNode) ?? '–'"></span>
+                  <span style="color:rgba(0,255,80,0.45)">Last heard</span>
+                  <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="fmtAge(targetNode.last_heard)"></span>
+                </div>
+
+                <!-- yagi history (only if we have data) -->
+                <template x-if="yagiTargetMeta.target_count > 0">
+                  <div>
+                    <div style="height:1px;background:rgba(255,30,30,0.18);margin:0.35rem 0"></div>
+                    <div class="radar-stat-grid">
+                      <span style="color:rgba(0,255,80,0.45)">Visits</span>
+                      <span style="color:rgba(0,255,80,0.9);text-align:right"
+                            x-text="yagiTargetMeta.contact_count+'/'+yagiTargetMeta.target_count
+                                    + (yagiTargetMeta.target_count>0 ? ' ('+Math.round(yagiTargetMeta.contact_count/yagiTargetMeta.target_count*100)+'%)' : '')"></span>
+                      <span style="color:rgba(0,255,80,0.45)">Best signal</span>
+                      <span style="color:rgba(0,255,80,0.9);text-align:right"
+                            x-text="(yagiTargetMeta.best_rssi!=null ? yagiTargetMeta.best_rssi+' dBm' : '–') + ' / ' + (yagiTargetMeta.best_snr!=null ? yagiTargetMeta.best_snr+' dB' : '–')"></span>
+                      <template x-if="yagiTargetMeta.last_contact">
+                        <span style="color:rgba(0,255,80,0.45)">Last contact</span>
+                      </template>
+                      <template x-if="yagiTargetMeta.last_contact">
+                        <span style="color:rgba(0,255,80,0.9);text-align:right" x-text="fmtAge(yagiTargetMeta.last_contact)"></span>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+

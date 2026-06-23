@@ -1,7 +1,7 @@
 import http from 'http';
 import express from 'express';
 import { fileURLToPath } from 'url';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
@@ -43,16 +43,31 @@ app.get('/utils.js', (req, res) => {
   res.type('application/javascript').set('Cache-Control', 'no-cache').send(out);
 });
 
+// -- HTML partial assembly ---------------------------------------------------
+// index.html may contain <!-- include: filename --> markers which are replaced
+// with the contents of public/partials/filename at request time.
+const PARTIALS_DIR = path.join(PUBLIC_DIR, 'partials');
+
+function assembleIndex() {
+  let html = readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  return html.replace(/<!--\s*include:\s*(\S+)\s*-->/g, (_, filename) => {
+    const p = path.join(PARTIALS_DIR, filename);
+    return existsSync(p) ? readFileSync(p, 'utf8') : `<!-- missing partial: ${filename} -->`;
+  });
+}
+
+function serveIndex(req, res) {
+  res.type('html').send(assembleIndex());
+}
+
 // -- SPA page routing --------------------------------------------------------
 // Browser navigations carry Accept: text/html; fetch() API calls do not.
 // Register page-serving stubs before conflicting API routes so the browser
 // gets index.html and JS handles the tab, while XHR still hits the API.
 const _servePage = (req, res, next) =>
-  req.headers.accept?.includes('text/html')
-    ? res.sendFile(path.join(PUBLIC_DIR, 'index.html'))
-    : next();
+  req.headers.accept?.includes('text/html') ? serveIndex(req, res) : next();
 
-for (const p of ['/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range']) {
+for (const p of ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range']) {
   app.get(p, _servePage);
 }
 
@@ -474,10 +489,10 @@ app.post('/alerts/test', async (req, res) => {
 });
 
 // -- static files -----------------------------------------------------------
-app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0 }));
+app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
 
-// Catch-all: serve index.html for any unrecognised path (SPA deep-links)
-app.use((req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
+// Catch-all: serve assembled index.html for any unrecognised path (SPA deep-links)
+app.use((req, res) => serveIndex(req, res));
 
 // -- server + WS relay -------------------------------------------------------
 const server = http.createServer(app);

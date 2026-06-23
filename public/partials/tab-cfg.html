@@ -1,0 +1,509 @@
+        <!-- ===================== CONFIG ===================== -->
+        <div x-show="tab==='cfg'" class="flex flex-col gap-3 min-h-0">
+          <div class="tabs tabs-bordered w-fit">
+            <a class="tab" :class="cfgTab==='radio'   && 'tab-active font-semibold'" @click="switchCfgTab('radio')">Radio</a>
+            <a class="tab" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
+            <a class="tab" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
+            <a class="tab" :class="cfgTab==='alerts'  && 'tab-active font-semibold'" @click="switchCfgTab('alerts')">Alerts</a>
+          </div>
+
+          <!-- ======== RADIO tab — single selector, inner sub-tabs ======== -->
+          <div x-show="cfgTab==='radio'" class="flex flex-col gap-3">
+
+            <!-- Radio selector (always visible) -->
+            <div class="flex items-center gap-3">
+              <span class="text-sm opacity-60 shrink-0">Radio:</span>
+              <select class="select select-bordered select-sm flex-1 max-w-xs"
+                      x-model="cfgRadioId"
+                      @change="resetRadioCfg()">
+                <template x-for="dev in availableDevices" :key="dev.node_id">
+                  <option :value="dev.node_id"
+                          x-text="deviceLabel(dev.node_id) + ' — ' + (dev.long_name || dev.short_name || dev.node_id)"></option>
+                </template>
+              </select>
+              <span x-show="!availableDevices.length" class="text-sm opacity-50 italic">No radios connected</span>
+            </div>
+
+            <!-- Inner sub-tabs -->
+            <div class="tabs tabs-bordered tabs-sm w-fit">
+              <a class="tab" :class="radioTab==='device'   && 'tab-active font-semibold'" @click="radioTab='device';   loadSections()">Device</a>
+              <a class="tab" :class="radioTab==='channels' && 'tab-active font-semibold'" @click="radioTab='channels'; loadChannels()">Channels</a>
+              <a class="tab" :class="radioTab==='owner'    && 'tab-active font-semibold'" @click="radioTab='owner';    loadOwner()">Owner</a>
+            </div>
+
+            <!-- Device sub-tab -->
+            <div x-show="radioTab==='device'" class="flex flex-col gap-3">
+              <!-- Antenna config (node-dash local, per radio) -->
+              <div class="card bg-base-100 shadow" x-show="cfgRadioId">
+                <div class="card-body py-3">
+                  <h2 class="card-title text-base">Antenna</h2>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                    <label class="form-control w-full sm:col-span-2">
+                      <div class="label py-1"><span class="label-text text-xs">Type</span></div>
+                      <input type="text" class="input input-bordered input-sm w-full"
+                             placeholder="e.g. DL6WU 5el Yagi"
+                             :value="deviceConfigs[cfgRadioId]?.antenna_type ?? ''"
+                             @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], antenna_type: $event.target.value || null }">
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Beam width °</span><span class="label-text-alt text-xs opacity-50">360 = omni</span></div>
+                      <input type="number" step="1" min="1" max="360" class="input input-bordered input-sm w-full font-mono"
+                             :value="deviceConfigs[cfgRadioId]?.beam_deg ?? 360"
+                             @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], beam_deg: Number($event.target.value) || 360 }">
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Gain dBi</span></div>
+                      <input type="number" step="0.1" class="input input-bordered input-sm w-full font-mono"
+                             :value="deviceConfigs[cfgRadioId]?.gain_dbi ?? 0"
+                             @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], gain_dbi: Number($event.target.value) || 0 }">
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Cable loss dB</span></div>
+                      <input type="number" step="0.1" min="0" class="input input-bordered input-sm w-full font-mono"
+                             :value="deviceConfigs[cfgRadioId]?.cable_loss_db ?? 0"
+                             @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], cable_loss_db: Number($event.target.value) || 0 }">
+                    </label>
+                  </div>
+                  <div class="flex items-center gap-2 mt-2">
+                    <button class="btn btn-sm btn-primary" @click="saveAntennaCfg()">Save</button>
+                    <span class="text-success text-sm" x-show="antennaSaved" x-transition>Saved ✓</span>
+                    <span class="text-error text-sm" x-show="antennaError" x-text="antennaError"></span>
+                  </div>
+                  <!-- Home position — only relevant for the primary device -->
+                  <template x-if="deviceConfigs[cfgRadioId]?.is_primary">
+                    <div>
+                      <div class="divider my-2 text-xs opacity-50">Home Position</div>
+                      <div class="grid grid-cols-2 gap-3">
+                        <label class="form-control w-full">
+                          <div class="label py-1"><span class="label-text text-xs">Latitude</span></div>
+                          <input type="number" step="0.000001" class="input input-bordered input-sm w-full font-mono"
+                                 placeholder="e.g. 51.5074"
+                                 :value="deviceConfigs[cfgRadioId]?.fixed_lat ?? ''"
+                                 @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], fixed_lat: $event.target.value !== '' ? Number($event.target.value) : null }">
+                        </label>
+                        <label class="form-control w-full">
+                          <div class="label py-1"><span class="label-text text-xs">Longitude</span></div>
+                          <input type="number" step="0.000001" class="input input-bordered input-sm w-full font-mono"
+                                 placeholder="e.g. -0.1278"
+                                 :value="deviceConfigs[cfgRadioId]?.fixed_lon ?? ''"
+                                 @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], fixed_lon: $event.target.value !== '' ? Number($event.target.value) : null }">
+                        </label>
+                      </div>
+                      <div class="flex items-center gap-2 mt-2">
+                        <button class="btn btn-sm btn-primary" @click="saveHomePosCfg()">Save</button>
+                        <span class="text-success text-sm" x-show="homePosSaved" x-transition>Saved ✓</span>
+                        <span class="text-error text-sm" x-show="homePosError" x-text="homePosError"></span>
+                      </div>
+                    </div>
+                  </template>
+                  <!-- Tilt calibration (only shown when the selected radio is the tilt-sensor device) -->
+                  <template x-if="nodeSelf.tilt && cfgRadioId === activeNodeId">
+                    <div>
+                      <div class="divider my-2 text-xs opacity-50">Tilt Calibration</div>
+                      <div class="grid gap-x-3 gap-y-2 items-center text-sm"
+                           style="grid-template-columns:auto 1fr auto auto">
+                        <span class="text-base-content/60">Zero</span>
+                        <span :class="tiltZero ? 'text-success' : 'text-base-content/40'"
+                              x-text="tiltZero ? 'Set ✓' : 'Not set'"></span>
+                        <button @click="tiltSetZero()" class="btn btn-xs btn-outline"
+                                title="Mast plumb vertical — press to capture zero">Set</button>
+                        <button @click="tiltClearCal()" class="btn btn-xs btn-outline btn-error"
+                                :disabled="!tiltZero">Clear</button>
+                        <span class="text-base-content/60">North</span>
+                        <span :class="tiltNorthAngle != null ? 'text-success' : 'text-base-content/40'"
+                              x-text="tiltNorthAngle != null ? (tiltNorthAngle * 180 / Math.PI).toFixed(1) + '°' : 'Not calibrated'"></span>
+                        <button @click="tiltSetNorth()" class="btn btn-xs btn-outline btn-warning"
+                                :disabled="!tiltZero"
+                                title="Antenna pointing north — press to capture direction">Set</button>
+                        <button @click="tiltClearNorth()" class="btn btn-xs btn-outline btn-error"
+                                :disabled="tiltNorthAngle == null">Clear</button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <div class="alert alert-info shadow-sm text-sm">
+                <span>Forms are generated directly from the device's protobuf schema. Saving sends the <b>entire</b> section back to the radio.</span>
+              </div>
+              <template x-for="sec in allSections" :key="sec.name">
+                <div class="collapse collapse-arrow bg-base-100 shadow">
+                  <input type="checkbox" @change="onSectionToggle(sec)" />
+                  <div class="collapse-title text-md font-semibold capitalize flex items-center gap-2">
+                    <span x-text="sec.name.replace(/_/g,' ')"></span>
+                    <span class="badge badge-ghost badge-sm" x-text="sec.kind"></span>
+                    <span class="badge badge-warning badge-sm" x-show="sec.rebootRequired">reboot</span>
+                    <span class="loading loading-spinner loading-xs" x-show="sec.loading"></span>
+                  </div>
+                  <div class="collapse-content">
+                    <template x-if="sec.notes && sec.notes.length">
+                      <div class="alert alert-info py-2 px-3 mb-3 text-xs">
+                        <template x-for="note in sec.notes" :key="note">
+                          <span x-text="note"></span>
+                        </template>
+                      </div>
+                    </template>
+                    <fieldset :id="'sec_' + sec.name" class="border-0 p-0 m-0 w-full"
+                              :disabled="devIsSaving(cfgRadioId)"
+                              :class="devIsSaving(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
+                    <div class="flex items-center gap-2 mt-3" x-show="sec.loaded">
+                      <button class="btn btn-sm btn-primary"
+                              :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) || opLoading('cfg_' + sec.name + '_' + cfgRadioId)"
+                              @click="asyncOp('cfg_' + sec.name + '_' + cfgRadioId, () => saveSection(sec), { successMsg: sec.name.replace(/_/g,' ') + ' saved & verified' })">
+                        <span x-show="opLoading('cfg_' + sec.name + '_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                        Save
+                      </button>
+                      <span class="text-success text-sm" x-show="opOk('cfg_' + sec.name + '_' + cfgRadioId)" x-transition>Saved ✓</span>
+                      <span class="text-warning text-sm animate-pulse" x-show="devIsSaving(cfgRadioId)" x-transition>Reconnecting…</span>
+                      <span class="text-warning/70 text-xs" x-show="sec.rebootRequired && !devIsSaving(cfgRadioId)">⚠ Save will reboot device</span>
+                    </div>
+                    <div x-show="sec.name === 'position' && sec.loaded" class="col-span-1 sm:col-span-2 border border-base-300 rounded-lg p-3 mt-3">
+                      <div class="text-xs font-semibold uppercase text-base-content/50 mb-2">Fixed Position (lat / lon / alt)</div>
+                      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <label class="form-control w-full">
+                          <div class="label py-1"><span class="label-text text-xs">Latitude</span></div>
+                          <input type="number" step="any" class="input input-bordered input-sm" x-model.number="fixedPosition.lat" placeholder="e.g. 51.50735">
+                        </label>
+                        <label class="form-control w-full">
+                          <div class="label py-1"><span class="label-text text-xs">Longitude</span></div>
+                          <input type="number" step="any" class="input input-bordered input-sm" x-model.number="fixedPosition.lon" placeholder="e.g. -0.12776">
+                        </label>
+                        <label class="form-control w-full">
+                          <div class="label py-1"><span class="label-text text-xs">Altitude (m)</span></div>
+                          <input type="number" step="1" class="input input-bordered input-sm" x-model.number="fixedPosition.alt" placeholder="e.g. 35">
+                        </label>
+                      </div>
+                      <div class="flex items-center gap-2 mt-3">
+                        <button class="btn btn-sm btn-primary"
+                                :disabled="opLoading('fixedpos_save_' + cfgRadioId)"
+                                @click="asyncOp('fixedpos_save_' + cfgRadioId, () => saveFixedPosition(), { successMsg: 'Fixed position saved & verified' })">
+                          <span x-show="opLoading('fixedpos_save_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                          Save Position
+                        </button>
+                        <button class="btn btn-sm btn-outline"
+                                :disabled="opLoading('fixedpos_clear_' + cfgRadioId)"
+                                @click="asyncOp('fixedpos_clear_' + cfgRadioId, () => clearFixedPosition(), { successMsg: 'Fixed position cleared' })">
+                          <span x-show="opLoading('fixedpos_clear_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                          Clear
+                        </button>
+                        <span class="text-success text-sm" x-show="opOk('fixedpos_save_' + cfgRadioId) || opOk('fixedpos_clear_' + cfgRadioId)" x-transition>Done ✓</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Channels sub-tab -->
+            <div x-show="radioTab==='channels'" class="flex flex-col gap-3">
+              <div class="alert alert-warning shadow-sm text-sm">
+                <span>Editing <b>psk</b> on the primary channel can break mesh connectivity. Bytes fields are locked — unlock only if you know what you're doing.</span>
+              </div>
+              <template x-for="ch in channels" :key="ch.index">
+                <div class="collapse collapse-arrow bg-base-100 shadow">
+                  <input type="checkbox" @change="onChannelToggle(ch)" />
+                  <div class="collapse-title text-md font-semibold flex items-center gap-2">
+                    <span x-text="'Channel ' + ch.index"></span>
+                    <span class="contents" x-html="channelRoleBadge(ch.data.role)"></span>
+                    <span class="text-sm text-base-content/50" x-text="ch.data.settings?.name || ''"></span>
+                    <span class="loading loading-spinner loading-xs" x-show="ch.loading"></span>
+                  </div>
+                  <div class="collapse-content">
+                    <fieldset :id="'ch_' + ch.index" class="border-0 p-0 m-0 w-full"
+                              :disabled="devIsSaving(cfgRadioId)"
+                              :class="devIsSaving(cfgRadioId) ? 'opacity-50 pointer-events-none' : ''"></fieldset>
+                    <div class="flex items-center gap-2 mt-3" x-show="ch.loaded">
+                      <button class="btn btn-sm btn-primary"
+                              :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) || opLoading('ch_' + ch.index + '_' + cfgRadioId)"
+                              @click="asyncOp('ch_' + ch.index + '_' + cfgRadioId, () => saveChannel(ch), { successMsg: 'Channel ' + ch.index + ' saved & verified' })">
+                        <span x-show="opLoading('ch_' + ch.index + '_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                        Save
+                      </button>
+                      <span class="text-success text-sm" x-show="opOk('ch_' + ch.index + '_' + cfgRadioId)" x-transition>Saved ✓</span>
+                      <span class="text-warning text-sm animate-pulse" x-show="devIsSaving(cfgRadioId)" x-transition>Reconnecting…</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Owner sub-tab -->
+            <div x-show="radioTab==='owner'" class="max-w-xl">
+              <div class="card bg-base-100 shadow">
+                <div class="card-body">
+                  <h2 class="card-title">Owner / Identity</h2>
+                  <div id="owner_form"></div>
+                  <div class="flex items-center gap-2 mt-3">
+                    <button class="btn btn-sm btn-primary"
+                            :disabled="opLoading('owner_' + cfgRadioId)"
+                            @click="asyncOp('owner_' + cfgRadioId, () => saveOwner(), { successMsg: 'Owner saved & verified' })">
+                      <span x-show="opLoading('owner_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
+                      Save
+                    </button>
+                    <span class="text-success text-sm" x-show="opOk('owner_' + cfgRadioId)" x-transition>Saved ✓</span>
+                    <span class="text-warning/70 text-xs" x-show="ownerData?.__reboot && !devIsSaving(cfgRadioId)">⚠ Role change will reboot device</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <div x-show="cfgTab==='bridge'" class="flex flex-col gap-3 max-w-2xl">
+            <div class="alert alert-info shadow-sm text-sm">
+              <span>App-level settings stored by the bridge (<code>bridge_config.yaml</code>), separate from radio protobuf config.</span>
+            </div>
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <div id="bridge_cfg_form"></div>
+                <div class="flex items-center gap-2 mt-3" x-show="bridgeConfigSchema">
+                  <button class="btn btn-sm btn-primary" @click="saveBridgeConfig()">Save</button>
+                  <span class="text-success text-sm" x-show="bridgeConfigSaved" x-transition>Saved ✓</span>
+                  <span class="text-error text-sm" x-show="bridgeConfigError" x-text="bridgeConfigError"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== ROTATOR TAB ==================== -->
+          <div x-show="cfgTab==='rotator'" class="flex flex-col gap-3 max-w-2xl">
+            <div class="alert alert-info shadow-sm text-sm">
+              <span>Rotator managed by node-dash. WS URL via <code>ROTATOR_WS_URL</code> env var.</span>
+            </div>
+
+            <!-- Status -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">Status</h2>
+                <div class="text-sm grid grid-cols-2 gap-x-6 gap-y-1 mt-1">
+                  <div class="flex justify-between">
+                    <span class="opacity-60">Connection</span>
+                    <span :class="rotatorConnected ? 'text-success' : 'text-error'" x-text="rotatorConnected ? 'Connected' : 'Disconnected'"></span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="opacity-60">Bearing</span>
+                    <span class="font-mono" x-text="rotatorStatus.az != null ? rotatorStatus.az.toFixed(1) + '°' : '–'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.pwmMin != null">
+                    <span class="opacity-60">PWM min</span>
+                    <span class="font-mono" x-text="rotatorStatus.pwmMin ?? '–'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.pwmRun != null">
+                    <span class="opacity-60">PWM run</span>
+                    <span class="font-mono" x-text="rotatorStatus.pwmRun ?? '–'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.pwmRunPct != null">
+                    <span class="opacity-60">PWM run %</span>
+                    <span class="font-mono" x-text="rotatorStatus.pwmRunPct != null ? Math.round(rotatorStatus.pwmRunPct * 100) + '%' : '–'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.blDeg != null">
+                    <span class="opacity-60">Backlash</span>
+                    <span class="font-mono" x-text="rotatorStatus.blDeg != null ? (+rotatorStatus.blDeg).toFixed(1) + '°' : '–'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.yagiOffset != null">
+                    <span class="opacity-60">Yagi offset</span>
+                    <span class="font-mono" x-text="rotatorStatus.yagiOffset != null ? (+rotatorStatus.yagiOffset).toFixed(1) + '°' : '–'"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Motor & Scan config (schema-driven) -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">Motor &amp; Scan</h2>
+                <div class="flex items-center justify-between gap-2 mb-2" x-show="rotatorStatus.pwmRunPct != null">
+                  <label class="text-sm">Motor speed %
+                    <span class="text-xs font-mono opacity-60" x-text="rotatorStatus.pwmRun != null ? '(pwmRun ' + rotatorStatus.pwmRun + ')' : ''"></span>
+                  </label>
+                  <div class="flex items-center gap-1">
+                    <input type="number" class="input input-xs w-16 text-right font-mono" min="1" max="100"
+                           x-model.number="pwmRunPctInput"
+                           :placeholder="rotatorStatus.pwmRunPct != null ? Math.round(rotatorStatus.pwmRunPct * 100) : 25">
+                    <span class="text-xs opacity-50">%</span>
+                    <button class="btn btn-xs btn-primary" :disabled="pwmRunPctInput == null" @click="applyPwmRunPct()">Set</button>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-2 mb-3" x-show="rotatorStatus.pwmFreq != null">
+                  <label class="text-sm">PWM frequency</label>
+                  <div class="flex items-center gap-1">
+                    <input type="number" class="input input-xs w-20 text-right font-mono" min="10" max="20000"
+                           x-model.number="pwmFreqInput"
+                           :placeholder="rotatorStatus.pwmFreq ?? 1000">
+                    <span class="text-xs opacity-50">Hz</span>
+                    <button class="btn btn-xs btn-primary" :disabled="pwmFreqInput == null" @click="applyPwmFreq()">Set</button>
+                  </div>
+                </div>
+                <div id="rotator_cfg_form" class="mt-2"></div>
+                <div class="flex items-center gap-2 mt-3">
+                  <button class="btn btn-sm btn-primary" :disabled="!rotatorCfgSchema" @click="saveRotatorConfig()">Apply to Firmware</button>
+                  <span class="text-success text-sm" x-show="rotatorCfgSaved" x-transition>Sent ✓</span>
+                  <span class="text-error text-sm" x-show="rotatorCfgError" x-text="rotatorCfgError"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Calibration -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">Calibration</h2>
+                <div class="flex flex-col gap-4">
+                  <div>
+                    <p class="text-xs font-semibold uppercase text-base-content/50 mb-2">Yagi offset</p>
+                    <div class="flex items-end gap-2 flex-wrap">
+                      <div class="form-control">
+                        <label class="label py-0.5"><span class="label-text text-xs">Direct (0–359°)</span></label>
+                        <input type="number" min="0" max="359" step="1" class="input input-sm input-bordered w-28 font-mono"
+                               :placeholder="rotatorStatus.yagiOffset != null ? rotatorStatus.yagiOffset.toFixed(1) : '0'"
+                               x-model="rotatorOffsetInput">
+                      </div>
+                      <button class="btn btn-sm btn-primary mb-0.5" @click="setRotatorOffset(rotatorOffsetInput)">Set</button>
+                    </div>
+                    <p class="text-xs text-base-content/40 mt-1">Or use compass-guided: point YAGI to North, then:</p>
+                    <div class="flex gap-2 flex-wrap mt-1">
+                      <button class="btn btn-sm btn-outline btn-xs" @click="rotatorCalibrate('qmcOsStart')">1. Move to North</button>
+                      <button class="btn btn-sm btn-outline btn-xs" @click="rotatorCalibrate('qmcOsEnd')">2. Set North Here</button>
+                    </div>
+                  </div>
+                  <div>
+                    <p class="text-xs font-semibold uppercase text-base-content/50 mb-2">Calibration routines (~20 s each)</p>
+                    <div class="flex gap-2 flex-wrap">
+                      <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('calMotor')">Motor</button>
+                      <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('qmcCali')">Compass</button>
+                      <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('calPwmMin')">PWM Min</button>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-success text-sm" x-show="rotatorCalSent" x-transition>Sent ✓</span>
+                    <span class="text-error text-sm" x-show="rotatorCalError" x-text="rotatorCalError"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===================== ALERTS ===================== -->
+          <div x-show="cfgTab==='alerts'" x-effect="cfgTab==='alerts' && !alertRules.length && loadAlertRules()"
+               class="flex flex-col gap-3 max-w-2xl">
+
+            <!-- SMTP config -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">Email (SMTP)</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">SMTP host</span></div>
+                    <input type="text" class="input input-bordered input-sm font-mono" x-ref="smtpHost"
+                           :value="alertSmtp.host">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">Port</span></div>
+                    <input type="number" class="input input-bordered input-sm font-mono" x-ref="smtpPort"
+                           :value="alertSmtp.port ?? 465">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">Username</span></div>
+                    <input type="text" class="input input-bordered input-sm font-mono" x-ref="smtpUser"
+                           :value="alertSmtp.user">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">Password</span></div>
+                    <input type="password" class="input input-bordered input-sm font-mono" x-ref="smtpPass"
+                           :value="alertSmtp.pass">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">From address</span></div>
+                    <input type="email" class="input input-bordered input-sm font-mono" x-ref="smtpFrom"
+                           :value="alertSmtp.from">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">To address</span></div>
+                    <input type="email" class="input input-bordered input-sm font-mono" x-ref="smtpTo"
+                           :value="alertSmtp.to">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">IMAP host</span></div>
+                    <input type="text" class="input input-bordered input-sm font-mono" x-ref="imapHost"
+                           :value="alertSmtp.imap_host">
+                  </label>
+                  <label class="form-control">
+                    <div class="label py-0"><span class="label-text text-xs">IMAP port</span></div>
+                    <input type="number" class="input input-bordered input-sm font-mono" x-ref="imapPort"
+                           :value="alertSmtp.imap_port ?? 993">
+                  </label>
+                </div>
+                <div class="flex items-center gap-3 mt-3 flex-wrap">
+                  <button class="btn btn-sm btn-primary" @click="saveSmtpAll()"
+                          :disabled="alertSmtpSaving">
+                    <span x-show="!alertSmtpSaving">Save</span>
+                    <span x-show="alertSmtpSaving" class="loading loading-spinner loading-xs"></span>
+                  </button>
+                  <button class="btn btn-sm btn-outline" @click="sendTestAlert()"
+                          :disabled="alertTestSending || alertSmtpSaving">
+                    <span x-show="!alertTestSending">Send test email</span>
+                    <span x-show="alertTestSending" class="loading loading-spinner loading-xs"></span>
+                  </button>
+                  <span x-show="alertSmtpSaved"  class="text-success text-sm">Saved ✓</span>
+                  <span x-show="alertSmtpError"  x-text="alertSmtpError" class="text-error text-sm"></span>
+                  <span x-show="alertTestResult" x-text="alertTestResult"
+                        :class="alertTestOk ? 'text-success text-sm' : 'text-error text-sm'"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Alert rules table -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">Alert Rules</h2>
+                <div class="overflow-x-auto mt-1">
+                  <table class="table table-sm">
+                    <thead>
+                      <tr>
+                        <th class="w-8">On</th>
+                        <th>Alert</th>
+                        <th class="w-28">Threshold</th>
+                        <th class="w-28">Cooldown (min)</th>
+                        <th>Last triggered</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="r in alertRules" :key="r.type">
+                        <tr>
+                          <td>
+                            <input type="checkbox" class="checkbox checkbox-sm"
+                                   :checked="r.enabled"
+                                   @change="updateAlertRule(r.type, { enabled: $event.target.checked })">
+                          </td>
+                          <td>
+                            <div class="font-medium text-sm" x-text="r.label"></div>
+                            <div class="text-xs opacity-50" x-text="r.desc"></div>
+                          </td>
+                          <td>
+                            <template x-if="r.unit">
+                              <div class="flex items-center gap-1">
+                                <input type="number" class="input input-bordered input-xs w-20 font-mono"
+                                       :value="r.threshold"
+                                       @change="updateAlertRule(r.type, { threshold: Number($event.target.value) })">
+                                <span class="text-xs opacity-60" x-text="r.unit"></span>
+                              </div>
+                            </template>
+                            <template x-if="!r.unit"><span class="opacity-30 text-xs">–</span></template>
+                          </td>
+                          <td>
+                            <input type="number" class="input input-bordered input-xs w-20 font-mono"
+                                   :value="r.cooldown_minutes"
+                                   @change="updateAlertRule(r.type, { cooldown_minutes: Number($event.target.value) })">
+                          </td>
+                          <td class="text-xs opacity-60 font-mono"
+                              x-text="r.last_sent ? new Date(r.last_sent * 1000).toLocaleString() : 'never'"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
