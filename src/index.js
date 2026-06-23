@@ -8,7 +8,7 @@ import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -17,6 +17,8 @@ import { nodeList } from './node-list.js';
 import { attachWsRelay } from './ws-relay.js';
 import { BRIDGE_CONFIG_SCHEMA } from './bridge-config-schema.js';
 import { ROTATOR_CONFIG_SCHEMA } from './rotator-config-schema.js';
+import { startAlertPoller, ALERT_META } from './alerts.js';
+import { sendTestAlert } from './mailer.js';
 
 const PORT = process.env.PORT || 8000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
@@ -355,6 +357,49 @@ app.put('/auto-purge', (req, res) => {
   res.json({ ok: true });
 });
 
+// -- send text message: forward to bridge, then persist our own TX in the DB --
+
+app.post('/:nodeId/messages', async (req, res) => {
+  const nodeId = req.params.nodeId;
+  const fromNum = parseInt(nodeId.replace('!', ''), 16) || 0;
+  try {
+    const upstream = await fetch(`${BRIDGE_URL}/${nodeId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    const text = await upstream.text();
+    res.status(upstream.status).type('application/json').send(text);
+    if (!upstream.ok) return;
+    const result = JSON.parse(text);
+    if (!result?.id) return;
+    // Store our own sent message so reply threading survives page reload.
+    const BROADCAST_NUM = 0xffffffff;
+    const toNum = (req.body.to ?? BROADCAST_NUM) >>> 0;
+    const node = nodeList._cache?.get(fromNum);
+    stmts.insertMessage.run({
+      ts:         Math.floor(Date.now() / 1000),
+      from_num:   fromNum,
+      to_num:     toNum,
+      text:       req.body.text ?? '',
+      channel:    req.body.channel ?? 0,
+      is_dm:      toNum !== BROADCAST_NUM ? 1 : 0,
+      hop_limit:  null,
+      snr:        null,
+      rssi:       null,
+      packet_id:  result.id,
+      reply_id:   req.body.reply_id ?? null,
+      device:     nodeId,
+      replay:     0,
+      hops:       0,
+      short_name: node?.user?.short_name ?? null,
+      long_name:  node?.user?.long_name  ?? null,
+    });
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: err.message });
+  }
+});
+
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 
 async function proxyToBridge(req, res) {
@@ -379,6 +424,40 @@ for (const prefix of BRIDGE_PREFIXES) {
 // Per-device routes: /!hex/...
 app.use(/^\/![0-9a-f]+/i, proxyToBridge);
 
+// -- alerts API --------------------------------------------------------------
+
+app.get('/alerts/rules', (req, res) => {
+  const rules = getAlertRules().map(r => ({
+    ...r,
+    label: ALERT_META[r.type]?.label ?? r.type,
+    desc:  ALERT_META[r.type]?.desc  ?? '',
+    unit:  ALERT_META[r.type]?.unit  ?? null,
+  }));
+  res.json(rules);
+});
+
+app.put('/alerts/rules/:type', (req, res) => {
+  const { type } = req.params;
+  const { enabled, threshold, cooldown_minutes } = req.body;
+  const changed = updateAlertRule({
+    type,
+    enabled:          enabled          != null ? (enabled ? 1 : 0) : undefined,
+    threshold:        threshold        != null ? Number(threshold) : null,
+    cooldown_minutes: cooldown_minutes != null ? Number(cooldown_minutes) : undefined,
+  });
+  if (!changed) return res.status(404).json({ error: 'unknown alert type' });
+  res.json({ ok: true });
+});
+
+app.post('/alerts/test', async (req, res) => {
+  try {
+    await sendTestAlert();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // -- static files -----------------------------------------------------------
 app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0 }));
 
@@ -400,6 +479,7 @@ server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);
   bridge.start();
   rotator.start();
+  startAlertPoller(nodeList);
   // Resume scan if it was active before restart
   const savedScan = getConfig('scan_state', {});
   if (savedScan.active) {

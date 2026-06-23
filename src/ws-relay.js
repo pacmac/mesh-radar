@@ -4,6 +4,7 @@ import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
 import { insertTilt } from './db.js';
+import { handleAlertEvent } from './alerts.js';
 import { dashMode } from './dash-mode.js';
 
 function makeRotatorThrottle(sendFn) {
@@ -49,7 +50,10 @@ export function attachWsRelay(server) {
   }
 
   bridge.on('connected',    () => broadcast({ type: 'bridge_connected' }));
-  bridge.on('disconnected', () => broadcast({ type: 'bridge_disconnected' }));
+  bridge.on('disconnected', () => {
+    broadcast({ type: 'bridge_disconnected' });
+    handleAlertEvent({ type: 'bridge_disconnected' });
+  });
 
   function broadcastDeviceList() {
     const devices = Object.entries(lastDeviceState)
@@ -91,6 +95,7 @@ export function attachWsRelay(server) {
         });
       } catch (e) { console.error('[tilt] insert failed:', e.message); }
     }
+    handleAlertEvent(ev);
     broadcast(ev);
   });
 
