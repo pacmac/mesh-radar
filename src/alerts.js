@@ -151,8 +151,8 @@ function _dispatchAlertEvent(ev) {
       const token = randomUUID();
       createReplyToken(token, ev.device, pkt.from >>> 0, pktId, pkt.channel ?? 0);
       sendAlert('dm_received',
-        `[mesh] DM from ${fromShort}`,
-        `Direct message from ${fromShort}:\n\n  "${text}"\n\nReply: http://localhost:8000/reply/${token}`,
+        `[mesh] DM from ${fromShort} [reply:${token}]`,
+        `Direct message from ${fromShort}:\n\n  "${text}"\n\nReply by replying to this email (keep the subject line intact).`,
         { replyToken: token }
       ).catch(e => console.error('[alerts] dm_received send failed:', e.message));
       return;
@@ -165,8 +165,8 @@ function _dispatchAlertEvent(ev) {
       const token = randomUUID();
       createReplyToken(token, ev.device, BROADCAST_NUM, pktId, pkt.channel ?? 0);
       sendAlert('broadcast_direct',
-        `[mesh] Direct broadcast from ${fromShort}`,
-        `0-hop broadcast from ${fromShort}:\n\n  "${text}"\n\nReply: http://localhost:8000/reply/${token}`,
+        `[mesh] Direct broadcast from ${fromShort} [reply:${token}]`,
+        `0-hop broadcast from ${fromShort}:\n\n  "${text}"\n\nReply by replying to this email (keep the subject line intact).`,
         { replyToken: token }
       ).catch(e => console.error('[alerts] broadcast_direct send failed:', e.message));
     }

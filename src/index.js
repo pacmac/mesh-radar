@@ -20,6 +20,7 @@ import { BRIDGE_CONFIG_SCHEMA } from './bridge-config-schema.js';
 import { ROTATOR_CONFIG_SCHEMA } from './rotator-config-schema.js';
 import { startAlertPoller, ALERT_META } from './alerts.js';
 import { sendTestAlert } from './mailer.js';
+import { startImapReceiver } from './imap-receiver.js';
 
 const PORT = process.env.PORT || 8000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
@@ -494,6 +495,7 @@ server.listen(PORT, () => {
   bridge.start();
   rotator.start();
   startAlertPoller(nodeList);
+  startImapReceiver();
   // Resume scan if it was active before restart
   const savedScan = getConfig('scan_state', {});
   if (savedScan.active) {
