@@ -124,6 +124,24 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_events_ts       ON events(ts DESC);
   CREATE INDEX IF NOT EXISTS idx_events_type     ON events(type);
   CREATE INDEX IF NOT EXISTS idx_nodes_updated   ON nodes(updated_at DESC);
+
+  CREATE TABLE IF NOT EXISTS alert_rules (
+    type             TEXT PRIMARY KEY,
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    threshold        REAL,
+    cooldown_minutes INTEGER NOT NULL DEFAULT 30,
+    last_sent        INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS reply_tokens (
+    token        TEXT PRIMARY KEY,
+    from_node_id TEXT NOT NULL,
+    to_num       INTEGER NOT NULL,
+    reply_id     INTEGER,
+    channel      INTEGER NOT NULL DEFAULT 0,
+    created_at   INTEGER NOT NULL,
+    expires_at   INTEGER NOT NULL
+  );
 `);
 
 // Migrations for columns added after initial schema
@@ -170,6 +188,20 @@ for (const col of envCols) {
     db.exec(`ALTER TABLE nodes ADD COLUMN ${col} REAL`);
   }
 }
+
+// Seed default alert rules (INSERT OR IGNORE preserves user customisations)
+const _seedRules = db.prepare(
+  `INSERT OR IGNORE INTO alert_rules (type, enabled, threshold, cooldown_minutes) VALUES (?, ?, ?, ?)`
+);
+db.transaction(() => {
+  _seedRules.run('node_offline',      1, 30,   60);
+  _seedRules.run('ble_disconnect',    1, null,  5);
+  _seedRules.run('temp_high',         1, 50,   30);
+  _seedRules.run('condensation',      1, 3,    60);
+  _seedRules.run('dm_received',       1, null,  5);
+  _seedRules.run('broadcast_direct',  1, null,  5);
+  _seedRules.run('tilt_high',         1, 10,   30);
+})();
 
 export const stmts = {
   insertMessage: db.prepare(`
@@ -387,6 +419,49 @@ export function getConfigByPrefix(prefix) {
     result[key.slice(prefix.length)] = JSON.parse(value);
   }
   return result;
+}
+
+// -- Alert rules --------------------------------------------------------------
+
+const _getAllAlertRules  = db.prepare(`SELECT * FROM alert_rules ORDER BY type`);
+const _getAlertRule      = db.prepare(`SELECT * FROM alert_rules WHERE type = ?`);
+const _updateAlertRule   = db.prepare(`
+  UPDATE alert_rules SET enabled = @enabled, threshold = @threshold, cooldown_minutes = @cooldown_minutes
+  WHERE type = @type
+`);
+const _touchAlertSent    = db.prepare(`UPDATE alert_rules SET last_sent = @ts WHERE type = @type`);
+
+export function getAlertRules()         { return _getAllAlertRules.all(); }
+export function getAlertRule(type)      { return _getAlertRule.get(type) ?? null; }
+export function updateAlertRule(rule)   { return _updateAlertRule.run(rule).changes; }
+export function touchAlertLastSent(type, ts = Math.floor(Date.now() / 1000)) {
+  _touchAlertSent.run({ type, ts });
+}
+
+// -- Reply tokens -------------------------------------------------------------
+
+const _insertReplyToken  = db.prepare(`
+  INSERT INTO reply_tokens (token, from_node_id, to_num, reply_id, channel, created_at, expires_at)
+  VALUES (@token, @from_node_id, @to_num, @reply_id, @channel, @created_at, @expires_at)
+`);
+const _getReplyToken     = db.prepare(`SELECT * FROM reply_tokens WHERE token = ? AND expires_at > ?`);
+const _deleteReplyToken  = db.prepare(`DELETE FROM reply_tokens WHERE token = ?`);
+const _pruneReplyTokens  = db.prepare(`DELETE FROM reply_tokens WHERE expires_at < ?`);
+
+export function createReplyToken(token, fromNodeId, toNum, replyId, channel = 0, ttlSeconds = 86400) {
+  const now = Math.floor(Date.now() / 1000);
+  _insertReplyToken.run({ token, from_node_id: fromNodeId, to_num: toNum, reply_id: replyId ?? null, channel, created_at: now, expires_at: now + ttlSeconds });
+}
+export function getReplyToken(token) {
+  return _getReplyToken.get(token, Math.floor(Date.now() / 1000)) ?? null;
+}
+export function consumeReplyToken(token) {
+  const row = getReplyToken(token);
+  if (row) _deleteReplyToken.run(token);
+  return row;
+}
+export function pruneExpiredTokens() {
+  _pruneReplyTokens.run(Math.floor(Date.now() / 1000));
 }
 
 export default db;
