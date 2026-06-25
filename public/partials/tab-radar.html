@@ -335,7 +335,7 @@
                         :style="{ color: activeCard?.accent }" x-text="activeCard?.label"></span>
                   <span style="font-family:'Oxanium',monospace;font-size:17px;font-weight:700"
                         :style="{ color: activeCard?.nameclr }"
-                        x-text="activeCard?.node?.user?.short_name || ('!'+activeCard?.node?.num?.toString(16))"></span>
+                        x-text="activeCard?.node?.num ? nodeShortName(activeCard.node.num) : ''"></span>
                   <span style="font-family:'Oxanium',monospace;font-size:11px;color:rgba(255,200,40,0.65);margin-left:auto"
                         x-text="activeCard?.node?.user?.id || ''"></span>
                 </div>

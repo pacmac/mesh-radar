@@ -37,10 +37,28 @@
                         <span x-show="m.rssi != null || m.snr != null" x-html="sigBars(m.rssi, m.snr)"></span>
                         <span class="ml-auto text-base-content/50 shrink-0" x-text="m.time"></span>
                         <template x-if="m.direction==='tx'">
-                          <span class="shrink-0 font-bold text-sm"
-                                :class="(m.ackStatus==='confirmed'||m.ackStatus==='sent') ? 'text-success' : m.ackStatus==='failed' ? 'text-error' : 'text-warning'"
-                                :title="m.ackStatus==='confirmed' ? 'Sent & echo confirmed' : m.ackStatus==='sent' ? 'Sent to radio' : m.ackStatus==='retrying' ? ('Retrying… attempt ' + (m._retryCount||1) + ' of 3') : m.ackStatus==='failed' ? ('Send failed: ' + (m._sendError||'unknown error')) : 'Sending…'"
-                                x-text="m.ackStatus==='failed' ? '✕' : m.ackStatus==='retrying' ? '↻' : m.ackStatus ? '✓' : '…'"></span>
+                          <span class="shrink-0 flex items-center gap-1">
+                            <span class="font-bold text-sm"
+                                  :class="{
+                                    'text-success':    m.ackStatus==='acked' || m.ackStatus==='confirmed',
+                                    'text-success/60': m.ackStatus==='sent',
+                                    'text-error':      m.ackStatus==='failed' || m.ackStatus==='no_ack',
+                                    'text-warning':    m.ackStatus==='sending' || m.ackStatus==='retrying',
+                                  }"
+                                  x-text="m.ackStatus==='acked'                              ? '✓✓'
+                                        : m.ackStatus==='failed' || m.ackStatus==='no_ack'  ? '✕'
+                                        : m.ackStatus==='retrying'                           ? '↻'
+                                        : m.ackStatus==='confirmed' || m.ackStatus==='sent'  ? '✓'
+                                        : '…'"></span>
+                            <span x-show="m.ackStatus==='acked' && m.ackFrom"
+                                  class="font-mono text-xs text-success/70"
+                                  x-text="nodeLabel(m.ackFrom)"></span>
+                            <span x-show="m.ackStatus==='no_ack'"
+                                  class="font-mono text-xs text-error/70"
+                                  x-text="m.ackError || 'TIMEOUT'"></span>
+                            <span x-show="m.ackStatus==='sent'"
+                                  class="font-mono text-xs text-base-content/40">awaiting ACK…</span>
+                          </span>
                         </template>
                       </div>
                       <div class="text-base text-base-content mt-0.5 break-words" x-text="m.text"></div>

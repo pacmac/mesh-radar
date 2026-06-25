@@ -1,6 +1,6 @@
         <!-- ===================== CONFIG ===================== -->
-        <div x-show="tab==='cfg'" class="flex flex-col gap-3 min-h-0">
-          <div class="tabs tabs-bordered w-fit">
+        <div x-show="tab==='cfg'" class="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+          <div class="tabs tabs-bordered w-fit shrink-0">
             <a class="tab" :class="cfgTab==='radio'   && 'tab-active font-semibold'" @click="switchCfgTab('radio')">Radio</a>
             <a class="tab" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
             <a class="tab" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
@@ -9,7 +9,7 @@
           </div>
 
           <!-- ======== RADIO tab — single selector, inner sub-tabs ======== -->
-          <div x-show="cfgTab==='radio'" class="flex flex-col gap-3">
+          <div x-show="cfgTab==='radio'" class="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto">
 
             <!-- Radio selector (always visible) -->
             <div class="flex items-center gap-3">
@@ -249,7 +249,7 @@
 
           </div>
 
-          <div x-show="cfgTab==='bridge'" class="flex flex-col gap-3 max-w-2xl">
+          <div x-show="cfgTab==='bridge'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
             <div class="alert alert-info shadow-sm text-sm">
               <span>App-level settings stored by the bridge (<code>bridge_config.yaml</code>), separate from radio protobuf config.</span>
             </div>
@@ -266,7 +266,7 @@
           </div>
 
           <!-- ==================== ROTATOR TAB ==================== -->
-          <div x-show="cfgTab==='rotator'" class="flex flex-col gap-3 max-w-2xl">
+          <div x-show="cfgTab==='rotator'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
             <div class="alert alert-info shadow-sm text-sm">
               <span>Rotator managed by node-dash. WS URL via <code>ROTATOR_WS_URL</code> env var.</span>
             </div>
@@ -383,7 +383,7 @@
           </div>
 
           <!-- ===================== RADAR ===================== -->
-          <div x-show="cfgTab==='radar'" class="flex flex-col gap-3 max-w-2xl">
+          <div x-show="cfgTab==='radar'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
 
             <!-- Display -->
             <div class="card bg-base-100 shadow">
@@ -492,7 +492,7 @@
 
           <!-- ===================== ALERTS ===================== -->
           <div x-show="cfgTab==='alerts'" x-effect="cfgTab==='alerts' && !alertRules.length && loadAlertRules()"
-               class="flex flex-col gap-3 max-w-2xl">
+               class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
 
             <!-- SMTP config -->
             <div class="card bg-base-100 shadow">

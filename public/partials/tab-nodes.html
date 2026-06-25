@@ -1,6 +1,6 @@
         <!-- ===================== NODES ===================== -->
-        <div x-show="tab==='nodes'" class="card bg-base-100 shadow">
-          <div class="card-body">
+        <div x-show="tab==='nodes'" class="flex-1 min-h-0 card bg-base-100 shadow flex flex-col overflow-hidden">
+          <div class="card-body flex flex-col flex-1 min-h-0">
             <div class="flex items-center gap-3 flex-wrap">
               <h2 class="card-title">
                 NodeDB
@@ -104,7 +104,7 @@
                 </div>
               </details>
             </div>
-            <div class="overflow-y-auto max-h-[65vh]">
+            <div class="flex-1 min-h-0 overflow-y-auto">
               <div class="flex flex-col gap-1 pt-1">
                 <template x-for="group in groupedNodes()" :key="group.label">
                   <div>

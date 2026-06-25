@@ -1,5 +1,5 @@
         <!-- ===================== RANGE TEST ===================== -->
-        <div x-show="tab==='range'" class="flex flex-col gap-4">
+        <div x-show="tab==='range'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto">
           <!-- Control bar -->
           <div class="card bg-base-100 shadow">
             <div class="card-body py-3 gap-2">
@@ -137,17 +137,17 @@
               <div class="overflow-x-auto max-h-[60vh]">
                 <table class="table table-zebra table-xs">
                   <thead class="sticky top-0 bg-base-100 z-10">
-                    <tr><th>Time</th><th x-show="!rangeRxFilter">Via</th><th>Node</th><th>Seq</th><th>Dist (km)</th><th>Az (°)</th><th>RSSI (dBm)</th><th>SNR (dB)</th><th>Exp RSSI</th><th>Excess loss</th><th>Hops</th></tr>
+                    <tr><th>Node</th><th>Rx</th><th>Time</th><th>Seq</th><th>Dist (km)</th><th>Az (°)</th><th>RSSI (dBm)</th><th>SNR (dB)</th><th>Exp RSSI</th><th>Excess loss</th><th>Hops</th></tr>
                   </thead>
                   <tbody>
                     <template x-if="!filteredRangeLog().length">
-                      <tr><td :colspan="rangeRxFilter ? 10 : 11" class="text-center py-8 opacity-30 italic">awaiting data</td></tr>
+                      <tr><td colspan="11" class="text-center py-8 opacity-30 italic">awaiting data</td></tr>
                     </template>
-                    <template x-for="raw in filteredRangeLog()" :key="raw.id">
+                    <template x-for="raw in filteredRangeLog()" :key="raw._uid">
                       <tr x-data="{ e: rangeEnrich(raw) }">
-                        <td class="font-mono text-xs" x-text="fmtAge(e.ts)"></td>
-                        <td x-show="!rangeRxFilter" class="font-mono text-xs opacity-70" x-text="e.via"></td>
-                        <td x-text="e.nodeName"></td>
+                        <td class="font-semibold" x-text="raw.from_name"></td>
+                        <td class="font-mono text-xs opacity-70" x-text="raw.rx_name"></td>
+                        <td class="font-mono text-xs" x-text="fmtAge(raw.ts, _rangeTick)"></td>
                         <td class="font-mono text-xs" x-text="e.seq || '–'"></td>
                         <td x-text="e.distKm != null ? e.distKm.toFixed(1) : '–'"></td>
                         <td x-text="e.az != null ? e.az + '°' : '–'"></td>
