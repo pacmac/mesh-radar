@@ -136,6 +136,26 @@ export const wsMixin = {
       if (ev.device) this.deviceOtaState[ev.device] = { state: 'error', pct: this.otaPct };
     }
 
+    if (ev.type === 'ota_download_start') {
+      if (ev.device) this.otaDownloadState[ev.device] = { state: 'downloading', pct: 0 };
+      return;
+    }
+    if (ev.type === 'ota_download_progress') {
+      if (ev.device) this.otaDownloadState[ev.device] = { state: 'downloading', pct: ev.data?.pct ?? 0 };
+      return;
+    }
+    if (ev.type === 'ota_download_complete') {
+      if (ev.device) {
+        this.otaDownloadState[ev.device] = { state: 'done', pct: 100 };
+        this.$nextTick(() => this.loadOtaFiles(ev.device));
+      }
+      return;
+    }
+    if (ev.type === 'ota_download_error') {
+      if (ev.device) this.otaDownloadState[ev.device] = { state: 'error', pct: 0, error: ev.data?.error };
+      return;
+    }
+
     if (['snapshot', 'ready', 'connecting', 'syncing', 'sync_progress',
          'reconnecting', 'error', 'idle', 'mqtt_proxy_up', 'mqtt_proxy_down'].includes(ev.type)) {
       this._applyStateEvent(ev);

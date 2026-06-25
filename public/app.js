@@ -90,6 +90,18 @@ function dashboard() {
     deviceOtaState: {},
     _otaSeq:      0,
 
+    // -- OTA firmware management ----------------------------------------------
+    otaFiles:         {},   // nodeId -> {files, hw_model, dir, configured, error}
+    otaFilesLoading:  {},   // nodeId -> bool
+    otaSelectedFile:  {},   // nodeId -> filename string
+    otaFetchOpen:     {},   // nodeId -> bool (GitHub fetch panel expanded)
+    otaReleases:      null, // [{tag, name, assets, ...}]
+    otaReleasesLoading: false,
+    otaReleasesError:   '',
+    otaSelectedRelease: '',
+    otaSelectedAsset:   {},  // nodeId -> asset name
+    otaDownloadState:   {},  // nodeId -> {state:'downloading'|'done'|'error', pct, error?}
+
     // -- Scan -----------------------------------------------------------------
     scanMode:      false,
     scanStep:      5,
