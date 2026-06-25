@@ -8,19 +8,20 @@ export const messagesMixin = {
       const rows = await fetchJSON('/messages?limit=50');
       if (Array.isArray(rows) && rows.length) {
         const ownNums = new Set(
-          (this.availableDevices || [])
-            .map(d => parseInt((d.node_id || '').replace('!', ''), 16))
+          Object.keys(this.deviceConfigs || {})
+            .filter(id => id.startsWith('!'))
+            .map(id => parseInt(id.slice(1), 16))
             .filter(Boolean)
         );
         this.messages = rows.map(r => {
-          if (r.short_name || r.long_name) {
-            this.msgNodeCache[r.from_num] = { num: r.from_num, user: { short_name: r.short_name, long_name: r.long_name } };
+          if (r.from_num) {
+            this.msgNodeCache[r.from_num] = { num: r.from_num, display_name: r.display_name || null, user: { short_name: r.short_name, long_name: r.long_name } };
           }
           return {
             pktId:         r.packet_id,
             replyId:       r.reply_id || null,
             fromNum:       r.from_num,
-            fromShortName: r.short_name || null,
+            fromShortName: r.display_name || r.short_name || null,
             fromLongName:  r.long_name  || null,
             hops:          r.hops ?? null,
             rssi:          r.rssi ?? null,
@@ -111,8 +112,8 @@ export const messagesMixin = {
     const txEntry = {
       _txKey: txKey,
       fromNum, to: to >>> 0,
-      fromShortName: txNode?.user?.short_name || this.availableDevices.find(d => d.node_id === fromId)?.short_name || null,
-      fromLongName:  txNode?.user?.long_name  || this.availableDevices.find(d => d.node_id === fromId)?.long_name  || null,
+      fromShortName: this.deviceLabel(fromId) || null,
+      fromLongName:  this.availableDevices.find(d => d.node_id === fromId)?.long_name || null,
       broadcast: to === 0xFFFFFFFF, channel, text,
       ts: Math.floor(Date.now() / 1000), time, direction: 'tx', ackStatus: 'sending',
       src: fromId ? [fromId] : [], replyId: this.msgReplyId || null,
@@ -143,10 +144,17 @@ export const messagesMixin = {
         if (res?.detail) throw new Error(res.detail);
         const m = this.messages.find(x => x._txKey === txKey);
         if (m) {
-          if (m.ackStatus === 'sending' || m.ackStatus === 'retrying') m.ackStatus = 'sent';
-          // Set pktId from the HTTP response immediately — don't wait for the BLE echo,
-          // which is unreliable. This is the authoritative packet ID for reply threading.
-          if (res?.id && !m.pktId) m.pktId = res.id;
+          // HTTP 200 = bridge accepted the packet. Keep showing 'sending' — the BLE echo
+          // (via WS packet event) will advance to 'sent'/'confirmed'. For DMs, routing_ack
+          // will then advance to 'acked'/'no_ack'. Only move to 'sent' on retries to show
+          // the retry cleared.
+          if (m.ackStatus === 'retrying') m.ackStatus = 'sending';
+          // pktId from HTTP response is authoritative for reply threading — don't wait for echo.
+          if (res?.id && !m.pktId) {
+            m.pktId = res.id;
+            this._seenPacketIds.add(res.id);
+            if (!m.broadcast) this._startAckTimeout(res.id);
+          }
         }
         try {
           const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
@@ -289,7 +297,7 @@ export const messagesMixin = {
   },
 
   selectMention(node) {
-    const sn = node.user?.short_name || ('!' + node.num.toString(16).slice(-4));
+    const sn = this.nodeShortName(node.num);
     const ta = this._composeTa;
     const cursorAfterAt = this.mentionPos + 1 + this.mentionQuery.length;
     this.msgText = this.msgText.slice(0, this.mentionPos) + '@' + sn + ' ' + this.msgText.slice(cursorAfterAt);

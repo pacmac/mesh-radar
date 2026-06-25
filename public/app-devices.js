@@ -210,10 +210,8 @@ export const devicesMixin = {
 
   deviceLabel(nodeId) {
     if (!nodeId) return '';
-    const cfg = this.deviceConfigs[nodeId];
-    if (cfg?.label) return cfg.label;
     const d = this.availableDevices.find(d => d.node_id === nodeId);
-    return d?.short_name || nodeId.replace('!', '').slice(-4).toUpperCase();
+    return d?.display_name || '';
   },
 
   rotatorDeviceId() {

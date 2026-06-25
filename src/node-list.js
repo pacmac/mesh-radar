@@ -169,8 +169,19 @@ class NodeList extends EventEmitter {
   }
 
   // Save a traceroute result for a node — persists to SQLite and patches in-memory entry
-  setTraceroute(num, data) {
+  setTraceroute(num, data, fromNum, rxDevice) {
     stmts.upsertTraceroute.run({ num, json: JSON.stringify(data) });
+    stmts.insertTracerouteHistory.run({
+      ts:              Math.floor((data.ts ?? Date.now()) / 1000),
+      from_num:        fromNum ?? null,
+      to_num:          num,
+      rx_device:       rxDevice ?? null,
+      route:           JSON.stringify(data.route ?? []),
+      route_back:      JSON.stringify(data.route_back ?? []),
+      snr_towards:     JSON.stringify(data.snr_towards ?? []),
+      snr_back:        JSON.stringify(data.snr_back ?? []),
+      relay_positions: JSON.stringify(data.relay_positions ?? {}),
+    });
     const existing = this._cache.get(num) ?? this._pending.get(num);
     if (existing) {
       const patched = { ...existing, last_traceroute: data };
@@ -258,6 +269,25 @@ class NodeList extends EventEmitter {
       });
     }
     this._scheduleEmit();
+  }
+
+  // Restore device attribution from SQLite after a cold seed.
+  // nodes.device holds the last device that received each node's packet.
+  restoreDeviceAttribution(rows) {
+    let changed = false;
+    for (const { num, device } of rows) {
+      if (!device || !this._cache.has(num)) continue;
+      const existing = this._cache.get(num);
+      const prevDevs = existing._devices ?? (existing._device ? [existing._device] : []);
+      if (prevDevs.includes(device)) continue;
+      this._cache.set(num, {
+        ...existing,
+        _device:  existing._device ?? device,
+        _devices: [...prevDevs, device],
+      });
+      changed = true;
+    }
+    if (changed) this._scheduleEmit();
   }
 
   // Wipe all in-memory node state (call after clearing SQLite nodes table)

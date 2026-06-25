@@ -7,6 +7,9 @@ import { insertTilt, getTiltCal } from './db.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode } from './dash-mode.js';
 import { passiveTracer } from './passive-tracer.js';
+import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
+import { FF } from './feature-flags.js';
+import { traceroute } from './traceroute.js';
 
 function makeRotatorThrottle(sendFn) {
   let lastMs    = 0;
@@ -43,11 +46,33 @@ export function attachWsRelay(server) {
   let lastDeviceList = null;
   const activeDeviceIds = new Set();
 
+  // Single enrichment point — every outbound event passes through here.
+  // Adds pre-resolved display labels so the UI never needs to resolve names itself.
+  function enrichEvent(ev) {
+    if (ev.type === 'node_list') {
+      return { ...ev, nodes: (ev.nodes || []).map(n => ({ ...n, display_name: resolveNodeLabel(n.num) })) };
+    }
+    if (ev.type === 'device_list') {
+      return { ...ev, devices: (ev.devices || []).map(d => ({ ...d, display_name: resolveDeviceLabel(d.node_id) })) };
+    }
+    if (ev.type === 'range_test_entry' && ev.data) {
+      return { ...ev, from_name: resolveNodeLabel(ev.data.from_num), rx_name: resolveDeviceLabel(ev.device) };
+    }
+    if (ev.type === 'text_message' && ev.data?.from_num != null) {
+      return { ...ev, from_name: resolveNodeLabel(ev.data.from_num) };
+    }
+    return ev;
+  }
+
   function broadcast(msg) {
-    const data = JSON.stringify(msg);
+    const data = JSON.stringify(enrichEvent(msg));
     for (const client of wss.clients) {
       if (client.readyState === 1) client.send(data);
     }
+  }
+
+  function sendEnriched(ws, msg) {
+    if (ws.readyState === 1) ws.send(JSON.stringify(enrichEvent(msg)));
   }
 
   bridge.on('connected',    () => broadcast({ type: 'bridge_connected' }));
@@ -125,8 +150,98 @@ export function attachWsRelay(server) {
   scanner.on('contact',  (data) => broadcast({ type: 'scan_contact',  data }));
   scanner.on('end',      (data) => broadcast({ type: 'scan_end',      data }));
   passiveTracer.on('tracing', (data) => broadcast({ type: 'passive_trace_start', ...data }));
-  passiveTracer.on('traced',  (data) => broadcast({ type: 'route_discovered',    ...data }));
+  // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────────
+  if (!FF.SSOT_TRACEROUTE) {
+    passiveTracer.on('traced', (data) => broadcast({ type: 'route_discovered', ...data }));
+  // ── [V2] SSOT — all traceroute results emit route_discovered, not PASV only
+  } else {
+    traceroute.on('result', (data) => broadcast({ type: 'route_discovered', ...data }));
+  }
+  // ──────────────────────────────────────────────────────────────────────────
   nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
+
+  // ── [V2] SSOT_ROUTE_RENDER — backend-derived radar display state ──────────
+  let _getRadarContext = null; // set below when FF active; used by connection replay
+  if (FF.SSOT_ROUTE_RENDER) {
+    // Local state for radar_context derivation
+    let _rcTracerouteNode     = null;   // node currently being traced (or last traced)
+    let _rcActive             = false;  // true while a traceroute dispatch is in flight
+    let _rcPassiveTracingNode = null;   // node currently being traced (PASV card spinner)
+
+    function buildRadarContext() {
+      const mode      = dashMode.value;      // 0=PASV, 1=ACTV, 2=SCAN
+      const targetNum = lastPointTarget?.point_target ?? null;
+      const armAz     = (mode !== 0) ? (rotator.status?.target ?? null) : null;
+
+      // tracerouteNode: which node gets crosshairs; traceroute_active: animate its route
+      let tracerouteNode = null;
+      let activeCard     = null;
+
+      if (mode === 1) {
+        // ACTV: crosshairs always on target; animate while traceroute in flight
+        tracerouteNode = targetNum;
+        activeCard = targetNum ? {
+          mode: 'actv', node_num: targetNum, label: 'TARGET',
+          border: 'rgba(255,30,30,0.40)', accent: 'rgba(255,30,30,0.75)',
+          nameclr: 'rgba(255,30,30,0.95)', divider: 'rgba(255,30,30,0.18)',
+        } : null;
+      } else if (mode === 0) {
+        // PASV: crosshairs on last traced node; card while actively tracing
+        tracerouteNode = _rcTracerouteNode;
+        activeCard = _rcPassiveTracingNode ? {
+          mode: 'pasv', node_num: _rcPassiveTracingNode, label: 'TRACING',
+          border: 'rgba(0,255,80,0.35)', accent: 'rgba(0,255,80,0.75)',
+          nameclr: 'rgba(0,255,80,0.95)', divider: 'rgba(0,255,80,0.15)',
+        } : null;
+      } else if (mode === 2) {
+        // SCAN: crosshairs on last traced node, no card
+        tracerouteNode = _rcTracerouteNode;
+        activeCard     = null;
+      }
+
+      return {
+        type:              'radar_context',
+        mode,
+        traceroute_node:   tracerouteNode,
+        traceroute_active: _rcActive,
+        target_arm_az:     armAz,
+        active_card:       activeCard,
+      };
+    }
+
+    function broadcastRadarContext() {
+      broadcast(buildRadarContext());
+    }
+    _getRadarContext = buildRadarContext;
+
+    // Wire up triggers
+    traceroute.on('start', ({ to }) => {
+      _rcTracerouteNode = to;
+      _rcActive         = true;
+      broadcastRadarContext();
+    });
+    traceroute.on('result', (data) => {
+      _rcTracerouteNode = data.from;
+      _rcActive         = false;
+      if (dashMode.value === 0) _rcPassiveTracingNode = null;
+      broadcastRadarContext();
+    });
+    traceroute.on('cancel', () => {
+      _rcActive = false;
+      broadcastRadarContext();
+    });
+    passiveTracer.on('tracing', (data) => {
+      _rcPassiveTracingNode = data.from;
+      broadcastRadarContext();
+    });
+    rotator.on('point_target', () => broadcastRadarContext());
+    dashMode.on('change', () => {
+      if (dashMode.value !== 0) _rcPassiveTracingNode = null;
+      broadcastRadarContext();
+    });
+    scanner.on('contact', () => broadcastRadarContext());
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   wss.on('connection', (ws) => {
     // Send current bridge connection state immediately
@@ -138,9 +253,7 @@ export function attachWsRelay(server) {
       if (ws.readyState === 1) ws.send(JSON.stringify(state));
     }
     // Replay device list — no HTTP
-    if (lastDeviceList && ws.readyState === 1) {
-      ws.send(JSON.stringify(lastDeviceList));
-    }
+    if (lastDeviceList) sendEnriched(ws, lastDeviceList);
 
     // Always send current dash mode — rotator may be offline but mode is persisted
     ws.send(JSON.stringify({ type: 'rotator', data: { _mode: dashMode.value } }));
@@ -153,18 +266,21 @@ export function attachWsRelay(server) {
     if (lastSignalUpdate) {
       ws.send(JSON.stringify({ type: 'signal_update', data: lastSignalUpdate }));
     }
+    if (_getRadarContext) {
+      ws.send(JSON.stringify(_getRadarContext()));
+    }
     if (scanner.active) {
       ws.send(JSON.stringify({ type: 'scan_start', data: {
         resumed: true, az: scanner.az, dwell_az: scanner.dwellAz,
         contacts: scanner.contacts,
       }}));
     }
-    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
+    sendEnriched(ws, { type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos });
 
     // All named nodes from cache — unfiltered, for message addressing only
     const knownNodes = Array.from(nodeList._cache.values())
       .filter(n => n.user?.long_name)
-      .map(n => ({ num: n.num, user: { short_name: n.user.short_name, long_name: n.user.long_name } }));
+      .map(n => ({ num: n.num, display_name: resolveNodeLabel(n.num), user: { short_name: n.user.short_name, long_name: n.user.long_name } }));
     ws.send(JSON.stringify({ type: 'known_nodes', nodes: knownNodes }));
 
     // Tilt calibration — replayed so browser never needs HTTP for this
@@ -193,16 +309,19 @@ export function attachWsRelay(server) {
     if (lastSignalUpdate) {
       ws.send(JSON.stringify({ type: 'signal_update', data: lastSignalUpdate }));
     }
+    if (_getRadarContext) {
+      ws.send(JSON.stringify(_getRadarContext()));
+    }
     if (scanner.active) {
       ws.send(JSON.stringify({ type: 'scan_start', data: {
         resumed: true, az: scanner.az, dwell_az: scanner.dwellAz, contacts: scanner.contacts,
       }}));
     }
-    ws.send(JSON.stringify({ type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
+    sendEnriched(ws, { type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos });
 
     function onEvent(ev) {
       if (ws.readyState !== 1) return;
-      if (!ev.device || ev.device === nodeId || ev.type?.startsWith('ota_')) ws.send(JSON.stringify(ev));
+      if (!ev.device || ev.device === nodeId || ev.type?.startsWith('ota_')) sendEnriched(ws, ev);
     }
 
     const onRotatorStatus = makeRotatorThrottle((data) => {
@@ -228,7 +347,7 @@ export function attachWsRelay(server) {
     const onScanEnd      = onScan('scan_end');
 
     function onNodeList(nodes) {
-      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'node_list', nodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
+      sendEnriched(ws, { type: 'node_list', nodes, total: nodeList._cache.size, homePos: nodeList.homePos });
     }
 
     bridge.on('event', onEvent);

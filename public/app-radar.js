@@ -4,6 +4,7 @@
 //   ACTV (1): nodes, route overlay for targeted node (animated dots), red crosshairs, target arm
 //   SCAN (2): nodes only, NO route overlays, target arm shows scan position
 import { fetchJSON, svgElem, ageColor, themeColor, geocodeNode, haversine, bearing } from './app-helpers.js';
+import { FF } from './feature-flags.js';
 
 export const radarMixin = {
   get targetNode() {
@@ -43,20 +44,44 @@ export const radarMixin = {
           return NICE_KM.find(n => n >= dataMax) ?? dataMax * 1.15;
         })()
       : Number(this.radarRange);
+    // ── [V2] SSOT_ROUTE_RENDER — build ctx from backend state, pass to draw fns
+    const ctx = FF.SSOT_ROUTE_RENDER ? this._buildRadarCtx() : null;
+    // ─────────────────────────────────────────────────────────────────────────
     this._drawRadarBg(maxKm);
-    this._drawTargetArm();
+    this._drawTargetArm(ctx);
     this._drawRadarBeam();
-    this._drawRadarTraceroute(maxKm);
-    this._drawRadarNodes(maxKm);
+    this._drawRadarTraceroute(maxKm, ctx);
+    this._drawRadarNodes(maxKm, ctx);
   },
 
-  _drawTargetArm() {
+  _buildRadarCtx() {
+    const rc = this.radarCtx ?? {};
+    return {
+      mode:             rc.mode             ?? this.rotatorMode,
+      tracerouteNode:   rc.traceroute_node   ?? null,
+      tracerouteActive: rc.traceroute_active ?? false,
+      targetArmAz:      (rc.mode ?? this.rotatorMode) !== 0
+                          ? (this.rotatorStatus?.target ?? null)
+                          : null,
+      activeCard:       rc.active_card      ?? null,
+    };
+  },
+
+  _drawTargetArm(ctx) {
     const ag = document.getElementById('radar-scan-arm-g');
     if (!ag) return;
     ag.innerHTML = '';
-    if (this.rotatorMode === 1) return;
-    const target = this.rotatorStatus?.target;
-    if (target == null) return;
+    // ── [V1] LEGACY — remove when SSOT_ROUTE_RENDER verified ─────────────────
+    if (!ctx) {
+      if (this.rotatorMode === 0) return;
+      const target = this.rotatorStatus?.target;
+      if (target == null) return;
+    // ── [V2] SSOT — backend sends target_arm_az, null means no arm ───────────
+    } else {
+      if (ctx.targetArmAz == null) return;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+    const target = ctx ? ctx.targetArmAz : this.rotatorStatus?.target;
     const CX = 300, CY = 300, MAX_R = 230;
     const rad = (target - 90) * Math.PI / 180;
     const line = svgElem('line', {
@@ -68,15 +93,12 @@ export const radarMixin = {
     ag.appendChild(line);
   },
 
-  _drawRadarTraceroute(maxKm) {
+  _drawRadarTraceroute(maxKm, ctx) {
     const tg = document.getElementById('radar-traceroute-g');
     if (!tg) return;
     tg.innerHTML = '';
     const home = this.homePos;
     if (!home) return;
-
-    // SCAN mode: no route overlays
-    if (this.rotatorMode === 2) return;
 
     const CX = 300, CY = 300, R = 256;
 
@@ -98,23 +120,34 @@ export const radarMixin = {
     for (const node of this.nodes) {
       const tr = node.last_traceroute;
 
-      // ACTV mode: targeted node is fully lit; others are not drawn in ACTV
-      const isTargeted = this.rotatorMode === 1 && node.num === this.yagiPointTarget;
-      if (this.rotatorMode === 1 && !isTargeted) continue;
-      // PASV mode: recently passive-traced node gets full opacity and animated dots
-      const isPassive  = this.rotatorMode === 0 && node.num === this.passiveTraceNum;
-
-      // Skip nodes with no route data unless actively being traced right now
-      if (!tr && !isPassive) continue;
+      // ── [V1] LEGACY — remove when SSOT_ROUTE_RENDER verified ─────────────
+      let isHighlighted, isLocked, isAnimated;
+      if (!ctx) {
+        if (this.rotatorMode === 2) return; // SCAN: no overlays
+        const isTargeted = this.rotatorMode === 1 && node.num === this.yagiPointTarget;
+        if (this.rotatorMode === 1 && !isTargeted) continue; // ACTV: targeted only
+        const isPassive  = this.rotatorMode === 0 && node.num === this.passiveTraceNum;
+        if (!tr && !isPassive) continue;
+        isHighlighted = isTargeted || isPassive;
+        isLocked      = isTargeted;
+        isAnimated    = isHighlighted;
+      // ── [V2] SSOT — static route always drawn; animate only while in flight
+      } else {
+        if (!tr) continue;
+        isHighlighted = node.num === ctx.tracerouteNode; // opacity/stroke boost when focused
+        isLocked      = isHighlighted;
+        isAnimated    = isHighlighted && ctx.tracerouteActive;
+      }
+      // ───────────────────────────────────────────────────────────────────────
 
       const ageSec = tr?.ts ? (Date.now() - tr.ts) / 1000 : 0;
-      const fade = isTargeted || isPassive ? 0.90
+      const fade = isHighlighted ? 0.90
         : (ageSec < 3600 ? 0.30 : Math.max(0.10, 0.30 - (ageSec - 3600) / (23 * 3600) * 0.20));
 
       const col = nodeColor(node.num);
 
       const rg = svgElem('g', { style: `opacity:${fade.toFixed(2)};cursor:crosshair` });
-      if (!isTargeted) {
+      if (!isLocked) {
         rg.addEventListener('mouseenter', () => { rg.style.opacity = 1; });
         rg.addEventListener('mouseleave', () => { rg.style.opacity = fade; });
       }
@@ -122,10 +155,9 @@ export const radarMixin = {
       const chain  = [null, ...(tr?.route ?? []), node.num];
       const snrs   = tr?.snr_towards ?? [];
       const points = chain.map(n => numToXY(n, tr?.relay_positions));
+      const known  = chain.map((_, i) => points[i] ? i : -1).filter(i => i >= 0);
+      const sw     = isHighlighted ? 2.5 : 2;
 
-      const known = chain.map((_, i) => points[i] ? i : -1).filter(i => i >= 0);
-
-      const sw = isTargeted ? 2.5 : 2;
       for (let k = 0; k < known.length - 1; k++) {
         const ai = known[k], bi = known[k + 1];
         const p1 = points[ai], p2 = points[bi];
@@ -158,8 +190,7 @@ export const radarMixin = {
         }));
       }
 
-      // Animated pulse dots — ACTV targeted node, or PASV recently-traced node
-      if (isTargeted || isPassive) {
+      if (isAnimated) {
         const knownPts = known.map(i => points[i]);
         if (knownPts.length >= 2) {
           const pathD = 'M ' + knownPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
@@ -169,11 +200,9 @@ export const radarMixin = {
             const phase = (phase0 + d * dur / N) % dur;
             const dot = svgElem('circle', { r: '2.5', cx: '0', cy: '0', style: `fill:${col}` });
             const anim = svgElem('animateMotion', {
-              path: pathD,
-              dur: `${dur}s`,
+              path: pathD, dur: `${dur}s`,
               begin: `-${phase.toFixed(3)}s`,
-              repeatCount: 'indefinite',
-              calcMode: 'linear',
+              repeatCount: 'indefinite', calcMode: 'linear',
             });
             dot.appendChild(anim);
             rg.appendChild(dot);
@@ -263,7 +292,7 @@ export const radarMixin = {
     beamG.innerHTML = `<path d="M ${CX} ${CY} L ${wx1.toFixed(1)} ${wy1.toFixed(1)} A ${R} ${R} 0 0 1 ${wx2.toFixed(1)} ${wy2.toFixed(1)} Z" style="fill:rgba(80,200,255,0.14);stroke:none;clip-path:url(#radarClip)"/><line x1="${CX}" y1="${CY}" x2="${CX}" y2="${CY - R}" style="stroke:rgba(80,200,255,0.85);stroke-width:1;opacity:0.9"/><text x="${CX}" y="${CY - R - 15}" style="fill:rgba(255,50,50,0.95);font-size:11px;font-weight:700;font-family:'Oxanium',monospace;text-anchor:middle;dominant-baseline:middle;pointer-events:none">${az}°</text>`;
   },
 
-  _drawRadarNodes(maxKm) {
+  _drawRadarNodes(maxKm, ctx) {
     const ng = document.getElementById('radar-nodes-g');
     if (!ng) return;
     ng.innerHTML = '';
@@ -273,8 +302,13 @@ export const radarMixin = {
     const CLUSTER_R = 22, BASE_DIAG = 12, STEP_DIAG = 14, HOR_LEN = 16;
     const selectedNum   = this.radarSelected?.num;
     const lastHeardNum  = this.lastHeardNum;
-    const pointTarget   = this.yagiPointTarget;
-    const isActv        = this.rotatorMode === 1;
+    // ── [V1] LEGACY ──────────────────────────────────────────────────────────
+    const pointTarget   = !ctx ? this.yagiPointTarget  : null;
+    const isActv        = !ctx ? this.rotatorMode === 1 : false;
+    // ── [V2] SSOT ────────────────────────────────────────────────────────────
+    const ctxTraceNode  = ctx?.tracerouteNode ?? null;
+    const ctxCardMode   = ctx?.activeCard?.mode ?? null; // 'actv' | 'pasv' | null
+    // ─────────────────────────────────────────────────────────────────────────
 
     const npos = nodes.map(node => {
       if (node._az == null) return null;
@@ -318,30 +352,53 @@ export const radarMixin = {
         g.appendChild(svgElem('line', { x1: x, y1: y+7,  x2: x, y2: y+17, style: rs }));
       }
 
-      // Crosshairs — ACTV: red with live signal overlay; PASV traced node: green
-      if (node.num === pointTarget && isActv) {
-        this.appendCrosshair(g, x, y);
-
-        if (this.yagiSignal.num === node.num && this.signalAge() != null && this.signalAge() < 30) {
-          this.appendPulseRing(g, x, y);
+      // ── [V1] LEGACY — Crosshairs: ACTV red + signal overlay; PASV green ────
+      if (!ctx) {
+        if (node.num === pointTarget && isActv) {
+          this.appendCrosshair(g, x, y);
+          if (this.yagiSignal.num === node.num && this.signalAge() != null && this.signalAge() < 30) {
+            this.appendPulseRing(g, x, y);
+          }
+          if (this.yagiSignal.num === node.num && (this.yagiSignal.rssi != null || this.yagiSignal.snr != null)) {
+            const sig = this.yagiSignal;
+            const age = this.signalAge();
+            const stale = age != null && age >= 30;
+            const col = stale ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)';
+            const parts = [];
+            if (sig.rssi != null) parts.push(`${sig.rssi} dBm`);
+            if (sig.snr  != null) parts.push(`${sig.snr >= 0 ? '+' : ''}${sig.snr.toFixed(1)} dB`);
+            if (age != null) parts.push(`${age}s`);
+            const sigTxt = svgElem('text', { x, y: y + 32, style: `fill:${col};font-size:9px;font-weight:600;font-family:'Oxanium',monospace;text-anchor:middle;pointer-events:none;filter:url(#rimGlow)` });
+            sigTxt.textContent = parts.join(' · ');
+            g.appendChild(sigTxt);
+          }
+        } else if (node.num === this.passiveTraceNum && this.rotatorMode === 0) {
+          this.appendCrosshair(g, x, y, 'rgba(0,255,80,0.80)');
         }
-
-        if (this.yagiSignal.num === node.num && (this.yagiSignal.rssi != null || this.yagiSignal.snr != null)) {
-          const sig = this.yagiSignal;
-          const age = this.signalAge();
-          const stale = age != null && age >= 30;
-          const col = stale ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)';
-          const parts = [];
-          if (sig.rssi != null) parts.push(`${sig.rssi} dBm`);
-          if (sig.snr  != null) parts.push(`${sig.snr >= 0 ? '+' : ''}${sig.snr.toFixed(1)} dB`);
-          if (age != null) parts.push(`${age}s`);
-          const sigTxt = svgElem('text', { x, y: y + 32, style: `fill:${col};font-size:9px;font-weight:600;font-family:'Oxanium',monospace;text-anchor:middle;pointer-events:none;filter:url(#rimGlow)` });
-          sigTxt.textContent = parts.join(' · ');
-          g.appendChild(sigTxt);
+      // ── [V2] SSOT — colour from ctx.activeCard.mode, node from ctx.tracerouteNode
+      } else if (node.num === ctxTraceNode) {
+        const xhColor = ctxCardMode === 'actv' ? undefined : 'rgba(0,255,80,0.80)';
+        this.appendCrosshair(g, x, y, xhColor);
+        if (ctxCardMode === 'actv') {
+          if (this.yagiSignal.num === node.num && this.signalAge() != null && this.signalAge() < 30) {
+            this.appendPulseRing(g, x, y);
+          }
+          if (this.yagiSignal.num === node.num && (this.yagiSignal.rssi != null || this.yagiSignal.snr != null)) {
+            const sig = this.yagiSignal;
+            const age = this.signalAge();
+            const stale = age != null && age >= 30;
+            const col = stale ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)';
+            const parts = [];
+            if (sig.rssi != null) parts.push(`${sig.rssi} dBm`);
+            if (sig.snr  != null) parts.push(`${sig.snr >= 0 ? '+' : ''}${sig.snr.toFixed(1)} dB`);
+            if (age != null) parts.push(`${age}s`);
+            const sigTxt = svgElem('text', { x, y: y + 32, style: `fill:${col};font-size:9px;font-weight:600;font-family:'Oxanium',monospace;text-anchor:middle;pointer-events:none;filter:url(#rimGlow)` });
+            sigTxt.textContent = parts.join(' · ');
+            g.appendChild(sigTxt);
+          }
         }
-      } else if (node.num === this.passiveTraceNum && this.rotatorMode === 0) {
-        this.appendCrosshair(g, x, y, 'rgba(0,255,80,0.80)');
       }
+      // ─────────────────────────────────────────────────────────────────────
 
       if (isSelected)
         g.appendChild(svgElem('circle', { cx: x, cy: y, r: 8, style: `fill:none;stroke:${G4};stroke-width:1.5;stroke-dasharray:4 3` }));
@@ -350,9 +407,9 @@ export const radarMixin = {
         g.appendChild(svgElem('circle', { cx: x, cy: y, r: r + 2, style: `fill:${ringColor};opacity:0.85` }));
       g.appendChild(svgElem('circle', { cx: x, cy: y, r, style: `fill:${dotColor};filter:url(#blipGlow)` }));
       const title = svgElem('title');
-      title.textContent = node.user?.long_name || node.user?.id || ('!' + (node.num ?? 0).toString(16).slice(-4));
+      title.textContent = node.user?.long_name || node.display_name || '';
       g.appendChild(title);
-      const label = node.user?.short_name || ('!' + (node.num ?? 0).toString(16).slice(-4));
+      const label = node.display_name || node.user?.short_name || '';
       const diagSign = isRight ? 1 : -1;
       const elbowX = x + diagSign * diagLen, elbowY = y - diagLen;
       const capX   = elbowX + diagSign * HOR_LEN;
@@ -408,8 +465,7 @@ export const radarMixin = {
   },
 
   tracerouteNodeName(num) {
-    const n = this.nodes.find(n => n.num === num);
-    return n?.user?.short_name || ('!' + (num >>> 0).toString(16).slice(-4).toUpperCase());
+    return this.nodeLabel(num);
   },
 
   toggleRadarCrosshair() {

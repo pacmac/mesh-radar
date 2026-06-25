@@ -2,12 +2,22 @@
 // Every badge, avatar, indicator and composite widget is defined once here.
 // Use x-html="componentName(...)" in Alpine templates.
 
+import { FF } from './feature-flags.js';
+
 export const componentsMixin = {
 
   // ── Active overlay card descriptor ──────────────────────────────────────
   // SSOT: returns { node, mode, label, border, accent, nameclr, divider } or null.
   // Template uses this to drive the unified PASV/ACTV/SCAN overlay card.
   get activeCard() {
+    // ── [V2] SSOT_ROUTE_RENDER — backend sends active_card, we just resolve node
+    if (FF.SSOT_ROUTE_RENDER) {
+      const ac = this.radarCtx?.active_card;
+      if (!ac) return null;
+      const node = this.nodes.find(n => n.num === ac.node_num) || null;
+      return node ? { node, mode: ac.mode, label: ac.label, border: ac.border, accent: ac.accent, nameclr: ac.nameclr, divider: ac.divider } : null;
+    }
+    // ── [V1] LEGACY — remove when SSOT_ROUTE_RENDER verified ─────────────────
     if (this.rotatorMode === 1 && this.targetNode)
       return { node: this.targetNode,  mode: 'actv', label: 'TARGET',
                border:  'rgba(255,30,30,0.40)', accent:  'rgba(255,30,30,0.75)',
@@ -17,6 +27,7 @@ export const componentsMixin = {
                border:  'rgba(0,255,80,0.35)',  accent:  'rgba(0,255,80,0.75)',
                nameclr: 'rgba(0,255,80,0.95)',  divider: 'rgba(0,255,80,0.15)' };
     return null;
+    // ─────────────────────────────────────────────────────────────────────────
   },
 
   // ── Avatar ──────────────────────────────────────────────────────────────

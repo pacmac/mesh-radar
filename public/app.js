@@ -9,6 +9,7 @@ import { rotatorMixin }   from './app-rotator.js';
 import { radarMixin }     from './app-radar.js';
 import { messagesMixin }  from './app-messages.js';
 import { rangeMixin }     from './app-range.js';
+import { perfMixin }      from './app-perf.js';
 import { telemetryMixin } from './app-telemetry.js';
 import { configMixin }      from './app-config.js';
 import { componentsMixin }  from './app-components.js';
@@ -111,6 +112,7 @@ function dashboard() {
     tracerouteResult:  null,
     traceroutePending: false,
     passiveTraceNum:   null,
+    radarCtx:          null,   // [V2] SSOT_ROUTE_RENDER — backend-derived radar display state
     lastHeardNum:   null,
 
     // -- Messages -------------------------------------------------------------
@@ -137,6 +139,7 @@ function dashboard() {
     mentionIdx: 0,
     unreadMessages: 0,
     _seenPacketIds: new Set(),
+    _ackTimers: {},
     msgChannel: '0',
     msgText: '',
     msgSent: false,
@@ -206,6 +209,13 @@ function dashboard() {
     // -- Live feed ------------------------------------------------------------
     feedVisible: [],   // populated in init() from feedFilterOptions; DOM persist manages it
 
+    // -- Performance ----------------------------------------------------------
+    perfHistory:          [],
+    perfLoading:          false,
+    perfAutoNodes:        JSON.parse(persistGet('perfAutoNodes', '[]')),
+    perfAutoIntervalMin:  parseInt(persistGet('perfAutoIntervalMin', '5'), 10) || 5,
+    _perfAutoTimer:       null,
+
     // -- Range test -----------------------------------------------------------
     rangeLog:     [],
     rangeLoading: false,
@@ -217,6 +227,8 @@ function dashboard() {
     rangeTimer: { active: false, endsAt: null, nodeId: null, remaining: null },
     _rangeCountdown: null,
     _rangeAutoSync:  null,
+    _rangeTick:      0,
+    _rangeUid:       0,
 
     // -- Init -----------------------------------------------------------------
     async init() {
@@ -263,6 +275,7 @@ function dashboard() {
         const pathToTab = {
           '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
           '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/devices': 'devices',
+          '/performance': 'perf',
         };
         const t = e.state?.tab ?? pathToTab[window.location.pathname] ?? 'overview';
         this.setNav(t);
@@ -283,10 +296,12 @@ function dashboard() {
       this.loadTiltHistory();
       this.loadEnvHistory(this.activeNodeId);
       setInterval(() => { if (this.yagiSignal.ts) this._sigTick++; }, 1000);
+      setInterval(() => this._rangeTick++, 60000);
 
       if (this.tab === 'radar') this.$nextTick(() => this.initRadar());
       else if (this.tab === 'cfg') this.switchCfgTab(this.cfgTab);
-      else if (this.tab === 'range') { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
+      else if (this.tab === 'range') { this.loadRangeTest(); this.loadRangeTimer(); }
+      else if (this.tab === 'perf') { this.loadPerfLoraCfg(); this.loadPerfHistory(); }
     },
   };
 }
@@ -298,7 +313,7 @@ window.dashboard = function() {
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
     rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
-    componentsMixin,
+    componentsMixin, perfMixin,
   ];
   for (const mixin of mixins) {
     Object.defineProperties(state, Object.getOwnPropertyDescriptors(mixin));

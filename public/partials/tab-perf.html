@@ -1,0 +1,198 @@
+        <!-- ===================== PERFORMANCE ===================== -->
+        <div x-show="tab==='perf'" class="flex-1 min-h-0 flex flex-col gap-4">
+
+          <!-- ── Link Budget Stats ─────────────────────────────────────────── -->
+          <div class="stats stats-horizontal shadow bg-base-100 w-full overflow-x-auto shrink-0">
+            <div class="stat">
+              <div class="stat-title">EIRP</div>
+              <div class="stat-value"
+                   x-text="perfEirpDbm().toFixed(1) + ' dBm'"></div>
+              <div class="stat-desc font-mono"
+                   x-text="(loraCfg?.tx_power??'–') + ' + ' + (deviceConfigs[activeNodeId]?.gain_dbi??0) + ' − ' + (deviceConfigs[activeNodeId]?.cable_loss_db??0) + ' dB'"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Sensitivity</div>
+              <div class="stat-value"
+                   x-text="perfRxSensitivityDbm().toFixed(1) + ' dBm'"></div>
+              <div class="stat-desc font-mono"
+                   x-text="'SF' + (loraCfg?.spread_factor??'?') + ' BW' + (loraCfg?.bandwidth??'?') + 'k · ' + (loraCfg?.sx126x_rx_boosted_gain ? 'boosted' : 'normal')"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Link Budget</div>
+              <div class="stat-value text-success"
+                   x-text="(perfEirpDbm() - perfRxSensitivityDbm()).toFixed(0) + ' dB'"></div>
+              <div class="stat-desc font-mono"
+                   x-text="(loraCfg?.region ?? '–') + ' · ' + perfFreqMHz().toFixed(0) + ' MHz'"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Theo. Range</div>
+              <div class="stat-value text-success"
+                   x-text="perfMaxRangeKm(3).toFixed(0) + ' km'"></div>
+              <div class="stat-desc">log-distance n=3</div>
+            </div>
+            <template x-if="perfScore() != null">
+              <div class="stat">
+                <div class="stat-title">Avg Excess Loss</div>
+                <div class="stat-value"
+                     :class="perfScore() < 20 ? 'text-success' : perfScore() < 35 ? 'text-warning' : 'text-error'"
+                     x-text="perfScore().toFixed(1) + ' dB'"></div>
+                <div class="stat-desc">above free-space · recent links</div>
+              </div>
+            </template>
+          </div>
+
+          <!-- ── Two-column grid — fills remaining viewport height ──────────── -->
+          <div class="grid grid-cols-2 gap-4 flex-1 min-h-0">
+
+            <!-- ── SNR vs Distance (phosphor panel, fills column height) ──── -->
+            <div class="rounded-lg overflow-hidden flex flex-col min-h-0"
+                 style="box-shadow:0 0 0 1px rgba(0,255,80,0.12),0 6px 32px rgba(0,0,0,0.7)">
+
+              <!-- header bar -->
+              <div class="flex items-center gap-3 px-3 py-2 shrink-0 flex-wrap"
+                   style="background:#0a1a0a;border-bottom:1px solid rgba(0,255,80,0.12)">
+                <span class="font-oxanium"
+                      style="font-size:0.6rem;font-weight:700;letter-spacing:0.2em;color:rgba(0,255,80,0.75)">SNR VS DISTANCE</span>
+                <span style="font-family:monospace;font-size:0.58rem;color:rgba(0,255,80,0.32);letter-spacing:0.08em">first-hop chip SNR · excess vs FSPL</span>
+                <div class="ml-auto flex items-center gap-3"
+                     style="font-family:monospace;font-size:0.58rem;color:rgba(0,255,80,0.38)">
+                  <span class="flex items-center gap-1">
+                    <svg width="16" height="3" style="display:inline"><line x1="0" y1="1.5" x2="16" y2="1.5" stroke="rgba(0,210,255,0.85)" stroke-width="1.5"/></svg> FSPL
+                  </span>
+                  <span class="flex items-center gap-1">
+                    <svg width="16" height="3" style="display:inline"><line x1="0" y1="1.5" x2="16" y2="1.5" stroke="rgba(255,160,40,0.75)" stroke-width="1.2" stroke-dasharray="4,2"/></svg> n=3
+                  </span>
+                  <span class="flex items-center gap-1"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:rgba(74,222,128,0.90)"></span> &lt;15 dB</span>
+                  <span class="flex items-center gap-1"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:rgba(251,191,36,0.90)"></span> 15–35</span>
+                  <span class="flex items-center gap-1"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:rgba(248,113,113,0.85)"></span> &gt;35</span>
+                </div>
+              </div>
+
+              <!-- chart body — fills panel, SVG centred with uniform scaling -->
+              <div class="relative flex-1 min-h-0"
+                   style="background:radial-gradient(ellipse at 35% 40%,#0c1a0c 0%,#050e05 55%,#020802 100%)">
+                <svg class="w-full h-full" viewBox="0 0 560 430"
+                     preserveAspectRatio="xMidYMid meet" style="display:block">
+                  <rect x="48" y="10" width="498" height="390" fill="none" stroke="rgba(0,255,80,0.12)" stroke-width="0.6"/>
+                  <g x-html="perfChartYLabels()"></g>
+                  <g x-html="perfChartXLabels()"></g>
+                  <polyline :points="perfChartFreeCurve()"
+                            fill="none" stroke="rgba(0,210,255,0.80)" stroke-width="1.5"/>
+                  <polyline :points="perfChartRealCurve()"
+                            fill="none" stroke="rgba(255,160,40,0.70)" stroke-width="1.2"
+                            stroke-dasharray="6,3"/>
+                  <g x-html="perfChartScatter()"></g>
+                  <line x1="48" :y1="perfChartSnrToY(perfSfSnrLimitDb())"
+                        x2="546" :y2="perfChartSnrToY(perfSfSnrLimitDb())"
+                        stroke="rgba(255,80,80,0.40)" stroke-width="0.8" stroke-dasharray="2,5"/>
+                  <text x="52" :y="perfChartSnrToY(perfSfSnrLimitDb()) - 4"
+                        font-size="9" font-family="monospace" fill="rgba(255,80,80,0.55)"
+                        x-text="'SF' + (loraCfg?.spread_factor??11) + ' limit'"></text>
+                </svg>
+                <div x-show="!perfLoading && perfHistory.filter(r=>perfEnrich(r).snrTx!=null).length===0"
+                     class="absolute inset-0 flex items-center justify-center pointer-events-none"
+                     style="font-family:monospace;font-size:0.65rem;color:rgba(0,255,80,0.25)">
+                  no traceroute data — run a traceroute to populate
+                </div>
+              </div>
+
+            </div><!-- /chart panel -->
+
+            <!-- ── Right column: history + auto traceroute ────────────────── -->
+            <div class="flex flex-col gap-4 min-h-0">
+
+              <!-- Traceroute history — fills remaining height, scrollable -->
+              <div class="card bg-base-100 shadow flex-1 min-h-0 flex flex-col overflow-hidden">
+                <div class="card-body py-3 px-4 flex flex-col flex-1 min-h-0">
+                  <div class="flex items-center gap-2 shrink-0 mb-2">
+                    <h2 class="card-title flex-1">Traceroute History</h2>
+                    <span x-show="perfLoading" class="loading loading-spinner loading-xs opacity-50"></span>
+                    <button class="btn btn-xs btn-ghost opacity-60 hover:opacity-100"
+                            @click="loadPerfHistory()" :disabled="perfLoading">↺ Refresh</button>
+                  </div>
+                  <div class="flex-1 min-h-0 overflow-y-auto">
+                    <table class="table table-xs" style="white-space:nowrap">
+                      <thead class="sticky top-0 bg-base-100 z-10 backdrop-blur-sm">
+                        <tr>
+                          <th>Time</th>
+                          <th>Node</th>
+                          <th class="text-right">Dist</th>
+                          <th class="text-right">SNR →</th>
+                          <th class="text-right">SNR ←</th>
+                          <th class="text-right">Excess</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template x-for="row in perfHistory.map(r => perfEnrich(r)).slice(0,200)" :key="row.id">
+                          <tr class="hover:bg-base-200/40">
+                            <td class="font-mono text-base-content/45"
+                                x-text="new Date(row.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})"></td>
+                            <td class="font-mono font-semibold"
+                                x-text="row.to_short_name || nodeLabel(row.to_num)"></td>
+                            <td class="font-mono text-right text-base-content/60"
+                                x-text="row.distKm != null ? row.distKm.toFixed(1)+' km' : '–'"></td>
+                            <td class="font-mono text-right"
+                                :class="row.snrTx == null ? '' : row.snrTx > -5 ? 'text-success' : row.snrTx > -15 ? 'text-warning' : 'text-error'"
+                                x-text="row.snrTx != null ? row.snrTx.toFixed(1)+' dB' : '–'"></td>
+                            <td class="font-mono text-right text-base-content/50"
+                                x-text="row.snrRx != null ? row.snrRx.toFixed(1)+' dB' : '–'"></td>
+                            <td class="font-mono text-right font-semibold"
+                                :class="row.gapTx == null ? 'text-base-content/30' : row.gapTx < 15 ? 'text-success' : row.gapTx < 35 ? 'text-warning' : 'text-error'"
+                                x-text="row.gapTx != null ? '+' + row.gapTx.toFixed(0)+' dB' : '–'"></td>
+                          </tr>
+                        </template>
+                        <tr x-show="!perfLoading && perfHistory.length === 0">
+                          <td colspan="6" class="text-center text-base-content/30 italic py-8">No history yet</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Auto traceroute — compact, anchored to bottom of right column -->
+              <div class="card bg-base-100 shadow shrink-0">
+                <div class="card-body py-3 px-4">
+                  <div class="flex items-center gap-2 mb-3">
+                    <h2 class="card-title flex-1">Auto Traceroute</h2>
+                    <select class="select select-xs select-bordered font-mono w-20"
+                            x-model.number="perfAutoIntervalMin"
+                            @change="if (_perfAutoTimer) perfAutoStart()">
+                      <option value="1">1 min</option>
+                      <option value="2">2 min</option>
+                      <option value="5">5 min</option>
+                      <option value="10">10 min</option>
+                      <option value="15">15 min</option>
+                      <option value="30">30 min</option>
+                    </select>
+                    <button class="btn btn-xs"
+                            :class="_perfAutoTimer ? 'btn-error' : 'btn-success'"
+                            :disabled="!perfAutoNodes.length && !_perfAutoTimer"
+                            @click="_perfAutoTimer ? perfAutoStop() : perfAutoStart()"
+                            x-text="_perfAutoTimer ? '■ Stop' : '▶ Start'"></button>
+                  </div>
+                  <div class="flex flex-wrap gap-1.5">
+                    <template x-for="n in nodes.filter(n => n._km != null).sort((a,b) => (a._km??999) - (b._km??999))" :key="n.num">
+                      <button class="btn btn-xs font-mono gap-1"
+                              :class="perfAutoNodes.includes(n.num) ? 'btn-primary' : 'btn-ghost border border-base-300'"
+                              @click="perfAutoToggleNode(n.num)">
+                        <span x-text="n.user?.short_name || ('!'+n.num.toString(16).slice(-4))"></span>
+                        <span class="opacity-40" x-text="n._km.toFixed(0)+'km'"></span>
+                      </button>
+                    </template>
+                    <span x-show="!nodes.filter(n=>n._km!=null).length"
+                          class="text-xs text-base-content/30 italic">No nodes with position data</span>
+                  </div>
+                  <div x-show="_perfAutoTimer" class="mt-2 text-xs font-mono text-success flex items-center gap-1.5">
+                    <span class="animate-pulse">●</span>
+                    running · every <span x-text="perfAutoIntervalMin"></span> min ·
+                    <span x-text="perfAutoNodes.length"></span> node(s)
+                  </div>
+                </div>
+              </div>
+
+            </div><!-- /right column -->
+
+          </div><!-- /grid -->
+
+        </div><!-- /perf tab -->

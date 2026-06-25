@@ -4,10 +4,12 @@ import { persistGet, persistSet } from './app-persist.js';
 const _PATH_TO_TAB = {
   '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
   '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/devices': 'devices',
+  '/performance': 'perf',
 };
 const _TAB_TO_PATH = {
   overview: '/', radar: '/radar', nodes: '/nodes',
   cfg: '/config', range: '/range', messages: '/messages', devices: '/devices',
+  perf: '/performance',
 };
 
 export function initTab() {
@@ -26,6 +28,7 @@ export const navMixin = {
     else if (t === 'cfg') this.switchCfgTab(c || this.cfgTab || 'radio');
     else if (t === 'range') { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
     else if (t === 'messages') this.unreadMessages = 0;
+    else if (t === 'perf') { this.loadPerfLoraCfg(); this.loadPerfHistory(); }
   },
 
   // Build a device-scoped URL using the active device.

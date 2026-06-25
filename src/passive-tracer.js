@@ -5,6 +5,8 @@ import { dashMode } from './dash-mode.js';
 import { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
 import { getRotatorDeviceId } from './device-config.js';
+import { FF } from './feature-flags.js';
+import { traceroute } from './traceroute.js';
 
 const log = {
   info: (...a) => console.log('[passive-tracer]', ...a),
@@ -22,8 +24,6 @@ function getPasvConfig() {
 
 // _attempted: num → ts of last SUCCESSFUL trace (stale_ms window)
 // _failed:    num → ts of last FAILED/timeout trace (stale_fail_ms window)
-// Both persist across packet events regardless of node-list cache membership
-// (nodes without GPS never enter _cache but may still be worth tracing).
 const _attempted = new Map();
 const _failed    = new Map();
 
@@ -55,42 +55,46 @@ class PassiveTracer extends EventEmitter {
     if (ev.type !== 'packet') return;
     const pkt = ev.data?.packet;
 
-    // Check if this is the traceroute response we're waiting for
-    if (this._busy && this._pendingFrom != null &&
-        pkt?.decoded?.portnum === 'TRACEROUTE_APP' &&
-        pkt?.from === this._pendingFrom) {
-      const rd = pkt.decoded.route_discovery ?? {};
-      const relay_positions = {};
-      for (const num of rd.route ?? []) {
-        const info = stmts.getNodeinfoByNum.get(num);
-        if (info?.lat != null && info?.lon != null) {
-          relay_positions[num] = {
-            latitude_i:  Math.round(info.lat * 1e7),
-            longitude_i: Math.round(info.lon * 1e7),
-          };
+    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
+    if (!FF.SSOT_TRACEROUTE) {
+      // Check if this is the traceroute response we're waiting for
+      if (this._busy && this._pendingFrom != null &&
+          pkt?.decoded?.portnum === 'TRACEROUTE_APP' &&
+          pkt?.from === this._pendingFrom) {
+        const rd = pkt.decoded.route_discovery ?? {};
+        const relay_positions = {};
+        for (const num of rd.route ?? []) {
+          const info = stmts.getNodeinfoByNum.get(num);
+          if (info?.lat != null && info?.lon != null) {
+            relay_positions[num] = {
+              latitude_i:  Math.round(info.lat * 1e7),
+              longitude_i: Math.round(info.lon * 1e7),
+            };
+          }
         }
+        log.info(`trace complete !${pkt.from.toString(16)} route=${JSON.stringify(rd.route ?? [])}`);
+        _attempted.set(pkt.from, Date.now());
+        this.emit('traced', {
+          from:            pkt.from,
+          route:           rd.route       ?? [],
+          route_back:      rd.route_back  ?? [],
+          snr_towards:     rd.snr_towards ?? [],
+          snr_back:        rd.snr_back    ?? [],
+          relay_positions,
+          ts:              Date.now(),
+        });
+        this._release();
+        return;
       }
-      log.info(`trace complete !${pkt.from.toString(16)} route=${JSON.stringify(rd.route ?? [])}`);
-      _attempted.set(pkt.from, Date.now());
-      this.emit('traced', {
-        from:            pkt.from,
-        route:           rd.route       ?? [],
-        route_back:      rd.route_back  ?? [],
-        snr_towards:     rd.snr_towards ?? [],
-        snr_back:        rd.snr_back    ?? [],
-        relay_positions,
-        ts:              Date.now(),
-      });
-      this._release();
-      return;
     }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Only trigger new traces in PASV mode (0)
     if (dashMode.value !== 0) return;
     if (this._busy) return;
     if (!pkt?.from || !ev.device) return;
     if (pkt.decoded?.portnum === 'TRACEROUTE_APP') return;
-    // Never traceroute own bridge radios, and don't transmit via the rotator (directional, may lack antenna)
+    // Never traceroute own bridge radios, and don't transmit via the rotator
     if (ownDeviceNums().has(pkt.from)) return;
     if (ev.device === getRotatorDeviceId()) return;
     if (!needsTrace(pkt.from)) return;
@@ -103,22 +107,44 @@ class PassiveTracer extends EventEmitter {
     this._pendingFrom = from_num;
     log.info(`tracing !${from_num.toString(16)} via ${device}`);
     this.emit('tracing', { from: from_num });
-    bridge.post(`/${device}/traceroute`, { to: from_num }).catch(err => {
-      log.warn(`send failed for !${from_num.toString(16)}: ${err.message}`);
-      _failed.set(from_num, Date.now());
-      this.emit('traced', { from: from_num, route: [], route_back: [], snr_towards: [], snr_back: [], relay_positions: {}, ts: Date.now() });
-      this._release();
-    });
-    const { timeout_ms } = getPasvConfig();
-    this._timeout = setTimeout(() => {
-      const num = this._pendingFrom;
-      log.warn(`timeout for !${num?.toString(16)}`);
-      _failed.set(num, Date.now());
-      this.emit('traced', { from: num, route: [], route_back: [], snr_towards: [], snr_back: [], relay_positions: {}, ts: Date.now() });
-      this._release();
-    }, timeout_ms);
+
+    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
+    if (!FF.SSOT_TRACEROUTE) {
+      bridge.post(`/${device}/traceroute`, { to: from_num }).catch(err => {
+        log.warn(`send failed for !${from_num.toString(16)}: ${err.message}`);
+        _failed.set(from_num, Date.now());
+        this.emit('traced', { from: from_num, route: [], route_back: [], snr_towards: [], snr_back: [], relay_positions: {}, ts: Date.now() });
+        this._release();
+      });
+      const { timeout_ms } = getPasvConfig();
+      this._timeout = setTimeout(() => {
+        const num = this._pendingFrom;
+        log.warn(`timeout for !${num?.toString(16)}`);
+        _failed.set(num, Date.now());
+        this.emit('traced', { from: num, route: [], route_back: [], snr_towards: [], snr_back: [], relay_positions: {}, ts: Date.now() });
+        this._release();
+      }, timeout_ms);
+    // ── [V2] SSOT — traceroute.js owns dispatch, timeout, decode ─────────────
+    } else {
+      traceroute.dispatch({ to: from_num, device })
+        .then(result => {
+          _attempted.set(from_num, Date.now());
+          this.emit('traced', result);
+        })
+        .catch(err => {
+          log.warn(`trace failed !${from_num.toString(16)}: ${err.message}`);
+          _failed.set(from_num, Date.now());
+          this.emit('traced', { from: from_num, route: [], route_back: [], snr_towards: [], snr_back: [], relay_positions: {}, ts: Date.now() });
+        })
+        .finally(() => {
+          this._busy        = false;
+          this._pendingFrom = null;
+        });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
   }
 
+  // Used by V1 path only — V2 uses .finally() on the dispatch promise
   _release() {
     clearTimeout(this._timeout);
     this._timeout     = null;

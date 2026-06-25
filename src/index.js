@@ -7,6 +7,7 @@ import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
+import { ownDeviceNums } from './node-filter.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule, getTiltCal, saveTiltCal } from './db.js';
 const ALERT_SMTP_KEYS = ['alerts.smtp_host','alerts.smtp_port','alerts.smtp_user','alerts.smtp_pass','alerts.smtp_from','alerts.smtp_to','alerts.imap_host','alerts.imap_port'];
@@ -22,6 +23,9 @@ import { startAlertPoller, ALERT_META } from './alerts.js';
 import { sendTestAlert } from './mailer.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { passiveTracer } from './passive-tracer.js';
+import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
+import { FF } from './feature-flags.js';
+import { traceroute } from './traceroute.js';
 
 const PORT = process.env.PORT || 8000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
@@ -68,7 +72,7 @@ function serveIndex(req, res) {
 const _servePage = (req, res, next) =>
   req.headers.accept?.includes('text/html') ? serveIndex(req, res) : next();
 
-for (const p of ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range']) {
+for (const p of ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range','/performance']) {
   app.get(p, _servePage);
 }
 
@@ -85,7 +89,8 @@ app.get('/status', async (req, res) => {
 
 app.get('/messages', (req, res) => {
   const limit = parseInt(req.query.limit) || 100;
-  res.json(queryMessages(limit));
+  const rows = queryMessages(limit).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) }));
+  res.json(rows);
 });
 
 app.delete('/nodes', (req, res) => {
@@ -284,7 +289,11 @@ app.get('/geocode', async (req, res) => {
 
 app.get('/range_test/log', (req, res) => {
   const limit = parseInt(req.query.limit) || 500;
-  const rows = queryRangeTestLog(limit);
+  const rows = queryRangeTestLog(limit).map(r => ({
+    ...r,
+    from_name: resolveNodeLabel(r.from_num),
+    rx_name:   resolveDeviceLabel(r.rx_device),
+  }));
   res.json({ log: rows, count: rows.length });
 });
 
@@ -348,10 +357,36 @@ app.post('/:nodeId/traceroute', async (req, res) => {
   const sender = getPrimaryDeviceId();
   if (!sender) return res.status(503).json({ error: 'no primary device configured' });
   try {
-    const result = await bridge.post(`/${sender}/traceroute`, { to: targetNum });
-    res.json(result);
+    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────
+    if (!FF.SSOT_TRACEROUTE) {
+      const result = await bridge.post(`/${sender}/traceroute`, { to: targetNum });
+      res.json(result);
+    // ── [V2] SSOT — traceroute.js owns dispatch ────────────────────────────
+    } else {
+      const result = await traceroute.dispatch({ to: targetNum, device: sender });
+      res.json(result);
+    }
+    // ───────────────────────────────────────────────────────────────────────
   } catch (err) {
     res.status(502).json({ error: err.message });
+  }
+});
+
+app.get('/traceroute_history', (req, res) => {
+  const to_num = req.query.to_num ? parseInt(req.query.to_num) : null;
+  const limit  = Math.min(parseInt(req.query.limit ?? 200), 1000);
+  try {
+    const rows = stmts.queryTracerouteHistory.all({ to_num, limit });
+    res.json(rows.map(r => ({
+      ...r,
+      route:           JSON.parse(r.route           || '[]'),
+      route_back:      JSON.parse(r.route_back      || '[]'),
+      snr_towards:     JSON.parse(r.snr_towards     || '[]'),
+      snr_back:        JSON.parse(r.snr_back        || '[]'),
+      relay_positions: JSON.parse(r.relay_positions || '{}'),
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -549,6 +584,12 @@ scanner.on('contact', (contact) => {
   const rotatorId = getRotatorDeviceId();
   if (contact.from && rotatorId)
     nodeList.confirmScanContact(contact.from, rotatorId, contact.az, contact.rssi, contact.snr);
+  if (FF.SSOT_TRACEROUTE && contact.from) {
+    const sender = getPrimaryDeviceId();
+    if (sender)
+      traceroute.dispatch({ to: contact.from, device: sender, cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: contact.from })
+        .catch(() => {});
+  }
 });
 scanner.on('end', () => {
   dashMode.set(scanner._preMode);
@@ -577,7 +618,7 @@ bridge.on('event', (ev) => {
     nodeList.handleNodeUpdate(ev);
     const node = ev.data?.node_info ?? ev.data;
     const em = node?.environment_metrics;
-    if (em && node?.num && (em.temperature != null || em.relative_humidity != null)) {
+    if (em && node?.num && ownDeviceNums().has(node.num) && (em.temperature != null || em.relative_humidity != null)) {
       const now = Math.floor(Date.now() / 1000);
       const last = _lastEnvTs.get(node.num) ?? 0;
       if (now - last > 60) {
@@ -603,40 +644,49 @@ bridge.on('event', (ev) => {
     if (pkt?.decoded?.portnum === 'TELEMETRY_APP' && pkt?.decoded?.telemetry?.environment_metrics && pkt?.from) {
       nodeList.setEnvironmentMetrics(pkt.from, pkt.decoded.telemetry.environment_metrics);
     }
-    if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery && pkt?.from) {
-      const rd = pkt.decoded.route_discovery;
-      // Snapshot relay node positions from nodeinfo so the radar can draw
-      // the exact path even when relay nodes are not in the current radar view.
-      const relay_positions = {};
-      for (const num of rd.route ?? []) {
-        const info = stmts.getNodeinfoByNum.get(num);
-        if (info?.lat != null && info?.lon != null) {
-          relay_positions[num] = { latitude_i: Math.round(info.lat * 1e7), longitude_i: Math.round(info.lon * 1e7) };
+    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
+    if (!FF.SSOT_TRACEROUTE) {
+      if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery && pkt?.from) {
+        const rd = pkt.decoded.route_discovery;
+        const relay_positions = {};
+        for (const num of rd.route ?? []) {
+          const info = stmts.getNodeinfoByNum.get(num);
+          if (info?.lat != null && info?.lon != null) {
+            relay_positions[num] = { latitude_i: Math.round(info.lat * 1e7), longitude_i: Math.round(info.lon * 1e7) };
+          }
         }
+        nodeList.setTraceroute(pkt.from, {
+          route:       rd.route       ?? [],
+          route_back:  rd.route_back  ?? [],
+          snr_towards: rd.snr_towards ?? [],
+          snr_back:    rd.snr_back    ?? [],
+          relay_positions,
+          ts: Date.now(),
+        }, pkt.to ?? null, ev.device ?? null);
       }
-      nodeList.setTraceroute(pkt.from, {
-        route:            rd.route       ?? [],
-        route_back:       rd.route_back  ?? [],
-        snr_towards:      rd.snr_towards ?? [],
-        snr_back:         rd.snr_back    ?? [],
-        relay_positions,
-        ts: Date.now(),
-      });
+    // ── [V2] SSOT — traceroute.js owns decode, relay_positions, storage ──────
+    } else {
+      traceroute.handlePacket(pkt, ev.device ?? null);
     }
+    // ─────────────────────────────────────────────────────────────────────────
   }
   // range_test_entry: broadcast by bridge with correctly decoded seq/hops from raw protobuf
   if (ev.type === 'range_test_entry' && ev.data) {
     const e = ev.data;
-    insertRangeTestEntry({
-      ts:        e.ts       ?? Math.floor(Date.now() / 1000),
-      from_num:  e.from_num ?? null,
-      rssi:      e.rssi     ?? null,
-      snr:       e.snr      ?? null,
-      hops:      e.hops     ?? null,
-      seq:       e.seq      ?? null,
-      rx_device: ev.device  ?? null,
-      via_mqtt:  e.via_mqtt ? 1 : 0,
-    });
+    try {
+      insertRangeTestEntry({
+        ts:        e.ts       ?? Math.floor(Date.now() / 1000),
+        from_num:  e.from_num ?? null,
+        rssi:      e.rssi     ?? null,
+        snr:       e.snr      ?? null,
+        hops:      e.hops     ?? null,
+        seq:       e.seq      ?? null,
+        rx_device: ev.device  ?? null,
+        via_mqtt:  e.via_mqtt ? 1 : 0,
+      });
+    } catch (err) {
+      console.error(`[range_test] DB insert failed: ${err.message}`);
+    }
   }
 });
 
@@ -648,21 +698,29 @@ rotator.on('connected', () => {
 });
 
 // Auto-traceroute: when ACTV mode acquires a new target, send a traceroute automatically.
-// Throttle: skip if this node was traced less than 5 minutes ago.
-let _lastTracedNum = null;
-let _lastTracedAt  = 0;
 const TRACE_COOLDOWN_MS = 5 * 60 * 1000;
 
 rotator.on('point_target', (data) => {
-  const num = data.point_target;
-  if (!num) return;
-  const now = Date.now();
-  if (num === _lastTracedNum && now - _lastTracedAt < TRACE_COOLDOWN_MS) return;
-  _lastTracedNum = num;
-  _lastTracedAt  = now;
+  const num    = data.point_target;
   const sender = getPrimaryDeviceId();
-  if (!sender) return;
-  bridge.post(`/${sender}/traceroute`, { to: num }).catch(() => {});
+  if (!num || !sender) return;
+
+  // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
+  if (!FF.SSOT_TRACEROUTE) {
+    // Inline cooldown state (replaced by traceroute.js cooldown mechanism in V2)
+    if (!rotator._lastTracedNum) rotator._lastTracedNum = null;
+    if (!rotator._lastTracedAt)  rotator._lastTracedAt  = 0;
+    const now = Date.now();
+    if (num === rotator._lastTracedNum && now - rotator._lastTracedAt < TRACE_COOLDOWN_MS) return;
+    rotator._lastTracedNum = num;
+    rotator._lastTracedAt  = now;
+    bridge.post(`/${sender}/traceroute`, { to: num }).catch(() => {});
+  // ── [V2] SSOT — traceroute.js owns dispatch and cooldown ─────────────────
+  } else {
+    traceroute.dispatch({ to: num, device: sender, cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: num })
+      .catch(() => {}); // cooldown rejections are expected and silent
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 });
 
 // -- auto-purge scheduler ---------------------------------------------------
@@ -700,13 +758,13 @@ bridge.on('connected', async () => {
   const primaryId = getPrimaryDeviceId();
   const cfg = primaryId ? getDeviceCfg(primaryId) : {};
 
-  // Seed NodeList: all nodes first (device unknown), then YAGI nodes with device tag
+  // Seed NodeList from merged node list, then restore device attribution from SQLite.
+  // nodes.device persists which device last received each node's packet across restarts.
   try {
-    const rotatorId = getRotatorDeviceId();
     const allResp = await bridge.get('/nodes');
     const allNodes = Object.values(allResp?.nodes ?? {});
     nodeList.seed(allNodes, null);
-    // Seed own-device cache for each known BLE device so Devices tab has metadata immediately
+    nodeList.restoreDeviceAttribution(stmts.getNodeDevices.all());
     const allDeviceCfgs = getAllDeviceCfgs();
     for (const deviceId of Object.keys(allDeviceCfgs)) {
       if (!deviceId.startsWith('!')) continue;

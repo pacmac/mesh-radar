@@ -142,6 +142,22 @@ db.exec(`
     created_at   INTEGER NOT NULL,
     expires_at   INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS traceroute_history (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts               INTEGER NOT NULL,
+    from_num         INTEGER NOT NULL,
+    to_num           INTEGER NOT NULL,
+    rx_device        TEXT,
+    route            TEXT,
+    route_back       TEXT,
+    snr_towards      TEXT,
+    snr_back         TEXT,
+    relay_positions  TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_traceroute_ts     ON traceroute_history(ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_traceroute_to_num ON traceroute_history(to_num, ts DESC);
 `);
 
 // Migrations for columns added after initial schema
@@ -276,6 +292,24 @@ export const stmts = {
     UPDATE nodeinfo SET last_traceroute = @json, updated_at = unixepoch() WHERE num = @num
   `),
 
+  insertTracerouteHistory: db.prepare(`
+    INSERT INTO traceroute_history
+      (ts, from_num, to_num, rx_device, route, route_back, snr_towards, snr_back, relay_positions)
+    VALUES
+      (@ts, @from_num, @to_num, @rx_device, @route, @route_back, @snr_towards, @snr_back, @relay_positions)
+  `),
+
+  queryTracerouteHistory: db.prepare(`
+    SELECT th.*,
+           n.lat    AS to_lat,
+           n.lon    AS to_lon,
+           n.short_name AS to_short_name
+    FROM traceroute_history th
+    LEFT JOIN nodes n ON n.num = th.to_num
+    WHERE (@to_num IS NULL OR th.to_num = @to_num)
+    ORDER BY th.ts DESC LIMIT @limit
+  `),
+
   upsertNodeEnvMetrics: db.prepare(`
     INSERT INTO nodes (num, temperature, relative_humidity, barometric_pressure, last_heard, updated_at)
     VALUES (@num, @temperature, @relative_humidity, @barometric_pressure, @last_heard, unixepoch())
@@ -317,6 +351,8 @@ export const stmts = {
     SELECT lat, lon FROM nodeinfo WHERE num = ? AND lat IS NOT NULL
     LIMIT 1
   `),
+
+  getNodeDevices: db.prepare(`SELECT num, device FROM nodes WHERE device IS NOT NULL`),
 
   insertTilt: db.prepare(`
     INSERT INTO tilt_history (ts, node_id, pitch, roll, x_g, y_g, z_g)

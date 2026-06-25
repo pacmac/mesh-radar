@@ -175,18 +175,22 @@ export const nodesMixin = {
     }).catch(() => {});
   },
 
-  nodeShortName(num) {
+  nodeLabel(num) {
+    if (num == null) return '';
     const n = this.nodes.find(n => n.num === num)
            ?? this._knownNodes.find(n => n.num === num)
            ?? this.msgNodeCache[num];
-    return n?.user?.short_name || ('!' + (num & 0xFFFF).toString(16).toUpperCase());
+    return n?.display_name || n?.user?.short_name || '';
   },
 
+  nodeShortName(num) { return this.nodeLabel(num); },
+
   nodeLongName(num) {
+    if (num == null) return '';
     const n = this.nodes.find(n => n.num === num)
            ?? this._knownNodes.find(n => n.num === num)
            ?? this.msgNodeCache[num];
-    return n?.user?.long_name || n?.user?.short_name || ('!' + (num & 0xFFFF).toString(16).toUpperCase());
+    return n?.user?.long_name || n?.user?.short_name || this.nodeLabel(num);
   },
 
   avatarColor(num) {

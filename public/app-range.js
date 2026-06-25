@@ -26,7 +26,8 @@ export const rangeMixin = {
           };
         }
       }
-      this.rangeLog = (data.log || []).slice().reverse();
+      this.rangeLog = (data.log || []).slice().reverse()
+        .map(r => ({ ...r, _uid: 'db_' + (r.id ?? (this._rangeUid++)) }));
       this._rangeStats = null; this._rangeChartCache = null;
     } catch (_) {
     } finally {
@@ -47,14 +48,6 @@ export const rangeMixin = {
       this.rangeTimer = t;
       this._startRangeCountdown();
     } catch (_) {}
-  },
-
-  _startRangeAutoSync() {
-    if (this._rangeAutoSync) clearInterval(this._rangeAutoSync);
-    this._rangeAutoSync = setInterval(async () => {
-      if (this.tab !== 'range') { clearInterval(this._rangeAutoSync); this._rangeAutoSync = null; return; }
-      await this.loadRangeTimer();
-    }, 15000);
   },
 
   _startRangeCountdown() {
@@ -79,7 +72,6 @@ export const rangeMixin = {
       if (t.error) { alert('Failed to start: ' + t.error); return; }
       this.rangeTimer = { active: true, endsAt: t.endsAt, nodeId, remaining: this.rangeDuration * 60 };
       this._startRangeCountdown();
-      this._startRangeAutoSync();
       await fetchJSON('/config/range_test.duration', 'PUT', { value: this.rangeDuration });
     } catch (err) {
       alert('Failed to start range test: ' + err.message);
@@ -111,12 +103,9 @@ export const rangeMixin = {
     const base = this.rangeRxFilter
       ? this.rangeLog.filter(e => e.rx_device === this.rangeRxFilter)
       : this.rangeLog;
-    const seen  = new Map();
+    const seen = new Map();
     for (const e of base) {
-      if (!seen.has(e.from_num)) {
-        const node = this.nodes.find(n => n.num === e.from_num);
-        seen.set(e.from_num, node?.user?.short_name || node?.user?.long_name || ('!' + (e.from_num ?? 0).toString(16).slice(-4)));
-      }
+      if (!seen.has(e.from_num)) seen.set(e.from_num, e.from_name || '');
     }
     return Array.from(seen.entries()).map(([num, name]) => ({ num, name }));
   },
@@ -150,8 +139,6 @@ export const rangeMixin = {
     }
     return {
       ...e,
-      nodeName: node?.user?.long_name || node?.user?.short_name || ('!' + (e.from_num ?? 0).toString(16).slice(-4)),
-      via: this.deviceLabel(e.rx_device) || (e.rx_device ? e.rx_device.slice(-4) : '–'),
       distKm, az: az != null ? Math.round(az) : null, expectedRssi, excessLoss,
     };
   },

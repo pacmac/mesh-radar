@@ -1,6 +1,7 @@
 // WebSocket connection and event dispatch mixin.
 import { b64ToUtf8, summarizeEvent, FEED_FILTER_OPTIONS } from './app-helpers.js';
 import { persistSet } from './app-persist.js';
+import { FF } from './feature-flags.js';
 window.feedFilterOptions = FEED_FILTER_OPTIONS;
 
 export const wsMixin = {
@@ -232,27 +233,32 @@ export const wsMixin = {
       return;
     }
 
-    // Traceroute result — device-agnostic, handle before per-device filter
-    if (ev.type === 'packet') {
-      const pkt = ev.data?.packet;
-      if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery) {
-        const rd = pkt.decoded.route_discovery;
-        this.traceroutePending = false;
-        this.tracerouteResult = {
-          num:         pkt.from,
-          route:       rd.route       ?? [],
-          route_back:  rd.route_back  ?? [],
-          snr_towards: rd.snr_towards ?? [],
-          snr_back:    rd.snr_back    ?? [],
-          ts: Date.now(),
-        };
-        const ni = this.nodes.findIndex(n => n.num === pkt.from);
-        if (ni >= 0) {
-          this.nodes[ni] = { ...this.nodes[ni], last_traceroute: this.tracerouteResult };
-          if (this.tab === 'radar') this.refreshRadar();
+    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ─────────────────────
+    // Raw packet patch: updates last_traceroute directly from the WS packet feed.
+    // In V2 this is replaced by the route_discovered handler below (fired by traceroute.js).
+    if (!FF.SSOT_TRACEROUTE) {
+      if (ev.type === 'packet') {
+        const pkt = ev.data?.packet;
+        if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery) {
+          const rd = pkt.decoded.route_discovery;
+          this.traceroutePending = false;
+          this.tracerouteResult = {
+            num:         pkt.from,
+            route:       rd.route       ?? [],
+            route_back:  rd.route_back  ?? [],
+            snr_towards: rd.snr_towards ?? [],
+            snr_back:    rd.snr_back    ?? [],
+            ts: Date.now(),
+          };
+          const ni = this.nodes.findIndex(n => n.num === pkt.from);
+          if (ni >= 0) {
+            this.nodes[ni] = { ...this.nodes[ni], last_traceroute: this.tracerouteResult };
+            if (this.tab === 'radar') this.refreshRadar();
+          }
         }
       }
     }
+    // ─────────────────────────────────────────────────────────────────────────────
 
     const time = new Date().toLocaleTimeString();
     const summary = summarizeEvent(ev);
@@ -319,6 +325,14 @@ export const wsMixin = {
       return;
     }
 
+    // ── [V2] SSOT_ROUTE_RENDER — backend owns radar display state ────────────
+    if (FF.SSOT_ROUTE_RENDER && ev.type === 'radar_context') {
+      this.radarCtx = ev;
+      if (this.tab === 'radar') this.refreshRadar();
+      return;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     if (ev.type === 'packet') {
       const pkt = ev.data?.packet;
       const portnum = pkt?.decoded?.portnum;
@@ -339,7 +353,10 @@ export const wsMixin = {
             const localTx = this.messages.find(m => m._localTx && m.fromNum === (pkt.from ?? 0) && m.text === text);
             if (localTx) {
               localTx.pktId = pktId;
-              localTx.ackStatus = 'confirmed';
+              // BLE echo = radio confirmed TX queued. For broadcasts this is the final state.
+              // For DMs we wait for routing_ack; start a 30s timeout for no-ack.
+              localTx.ackStatus = localTx.broadcast ? 'confirmed' : 'sent';
+              if (!localTx.broadcast) this._startAckTimeout(pktId);
               const _txKey = localTx._txKey;
               delete localTx._localTx;
               try {
@@ -351,16 +368,16 @@ export const wsMixin = {
               const fromNum = pkt.from ?? 0;
               const injectedUser = pkt.decoded.user;
               const fromNode = !injectedUser ? this.nodes.find(n => n.num === fromNum) : null;
-              const shortName = injectedUser?.short_name || fromNode?.user?.short_name || null;
+              const fromName  = ev.from_name || injectedUser?.short_name || fromNode?.display_name || fromNode?.user?.short_name || null;
               const longName  = injectedUser?.long_name  || fromNode?.user?.long_name  || null;
               const hops = (pkt.hop_start != null && pkt.hop_limit != null)
                 ? Math.max(0, pkt.hop_start - pkt.hop_limit) : null;
-              if (shortName || longName) {
-                this.msgNodeCache[fromNum] = { num: fromNum, user: { short_name: shortName, long_name: longName } };
+              if (fromName || longName) {
+                this.msgNodeCache[fromNum] = { num: fromNum, display_name: fromName, user: { short_name: fromName, long_name: longName } };
               }
               this.messages.unshift({
                 pktId, fromNum, to: toNum,
-                fromShortName: shortName,
+                fromShortName: fromName,
                 fromLongName:  longName,
                 hops, rssi: pkt.rx_rssi ?? null, snr: pkt.rx_snr ?? null,
                 broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
@@ -383,9 +400,32 @@ export const wsMixin = {
       if (this.tab === 'nodes' && portnum === 'TELEMETRY_APP') this.sortNodes(this.nodeSort.key, true);
     }
 
-    if (ev.type === 'range_test_entry') {
+    if (ev.type === 'routing_ack') {
+      const m = this.messages.find(m => m.pktId === ev.packet_id);
+      if (m) {
+        if (ev.error_reason === 0) {
+          m.ackStatus = 'acked';
+          m.ackFrom   = ev.from_num ?? null;
+        } else {
+          m.ackStatus   = 'no_ack';
+          m.ackError    = ev.error_name || 'NO_ROUTE';
+          m.ackFrom     = ev.from_num ?? null;
+        }
+        this._clearAckTimeout(ev.packet_id);
+      }
+    }
+
+    if (ev.type === 'range_test_entry' && ev.data) {
       this._rangeStats = null; this._rangeChartCache = null;
-      if (this.tab === 'range') this.loadRangeTest();
+      const entry = {
+        ...ev.data,
+        rx_device: ev.device  ?? null,
+        from_name: ev.from_name ?? null,
+        rx_name:   ev.rx_name  ?? null,
+        _uid: 'live_' + (this._rangeUid++),
+      };
+      this.rangeLog = [entry, ...this.rangeLog].slice(0, 500);
+      this._rangeTick++;
     }
     if (ev.type === 'auto_purge_complete') {
       if (this.autoPurge[ev.device]) this.autoPurge[ev.device].last_run_ts = ev.ts;
@@ -402,6 +442,25 @@ export const wsMixin = {
         this.nodes[idx] = { ...this.nodes[idx], ...upd };
         if (this.tab === 'radar' && this.homePos && upd.position?.latitude_i) this.refreshRadar();
       }
+    }
+  },
+
+  _startAckTimeout(pktId) {
+    if (!pktId) return;
+    this._ackTimers[pktId] = setTimeout(() => {
+      delete this._ackTimers[pktId];
+      const m = this.messages.find(m => m.pktId === pktId);
+      if (m && m.ackStatus === 'sent') {
+        m.ackStatus = 'no_ack';
+        m.ackError  = 'TIMEOUT';
+      }
+    }, 30000);
+  },
+
+  _clearAckTimeout(pktId) {
+    if (this._ackTimers[pktId]) {
+      clearTimeout(this._ackTimers[pktId]);
+      delete this._ackTimers[pktId];
     }
   },
 };
