@@ -9,11 +9,14 @@ A real-time web dashboard for Meshtastic mesh networks with directional antenna 
 ## Features
 
 - **Live radar display** — plots all visible mesh nodes by bearing and distance on a polar radar
+- **Route overlays** — traceroute hop chains drawn on the radar for every node with known route data; animated dots while a traceroute is actively in flight
+- **Traceroute** — auto-dispatched in all modes; results stored per-node and drawn as route overlays; SSOT lifecycle managed by `src/traceroute.js`
+- **Mast Tilt display** — polar tilt chart on the overview page showing live roll/pitch from a LIS3DH accelerometer on the antenna mast, with 4h/24h history
 - **Message view** — threaded chat with DM and channel support
 - **Node table** — filterable list with signal quality, hops, position, telemetry
 - **ACTV mode** — proactive scheduler rotates the Yagi antenna through all radar-visible nodes; click any node in the list to manually target it
-- **SCAN mode** — full 360° sweep recording signal contacts at each azimuth
-- **PASV mode** — display only, no rotation
+- **SCAN mode** — full 360° sweep recording signal contacts at each azimuth; auto-dispatches traceroutes on contact
+- **PASV mode** — passive listening; auto-traceroutes nodes as they are heard
 - **Persistent node tracking** — `nodeinfo` table survives restarts; per-node Yagi contact history (visit count, contact count, best RSSI/SNR, last contact)
 - **Range test logging** — records individual signal readings from the pointed target
 - **Shared signal quality calculation** — `src/utils.js` served to both backend and browser as a single source of truth
@@ -31,13 +34,15 @@ src/index.js           ← Express server, API routes, event dispatch
 src/db.js              ← SQLite (better-sqlite3), schema, prepared statements
 src/node-list.js       ← in-memory filtered node list, position enrichment
 src/node-filter.js     ← SSOT filter logic (hops, age, source, role, etc.)
+src/traceroute.js      ← SSOT traceroute lifecycle: dispatch, decode, storage, broadcast
+src/passive-tracer.js  ← PASV mode: auto-traceroute on packet receipt
 src/active-tracker.js  ← ACTV mode: proactive scheduler, manual targeting
 src/scanner.js         ← SCAN mode: 360° sweep
 src/rotator.js         ← WebSocket client to rotator hardware
 src/dash-mode.js       ← PASV/ACTV/SCAN state, persisted in config table
-src/ws-relay.js        ← broadcasts events to browser via WebSocket
+src/ws-relay.js        ← broadcasts events to browser; derives radar_context display state
 src/utils.js           ← pure shared functions (haversine, bearing, signalQuality, node ID)
-public/                ← static frontend (Alpine.js, Tailwind CSS, canvas radar)
+public/                ← static frontend (Alpine.js, Tailwind CSS, SVG radar)
 ```
 
 Consumers connect to the dashboard at `http://host:8000`. The frontend communicates over a single WebSocket for live updates.
@@ -88,9 +93,9 @@ Modes are UI/backend state only — no mode commands are ever sent to rotator fi
 
 | Mode | Behaviour |
 |---|---|
-| **PASV** | Passive — display only, rotator idle |
-| **ACTV** | Active — proactive scheduler targets each radar-visible node for 90 s, in order of least-recently-visited. Click a node row to manually jump to it. Live RSSI/SNR displayed in the targeted node card with per-node contact history. |
-| **SCAN** | Scan — sweeps 360° in configured steps, records signal contacts at each bearing |
+| **PASV** | Passive — rotator idle. Auto-dispatches traceroutes to nodes as packets are heard (5-minute cooldown per node). Route overlays animate while a traceroute is in flight. |
+| **ACTV** | Active — proactive scheduler targets each radar-visible node for 90 s, in order of least-recently-visited. Click a node row to manually jump to it. Live RSSI/SNR displayed in the targeted node card. Traceroute dispatched on each visit. |
+| **SCAN** | Scan — sweeps 360° in configured steps, records signal contacts at each bearing. Traceroute dispatched on each new contact. |
 
 ---
 
@@ -121,7 +126,7 @@ Own devices (configured in the device config) are always excluded from the node 
 | `nodeinfo` | Yes | Node metadata, position, Yagi contact history (`yagi_*` columns) |
 | `messages` | Yes | Chat messages with full metadata |
 | `range_test_log` | Yes | Individual signal readings from pointed target |
-| `tilt_history` | Yes | Tilt sensor history |
+| `tilt_history` | Yes | LIS3DH mast tilt history (roll, pitch, raw XYZ) |
 | `config` | Yes | All runtime settings |
 | `nodes` | No | Ephemeral node state (cleared on restart) |
 | `events` | Yes | Raw event log |
