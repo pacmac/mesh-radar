@@ -151,18 +151,7 @@ export const perfMixin = {
     else            this.perfAutoNodes = this.perfAutoNodes.filter(n => n !== num);
   },
 
-  async loadPerfHistory() {
-    this.perfLoading = true;
-    try {
-      const rows = await fetchJSON('/traceroute_history?limit=1000');
-      this.perfHistory = Array.isArray(rows) ? rows : [];
-      this.$nextTick?.(() => this.updatePerfCharts());
-    } catch (e) {
-      console.warn('[perf] loadPerfHistory failed', e);
-    } finally {
-      this.perfLoading = false;
-    }
-  },
+  loadPerfHistory() { /* no-op — traceroute_history arrives via WS on connect */ },
 
   // Distance (km) from home to a lat/lon pair using Haversine
   _haversineKm(lat, lon) {
