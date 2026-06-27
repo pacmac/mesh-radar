@@ -719,10 +719,10 @@ bridge.on('event', (ev) => {
     }
     // ─────────────────────────────────────────────────────────────────────────
   }
-  // traceroute: AppRouter typed event — route_discovery is in ev.data, NOT in the raw packet.
+  // traceroute: AppRouter typed event — ev.data IS the RouteDiscovery (route/snr_towards/etc).
   // Raw packet arrives separately but lacks decoded route_discovery; this bridge fills that gap.
   if (ev.type === 'traceroute' && ev.from_num) {
-    const rd = ev.data?.route_discovery ?? {};
+    const rd = ev.data ?? {};
     if (FF.SSOT_TRACEROUTE) {
       // V2: traceroute.js owns decode, relay_positions, storage, result emit
       const syntheticPkt = {
