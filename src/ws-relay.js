@@ -104,12 +104,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       return;
     }
 
-    if (ev.type === 'device_removed' && ev.device) {
-      delete lastDeviceState[ev.device];
-      broadcastDeviceList();
-      return;
-    }
-
     // Keep last-known state current as events flow through, then broadcast.
     // All state types update the in-memory map — OFFLINE devices stay visible.
     // seed populates { addr, state_event:{...}, data_event:{...} } — live events

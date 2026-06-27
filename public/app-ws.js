@@ -30,41 +30,6 @@ export const wsMixin = {
     this.connectWS();
   },
 
-  _applyStateEvent(ev) {
-    const device = ev.device;
-    if (!device) return;
-    const t = ev.type;
-    const existing = this.deviceBleStates[device] || {};
-    const SKIP = new Set(['type', 'device', 'ts', 'my_info', 'metadata', 'config', 'module_config']);
-    const patch = { ...existing };
-    for (const [k, v] of Object.entries(ev)) {
-      if (!SKIP.has(k) && v !== undefined) patch[k] = v;
-    }
-
-    if (t === 'ready') {
-      this.serverReachable = true;
-      if (ev.mqtt_proxy != null) this.mqttProxy = !!ev.mqtt_proxy;
-      if (ev.my_info)   this.info = { ...this.info, my_info: ev.my_info };
-      if (ev.metadata)  this.info = { ...this.info, metadata: ev.metadata };
-      if (ev.module_config?.mqtt) this.mqttCfg = ev.module_config.mqtt;
-      if (ev.config?.lora)        this.loraCfg = ev.config.lora;
-      const isPrimary = device === (this.primaryDeviceId || this.activeNodeId);
-      if (isPrimary) this.bootstrapDevice();
-    } else if (t === 'snapshot') {
-      this.serverReachable = true;
-      if (ev.mqtt_proxy != null) this.mqttProxy = !!ev.mqtt_proxy;
-    } else if (t === 'mqtt_proxy_up') {
-      this.mqttProxy = true;
-    } else if (t === 'mqtt_proxy_down') {
-      this.mqttProxy = false;
-    } else {
-      // connecting | syncing | reconnecting | idle | sync_progress | error
-      this.serverReachable = true;
-    }
-
-    this.deviceBleStates = { ...this.deviceBleStates, [device]: patch };
-  },
-
   handleEvent(ev) {
     if (ev.type === 'config_op')           { handleConfigOp(ev); return; }
     if (ev.type === 'bridge_connected')    { this.bridgeConnected = true;  return; }
@@ -111,13 +76,14 @@ export const wsMixin = {
       return;
     }
 
-    // OTA flash — WS drives the ops key for the duration of the flash
-    if (ev.type === 'ota_start' && ev.device) {
-      this.asyncOpStart('otaFlash_' + ev.device);
+    // OTA flash — WS drives the ops key for the duration of the flash.
+    // ws-relay.js translates device_state OTA_* → ota_start/progress/complete/error with ev.node_id.
+    if (ev.type === 'ota_start' && (ev.node_id || ev.device)) {
+      this.asyncOpStart('otaFlash_' + (ev.node_id || ev.device));
       return;
     }
-    if (ev.type === 'ota_progress' && ev.device) {
-      this.asyncOpProgress('otaFlash_' + ev.device, ev.data?.pct ?? 0);
+    if (ev.type === 'ota_progress' && (ev.node_id || ev.device)) {
+      this.asyncOpProgress('otaFlash_' + (ev.node_id || ev.device), ev.data?.pct ?? 0);
       // Show prominent toast for status events requiring user action (once per status change)
       const st = ev.data?.status;
       if (st && st !== this._lastOtaStatus) {
@@ -133,51 +99,47 @@ export const wsMixin = {
       }
       return;
     }
-    if (ev.type === 'ota_complete' && ev.device) {
-      this.asyncOpEnd('otaFlash_' + ev.device, true);
+    if (ev.type === 'ota_complete' && (ev.node_id || ev.device)) {
+      this.asyncOpEnd('otaFlash_' + (ev.node_id || ev.device), true);
       return;
     }
-    if (ev.type === 'ota_error' && ev.device) {
-      this.asyncOpEnd('otaFlash_' + ev.device, false, ev.data?.error || 'OTA failed');
+    if (ev.type === 'ota_error' && (ev.node_id || ev.device)) {
+      this.asyncOpEnd('otaFlash_' + (ev.node_id || ev.device), false, ev.data?.error || 'OTA failed');
       return;
     }
 
     // OTA download — WS drives the ops key; HTTP trigger just starts the task
-    if (ev.type === 'ota_download_start' && ev.device) {
-      this.asyncOpStart('otaDownload_' + ev.device);
+    if (ev.type === 'ota_download_start' && (ev.node_id || ev.device)) {
+      this.asyncOpStart('otaDownload_' + (ev.node_id || ev.device));
       return;
     }
-    if (ev.type === 'ota_download_progress' && ev.device) {
-      this.asyncOpProgress('otaDownload_' + ev.device, ev.data?.pct ?? 0);
+    if (ev.type === 'ota_download_progress' && (ev.node_id || ev.device)) {
+      this.asyncOpProgress('otaDownload_' + (ev.node_id || ev.device), ev.data?.pct ?? 0);
       return;
     }
-    if (ev.type === 'ota_download_complete' && ev.device) {
-      this.asyncOpEnd('otaDownload_' + ev.device, true);
-      this.loadOtaFiles(ev.device).then(() => {
+    if (ev.type === 'ota_download_complete' && (ev.node_id || ev.device)) {
+      const _ota_dev = ev.node_id || ev.device;
+      this.asyncOpEnd('otaDownload_' + _ota_dev, true);
+      this.loadOtaFiles(_ota_dev).then(() => {
         const fname = ev.filename || ev.extracted;
-        if (fname && !this.otaSelectedFile[ev.device])
-          this.otaSelectedFile = { ...this.otaSelectedFile, [ev.device]: fname };
+        if (fname && !this.otaSelectedFile[_ota_dev])
+          this.otaSelectedFile = { ...this.otaSelectedFile, [_ota_dev]: fname };
       });
       return;
     }
-    if (ev.type === 'ota_download_error' && ev.device) {
-      this.asyncOpEnd('otaDownload_' + ev.device, false, ev.data?.error || 'Download failed');
+    if (ev.type === 'ota_download_error' && (ev.node_id || ev.device)) {
+      this.asyncOpEnd('otaDownload_' + (ev.node_id || ev.device), false, ev.data?.error || 'Download failed');
       return;
     }
 
-    if (['snapshot', 'ready', 'connecting', 'syncing', 'sync_progress',
-         'reconnecting', 'error', 'idle', 'ota_bootloader',
-         'mqtt_proxy_up', 'mqtt_proxy_down'].includes(ev.type)) {
-      this._applyStateEvent(ev);
-      return;
-    }
+    if (ev.type === 'text_message') return; // handled via TEXT_MESSAGE_APP packet path
 
     if (ev.type === 'tilt_update' && ev.from_num != null) {
       const idx = this.nodes.findIndex(n => n.num === ev.from_num);
       if (idx >= 0) this.nodes[idx] = { ...this.nodes[idx], tilt: ev.data };
       if (this.nodeSelf?.num === ev.from_num) {
         this.nodeSelf = { ...this.nodeSelf, tilt: ev.data };
-        if (ev.data?.pitch != null && ev.device === this.activeNodeId) {
+        if (ev.data?.pitch != null && (ev.addr || ev.device) === this.activeNodeId) {
           const entry = { ts: Math.floor(Date.now() / 1000), pitch: ev.data.pitch, roll: ev.data.roll };
           this.tiltHistory = [...this.tiltHistory, entry];
           const z = this.tiltApplyZero(entry.pitch, entry.roll);
@@ -353,7 +315,7 @@ export const wsMixin = {
     const time = new Date().toLocaleTimeString();
     const summary = summarizeEvent(ev);
     const portnum = ev.type === 'packet' ? (ev.data?.packet?.decoded?.portnum || null) : null;
-    this.events.unshift({ type: ev.type, portnum, time, summary, device: ev.device || null });
+    this.events.unshift({ type: ev.type, portnum, time, summary, device: ev.addr || ev.device || null });
     if (this.events.length > 80) this.events.pop();
 
     if (ev.type === 'scan_start') {
@@ -457,7 +419,7 @@ export const wsMixin = {
             if (localTx) {
               localTx.pktId = pktId;
               // BLE echo = radio confirmed TX queued. For broadcasts this is the final state.
-              // For DMs we wait for routing_ack; start a 30s timeout for no-ack.
+              // For DMs, start a 30s timeout; DM ack events are not emitted by this gateway version.
               localTx.ackStatus = localTx.broadcast ? 'confirmed' : 'sent';
               if (!localTx.broadcast) this._startAckTimeout(pktId);
               const _txKey = localTx._txKey;
@@ -503,26 +465,11 @@ export const wsMixin = {
       if (this.tab === 'nodes' && portnum === 'TELEMETRY_APP') this.sortNodes(this.nodeSort.key, true);
     }
 
-    if (ev.type === 'routing_ack') {
-      const m = this.messages.find(m => m.pktId === ev.packet_id);
-      if (m) {
-        if (ev.error_reason === 0) {
-          m.ackStatus = 'acked';
-          m.ackFrom   = ev.from_num ?? null;
-        } else {
-          m.ackStatus   = 'no_ack';
-          m.ackError    = ev.error_name || 'NO_ROUTE';
-          m.ackFrom     = ev.from_num ?? null;
-        }
-        this._clearAckTimeout(ev.packet_id);
-      }
-    }
-
     if (ev.type === 'range_test_entry' && ev.data) {
       this._rangeStats = null; this._rangeChartCache = null;
       const entry = {
         ...ev.data,
-        rx_device: ev.device  ?? null,
+        rx_device: ev.addr || ev.device || null,
         from_name: ev.from_name ?? null,
         rx_name:   ev.rx_name  ?? null,
         _uid: 'live_' + (this._rangeUid++),
@@ -531,12 +478,13 @@ export const wsMixin = {
       this._rangeTick++;
     }
     if (ev.type === 'auto_purge_complete') {
-      if (this.autoPurge[ev.device]) this.autoPurge[ev.device].last_run_ts = ev.ts;
+      const _ap_dev = ev.addr || ev.device;
+      if (_ap_dev && this.autoPurge[_ap_dev]) this.autoPurge[_ap_dev].last_run_ts = ev.ts;
       this.nodes = [];
-      this.showToast(`Auto-purge complete on ${ev.device}`, 'success');
+      this.showToast(`Auto-purge complete on ${_ap_dev}`, 'success');
     }
     if (ev.type === 'auto_purge_error') {
-      this.showToast(`Auto-purge failed on ${ev.device}: ${ev.error}`, 'error');
+      this.showToast(`Auto-purge failed on ${ev.addr || ev.device}: ${ev.error}`, 'error');
     }
     if (ev.type === 'mqtt_node' && ev.data && !this.scanMode) {
       const upd = ev.data;

@@ -664,9 +664,9 @@ const _lastEnvTs = new Map(); // num → last inserted ts (dedup node_update vs 
 
 bridge.on('event', (ev) => {
   handleEvent(ev);
-  if (ev.type === 'node_update' || ev.type === 'node_info') {
+  if (ev.type === 'node_update') {
     nodeList.handleNodeUpdate(ev);
-    const node = ev.data?.node_info ?? ev.data;
+    const node = ev.data;
     const em = node?.environment_metrics;
     if (em && node?.num && ownDeviceNums().has(node.num) && (em.temperature != null || em.relative_humidity != null)) {
       const now = Math.floor(Date.now() / 1000);
@@ -868,7 +868,7 @@ bridge.on('connected', async () => {
     const nodeMap = resp?.nodes ?? {};
     const entries = Object.values(nodeMap);
     for (const n of entries) {
-      handleEvent({ type: 'node_info', data: n, device: null });
+      handleEvent({ type: 'node_update', data: n, device: null });
     }
     console.log(`[node-dash] seeded ${entries.length} named nodes into persist`);
   } catch (err) {

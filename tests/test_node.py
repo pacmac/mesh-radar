@@ -187,8 +187,9 @@ def static_checks():
         report("PASS", "app-ws.js: old state event types", "not found")
 
     # 9. Browser ev.device in packet handler (only flag unguarded uses)
+    # Use word-boundary match to avoid false positives on ev.devices / ev.device_nodes.
     lines_with_device = [(i+1, l.strip()) for i, l in enumerate(appws.splitlines())
-                          if 'ev.device' in l and '|| ev.device' not in l and '?? ev.device' not in l
+                          if re.search(r'\bev\.device\b', l) and '|| ev.device' not in l and '?? ev.device' not in l
                           and not l.strip().startswith('//')]
     if lines_with_device:
         report("WARN", "app-ws.js: ev.device without addr fallback",
