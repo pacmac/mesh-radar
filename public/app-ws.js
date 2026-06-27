@@ -62,6 +62,25 @@ export const wsMixin = {
         existing[key] = cur ? { ...cur, ...dev } : { ...dev };
       }
       this.deviceBleStates = { ...this.deviceBleStates, ...existing };
+
+      // NEED_PAIR overlay — driven from device_list (always reflects current state).
+      // device_state replay on page load can be stale; device_list is authoritative.
+      const needPairDev = devices.find(d => d.ble_state === 'need_pair' && d.has_pin === false);
+      if (needPairDev && !this.needPairBusy) {
+        if (this.needPairAddr !== needPairDev.addr) {
+          this.needPairAddr  = needPairDev.addr;
+          this.needPairError = '';
+          this.needPairPin   = this.deviceConfigs[needPairDev.node_id]?.ble_pin || '';
+        }
+      } else if (!needPairDev && this.needPairAddr && !this.needPairBusy) {
+        const prevDev = devices.find(d => d.addr === this.needPairAddr);
+        const s = prevDev?.ble_state;
+        if (s === 'discovering' || s === 'syncing' || s === 'ready') {
+          this.showToast('Device paired successfully', 'success');
+        }
+        this.needPairAddr = null;
+      }
+
       if (!this.activeNodeId && devices.length > 0) {
         this.activeNodeId = devices[0].node_id;
         persistSet('activeNodeId', this.activeNodeId);
@@ -78,31 +97,15 @@ export const wsMixin = {
 
     // NEED_PAIR — BLE device requires a PIN to complete pairing.
     // device_state events flow directly from node-dash WS relay.
-    if (ev.type === 'device_state' && ev.addr) {
-      if (ev.state === 'NEED_PAIR' && !this.needPairBusy) {
-        if (this.needPairAddr !== ev.addr) {
-          // New device needing pairing — reset overlay
-          this.needPairAddr  = ev.addr;
-          this.needPairError = '';
-          this.needPairPin   = this.deviceConfigs[ev.node_id]?.ble_pin || '';
-        } else if (this.needPairAddr === ev.addr && this.needPairBusy) {
-          // Was submitting but device came back to NEED_PAIR → wrong PIN
-          this.needPairError = 'Incorrect PIN — check the device display and try again';
-          this.needPairBusy  = false;
-        }
-      } else if (this.needPairAddr === ev.addr) {
-        const s = ev.state;
-        if (s === 'DISCOVERING' || s === 'SYNCING' || s === 'READY') {
-          // Pairing succeeded — dismiss overlay
-          this.needPairAddr  = null;
-          this.needPairError = '';
-          this.needPairBusy  = false;
-          this.showToast('Device paired successfully', 'success');
-        } else if (s === 'OFFLINE' && this.needPairBusy) {
-          // Pairing failed after our PIN submission — will loop back to NEED_PAIR
-          this.needPairError = 'Pairing failed — wrong PIN?';
-          this.needPairBusy  = false;
-        }
+    // NEED_PAIR wrong-PIN feedback — device_list handles show/dismiss;
+    // device_state handles the wrong-PIN case when we actively submitted.
+    if (ev.type === 'device_state' && ev.addr && this.needPairAddr === ev.addr) {
+      if (ev.state === 'NEED_PAIR' && this.needPairBusy) {
+        this.needPairError = 'Incorrect PIN — check the device display and try again';
+        this.needPairBusy  = false;
+      } else if (ev.state === 'OFFLINE' && this.needPairBusy) {
+        this.needPairError = 'Pairing failed — wrong PIN?';
+        this.needPairBusy  = false;
       }
     }
 
