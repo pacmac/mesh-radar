@@ -120,10 +120,28 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const { type: _t, ...fields } = ev;
       if (ev.type === 'device_state') {
         lastDeviceState[evAddr] = { ...existing, ...fields, state_event: ev, ble_state: ev.state.toLowerCase() };
+        // Translate OTA FSM states to legacy ota_start/progress/complete/error events for browser UI
+        if (ev.node_id) {
+          const s = ev.state;
+          if (s === 'OTA_PENDING' || s === 'OTA_HANDSHAKE') {
+            broadcast({ type: 'ota_start', device: ev.node_id });
+          } else if (s === 'OTA_FLASHING') {
+            broadcast({ type: 'ota_progress', device: ev.node_id, data: { pct: ev.pct ?? 0, status: 'flashing' } });
+          } else if (s === 'OTA_COMPLETE') {
+            broadcast({ type: 'ota_complete', device: ev.node_id });
+          } else if (s === 'OTA_SERIAL_WAIT') {
+            broadcast({ type: 'ota_progress', device: ev.node_id, data: { pct: 0, status: 'nvs_erase_waiting', message: ev.message || '' } });
+          } else if (s === 'OTA_SERIAL_ERASING') {
+            broadcast({ type: 'ota_progress', device: ev.node_id, data: { pct: 0, status: 'nvs_erasing', message: 'NVS erasing…' } });
+          } else if (['OTA_ERROR', 'OTA_BOOTLOADER_STUCK', 'OTA_NVS_MISMATCH'].includes(s)) {
+            broadcast({ type: 'ota_error', device: ev.node_id, data: { error: ev.message || s } });
+          }
+        }
       } else if (ev.type === 'device_data') {
         lastDeviceState[evAddr] = { ...existing, ...fields, data_event: ev };
       }
       broadcastDeviceList();
+      return;
     }
 
     // -- AppRouter typed event translations ----------------------------------

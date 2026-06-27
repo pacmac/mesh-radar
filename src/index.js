@@ -664,9 +664,10 @@ bridge.on('event', (ev) => {
     activeTracker.handlePacket(ev);
     scanner.handlePacket(ev);
     const pkt = ev.data?.packet;
+    const rxDevice = ev.addr || ev.device || null;
     const rotatorId = getRotatorDeviceId();
-    const yagiOnly = scanner.active && rotatorId && ev.device !== rotatorId;
-    if (pkt?.from && !yagiOnly) nodeList.touchLastHeard(pkt.from, pkt.rx_time, ev.device ?? null);
+    const yagiOnly = scanner.active && rotatorId && rxDevice !== rotatorId;
+    if (pkt?.from && !yagiOnly) nodeList.touchLastHeard(pkt.from, pkt.rx_time, rxDevice);
     // environment_metrics are now handled via the typed `telemetry` event from AppRouter
     // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
     if (!FF.SSOT_TRACEROUTE) {
@@ -686,13 +687,42 @@ bridge.on('event', (ev) => {
           snr_back:    rd.snr_back    ?? [],
           relay_positions,
           ts: Date.now(),
-        }, pkt.to ?? null, ev.device ?? null);
+        }, pkt.to ?? null, rxDevice);
       }
     // ── [V2] SSOT — traceroute.js owns decode, relay_positions, storage ──────
     } else {
-      traceroute.handlePacket(pkt, ev.device ?? null);
+      traceroute.handlePacket(pkt, rxDevice);
     }
     // ─────────────────────────────────────────────────────────────────────────
+  }
+  // traceroute: AppRouter typed event — route_discovery is in ev.data, NOT in the raw packet.
+  // Raw packet arrives separately but lacks decoded route_discovery; this bridge fills that gap.
+  if (ev.type === 'traceroute' && ev.from_num) {
+    const rd = ev.data?.route_discovery ?? {};
+    if (FF.SSOT_TRACEROUTE) {
+      // V2: traceroute.js owns decode, relay_positions, storage, result emit
+      const syntheticPkt = {
+        from: ev.from_num, to: ev.to_num,
+        decoded: { portnum: 'TRACEROUTE_APP', route_discovery: rd },
+      };
+      traceroute.handlePacket(syntheticPkt, ev.addr || ev.device || null);
+    } else {
+      // V1: inline storage (parallel to the raw packet path, now also covering typed event)
+      if (Object.keys(rd).length) {
+        const relay_positions = {};
+        for (const num of rd.route ?? []) {
+          const info = stmts.getNodeinfoByNum.get(num);
+          if (info?.lat != null && info?.lon != null) {
+            relay_positions[num] = { latitude_i: Math.round(info.lat * 1e7), longitude_i: Math.round(info.lon * 1e7) };
+          }
+        }
+        nodeList.setTraceroute(ev.from_num, {
+          route: rd.route ?? [], route_back: rd.route_back ?? [],
+          snr_towards: rd.snr_towards ?? [], snr_back: rd.snr_back ?? [],
+          relay_positions, ts: Date.now(),
+        }, ev.to_num ?? null, ev.addr || ev.device || null);
+      }
+    }
   }
   // rangetest: AppRouter typed event for RANGE_TEST_APP (portnum 66)
   if (ev.type === 'rangetest') {

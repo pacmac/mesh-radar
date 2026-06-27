@@ -440,9 +440,10 @@ export const wsMixin = {
         try {
           const pktId = pkt.id;
           if (pktId && this._seenPacketIds.has(pktId)) {
-            if (ev.device) {
+            const rxDev = ev.addr || ev.device;
+            if (rxDev) {
               const existing = this.messages.find(m => m.pktId === pktId);
-              if (existing && !existing.src.includes(ev.device)) existing.src = [...existing.src, ev.device];
+              if (existing && !existing.src.includes(rxDev)) existing.src = [...existing.src, rxDev];
             }
           } else {
             if (pktId) {
@@ -484,7 +485,7 @@ export const wsMixin = {
                 channel: pkt.channel ?? 0,
                 replyId: pkt.decoded.reply_id || null,
                 text, ts: pkt.rx_time || Math.floor(Date.now() / 1000), time, direction: 'rx', ackStatus: null,
-                src: ev.device ? [ev.device] : [],
+                src: (ev.addr || ev.device) ? [ev.addr || ev.device] : [],
               });
               if (this.messages.length > 50) this.messages.pop();
               try { localStorage.setItem('msgHistory', JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}

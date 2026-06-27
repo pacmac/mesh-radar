@@ -92,14 +92,15 @@ class PassiveTracer extends EventEmitter {
     // Only trigger new traces in PASV mode (0)
     if (dashMode.value !== 0) return;
     if (this._busy) return;
-    if (!pkt?.from || !ev.device) return;
+    const rxDevice = ev.addr ?? ev.device ?? null;
+    if (!pkt?.from || !rxDevice) return;
     if (pkt.decoded?.portnum === 'TRACEROUTE_APP') return;
     // Never traceroute own bridge radios, and don't transmit via the rotator
     if (ownDeviceNums().has(pkt.from)) return;
-    if (ev.device === getRotatorDeviceId()) return;
+    if (rxDevice === getRotatorDeviceId()) return;
     if (!needsTrace(pkt.from)) return;
 
-    this._trace(pkt.from, ev.device);
+    this._trace(pkt.from, rxDevice);
   }
 
   _trace(from_num, device) {
