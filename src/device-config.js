@@ -19,6 +19,8 @@ const DEFAULT = {
   fixed_lat:           null,   // fallback home position latitude (decimal degrees)
   fixed_lon:           null,   // fallback home position longitude (decimal degrees)
   color:               null,   // DaisyUI theme color for badges/radar (primary|secondary|accent|info|success|warning|error)
+  ble_address:         null,   // BLE MAC address — links node_id → BLE device
+  ble_pin:             null,   // BLE pairing PIN; SSOT here (not bridge_config.yaml). paired status = bleak_db SSOT
 };
 
 export function getDeviceCfg(nodeId) {
@@ -61,7 +63,7 @@ router.put('/:nodeId', (req, res) => {
   const existing = getDeviceCfg(nodeId);
   const updated = { ...existing };
 
-  const { label, is_rotator, is_primary, load_nodes_on_boot, antenna_type, beam_deg, gain_dbi, cable_loss_db, fixed_lat, fixed_lon, color } = req.body;
+  const { label, is_rotator, is_primary, load_nodes_on_boot, antenna_type, beam_deg, gain_dbi, cable_loss_db, fixed_lat, fixed_lon, color, ble_address, ble_pin } = req.body;
   if (label !== undefined)               updated.label               = label || null;
   if (is_rotator !== undefined)          updated.is_rotator          = !!is_rotator;
   if (load_nodes_on_boot !== undefined)  updated.load_nodes_on_boot  = !!load_nodes_on_boot;
@@ -73,6 +75,8 @@ router.put('/:nodeId', (req, res) => {
   if (fixed_lat !== undefined)     updated.fixed_lat     = fixed_lat != null && fixed_lat !== '' ? Number(fixed_lat) : null;
   if (fixed_lon !== undefined)     updated.fixed_lon     = fixed_lon != null && fixed_lon !== '' ? Number(fixed_lon) : null;
   if (color !== undefined)         updated.color         = color || null;
+  if (ble_address !== undefined)   updated.ble_address   = ble_address ? ble_address.toUpperCase() : null;
+  if (ble_pin !== undefined)       updated.ble_pin       = ble_pin || null;
 
   if (is_primary !== undefined) {
     if (is_primary) {
