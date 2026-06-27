@@ -429,9 +429,8 @@ export class OpManager {
       } else if (entry.class === 'Radio') {
         result = await this._radioRunner(entry, params, op);
       } else {
-        // Mode: stub runner (step 5)
-        result = await stubRunner(entry, params);
-        if (entry.read_back_path) this._transition(op, 'validating');
+        // Mode: action trigger + optional WS postcondition
+        result = await this._modeRunner(entry, params, op);
       }
       this._transition(op, 'success', result);
     } catch (err) {
@@ -496,7 +495,36 @@ export class OpManager {
     return { ok: true, rebooted: rebooting };
   }
 
+  async _modeRunner(entry, params, op) {
+    const path = entry.endpoint(params);
+    const body = params.values ?? {};
+    const target = params.target;
+    const confirming = entry.confirming ?? 'http_200';
+
+    // For WS-based confirmation, arm the listener BEFORE the write so we don't miss a fast event.
+    let postconditionPromise = null;
+    if (confirming === 'device_state_ready') {
+      postconditionPromise = this._waitForStateChange(
+        target, s => s === 'READY', (entry.timeout_s ?? 30) * 1000
+      );
+    }
+
+    const wr = await _localFetch(entry.method, path, body);
+    if (!wr.ok) {
+      const detail = wr.json?.error ?? wr.json?.detail ?? wr.text?.slice(0, 120);
+      throw new Error(`Action failed HTTP ${wr.status}: ${detail}`);
+    }
+
+    if (postconditionPromise) {
+      const confirmed = await postconditionPromise;
+      if (!confirmed) throw new Error(`Device ${target} did not reach expected state (timeout)`);
+    }
+
+    return { ok: true, data: wr.json };
+  }
+
   // Returns true if condition(state) becomes true within timeoutMs; false on timeout.
+  // Matches on both node_id (!hexid) and addr (BLE MAC) — connecting devices may only have addr.
   _waitForStateChange(target, condition, timeoutMs) {
     return new Promise(resolve => {
       if (!this._bridge) { resolve(false); return; }
@@ -507,7 +535,7 @@ export class OpManager {
       }, timeoutMs);
 
       const handler = (ev) => {
-        if (ev.node_id === target && condition(ev.state)) {
+        if ((ev.node_id === target || ev.addr === target) && condition(ev.state)) {
           clearTimeout(timer);
           this._bridge.off('device_state', handler);
           resolve(true);
