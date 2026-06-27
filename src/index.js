@@ -667,9 +667,7 @@ bridge.on('event', (ev) => {
     const rotatorId = getRotatorDeviceId();
     const yagiOnly = scanner.active && rotatorId && ev.device !== rotatorId;
     if (pkt?.from && !yagiOnly) nodeList.touchLastHeard(pkt.from, pkt.rx_time, ev.device ?? null);
-    if (pkt?.decoded?.portnum === 'TELEMETRY_APP' && pkt?.decoded?.telemetry?.environment_metrics && pkt?.from) {
-      nodeList.setEnvironmentMetrics(pkt.from, pkt.decoded.telemetry.environment_metrics);
-    }
+    // environment_metrics are now handled via the typed `telemetry` event from AppRouter
     // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
     if (!FF.SSOT_TRACEROUTE) {
       if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery && pkt?.from) {
@@ -696,19 +694,19 @@ bridge.on('event', (ev) => {
     }
     // ─────────────────────────────────────────────────────────────────────────
   }
-  // range_test_entry: broadcast by bridge with correctly decoded seq/hops from raw protobuf
-  if (ev.type === 'range_test_entry' && ev.data) {
-    const e = ev.data;
+  // rangetest: AppRouter typed event for RANGE_TEST_APP (portnum 66)
+  if (ev.type === 'rangetest') {
     try {
+      const seq = parseInt((ev.data?.text || '').replace(/[^0-9]/g, '')) || null;
       insertRangeTestEntry({
-        ts:        e.ts       ?? Math.floor(Date.now() / 1000),
-        from_num:  e.from_num ?? null,
-        rssi:      e.rssi     ?? null,
-        snr:       e.snr      ?? null,
-        hops:      e.hops     ?? null,
-        seq:       e.seq      ?? null,
-        rx_device: ev.device  ?? null,
-        via_mqtt:  e.via_mqtt ? 1 : 0,
+        ts:        Math.floor(Date.now() / 1000),
+        from_num:  ev.from_num   ?? null,
+        rssi:      ev.rx_rssi    ?? null,
+        snr:       ev.rx_snr     ?? null,
+        hops:      ev.hops       ?? null,
+        seq,
+        rx_device: ev.addr || ev.device || null,
+        via_mqtt:  ev.via_mqtt ? 1 : 0,
       });
     } catch (err) {
       console.error(`[range_test] DB insert failed: ${err.message}`);

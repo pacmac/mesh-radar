@@ -52,10 +52,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     if (ev.type === 'device_list') {
       return { ...ev, devices: (ev.devices || []).map(d => ({ ...d, display_name: resolveDeviceLabel(d.node_id) })) };
     }
-    if (ev.type === 'range_test_entry' && ev.data) {
+    if ((ev.type === 'range_test_entry') && ev.data) {
       return { ...ev, from_name: resolveNodeLabel(ev.data.from_num), rx_name: resolveDeviceLabel(ev.device) };
     }
-    if (ev.type === 'text_message' && ev.data?.from_num != null) {
+    if ((ev.type === 'text_message') && ev.data?.from_num != null) {
       return { ...ev, from_name: resolveNodeLabel(ev.data.from_num) };
     }
     return ev;
@@ -126,33 +126,58 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       broadcastDeviceList();
     }
 
-    if (ev.type === 'tilt_update' && ev.data) {
-      try {
-        insertTilt({
-          ts:      Math.floor(Date.now() / 1000),
-          node_id: ev.device || '?',
-          pitch:   ev.data.pitch ?? 0,
-          roll:    ev.data.roll  ?? 0,
-          x_g:     ev.data.x    ?? null,
-          y_g:     ev.data.y    ?? null,
-          z_g:     ev.data.z    ?? null,
-        });
-      } catch (e) { console.error('[tilt] insert failed:', e.message); }
+    // -- AppRouter typed event translations ----------------------------------
+    // AppRouter emits generic events; translate to legacy names for browser compat.
+
+    if (ev.type === 'private_app' && ev.portnum === 256) {
+      const buf = Buffer.from(ev.payload_b64 || '', 'base64');
+      if (buf.length >= 20) {
+        const view  = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        const roll  = Math.round(view.getFloat32(0,  true) * 100) / 100;
+        const pitch = Math.round(view.getFloat32(4,  true) * 100) / 100;
+        const x_g   = Math.round(view.getFloat32(8,  true) * 1000) / 1000;
+        const y_g   = Math.round(view.getFloat32(12, true) * 1000) / 1000;
+        const z_g   = Math.round(view.getFloat32(16, true) * 1000) / 1000;
+        try {
+          insertTilt({ ts: Math.floor(Date.now() / 1000), node_id: ev.addr || ev.device || '?', pitch, roll, x_g, y_g, z_g });
+        } catch (e) { console.error('[tilt] insert failed:', e.message); }
+        const tiltEv = { type: 'tilt_update', device: ev.addr || ev.device, from_num: ev.from_num, data: { roll, pitch, x: x_g, y: y_g, z: z_g } };
+        handleAlertEvent(tiltEv);
+        broadcast(tiltEv);
+      }
+      return;
     }
-    if (ev.type === 'telemetry_update' && ev.variant === 'environment_metrics' && ev.from_num && ev.data) {
-      try {
-        const em = ev.data;
-        if (em.temperature != null || em.relative_humidity != null) {
-          insertEnvHistory({
-            ts:                  Math.floor(Date.now() / 1000),
-            num:                 ev.from_num,
-            temperature:         em.temperature         ?? null,
-            relative_humidity:   em.relative_humidity   ?? null,
-            barometric_pressure: em.barometric_pressure ?? null,
-          });
-        }
-      } catch (e) { console.error('[env] insert failed:', e.message); }
+
+    if (ev.type === 'telemetry' && ev.from_num) {
+      const dm = ev.data?.device_metrics;
+      const em = ev.data?.environment_metrics;
+      if (em && (em.temperature != null || em.relative_humidity != null)) {
+        try {
+          insertEnvHistory({ ts: Math.floor(Date.now() / 1000), num: ev.from_num, temperature: em.temperature ?? null, relative_humidity: em.relative_humidity ?? null, barometric_pressure: em.barometric_pressure ?? null });
+        } catch (e) { console.error('[env] insert failed:', e.message); }
+        broadcast({ type: 'telemetry_update', device: ev.addr || ev.device, from_num: ev.from_num, variant: 'environment_metrics', data: em });
+      } else if (dm) {
+        broadcast({ type: 'telemetry_update', device: ev.addr || ev.device, from_num: ev.from_num, variant: 'device_metrics', data: dm });
+      }
+      return;
     }
+
+    if (ev.type === 'rangetest') {
+      const seq = parseInt((ev.data?.text || '').replace(/[^0-9]/g, '')) || null;
+      broadcast({
+        type: 'range_test_entry',
+        device: ev.addr || ev.device,
+        data: { ts: Math.floor(Date.now() / 1000), from_num: ev.from_num ?? null, rssi: ev.rx_rssi ?? null, snr: ev.rx_snr ?? null, hops: ev.hops ?? null, seq, via_mqtt: ev.via_mqtt ?? false },
+      });
+      return;
+    }
+
+    // user, position, admin, node_update — handled server-side; no separate browser event needed.
+    // Raw `packet` events (portnum=NODEINFO_APP, POSITION_APP etc.) still flow for browser packet log.
+    if (ev.type === 'user' || ev.type === 'position' || ev.type === 'admin' || ev.type === 'node_update') {
+      return;
+    }
+
     handleAlertEvent(ev);
     broadcast(ev);
   });

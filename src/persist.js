@@ -34,6 +34,85 @@ export function handleEvent(event) {
     handlePacket(data?.packet, device, ts, !!_replay);
   } else if (type === 'node_info' || type === 'nodeinfo') {
     handleNodeInfo(data, device);
+  } else if (type === 'telemetry') {
+    handleTelemetryEvent(event);
+  } else if (type === 'user') {
+    // AppRouter decoded NODEINFO_APP
+    if (event.from_num && data) {
+      stmts.upsertNode.run({
+        num: event.from_num, node_id: data.id ?? null,
+        short_name: data.short_name ?? null, long_name: data.long_name ?? null,
+        hw_model: data.hw_model ?? null, role: data.role ?? null,
+        last_heard: ts, snr: event.rx_snr ?? null, rssi: event.rx_rssi ?? null,
+        hops: event.hops ?? null, lat: null, lon: null, alt: null,
+        battery: null, voltage: null, channel_util: null, air_util_tx: null, uptime_seconds: null,
+        device,
+      });
+      _upsertCache(event.from_num, data.id, data, null);
+    }
+  } else if (type === 'position') {
+    // AppRouter decoded POSITION_APP
+    if (event.from_num && data) {
+      const lat = data.latitude_i  != null ? data.latitude_i  / 1e7 : null;
+      const lon = data.longitude_i != null ? data.longitude_i / 1e7 : null;
+      stmts.upsertNode.run({
+        num: event.from_num, node_id: null, short_name: null, long_name: null,
+        hw_model: null, role: null, last_heard: ts,
+        snr: event.rx_snr ?? null, rssi: event.rx_rssi ?? null, hops: event.hops ?? null,
+        lat, lon, alt: data.altitude ?? null,
+        battery: null, voltage: null, channel_util: null, air_util_tx: null, uptime_seconds: null,
+        device,
+      });
+    }
+  } else if (type === 'node_update') {
+    // AppRouter node cache update — has merged user/position/metrics data
+    handleNodeInfo(data, device);
+  }
+}
+
+function handleTelemetryEvent(event) {
+  const { data, from_num, rx_snr, rx_rssi } = event;
+  if (!from_num || !data) return;
+  const ts = Math.floor(Date.now() / 1000);
+  if (data.device_metrics) {
+    const m = data.device_metrics;
+    stmts.upsertNode.run({
+      num:            from_num,
+      node_id:        null,
+      short_name:     null,
+      long_name:      null,
+      hw_model:       null,
+      role:           null,
+      last_heard:     data.time || ts,
+      snr:            rx_snr  ?? null,
+      rssi:           rx_rssi ?? null,
+      hops:           null,
+      lat:            null,
+      lon:            null,
+      alt:            null,
+      battery:        m.battery_level       ?? null,
+      voltage:        m.voltage             ?? null,
+      channel_util:   m.channel_utilization ?? null,
+      air_util_tx:    m.air_util_tx         ?? null,
+      uptime_seconds: m.uptime_seconds      ?? null,
+      device:         event.device ?? null,
+    });
+  } else if (data.environment_metrics) {
+    const m = data.environment_metrics;
+    stmts.upsertNodeEnvMetrics.run({
+      num:                 from_num,
+      temperature:         m.temperature         ?? null,
+      relative_humidity:   m.relative_humidity   ?? null,
+      barometric_pressure: m.barometric_pressure ?? null,
+      last_heard:          data.time || ts,
+    });
+    insertEnvHistory({
+      ts:                  data.time || ts,
+      num:                 from_num,
+      temperature:         m.temperature         ?? null,
+      relative_humidity:   m.relative_humidity   ?? null,
+      barometric_pressure: m.barometric_pressure ?? null,
+    });
   }
 }
 
