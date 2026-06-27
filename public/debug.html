@@ -289,6 +289,8 @@ function renderBoard() {
         `<span>hw: <b>${d.hw_model || '—'}</b></span>` +
         `<span>fw: <b>${d.firmware_version || '—'}</b></span>` +
         `<span>pin: <b>${d.has_pin === true ? 'yes' : d.has_pin === false ? 'no' : '—'}</b></span>` +
+        `<span>paired: <b>${d.paired === true ? 'yes' : d.paired === false ? 'no' : '—'}</b></span>` +
+        `<span>trusted: <b>${d.trusted === true ? 'yes' : d.trusted === false ? 'no' : '—'}</b></span>` +
         `<span>label: ${esc(d.label || '—')}</span>` +
       `</div>` +
       (d.pct != null ? `<div class="dev-progress"><div class="dev-progress-track"><div class="dev-progress-fill" style="width:${d.pct}%"></div></div><span>${d.pct}%</span></div>` : '') +
@@ -322,6 +324,8 @@ function applyGwEventToBoard(data) {
         firmware_version: de.firmware_version || d.firmware_version,
         pct:              se.pct ?? d.pct ?? null,
         has_pin:          se.has_pin ?? d.has_pin ?? null,
+        paired:           se.paired  ?? d.paired  ?? null,
+        trusted:          se.trusted ?? d.trusted  ?? null,
         ts: Date.now(),
       };
     }
@@ -341,6 +345,8 @@ function applyGwEventToBoard(data) {
       node_id: data.node_id,
       pct:     data.pct ?? null,
       has_pin: data.has_pin ?? deviceBoard[addr]?.has_pin ?? null,
+      paired:  data.paired  ?? deviceBoard[addr]?.paired  ?? null,
+      trusted: data.trusted ?? deviceBoard[addr]?.trusted ?? null,
       ts: Date.now(),
     };
     renderBoard();
