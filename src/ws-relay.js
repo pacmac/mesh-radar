@@ -9,6 +9,7 @@ import { handleAlertEvent } from './alerts.js';
 import { dashMode } from './dash-mode.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
+import { ensureDeviceCfgMac } from './device-config.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 
@@ -90,6 +91,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     if (ev.type === 'device_snapshot') {
       for (const d of (ev.devices || [])) {
         if (!d.addr) continue;
+        ensureDeviceCfgMac(d.addr);
         // Flatten state_event + data_event into top level so browser reads dev.node_id etc. directly
         const flat = { ...d };
         if (d.state_event) Object.assign(flat, d.state_event);
@@ -110,6 +112,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // must update the nested key, not spread flat on top of it.
     const evAddr = ev.addr || ev.device;
     if (evAddr && STATE_EVENT_TYPES.has(ev.type)) {
+      if (ev.type === 'device_state' && ev.addr) ensureDeviceCfgMac(ev.addr);
       const existing = lastDeviceState[evAddr] || { addr: evAddr };
       const { type: _t, ...fields } = ev;
       if (ev.type === 'device_state') {

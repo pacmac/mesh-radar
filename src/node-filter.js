@@ -3,11 +3,12 @@ import { getRotatorDeviceId, getAllDeviceCfgs } from './device-config.js';
 import { nodeIdToNum } from './utils.js';
 
 // Returns the set of nums for all configured BLE devices.
+// Keys are MAC addresses — derive node num from last 4 bytes.
 export function ownDeviceNums() {
   return new Set(
     Object.keys(getAllDeviceCfgs())
-      .filter(id => id.startsWith('!'))
-      .map(id => nodeIdToNum(id))
+      .map(mac => parseInt(mac.replace(/:/g, '').slice(-8), 16))
+      .filter(n => !isNaN(n))
   );
 }
 

@@ -345,6 +345,7 @@ export const stmts = {
 
   getConfig:   db.prepare(`SELECT value FROM config WHERE key = ?`),
   setConfig:   db.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
+  deleteConfig: db.prepare(`DELETE FROM config WHERE key = ?`),
   getNodePos:  db.prepare(`
     SELECT lat, lon FROM nodes WHERE num = ? AND lat IS NOT NULL
     UNION ALL
@@ -402,6 +403,10 @@ export function getConfig(key, fallback = null) {
 
 export function setConfig(key, value) {
   stmts.setConfig.run(key, JSON.stringify(value));
+}
+
+export function deleteConfig(key) {
+  stmts.deleteConfig.run(key);
 }
 
 export function insertRangeTestEntry(entry) {

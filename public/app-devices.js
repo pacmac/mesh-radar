@@ -229,7 +229,15 @@ export const devicesMixin = {
 
   async loadDeviceConfigs() {
     try {
-      this.deviceConfigs = await fetchJSON('/device-config');
+      // API returns { [MAC]: cfg } — transform to { [nodeId]: cfg } for UI consistency.
+      // nodeId is deterministic from MAC: '!' + last 4 bytes lowercase hex.
+      const byMac = await fetchJSON('/device-config');
+      this.deviceConfigs = Object.fromEntries(
+        Object.entries(byMac).map(([mac, cfg]) => [
+          '!' + mac.replace(/:/g, '').slice(-8).toLowerCase(),
+          cfg,
+        ])
+      );
       const primaryEntry = Object.entries(this.deviceConfigs).find(([, c]) => c?.is_primary);
       if (primaryEntry) {
         const [primaryId] = primaryEntry;
