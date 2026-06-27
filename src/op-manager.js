@@ -342,11 +342,26 @@ const REGISTRY = new Map([
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stub runners (replaced by real runners in steps 3-5)
+// Runners
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function stubRunner(entry, params) {
-  // Simulates immediate success for skeleton testing.
+const PORT = process.env.PORT || 8000;
+const LOCAL_BASE = `http://localhost:${PORT}`;
+
+async function _localFetch(method, path, body) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  };
+  if (body !== undefined && method !== 'DELETE') opts.body = JSON.stringify(body);
+  const res = await fetch(`${LOCAL_BASE}${path}`, opts);
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch { json = null; }
+  return { ok: res.ok, status: res.status, json, text };
+}
+
+async function stubRunner(_entry, _params) {
   return { ok: true, stub: true };
 }
 
@@ -380,20 +395,54 @@ export class OpManager {
 
     this._transition(op, 'saving');
 
-    let result;
     try {
-      result = await stubRunner(entry, params);
+      let result;
+      if (entry.class === 'Local') {
+        result = await this._localRunner(entry, params, op);
+      } else {
+        // Radio and Mode: stub runners (steps 4-5)
+        result = await stubRunner(entry, params);
+        if (entry.read_back_path) this._transition(op, 'validating');
+      }
+      this._transition(op, 'success', result);
     } catch (err) {
       this._transition(op, 'error', null, err.message);
-      return;
+    }
+  }
+
+  async _localRunner(entry, params, op) {
+    const path = entry.endpoint(params);
+    const body = params.values ?? {};
+
+    // Write
+    const wr = await _localFetch(entry.method, path, body);
+    if (!wr.ok) {
+      const detail = wr.json?.error ?? wr.json?.detail ?? wr.text?.slice(0, 120);
+      throw new Error(`Write failed HTTP ${wr.status}: ${detail}`);
     }
 
-    if (entry.read_back_path) {
-      this._transition(op, 'validating');
-      // Stub: skip actual read-back for now; real validation in steps 3-5.
+    if (!entry.read_back_path) return { ok: true };
+
+    // Validate
+    this._transition(op, 'validating');
+    const rbPath = entry.read_back_path(params);
+    const rbr = await _localFetch('GET', rbPath);
+    if (!rbr.ok) throw new Error(`Read-back failed HTTP ${rbr.status}`);
+
+    if (entry.match_fields?.length > 0 && rbr.json) {
+      const mismatches = [];
+      for (const field of entry.match_fields) {
+        if (!(field in body)) continue; // only check fields we actually set
+        const expected = body[field];
+        const actual = rbr.json[field];
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+          mismatches.push(`${field}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+        }
+      }
+      if (mismatches.length > 0) throw new Error(`Read-back mismatch: ${mismatches.join('; ')}`);
     }
 
-    this._transition(op, 'success', result);
+    return { ok: true };
   }
 
   _transition(op, state, result = null, error = null) {
