@@ -576,7 +576,7 @@ app.put('/tilt_cal', (req, res) => {
 // -- OpManager (must register before static middleware to avoid catch-all) ---
 // broadcastAll is defined after wss; forward-reference via closure.
 let _broadcast = () => {};
-const opManager = new OpManager((msg) => _broadcast(msg));
+const opManager = new OpManager((msg) => _broadcast(msg), bridge);
 app.use('/ops', opManager.router);  // POST /ops, GET /ops/manifest, GET /ops/:op_id
 
 // -- static files -----------------------------------------------------------

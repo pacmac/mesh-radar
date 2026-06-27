@@ -365,13 +365,40 @@ async function stubRunner(_entry, _params) {
   return { ok: true, stub: true };
 }
 
+function _flattenResponse(json) {
+  // Unwrap single-key section wrappers like {telemetry: {...}} → {...}
+  if (json && typeof json === 'object' && !Array.isArray(json)) {
+    const keys = Object.keys(json);
+    if (keys.length === 1 && typeof json[keys[0]] === 'object' && !Array.isArray(json[keys[0]])) {
+      return json[keys[0]];
+    }
+  }
+  return json;
+}
+
+function _compareMatchFields(entry, body, responseJson) {
+  if (!entry.match_fields?.length || !responseJson) return;
+  const flat = _flattenResponse(responseJson);
+  const mismatches = [];
+  for (const field of entry.match_fields) {
+    if (!(field in body)) continue;
+    const expected = body[field];
+    const actual = flat[field];
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      mismatches.push(`${field}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    }
+  }
+  if (mismatches.length > 0) throw new Error(`Read-back mismatch: ${mismatches.join('; ')}`);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // OpManager
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class OpManager {
-  constructor(broadcastFn) {
+  constructor(broadcastFn, bridge = null) {
     this._broadcast = broadcastFn;
+    this._bridge = bridge;   // BridgeClient — needed by RadioRunner for device_state events
     this._ops = new Map(); // op_id → op state
     this.router = this._buildRouter();
   }
@@ -399,8 +426,10 @@ export class OpManager {
       let result;
       if (entry.class === 'Local') {
         result = await this._localRunner(entry, params, op);
+      } else if (entry.class === 'Radio') {
+        result = await this._radioRunner(entry, params, op);
       } else {
-        // Radio and Mode: stub runners (steps 4-5)
+        // Mode: stub runner (step 5)
         result = await stubRunner(entry, params);
         if (entry.read_back_path) this._transition(op, 'validating');
       }
@@ -414,7 +443,6 @@ export class OpManager {
     const path = entry.endpoint(params);
     const body = params.values ?? {};
 
-    // Write
     const wr = await _localFetch(entry.method, path, body);
     if (!wr.ok) {
       const detail = wr.json?.error ?? wr.json?.detail ?? wr.text?.slice(0, 120);
@@ -423,26 +451,70 @@ export class OpManager {
 
     if (!entry.read_back_path) return { ok: true };
 
-    // Validate
     this._transition(op, 'validating');
-    const rbPath = entry.read_back_path(params);
-    const rbr = await _localFetch('GET', rbPath);
+    const rbr = await _localFetch('GET', entry.read_back_path(params));
     if (!rbr.ok) throw new Error(`Read-back failed HTTP ${rbr.status}`);
-
-    if (entry.match_fields?.length > 0 && rbr.json) {
-      const mismatches = [];
-      for (const field of entry.match_fields) {
-        if (!(field in body)) continue; // only check fields we actually set
-        const expected = body[field];
-        const actual = rbr.json[field];
-        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-          mismatches.push(`${field}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
-        }
-      }
-      if (mismatches.length > 0) throw new Error(`Read-back mismatch: ${mismatches.join('; ')}`);
-    }
+    _compareMatchFields(entry, body, rbr.json);
 
     return { ok: true };
+  }
+
+  async _radioRunner(entry, params, op) {
+    const path = entry.endpoint(params);
+    const body = params.values ?? {};
+    const target = params.target;
+
+    // Start reboot listener BEFORE the write — firmware reboot delay is ~7s
+    // and the listener must be in place before device_state transitions happen.
+    // `reboot: 'never'` (module configs) and `reboot: false` skip detection entirely.
+    const skipReboot = entry.reboot === 'never' || entry.reboot === false;
+    const rebootPromise = skipReboot
+      ? Promise.resolve(false)
+      : this._waitForStateChange(target, s => s !== 'READY', 15000);
+
+    const wr = await _localFetch(entry.method, path, body);
+    if (!wr.ok) {
+      const detail = wr.json?.error ?? wr.json?.detail ?? wr.text?.slice(0, 120);
+      throw new Error(`Write failed HTTP ${wr.status}: ${detail}`);
+    }
+
+    const rebooting = await rebootPromise;
+
+    if (rebooting) {
+      this._transition(op, 'rebooting');
+      const recovered = await this._waitForStateChange(target, s => s === 'READY', 45000);
+      if (!recovered) throw new Error(`Device ${target} did not recover after reboot (45 s timeout)`);
+    }
+
+    if (!entry.read_back_path) return { ok: true, rebooted: rebooting };
+
+    this._transition(op, 'validating');
+    const rbr = await _localFetch('GET', entry.read_back_path(params));
+    if (!rbr.ok) throw new Error(`Read-back failed HTTP ${rbr.status}`);
+    _compareMatchFields(entry, body, rbr.json);
+
+    return { ok: true, rebooted: rebooting };
+  }
+
+  // Returns true if condition(state) becomes true within timeoutMs; false on timeout.
+  _waitForStateChange(target, condition, timeoutMs) {
+    return new Promise(resolve => {
+      if (!this._bridge) { resolve(false); return; }
+
+      const timer = setTimeout(() => {
+        this._bridge.off('device_state', handler);
+        resolve(false);
+      }, timeoutMs);
+
+      const handler = (ev) => {
+        if (ev.node_id === target && condition(ev.state)) {
+          clearTimeout(timer);
+          this._bridge.off('device_state', handler);
+          resolve(true);
+        }
+      };
+      this._bridge.on('device_state', handler);
+    });
   }
 
   _transition(op, state, result = null, error = null) {
