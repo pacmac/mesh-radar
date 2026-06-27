@@ -116,7 +116,7 @@
               </div>
 
               <div class="relative flex-1 min-h-0 p-1">
-                <div x-ref="perfTrendChart" class="perf-chart h-full min-h-64 w-full"></div>
+                <canvas x-ref="perfTrendChart" class="perf-chart w-full h-full min-h-64"></canvas>
                 <div x-show="!perfLoading && perfTrendBuckets().length===0"
                      class="absolute inset-0 flex items-center justify-center pointer-events-none"
                      style="font-family:monospace;font-size:0.75rem">
@@ -143,7 +143,7 @@
               </div>
 
               <div class="relative flex-1 min-h-0 p-1">
-                <div x-ref="perfScatterChart" class="perf-chart h-full min-h-64 w-full"></div>
+                <canvas x-ref="perfScatterChart" class="perf-chart w-full h-full min-h-64"></canvas>
                 <div x-show="!perfLoading && perfValidRows('all').length===0"
                      class="absolute inset-0 flex items-center justify-center pointer-events-none"
                      style="font-family:monospace;font-size:0.75rem">

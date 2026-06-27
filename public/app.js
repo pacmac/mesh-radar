@@ -9,7 +9,7 @@ import { rotatorMixin }   from './app-rotator.js';
 import { radarMixin }     from './app-radar.js';
 import { messagesMixin }  from './app-messages.js';
 import { rangeMixin }     from './app-range.js';
-import { perfMixin }      from './app-perf.js?v=20260627nativeseries';
+import { perfMixin }      from './app-perf.js?v=20260627rewrite';
 import { telemetryMixin } from './app-telemetry.js';
 import { configMixin }      from './app-config.js';
 import { componentsMixin }  from './app-components.js';
@@ -223,8 +223,6 @@ function dashboard() {
     perfTrendWindowHours: parseInt(persistGet('perfTrendWindowHours', '72'), 10) || 72,
     perfExpert:           persistGet('perfExpert', 'false') === 'true',
     _perfAutoTimer:       null,
-    _perfCharts:          {},
-    _perfResizeObserver:  null,
 
     // -- Range test -----------------------------------------------------------
     rangeLog:     [],

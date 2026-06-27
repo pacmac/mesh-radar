@@ -813,33 +813,6 @@ footer {
   overflow: hidden;
   border-radius: 0.375rem;
 }
-.perf-chart .uplot {
-  width: 100%;
-  height: 100%;
-  color: oklch(var(--bc));
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  overflow: hidden;
-}
-.perf-chart .u-wrap,
-.perf-chart canvas {
-  max-width: 100%;
-}
-.perf-chart .u-title,
-.perf-chart .u-legend {
-  color: oklch(var(--bc));
-}
-.perf-chart .u-legend {
-  display: none;
-  font-size: 0.75rem;
-  border-color: oklch(var(--b3));
-}
-.perf-chart .u-legend .u-marker {
-  border-radius: 9999px;
-}
-.perf-chart .u-over,
-.perf-chart .u-under {
-  background: oklch(var(--b1));
-}
 .perf-chart-error {
   height: 100%;
   min-height: 16rem;

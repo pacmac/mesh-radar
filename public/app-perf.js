@@ -1,4 +1,6 @@
 // Performance mixin: link budget calculator, traceroute history, RF analytics.
+// Chart instances live outside Alpine's reactive scope to prevent proxy recursion.
+const _charts = {};
 
 const REGION_FREQ_MHZ = {
   EU_433: 433.175, EU_868: 868.0, US: 915.0, AU_915: 915.0, CN: 470.0,
@@ -279,8 +281,7 @@ export const perfMixin = {
   perfSetExpert(v) {
     this.perfExpert = !!v;
     persistSet('perfExpert', this.perfExpert ? 'true' : 'false');
-    this.destroyPerfCharts();
-    this.$nextTick?.(() => this.initPerfCharts());
+    this.updatePerfCharts();
   },
 
   perfHealth(margin) {
@@ -384,161 +385,10 @@ export const perfMixin = {
     return `${hh}:${mm}${dayDiff > 0 ? ' -' + dayDiff : ''}`;
   },
 
-  // ── uPlot chart helpers ───────────────────────────────────────────────────
-
-  _perfChartTheme() {
-    const dark = document.documentElement.getAttribute('data-theme') === 'business';
-    return {
-      text:    dark ? '#e5e7eb' : '#1f2937',
-      grid:    dark ? 'rgba(229,231,235,0.18)' : 'rgba(31,41,55,0.16)',
-      bg:      dark ? '#111827' : '#ffffff',
-      primary: dark ? '#22d3ee' : '#0891b2',
-      success: dark ? '#4ade80' : '#16a34a',
-      info:    dark ? '#60a5fa' : '#2563eb',
-      warning: dark ? '#fbbf24' : '#d97706',
-      error:   dark ? '#f87171' : '#dc2626',
-    };
-  },
-
-  _perfChartSize(el) {
-    const r = el?.getBoundingClientRect?.();
-    return {
-      width:  Math.max(360, Math.floor(r?.width  || 360)),
-      height: Math.max(260, Math.floor(r?.height || 260)),
-    };
-  },
-
-  _perfBaseUplotOptions(el, time = false) {
-    const c = this._perfChartTheme();
-    const { width, height } = this._perfChartSize(el);
-    return {
-      width, height,
-      cursor: { drag: { x: true, y: true }, focus: { prox: 24 } },
-      legend: { show: false },
-      scales: {
-        x: { time },
-        y: {
-          auto: true,
-          range: (u, min, max) => [
-            Math.min(Number.isFinite(min) ? min : 0, 0) - 2,
-            Math.max(Number.isFinite(max) ? max : 10, 10) + 2,
-          ],
-        },
-      },
-      axes: [
-        {
-          stroke: c.text,
-          grid: { stroke: c.grid, width: 1 },
-          ticks: { stroke: c.grid, width: 1 },
-          size: 30,
-          gap: 4,
-          font: '11px ui-monospace, SFMono-Regular, Menlo, monospace',
-          values: time ? (u, vals) => vals.map(v => this._perfTimeTick(v)) : null,
-        },
-        {
-          stroke: c.text,
-          grid: { stroke: c.grid, width: 1 },
-          ticks: { stroke: c.grid, width: 1 },
-          size: 42,
-          gap: 4,
-          font: '11px ui-monospace, SFMono-Regular, Menlo, monospace',
-        },
-      ],
-    };
-  },
-
-  _perfDrawSeries(u, yIdx, color, width = 3, dash = [], points = false) {
-    const xs = u.data?.[0] || [];
-    const ys = u.data?.[yIdx] || [];
-    const ctx = u.ctx;
-    const dpr = window.devicePixelRatio || 1;
-    ctx.save();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = width * dpr;
-    ctx.setLineDash(dash.map(v => v * dpr));
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    let open = false;
-    ctx.beginPath();
-    for (let i = 0; i < xs.length; i++) {
-      const yv = ys[i];
-      if (!Number.isFinite(yv)) {
-        if (open) {
-          ctx.stroke();
-          ctx.beginPath();
-          open = false;
-        }
-        continue;
-      }
-      const x = u.valToPos(xs[i], 'x', true);
-      const y = u.valToPos(yv, 'y', true);
-      if (!open) {
-        ctx.moveTo(x, y);
-        open = true;
-      } else {
-        ctx.lineTo(x, y);
-      }
-    }
-    if (open) ctx.stroke();
-    ctx.setLineDash([]);
-
-    if (points) {
-      for (let i = 0; i < xs.length; i++) {
-        const yv = ys[i];
-        if (!Number.isFinite(yv)) continue;
-        const x = u.valToPos(xs[i], 'x', true);
-        const y = u.valToPos(yv, 'y', true);
-        ctx.beginPath();
-        ctx.arc(x, y, 3.5 * dpr, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    ctx.restore();
-  },
-
-  _perfDrawHeadroomBands(u) {
-    const ctx = u.ctx;
-    if (!u.bbox) return;
-    const left = u.bbox.left;
-    const width = u.bbox.width;
-    const yMin = u.scales.y.min;
-    const yMax = u.scales.y.max;
-    const band = (from, to, color) => {
-      const lo = Math.max(from, yMin);
-      const hi = Math.min(to, yMax);
-      if (hi <= yMin || lo >= yMax || hi <= lo) return;
-      const y1 = u.valToPos(hi, 'y', true);
-      const y2 = u.valToPos(lo, 'y', true);
-      ctx.fillStyle = color;
-      ctx.fillRect(left, y1, width, y2 - y1);
-    };
-    ctx.save();
-    band(yMin, 0, 'rgba(248,113,113,0.16)');
-    band(0, 3, 'rgba(251,191,36,0.16)');
-    band(3, 10, 'rgba(250,204,21,0.10)');
-    band(10, yMax, 'rgba(74,222,128,0.08)');
-    ctx.restore();
-  },
-
-  _perfDrawTrend(u) { this._perfDrawHeadroomBands(u); },
-  _perfDrawScatter(u) { this._perfDrawHeadroomBands(u); },
-
-  _perfTimeTick(ts) {
-    const d = new Date(ts * 1000);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    if ((this.perfTrendWindowHours ?? 72) > 24) {
-      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${hh}:${mm}`;
-    }
-    return `${hh}:${mm}`;
-  },
-
   perfTrendSetWindow(hours) {
     this.perfTrendWindowHours = hours;
     persistSet('perfTrendWindowHours', String(hours));
+    this.updatePerfCharts();
   },
 
   perfTrendRows() {
@@ -578,122 +428,220 @@ export const perfMixin = {
     }));
   },
 
-  perfTrendUplotData() {
+  // ── Chart.js charts ───────────────────────────────────────────────────────
+
+  _perfTheme() {
+    const dark = document.documentElement.getAttribute('data-theme') === 'business';
+    return {
+      text:    dark ? '#e5e7eb' : '#1f2937',
+      grid:    dark ? 'rgba(229,231,235,0.18)' : 'rgba(31,41,55,0.16)',
+      success: dark ? '#4ade80' : '#16a34a',
+      info:    dark ? '#60a5fa' : '#2563eb',
+      warning: dark ? '#fbbf24' : '#d97706',
+      primary: dark ? '#22d3ee' : '#0891b2',
+    };
+  },
+
+  _perfBandsPlugin() {
+    return {
+      id: 'perfBands',
+      beforeDraw(chart) {
+        const { ctx, chartArea, scales: { y } } = chart;
+        if (!chartArea || !y) return;
+        const { left, right } = chartArea;
+        const yMin = y.min, yMax = y.max;
+        const yp = v => y.getPixelForValue(Math.min(Math.max(v, yMin), yMax));
+        ctx.save();
+        for (const [lo, hi, col] of [
+          [yMin, 0,    'rgba(248,113,113,0.22)'],
+          [0,    3,    'rgba(251,191,36,0.22)'],
+          [3,    10,   'rgba(250,204,21,0.14)'],
+          [10,   yMax, 'rgba(74,222,128,0.12)'],
+        ]) {
+          if (lo >= yMax || hi <= yMin) continue;
+          const yTop = yp(Math.min(hi, yMax));
+          const yBot = yp(Math.max(lo, yMin));
+          ctx.fillStyle = col;
+          ctx.fillRect(left, yTop, right - left, yBot - yTop);
+        }
+        ctx.restore();
+      },
+    };
+  },
+
+  _perfChartAxes(c, time) {
+    const font = { family: 'ui-monospace, SFMono-Regular, Menlo, monospace', size: 11 };
+    const x = {
+      type: 'linear',
+      ticks: {
+        color: c.text,
+        font,
+        maxTicksLimit: 8,
+        ...(time ? {
+          callback(val, index, ticks) {
+            if (!ticks.length) return '';
+            const rangeMs = ticks[ticks.length - 1].value - ticks[0].value;
+            const d = new Date(val);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            if (rangeMs > 24 * 3600 * 1000) {
+              return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${hh}:${mm}`;
+            }
+            return `${hh}:${mm}`;
+          },
+        } : {}),
+      },
+      grid:   { color: c.grid },
+      border: { color: c.grid },
+    };
+    const y = {
+      ticks:  { color: c.text, font },
+      grid:   { color: c.grid },
+      border: { color: c.grid },
+    };
+    return { x, y };
+  },
+
+  _perfTrendDatasets(c) {
     const buckets = this.perfTrendBuckets();
     return [
-      buckets.map(b => b.ts),
-      buckets.map(b => b.directMargin),
-      buckets.map(b => b.firstHopMargin),
+      {
+        label: 'Direct RF',
+        data: buckets.map(b => ({ x: b.ts * 1000, y: b.directMargin })),
+        borderColor: c.success,
+        backgroundColor: c.success,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+        spanGaps: true,
+      },
+      {
+        label: 'First Hop',
+        data: buckets.map(b => ({ x: b.ts * 1000, y: b.firstHopMargin })),
+        borderColor: c.info,
+        backgroundColor: c.info,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+        borderDash: [8, 5],
+        spanGaps: true,
+      },
     ];
   },
 
-  perfScatterUplotData() {
+  _perfScatterRefDatasets(c) {
+    if (!this.perfExpert) return [];
     const rows = this.perfValidRows('all');
-    const maxKm = rows.length ? Math.max(...rows.map(r => r.metricDistKm), 5) * 1.1 : 50;
-    const entries = [];
-    for (let i = 0; i <= 96; i++) {
-      const km = Math.max(0.1, (i / 96) * maxKm);
-      entries.push({ x: km });
+    if (!rows.length) return [];
+    const maxKm = Math.max(...rows.map(r => r.metricDistKm), 1);
+    const pts   = 80;
+    const ideal = [], rural = [];
+    for (let i = 1; i <= pts; i++) {
+      const km   = (i / pts) * maxKm * 1.1;
+      const base = this.perfTheoChipSnr(km) - this.perfSfSnrLimitDb();
+      ideal.push({ x: km, y: base });
+      rural.push({ x: km, y: base - 10 * Math.log10(km) });
     }
-    rows.forEach((r, idx) => {
-      // Tiny deterministic offset avoids duplicate x collapse while remaining visually invisible.
-      entries.push({
-        x: r.metricDistKm + (idx * 1e-6),
-        direct: r.direct ? r.marginTx : null,
-        firstHop: r.direct ? null : r.marginTx,
-      });
-    });
-    entries.sort((a, b) => a.x - b.x);
     return [
-      entries.map(e => e.x),
-      entries.map(e => this.perfTheoChipSnr(e.x) - this.perfSfSnrLimitDb()),
-      entries.map(e => this.perfTheoChipSnr(e.x) - 10 * Math.log10(e.x) - this.perfSfSnrLimitDb()),
-      entries.map(() => 0),
-      entries.map(e => e.direct   ?? null),
-      entries.map(e => e.firstHop ?? null),
+      {
+        label: 'Ideal (free space)',
+        type: 'line',
+        data: ideal,
+        borderColor: c.primary,
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        spanGaps: true,
+      },
+      {
+        label: 'Rural (n=3)',
+        type: 'line',
+        data: rural,
+        borderColor: c.warning,
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        borderDash: [8, 5],
+        pointRadius: 0,
+        spanGaps: true,
+      },
     ];
   },
 
-  _perfTrendOptions(el) {
-    const c = this._perfChartTheme();
-    return {
-      ...this._perfBaseUplotOptions(el, true),
-      hooks: { drawClear: [u => this._perfDrawTrend(u)] },
-      series: [
-        {},
-        { label: 'Direct RF', stroke: c.success, width: 4, spanGaps: true, points: { show: true, size: 7, width: 2, stroke: c.success, fill: c.bg } },
-        { label: 'First hop', stroke: c.info, width: 4, dash: [8, 5], spanGaps: true, points: { show: true, size: 7, width: 2, stroke: c.info, fill: c.bg } },
-      ],
-    };
-  },
-
-  _perfScatterOptions(el) {
-    const c = this._perfChartTheme();
-    return {
-      ...this._perfBaseUplotOptions(el, false),
-      hooks: { drawClear: [u => this._perfDrawScatter(u)] },
-      series: [
-        {},
-        { label: 'Ideal free-space', show: this.perfExpert, stroke: c.primary, width: 4, points: { show: false } },
-        { label: 'Typical rural', show: this.perfExpert, stroke: c.warning, width: 3, dash: [8, 5], points: { show: false } },
-        { label: 'SF limit', stroke: c.error, width: 3, dash: [4, 6], points: { show: false } },
-        { label: 'Direct RF', stroke: c.success, width: 0, points: { show: true, size: 8, width: 2, stroke: c.success, fill: c.success } },
-        { label: 'First hop', stroke: c.info, width: 0, points: { show: true, size: 8, width: 2, stroke: c.info, fill: c.info } },
-      ],
-    };
+  _perfScatterDatasets(c) {
+    const rows     = this.perfValidRows('all');
+    const direct   = rows.filter(r =>  r.direct).map(r => ({ x: r.metricDistKm, y: r.marginTx }));
+    const firstHop = rows.filter(r => !r.direct).map(r => ({ x: r.metricDistKm, y: r.marginTx }));
+    return [
+      {
+        label: 'Direct RF',
+        data: direct,
+        backgroundColor: c.success + 'bf',
+        pointRadius: 5,
+        pointHoverRadius: 7,
+      },
+      {
+        label: 'First Hop',
+        data: firstHop,
+        backgroundColor: c.info + 'bf',
+        pointRadius: 5,
+        pointHoverRadius: 7,
+      },
+      ...this._perfScatterRefDatasets(c),
+    ];
   },
 
   initPerfCharts() {
     if (this.tab !== 'perf') return;
-    const trendEl = this.$refs?.perfTrendChart;
+    const trendEl   = this.$refs?.perfTrendChart;
     const scatterEl = this.$refs?.perfScatterChart;
     if (!trendEl || !scatterEl) return;
-    if (!window.uPlot) {
-      const msg = '<div class="perf-chart-error">uPlot failed to load</div>';
-      trendEl.innerHTML = msg;
-      scatterEl.innerHTML = msg;
-      console.warn('[perf] uPlot is not loaded');
-      return;
+    if (!window.Chart) { console.warn('[perf] Chart.js not loaded'); return; }
+    const c           = this._perfTheme();
+    const bandsPlugin = this._perfBandsPlugin();
+    if (!_charts.trend) {
+      _charts.trend = new window.Chart(trendEl, {
+        type: 'line',
+        data: { datasets: this._perfTrendDatasets(c) },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false } },
+          scales: this._perfChartAxes(c, true),
+        },
+        plugins: [bandsPlugin],
+      });
     }
-
-    if (!this._perfCharts.trend) {
-      trendEl.innerHTML = '';
-      this._perfCharts.trend = new window.uPlot(this._perfTrendOptions(trendEl), this.perfTrendUplotData(), trendEl);
+    if (!_charts.scatter) {
+      _charts.scatter = new window.Chart(scatterEl, {
+        type: 'scatter',
+        data: { datasets: this._perfScatterDatasets(c) },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false } },
+          scales: this._perfChartAxes(c, false),
+        },
+        plugins: [bandsPlugin],
+      });
     }
-    if (!this._perfCharts.scatter) {
-      scatterEl.innerHTML = '';
-      this._perfCharts.scatter = new window.uPlot(this._perfScatterOptions(scatterEl), this.perfScatterUplotData(), scatterEl);
-    }
-
-    if (!this._perfResizeObserver) {
-      this._perfResizeObserver = new ResizeObserver(() => this.updatePerfCharts());
-      this._perfResizeObserver.observe(trendEl);
-      this._perfResizeObserver.observe(scatterEl);
-    }
-    this.updatePerfCharts();
   },
 
   updatePerfCharts() {
     if (this.tab !== 'perf') return;
-    if (!this._perfCharts?.trend || !this._perfCharts?.scatter) {
-      this.initPerfCharts();
-      return;
-    }
-    const trendEl = this.$refs?.perfTrendChart;
-    const scatterEl = this.$refs?.perfScatterChart;
-    if (!trendEl || !scatterEl) return;
-
-    this._perfCharts.trend.setSize(this._perfChartSize(trendEl));
-    this._perfCharts.trend.setData(this.perfTrendUplotData());
-    this._perfCharts.scatter.setSize(this._perfChartSize(scatterEl));
-    this._perfCharts.scatter.setData(this.perfScatterUplotData());
+    if (!_charts?.trend || !_charts?.scatter) { this.initPerfCharts(); return; }
+    const c = this._perfTheme();
+    _charts.trend.data.datasets = this._perfTrendDatasets(c);
+    _charts.trend.update('none');
+    _charts.scatter.data.datasets = this._perfScatterDatasets(c);
+    _charts.scatter.update('none');
   },
 
   destroyPerfCharts() {
-    this._perfCharts?.trend?.destroy();
-    this._perfCharts?.scatter?.destroy();
-    this._perfCharts = {};
-    this._perfResizeObserver?.disconnect();
-    this._perfResizeObserver = null;
+    _charts?.trend?.destroy();
+    _charts?.scatter?.destroy();
+    _charts = {};
   },
+
 };
