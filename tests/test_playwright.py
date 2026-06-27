@@ -73,16 +73,38 @@ async def navigate_config_bridge(page: Page):
     await asyncio.sleep(1.2)
 
 
-async def navigate_config_radar(page: Page):
-    """Navigate to /config then click Radar sub-tab. Wait for radar config fetch."""
+async def wait_ws_and_radar_config(page: Page):
+    """After nav, wait for WS connection AND /config/radar response, then click Radar."""
+    # Use Playwright WS interception: ARM listener BEFORE navigating so we don't miss the connect
+    ws_connected = asyncio.Event()
+
+    def on_ws(ws):
+        ws_connected.set()
+
+    page.on("websocket", on_ws)
+
+    # Navigate
     await page.goto(f"{BASE}/config", timeout=10000)
     await page.wait_for_load_state("networkidle", timeout=10000)
-    await asyncio.sleep(0.8)
-    # Start waiting for the radar config response BEFORE clicking the tab
+
+    # Wait for WS connection
+    try:
+        await asyncio.wait_for(ws_connected.wait(), timeout=8.0)
+    except asyncio.TimeoutError:
+        pass  # proceed anyway
+
+    await asyncio.sleep(0.5)
+
+    # Now click Radar tab and wait for the config fetch
     async with page.expect_response(lambda r: "/config/radar" in r.url, timeout=8000) as resp_info:
         await page.click('.tab:text("Radar")', timeout=5000)
-    await resp_info.value  # wait for request to complete
-    await asyncio.sleep(0.5)
+    await resp_info.value
+    await asyncio.sleep(0.3)
+
+
+async def navigate_config_radar(page: Page):
+    """Navigate to /config then click Radar sub-tab. Wait for WS + radar config fetch."""
+    await wait_ws_and_radar_config(page)
 
 
 async def test_bridge_config_save(page: Page):
@@ -113,6 +135,10 @@ async def main():
         browser = await pw.chromium.launch(headless=HEADLESS)
         page = await browser.new_page()
 
+        # Capture browser console errors
+        console_errors = []
+        page.on("console", lambda m: console_errors.append(f"[{m.type}] {m.text}") if m.type in ("error", "warning") else None)
+
         # Load dashboard and wait for Alpine to initialise
         await page.goto(BASE, timeout=15000)
         await page.wait_for_load_state("networkidle", timeout=15000)
@@ -129,6 +155,11 @@ async def main():
         except Exception as e:
             print(f"  ✗ Unexpected error: {e}")
             TESTS_FAILED += 1
+
+        if console_errors:
+            print(f"  Console errors/warnings ({len(console_errors)}):")
+            for e in console_errors[-10:]:
+                print(f"    {e}")
 
         await browser.close()
 
