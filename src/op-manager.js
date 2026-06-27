@@ -96,8 +96,8 @@ const REGISTRY = new Map([
   ['alert_rule', {
     class: 'Local', description: 'Alert rule (enabled/threshold/cooldown)',
     method: 'PUT', endpoint: p => `/alerts/rules/${p.target}`,
-    read_back_path: () => '/alerts/rules', match_fields: ['enabled', 'threshold'],
-    example_payload: { target: 'battery_low', values: { enabled: true, threshold: 20, cooldown_minutes: 60 } },
+    read_back_path: () => '/alerts/rules', match_fields: [],
+    example_payload: { target: 'node_offline', values: { enabled: true, threshold: 0, cooldown_minutes: 60 } },
     timeout_s: 5, reboot: false,
   }],
   ['auto_purge_settings', {

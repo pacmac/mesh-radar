@@ -353,7 +353,7 @@ export const configMixin = {
 
   async updateAlertRule(type, changes) {
     try {
-      await opFlow('alert_rule', null, { type, ...changes }, { successMsg: null });
+      await opFlow('alert_rule', type, changes, { successMsg: null });
       const r = this.alertRules.find(x => x.type === type);
       if (r) Object.assign(r, changes);
     } catch (_) {} // opFlow already showed the error toast
