@@ -2,6 +2,25 @@
 import { fetchJSON, nextFrame } from './app-helpers.js';
 import { persistSet } from './app-persist.js';
 import { buildForm, collectForm } from './app-forms.js';
+import { submitOp } from './op-client.js';
+import { opFlow } from './op-flow.js';
+
+const SECTION_OP_KIND = {
+  lora:           'radio_config_lora',
+  device:         'radio_config_device',
+  network:        'radio_config_network',
+  bluetooth:      'radio_config_bluetooth',
+  display:        'radio_config_display',
+  power:          'radio_config_power',
+  position:       'radio_config_position',
+  security:       'radio_config_security',
+  mqtt:           'module_config_mqtt',
+  serial:         'module_config_serial',
+  telemetry:      'module_config_telemetry',
+  range_test:     'module_config_range_test',
+  canned_message: 'module_config_canned_msg',
+  neighbor_info:  'module_config_neighbor',
+};
 
 export const configMixin = {
   async loadConfig() {
@@ -117,17 +136,13 @@ export const configMixin = {
     };
     if (this.fixedPosition.alt != null && this.fixedPosition.alt !== '')
       body.altitude = Math.round(this.fixedPosition.alt);
-    const res = await fetchJSON(this.cd('/fixed_position'), 'PUT', body);
-    if (res?.error) throw new Error(res.error?.message || res.error);
-    if (res?.detail) throw new Error(res.detail);
-    if (!res?.verified) throw new Error('Position not verified by device');
+    const target = this.cfgRadioId || this.activeNodeId;
+    await submitOp('fixed_position_push', target, body);
   },
 
   async clearFixedPosition() {
-    const res = await fetchJSON(this.cd('/fixed_position'), 'DELETE');
-    if (res?.error) throw new Error(res.error?.message || res.error);
-    if (res?.detail) throw new Error(res.detail);
-    if (!res?.verified) throw new Error('Clear not verified by device');
+    const target = this.cfgRadioId || this.activeNodeId;
+    await submitOp('fixed_position_clear', target, {});
     this.fixedPosition.lat = null;
     this.fixedPosition.lon = null;
     this.fixedPosition.alt = null;
@@ -136,10 +151,11 @@ export const configMixin = {
   async saveSection(sec) {
     const el = document.getElementById('sec_' + sec.name);
     const payload = collectForm(el, sec.schema.fields);
-    const res = await fetchJSON(this.cd(`/config/${sec.name}`), 'PUT', payload);
-    if (res?.error) throw new Error(res.error?.message || res.error);
-    if (res?.detail) throw new Error(res.detail);
-    if (!res?.verified) throw new Error('Device did not verify config');
+    const kind = SECTION_OP_KIND[sec.name];
+    if (!kind) throw new Error(`No op kind for section: ${sec.name}`);
+    const target = this.cfgRadioId || this.activeNodeId;
+    await submitOp(kind, target, payload);
+    // Refresh the form UI with the verified server state
     const values = await fetchJSON(this.cd(`/config/${sec.name}`));
     sec.data = values[sec.name] || values || {};
     const formEl = document.getElementById('sec_' + sec.name);
@@ -189,12 +205,11 @@ export const configMixin = {
   async saveChannel(ch) {
     const el = document.getElementById('ch_' + ch.index);
     const payload = collectForm(el, this.channelSchema.fields);
-    const body = { settings: { ...payload }, role: payload.role };
+    const body = { settings: { ...payload }, role: payload.role, index: ch.index };
     delete body.settings.role;
-    const res = await fetchJSON(this.cd(`/channels/${ch.index}`), 'PUT', body);
-    if (res?.error) throw new Error(res.error?.message || res.error);
-    if (res?.detail) throw new Error(res.detail);
-    if (!res?.verified) throw new Error('Device did not verify channel config');
+    const target = this.cfgRadioId || this.activeNodeId;
+    await submitOp('channel_config', target, body);
+    // Refresh the form UI
     const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
     ch.data = live || {};
     const formData = { ...(live?.settings || {}), role: live?.role };
@@ -233,10 +248,8 @@ export const configMixin = {
     // Only include role in payload if it genuinely changed to avoid spurious reboots.
     const currentRole = this.ownerData?.role ?? 'CLIENT';
     if (payload.role === currentRole) delete payload.role;
-    const res = await fetchJSON(this.cd('/owner'), 'PUT', payload);
-    if (res?.error) throw new Error(res.error?.message || res.error);
-    if (res?.detail) throw new Error(res.detail);
-    if (!res?.verified) throw new Error('Owner update not confirmed by device');
+    const target = this.cfgRadioId || this.activeNodeId;
+    await submitOp('owner_info', target, payload);
   },
 
   async loadBridgeConfig() {
@@ -264,7 +277,7 @@ export const configMixin = {
     try {
       const el = document.getElementById('bridge_cfg_form');
       const payload = collectForm(el, this.bridgeConfigSchema.fields);
-      await fetchJSON('/bridge_config', 'PUT', payload);
+      await opFlow('bridge_config', null, payload, { successMsg: 'Bridge config saved' });
       el.removeAttribute('data-dirty');
       this.bridgeConfigSaved = true;
       setTimeout(() => { this.bridgeConfigSaved = false; }, 2000);
@@ -313,7 +326,7 @@ export const configMixin = {
     this.alertSmtpSaved  = false;
     this.alertSmtpError  = '';
     try {
-      await fetchJSON('/alerts/config', 'PUT', payload);
+      await opFlow('alert_config', null, payload, { successMsg: 'SMTP settings saved' });
       Object.assign(this.alertSmtp, {
         host: payload['alerts.smtp_host'], port: payload['alerts.smtp_port'],
         user: payload['alerts.smtp_user'], pass: payload['alerts.smtp_pass'],
@@ -332,22 +345,18 @@ export const configMixin = {
 
   async saveSmtp(key, value) {
     try {
-      await fetchJSON('/alerts/config', 'PUT', { [key]: value });
+      await opFlow('alert_config', null, { [key]: value }, { successMsg: null });
       const field = key.replace('alerts.smtp_', '').replace('alerts.imap_', 'imap_');
       if (this.alertSmtp) this.alertSmtp[field] = value;
-    } catch (e) {
-      console.warn('saveSmtp failed', e);
-    }
+    } catch (_) {} // opFlow already showed the error toast
   },
 
   async updateAlertRule(type, changes) {
     try {
-      await fetchJSON(`/alerts/rules/${type}`, 'PUT', changes);
+      await opFlow('alert_rule', null, { type, ...changes }, { successMsg: null });
       const r = this.alertRules.find(x => x.type === type);
       if (r) Object.assign(r, changes);
-    } catch (e) {
-      console.warn('updateAlertRule failed', e);
-    }
+    } catch (_) {} // opFlow already showed the error toast
   },
 
   async loadRadarCfg() {
@@ -363,7 +372,7 @@ export const configMixin = {
     this.radarCfgSaved  = false;
     this.radarCfgError  = '';
     try {
-      await fetchJSON('/config/radar', 'PUT', this.radarCfg);
+      await opFlow('radar_config', null, this.radarCfg, { successMsg: 'Radar config saved' });
       this.radarCfgSaved = true;
       setTimeout(() => { this.radarCfgSaved = false; }, 3000);
     } catch (e) {
@@ -378,7 +387,7 @@ export const configMixin = {
     this.alertTestSending = true;
     this.alertTestResult = '';
     try {
-      await fetchJSON('/alerts/test', 'POST', {});
+      await submitOp('send_alert_test', null, {});
       this.alertTestOk = true;
       this.alertTestResult = 'Sent!';
     } catch (e) {

@@ -30,7 +30,7 @@ export async function opFlow(kind, target, values = {}, opts = {}) {
 
   try {
     const outcome = await submitOp(kind, target, values);
-    showToast('success', successMsg);
+    if (successMsg) showToast('success', successMsg);
     _clearLoading(element);
     return outcome;
   } catch (err) {
