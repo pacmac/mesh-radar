@@ -2,6 +2,7 @@
 import { b64ToUtf8, summarizeEvent, FEED_FILTER_OPTIONS } from './app-helpers.js';
 import { persistSet } from './app-persist.js';
 import { FF } from './feature-flags.js';
+import { handleConfigOp } from './op-client.js';
 window.feedFilterOptions = FEED_FILTER_OPTIONS;
 
 export const wsMixin = {
@@ -65,6 +66,7 @@ export const wsMixin = {
   },
 
   handleEvent(ev) {
+    if (ev.type === 'config_op')           { handleConfigOp(ev); return; }
     if (ev.type === 'bridge_connected')    { this.bridgeConnected = true;  return; }
     if (ev.type === 'bridge_disconnected') { this.bridgeConnected = false; return; }
 
