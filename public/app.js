@@ -9,7 +9,7 @@ import { rotatorMixin }   from './app-rotator.js';
 import { radarMixin }     from './app-radar.js';
 import { messagesMixin }  from './app-messages.js';
 import { rangeMixin }     from './app-range.js';
-import { perfMixin }      from './app-perf.js?v=20260627headroom4';
+import { perfMixin }      from './app-perf.js?v=20260627nativeseries';
 import { telemetryMixin } from './app-telemetry.js';
 import { configMixin }      from './app-config.js';
 import { componentsMixin }  from './app-components.js';

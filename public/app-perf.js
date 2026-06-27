@@ -523,24 +523,8 @@ export const perfMixin = {
     ctx.restore();
   },
 
-  _perfDrawTrend(u) {
-    const c = this._perfChartTheme();
-    this._perfDrawHeadroomBands(u);
-    this._perfDrawSeries(u, 1, c.success, 3, [], true);
-    this._perfDrawSeries(u, 2, c.info, 3, [8, 5], true);
-  },
-
-  _perfDrawScatter(u) {
-    const c = this._perfChartTheme();
-    this._perfDrawHeadroomBands(u);
-    if (this.perfExpert) {
-      this._perfDrawSeries(u, 1, c.primary, 3);
-      this._perfDrawSeries(u, 2, c.warning, 2, [8, 5]);
-    }
-    this._perfDrawSeries(u, 3, c.error, 2, [4, 6]);
-    this._perfDrawSeries(u, 4, c.success, 0, [], true);
-    this._perfDrawSeries(u, 5, c.info, 0, [], true);
-  },
+  _perfDrawTrend(u) { this._perfDrawHeadroomBands(u); },
+  _perfDrawScatter(u) { this._perfDrawHeadroomBands(u); },
 
   _perfTimeTick(ts) {
     const d = new Date(ts * 1000);
@@ -634,11 +618,11 @@ export const perfMixin = {
     const c = this._perfChartTheme();
     return {
       ...this._perfBaseUplotOptions(el, true),
-      hooks: { draw: [u => this._perfDrawTrend(u)] },
+      hooks: { drawClear: [u => this._perfDrawTrend(u)] },
       series: [
         {},
         { label: 'Direct RF', stroke: c.success, width: 4, spanGaps: true, points: { show: true, size: 7, width: 2, stroke: c.success, fill: c.bg } },
-        { label: 'First hop', stroke: c.info, width: 4, spanGaps: true, points: { show: true, size: 7, width: 2, stroke: c.info, fill: c.bg } },
+        { label: 'First hop', stroke: c.info, width: 4, dash: [8, 5], spanGaps: true, points: { show: true, size: 7, width: 2, stroke: c.info, fill: c.bg } },
       ],
     };
   },
@@ -647,7 +631,7 @@ export const perfMixin = {
     const c = this._perfChartTheme();
     return {
       ...this._perfBaseUplotOptions(el, false),
-      hooks: { draw: [u => this._perfDrawScatter(u)] },
+      hooks: { drawClear: [u => this._perfDrawScatter(u)] },
       series: [
         {},
         { label: 'Ideal free-space', show: this.perfExpert, stroke: c.primary, width: 4, points: { show: false } },
