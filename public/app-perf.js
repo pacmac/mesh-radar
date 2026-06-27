@@ -117,10 +117,8 @@ export const perfMixin = {
     this.perfAutoStop();
     if (!this.perfAutoNodes?.length) return;
     const ms = (this.perfAutoIntervalMin ?? 5) * 60 * 1000;
-    this._perfAutoTimer = setInterval(() => {
-      this._perfAutoTick();
-      setTimeout(() => this.loadPerfHistory(), 8000);
-    }, ms);
+    // Results arrive via WS route_discovered events — no polling needed
+    this._perfAutoTimer = setInterval(() => this._perfAutoTick(), ms);
     persistSet('perfAutoNodes', JSON.stringify(this.perfAutoNodes));
     persistSet('perfAutoIntervalMin', String(this.perfAutoIntervalMin));
   },
@@ -135,17 +133,7 @@ export const perfMixin = {
     else            this.perfAutoNodes = this.perfAutoNodes.filter(n => n !== num);
   },
 
-  async loadPerfHistory(toNum = null) {
-    this.perfLoading = true;
-    try {
-      const qs = toNum ? `?to_num=${toNum}&limit=200` : '?limit=200';
-      this.perfHistory = await fetchJSON('/traceroute_history' + qs);
-    } catch (e) {
-      console.warn('[perf] loadPerfHistory failed', e);
-    } finally {
-      this.perfLoading = false;
-    }
-  },
+  loadPerfHistory() { /* no-op — history arrives via WS traceroute_history on connect; new results via route_discovered */ },
 
   // Distance (km) from home to a lat/lon pair using Haversine
   _haversineKm(lat, lon) {

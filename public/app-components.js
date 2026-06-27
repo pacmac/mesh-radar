@@ -80,13 +80,11 @@ export const componentsMixin = {
 
   // ── Status badges ────────────────────────────────────────────────────────
   devStateBadge(nodeId) {
-    const state  = this.devBleState(nodeId);
+    const dev    = this.deviceBleStates[nodeId];
     const saving = this.devIsSaving(nodeId);
-    const cls = (state === 'ready' && !saving) ? 'badge-success'
-              : (state === 'syncing' || saving)  ? 'badge-warning'
-              : state === 'error'                ? 'badge-error'
-              :                                    'badge-ghost';
-    const label = saving ? 'saving' : (state || 'idle');
+    const bc_map = { success: 'badge-success', warning: 'badge-warning', error: 'badge-error', info: 'badge-info' };
+    const cls    = saving ? 'badge-warning' : (bc_map[dev?.display?.badge_color] || 'badge-ghost');
+    const label  = saving ? 'saving' : (dev?.display?.badge_text || 'offline');
     return `<span class="badge badge-sm ${cls}">${label}</span>`;
   },
 

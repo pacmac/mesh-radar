@@ -3,46 +3,41 @@ import { fetchJSON } from './app-helpers.js';
 import { persistSet } from './app-persist.js';
 
 export const messagesMixin = {
-  async loadMessages() {
-    try {
-      const rows = await fetchJSON('/messages?limit=50');
-      if (Array.isArray(rows) && rows.length) {
-        const ownNums = new Set(
-          Object.keys(this.deviceConfigs || {})
-            .filter(id => id.startsWith('!'))
-            .map(id => parseInt(id.slice(1), 16))
-            .filter(Boolean)
-        );
-        this.messages = rows.map(r => {
-          if (r.from_num) {
-            this.msgNodeCache[r.from_num] = { num: r.from_num, display_name: r.display_name || null, user: { short_name: r.short_name, long_name: r.long_name } };
-          }
-          return {
-            pktId:         r.packet_id,
-            replyId:       r.reply_id || null,
-            fromNum:       r.from_num,
-            fromShortName: r.display_name || r.short_name || null,
-            fromLongName:  r.long_name  || null,
-            hops:          r.hops ?? null,
-            rssi:          r.rssi ?? null,
-            snr:           r.snr  ?? null,
-            to:            r.to_num >>> 0,
-            broadcast:     (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
-            channel:       r.channel ?? 0,
-            text:          r.text,
-            ts:            r.ts,
-            time:          new Date(r.ts * 1000).toLocaleTimeString(),
-            direction:     ownNums.has(r.from_num) ? 'tx' : 'rx',
-            ackStatus:     ownNums.has(r.from_num) ? 'confirmed' : null,
-            src:           r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
-          };
-        });
-        this.messages.forEach(m => { if (m.pktId) this._seenPacketIds.add(m.pktId); });
-        try { localStorage.setItem('msgHistory', JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
+  // Called by WS message_history event — no HTTP fetch.
+  _applyMessageRows(rows) {
+    if (!Array.isArray(rows) || !rows.length) return;
+    const ownNums = new Set(
+      Object.keys(this.deviceConfigs || {})
+        .filter(id => id.startsWith('!'))
+        .map(id => parseInt(id.slice(1), 16))
+        .filter(Boolean)
+    );
+    this.messages = rows.map(r => {
+      if (r.from_num) {
+        this.msgNodeCache[r.from_num] = { num: r.from_num, display_name: r.display_name || null, user: { short_name: r.short_name, long_name: r.long_name } };
       }
-    } catch (e) {
-      console.warn('loadMessages failed', e);
-    }
+      return {
+        pktId:         r.packet_id,
+        replyId:       r.reply_id || null,
+        fromNum:       r.from_num,
+        fromShortName: r.display_name || r.short_name || null,
+        fromLongName:  r.long_name  || null,
+        hops:          r.hops ?? null,
+        rssi:          r.rssi ?? null,
+        snr:           r.snr  ?? null,
+        to:            r.to_num >>> 0,
+        broadcast:     (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
+        channel:       r.channel ?? 0,
+        text:          r.text,
+        ts:            r.ts,
+        time:          new Date(r.ts * 1000).toLocaleTimeString(),
+        direction:     ownNums.has(r.from_num) ? 'tx' : 'rx',
+        ackStatus:     ownNums.has(r.from_num) ? 'confirmed' : null,
+        src:           r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
+      };
+    });
+    this.messages.forEach(m => { if (m.pktId) this._seenPacketIds.add(m.pktId); });
+    try { localStorage.setItem('msgHistory', JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
     // Restore pending TX messages not yet confirmed (echoed).
     try {
       const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
@@ -56,6 +51,8 @@ export const messagesMixin = {
       }
     } catch (_) {}
   },
+
+  loadMessages() { /* no-op — history arrives via WS message_history on connect */ },
 
   displayMessages() {
     const msgs = this.messages;
@@ -98,13 +95,19 @@ export const messagesMixin = {
 
   async sendMessage() {
     if (!this.msgText.trim()) return;
+    // Hard guard: if user intended a DM but recipient is missing, refuse to send rather than
+    // silently fall back to broadcast. This catches modal x-model initialization race conditions.
+    if (this.msgIsDirect && !this.msgDirectTo) {
+      this.showToast('No recipient — select a node before sending a direct message', 'error', 0);
+      return;
+    }
     this.msgSent = false;
     const text = this.msgText, channel = Number(this.msgChannel), time = new Date().toLocaleTimeString();
     const fromId = this.msgFrom || this.activeNodeId;
-    const to = this.msgIsDirect && this.msgDirectTo ? Number(this.msgDirectTo) : 0xFFFFFFFF;
+    const to = this.msgIsDirect ? Number(this.msgDirectTo) : 0xFFFFFFFF;
     const fromNum = parseInt((fromId || '').replace('!', ''), 16) || 0;
     const body = { text, channel };
-    if (this.msgIsDirect && this.msgDirectTo) body.to = to;
+    if (this.msgIsDirect) body.to = to;
     if (this.msgReplyId) body.reply_id = this.msgReplyId;
 
     const txKey = Date.now();

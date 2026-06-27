@@ -93,7 +93,7 @@
 
       <!-- Status footer inside sidebar -->
       <div class="p-3 border-t border-base-200 text-xs flex flex-col gap-1.5">
-        <template x-for="dev in availableDevices" :key="dev.node_id">
+        <template x-for="dev in availableDevices" :key="dev.addr">
           <div class="flex items-center justify-between gap-2">
             <span class="font-mono opacity-50 shrink-0" x-text="deviceLabel(dev.node_id)"></span>
             <span class="inline-flex items-center gap-1 min-w-0">

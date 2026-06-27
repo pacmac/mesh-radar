@@ -3,7 +3,8 @@ import { bridge } from './bridge.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
-import { insertTilt, getTiltCal } from './db.js';
+import { insertTilt, insertEnvHistory, getTiltCal, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts } from './db.js';
+import { queryMessages } from './filters.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode } from './dash-mode.js';
 import { passiveTracer } from './passive-tracer.js';
@@ -28,12 +29,9 @@ function makeRotatorThrottle(sendFn) {
 }
 
 // State event types from the bridge BLE state machine — buffered per device
-const STATE_EVENT_TYPES = new Set([
-  'snapshot', 'ready', 'connecting', 'syncing', 'reconnecting',
-  'error', 'idle', 'failed', 'sync_progress',
-]);
+const STATE_EVENT_TYPES = new Set(['device_state', 'device_data']);
 
-export function attachWsRelay(server) {
+export function attachWsRelay(server, getRangeTimer = () => ({ active: false, endsAt: null, nodeId: null })) {
   const wss = new WebSocketServer({ noServer: true });
 
   // Last-known BLE state per device (node_id → event object).
@@ -42,9 +40,8 @@ export function attachWsRelay(server) {
   const lastDeviceState = {};
 
   // Last-known device list — replayed to new frontend clients on connect.
-  // Refreshed via one HTTP call whenever the set of connected devices changes.
+  // Composed from lastDeviceState in memory — no HTTP calls after startup.
   let lastDeviceList = null;
-  const activeDeviceIds = new Set();
 
   // Single enrichment point — every outbound event passes through here.
   // Adds pre-resolved display labels so the UI never needs to resolve names itself.
@@ -75,44 +72,58 @@ export function attachWsRelay(server) {
     if (ws.readyState === 1) ws.send(JSON.stringify(enrichEvent(msg)));
   }
 
-  bridge.on('connected',    () => broadcast({ type: 'bridge_connected' }));
+  bridge.on('connected',    () => { broadcast({ type: 'bridge_connected' }); });
   bridge.on('disconnected', () => {
     broadcast({ type: 'bridge_disconnected' });
     handleAlertEvent({ type: 'bridge_disconnected' });
   });
 
   function broadcastDeviceList() {
-    const devices = Object.entries(lastDeviceState)
-      .filter(([k]) => !k.startsWith('ble:'))
-      .map(([nodeId, s]) => ({ node_id: nodeId, ...s }));
-    lastDeviceList = { type: 'device_list', devices };
+    // Compose from in-memory lastDeviceState — never makes an HTTP call.
+    // lastDeviceState is seeded once at startup from GET /devices, then kept
+    // live by the WS event stream. All configured devices are always present.
+    lastDeviceList = { type: 'device_list', devices: Object.values(lastDeviceState) };
     broadcast(lastDeviceList);
   }
 
   bridge.on('event', (ev) => {
-    if (ev.type === 'device_removed' && ev.device) {
-      delete lastDeviceState[ev.device];
-      activeDeviceIds.delete(ev.device);
+    if (ev.type === 'device_snapshot') {
+      for (const d of (ev.devices || [])) {
+        if (!d.addr) continue;
+        // Flatten state_event + data_event into top level so browser reads dev.node_id etc. directly
+        const flat = { ...d };
+        if (d.state_event) Object.assign(flat, d.state_event);
+        if (d.data_event)  Object.assign(flat, d.data_event);
+        flat.state_event = d.state_event;
+        flat.data_event  = d.data_event;
+        // ble_state: lowercase state for UI logic (devBleState, devIsReady, etc.)
+        flat.ble_state = (d.state_event?.state || 'OFFLINE').toLowerCase();
+        lastDeviceState[d.addr] = flat;
+      }
       broadcastDeviceList();
       return;
     }
 
-    // Keep last-known state current as events flow through
-    if (ev.device && STATE_EVENT_TYPES.has(ev.type)) {
-      // Merge so identity fields (short_name, long_name, hw_model) from 'ready'
-      // are preserved across subsequent state events that don't include them.
-      lastDeviceState[ev.device] = { ...lastDeviceState[ev.device], ...ev };
+    if (ev.type === 'device_removed' && ev.device) {
+      delete lastDeviceState[ev.device];
+      broadcastDeviceList();
+      return;
+    }
 
-      // Detect device list changes and broadcast device_list
-      const isActive = ev.type !== 'idle' && ev.type !== 'failed';
-      const wasActive = activeDeviceIds.has(ev.device);
-      if (isActive && !wasActive) {
-        activeDeviceIds.add(ev.device);
-        broadcastDeviceList();
-      } else if (!isActive && wasActive) {
-        activeDeviceIds.delete(ev.device);
-        broadcastDeviceList();
+    // Keep last-known state current as events flow through, then broadcast.
+    // All state types update the in-memory map — OFFLINE devices stay visible.
+    // seed populates { addr, state_event:{...}, data_event:{...} } — live events
+    // must update the nested key, not spread flat on top of it.
+    const evAddr = ev.addr || ev.device;
+    if (evAddr && STATE_EVENT_TYPES.has(ev.type)) {
+      const existing = lastDeviceState[evAddr] || { addr: evAddr };
+      const { type: _t, ...fields } = ev;
+      if (ev.type === 'device_state') {
+        lastDeviceState[evAddr] = { ...existing, ...fields, state_event: ev, ble_state: ev.state.toLowerCase() };
+      } else if (ev.type === 'device_data') {
+        lastDeviceState[evAddr] = { ...existing, ...fields, data_event: ev };
       }
+      broadcastDeviceList();
     }
 
     if (ev.type === 'tilt_update' && ev.data) {
@@ -127,6 +138,20 @@ export function attachWsRelay(server) {
           z_g:     ev.data.z    ?? null,
         });
       } catch (e) { console.error('[tilt] insert failed:', e.message); }
+    }
+    if (ev.type === 'telemetry_update' && ev.variant === 'environment_metrics' && ev.from_num && ev.data) {
+      try {
+        const em = ev.data;
+        if (em.temperature != null || em.relative_humidity != null) {
+          insertEnvHistory({
+            ts:                  Math.floor(Date.now() / 1000),
+            num:                 ev.from_num,
+            temperature:         em.temperature         ?? null,
+            relative_humidity:   em.relative_humidity   ?? null,
+            barometric_pressure: em.barometric_pressure ?? null,
+          });
+        }
+      } catch (e) { console.error('[env] insert failed:', e.message); }
     }
     handleAlertEvent(ev);
     broadcast(ev);
@@ -252,8 +277,12 @@ export function attachWsRelay(server) {
     for (const state of Object.values(lastDeviceState)) {
       if (ws.readyState === 1) ws.send(JSON.stringify(state));
     }
-    // Replay device list — no HTTP
-    if (lastDeviceList) sendEnriched(ws, lastDeviceList);
+    // Replay device list — fetch fresh from gateway if not yet populated
+    if (lastDeviceList) {
+      sendEnriched(ws, lastDeviceList);
+    } else {
+      broadcastDeviceList();
+    }
 
     // Always send current dash mode — rotator may be offline but mode is persisted
     ws.send(JSON.stringify({ type: 'rotator', data: { _mode: dashMode.value } }));
@@ -283,9 +312,44 @@ export function attachWsRelay(server) {
       .map(n => ({ num: n.num, display_name: resolveNodeLabel(n.num), user: { short_name: n.user.short_name, long_name: n.user.long_name } }));
     ws.send(JSON.stringify({ type: 'known_nodes', nodes: knownNodes }));
 
-    // Tilt calibration — replayed so browser never needs HTTP for this
+    // Tilt calibration
     const cal = getTiltCal();
     ws.send(JSON.stringify({ type: 'tilt_cal', zero: cal.zero, north_angle: cal.north_angle }));
+
+    // History snapshots — pushed once on connect; real-time events append from here
+    try {
+      const since24h = Math.floor(Date.now() / 1000) - 86400;
+
+      const msgRows = queryMessages(50).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) }));
+      ws.send(JSON.stringify({ type: 'message_history', messages: msgRows }));
+
+      const tiltRows = queryAllTiltHistory(since24h);
+      ws.send(JSON.stringify({ type: 'tilt_history', rows: tiltRows }));
+
+      const since7d = Math.floor(Date.now() / 1000) - 7 * 86400;
+      const envRows = queryAllEnvHistory(since7d);
+      ws.send(JSON.stringify({ type: 'env_history', rows: envRows }));
+
+      const rangeLog = queryRangeTestLog(500).map(r => ({
+        ...r, from_name: resolveNodeLabel(r.from_num), rx_name: resolveDeviceLabel(r.rx_device),
+      }));
+      ws.send(JSON.stringify({ type: 'range_test_log', log: rangeLog }));
+
+      const timer = getRangeTimer();
+      ws.send(JSON.stringify({ type: 'range_test_timer', ...timer }));
+
+      const traceRows = stmts.queryTracerouteHistory.all({ to_num: null, limit: 200 }).map(r => ({
+        ...r,
+        route:           JSON.parse(r.route           || '[]'),
+        route_back:      JSON.parse(r.route_back      || '[]'),
+        snr_towards:     JSON.parse(r.snr_towards     || '[]'),
+        snr_back:        JSON.parse(r.snr_back        || '[]'),
+        relay_positions: JSON.parse(r.relay_positions || '{}'),
+      }));
+      ws.send(JSON.stringify({ type: 'traceroute_history', rows: traceRows }));
+    } catch (e) {
+      console.error('[ws-relay] history push failed:', e.message);
+    }
   });
 
   // -- Per-device /!{nodeId}/events — snapshot first, pre-filtered -----------

@@ -1,35 +1,18 @@
 // Telemetry mixin: tilt sensor display and environmental history charts.
-import { fetchJSON } from './app-helpers.js';
 
 function _saveTiltCal(body) {
   fetch('/tilt_cal', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
 }
 
 export const telemetryMixin = {
-  async loadTiltHistory() {
-    if (!this.activeNodeId) return;
-    try {
-      const rows = await fetchJSON(`/tilt_history?node_id=${encodeURIComponent(this.activeNodeId)}&hours=${this.tiltWindow}`);
-      this.tiltHistory = Array.isArray(rows) ? rows : [];
-      this._tiltRecomputePeak();
-    } catch (_) {}
-  },
+  // History arrives via WS tilt_history / env_history events on connect.
+  loadTiltHistory()      { /* no-op */ },
+  loadEnvHistory()       { /* no-op */ },
+  async loadEnvHistoryAll() { /* no-op */ },
 
-  async loadEnvHistory(nodeId) {
-    if (!nodeId?.startsWith('!')) return;
-    const num = parseInt(nodeId.slice(1), 16);
-    try {
-      const rows = await fetchJSON(`/env_history?num=${num}&hours=${this.envWindow}`);
-      const updated = { ...this.envHistory };
-      updated[nodeId] = Array.isArray(rows) ? rows : [];
-      this.envHistory = updated;
-    } catch (_) {}
-  },
-
-  async loadEnvHistoryAll() {
-    for (const dev of this.availableDevices) {
-      if (dev.node_id) await this.loadEnvHistory(dev.node_id);
-    }
+  _envRowsWindowed(nodeId) {
+    const cutoff = Math.floor(Date.now() / 1000) - (this.envWindow || 24) * 3600;
+    return (this.envHistory[nodeId] ?? []).filter(r => r.ts >= cutoff);
   },
 
   // -- Tilt helpers -------------------------------------------------------------
@@ -220,16 +203,17 @@ export const telemetryMixin = {
   },
 
   envTempPoints(nodeId) {
-    const rows = (this.envHistory[nodeId] ?? []).filter(r => r.temperature != null);
+    const rows = this._envRowsWindowed(nodeId).filter(r => r.temperature != null);
     if (rows.length < 2) return '';
     const sc = this._envScales(rows);
     return rows.map(r => `${this._envX(r.ts, sc).toFixed(1)},${this._envY(r.temperature, sc).toFixed(1)}`).join(' ');
   },
 
   envDpPoints(nodeId) {
-    const rows = (this.envHistory[nodeId] ?? []).filter(r => r.temperature != null && r.relative_humidity != null);
+    const base = this._envRowsWindowed(nodeId);
+    const rows = base.filter(r => r.temperature != null && r.relative_humidity != null);
     if (rows.length < 2) return '';
-    const sc = this._envScales(this.envHistory[nodeId] ?? []);
+    const sc = this._envScales(base);
     return rows.map(r => {
       const dp = this.dewPoint(r.temperature, r.relative_humidity);
       return `${this._envX(r.ts, sc).toFixed(1)},${this._envY(dp, sc).toFixed(1)}`;
@@ -237,14 +221,15 @@ export const telemetryMixin = {
   },
 
   envHumPoints(nodeId) {
-    const rows = (this.envHistory[nodeId] ?? []).filter(r => r.relative_humidity != null);
+    const base = this._envRowsWindowed(nodeId);
+    const rows = base.filter(r => r.relative_humidity != null);
     if (rows.length < 2) return '';
-    const sc = this._envScales(this.envHistory[nodeId] ?? []);
+    const sc = this._envScales(base);
     return rows.map(r => `${this._envX(r.ts, sc).toFixed(1)},${this._envYh(r.relative_humidity, sc).toFixed(1)}`).join(' ');
   },
 
   envChartYLabels(nodeId) {
-    const rows = this.envHistory[nodeId] ?? [];
+    const rows = this._envRowsWindowed(nodeId);
     if (!rows.length) return '';
     const sc = this._envScales(rows);
     return [0, 1, 2, 3, 4].map(i => {
@@ -255,7 +240,7 @@ export const telemetryMixin = {
   },
 
   envChartRhLabels(nodeId) {
-    const rows = this.envHistory[nodeId] ?? [];
+    const rows = this._envRowsWindowed(nodeId);
     const sc = rows.length ? this._envScales(rows) : { rhMin: 0, rhMax: 100 };
     return [0, 1, 2, 3, 4].map(i => {
       const rh = sc.rhMin + (sc.rhMax - sc.rhMin) * i / 4;
@@ -265,7 +250,7 @@ export const telemetryMixin = {
   },
 
   envChartXLabels(nodeId) {
-    const rows = this.envHistory[nodeId] ?? [];
+    const rows = this._envRowsWindowed(nodeId);
     if (rows.length < 2) return '';
     const tsMin = rows[0].ts, tsMax = rows[rows.length - 1].ts;
     return [0, 1, 2, 3, 4].map(i => {

@@ -2,38 +2,7 @@
 import { fetchJSON } from './app-helpers.js';
 
 export const rangeMixin = {
-  async loadRangeTest() {
-    this.rangeLoading = true;
-    try {
-      const connectedIds = new Set(this.availableDevices.map(d => d.node_id));
-      const nodeIds = Object.keys(this.deviceConfigs).filter(id => connectedIds.has(id));
-      const [data, ...loraCfgs] = await Promise.all([
-        fetchJSON('/range_test/log'),
-        ...nodeIds.map(id =>
-          fetchJSON(`/${id}/config`).then(r => ({
-            id,
-            tx_power: r?.config?.lora?.tx_power ?? null,
-            region:   r?.config?.lora?.region   ?? null,
-          })).catch(() => ({ id, tx_power: null, region: null }))
-        ),
-      ]);
-      for (const { id, tx_power, region } of loraCfgs) {
-        if (this.deviceConfigs[id]) {
-          this.deviceConfigs[id] = {
-            ...this.deviceConfigs[id],
-            ...(tx_power != null ? { tx_power_dbm: tx_power } : {}),
-            ...(region   != null ? { lora_region:  region   } : {}),
-          };
-        }
-      }
-      this.rangeLog = (data.log || []).slice().reverse()
-        .map(r => ({ ...r, _uid: 'db_' + (r.id ?? (this._rangeUid++)) }));
-      this._rangeStats = null; this._rangeChartCache = null;
-    } catch (_) {
-    } finally {
-      this.rangeLoading = false;
-    }
-  },
+  loadRangeTest() { /* no-op — log arrives via WS range_test_log on connect */ },
 
   async clearRangeTest() {
     if (!confirm('Clear all range test data? This cannot be undone.')) return;
@@ -42,13 +11,7 @@ export const rangeMixin = {
     this._rangeStats = null; this._rangeChartCache = null;
   },
 
-  async loadRangeTimer() {
-    try {
-      const t = await fetchJSON('/range_test/timer');
-      this.rangeTimer = t;
-      this._startRangeCountdown();
-    } catch (_) {}
-  },
+  loadRangeTimer() { /* no-op — timer state arrives via WS range_test_timer on connect */ },
 
   _startRangeCountdown() {
     if (this._rangeCountdown) clearInterval(this._rangeCountdown);

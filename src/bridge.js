@@ -55,7 +55,7 @@ class BridgeClient extends EventEmitter {
         console.log(`[ble] ${dev} → ${event.type}${msg}`);
       }
       this.emit('event', event);
-      if (event.type) this.emit(event.type, event);
+      if (event.type && event.type !== 'error') this.emit(event.type, event);
     });
 
     ws.on('close', () => {

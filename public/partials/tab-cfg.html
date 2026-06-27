@@ -17,7 +17,7 @@
               <select class="select select-bordered select-sm flex-1 max-w-xs"
                       x-model="cfgRadioId"
                       @change="resetRadioCfg()">
-                <template x-for="dev in availableDevices" :key="dev.node_id">
+                <template x-for="dev in availableDevices" :key="dev.addr">
                   <option :value="dev.node_id"
                           x-text="deviceLabel(dev.node_id) + ' — ' + (dev.long_name || dev.short_name || dev.node_id)"></option>
                 </template>

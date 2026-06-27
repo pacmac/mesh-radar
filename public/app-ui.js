@@ -32,6 +32,28 @@ export const uiMixin = {
 
   opLoading(key) { return !!this.ops[key]?.loading; },
   opOk(key)      { return !!this.ops[key]?.ok; },
+  opErr(key)     { return this.ops[key]?.err || null; },
+  opPct(key)     { return this.ops[key]?.pct ?? null; },
+
+  // Key of any currently-active otaFlash_ op (loading, done, or errored) — used by OTA overlay.
+  get activeFlashKey() {
+    return Object.keys(this.ops).find(
+      k => k.startsWith('otaFlash_') && (this.ops[k]?.loading || this.ops[k]?.ok || this.ops[k]?.err)
+    ) || null;
+  },
+
+  // For WS-tracked streaming operations: HTTP just triggers; WS drives state to done.
+  asyncOpStart(key) {
+    this.ops = { ...this.ops, [key]: { loading: true, ok: false, err: null, pct: null } };
+  },
+  asyncOpProgress(key, pct) {
+    if (!this.ops[key]?.loading) return;
+    this.ops = { ...this.ops, [key]: { ...this.ops[key], pct } };
+  },
+  asyncOpEnd(key, ok = true, err = null) {
+    this.ops = { ...this.ops, [key]: { loading: false, ok, err, pct: ok ? 100 : this.ops[key]?.pct } };
+    if (ok) setTimeout(() => { if (this.ops[key]?.ok) this.ops = { ...this.ops, [key]: null }; }, 2500);
+  },
 
   fmtUptime(secs) {
     if (secs == null) return '–';

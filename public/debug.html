@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mt-radar debug</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Courier New', monospace;
+  font-size: 15px;
+  background: #111;
+  color: #ccc;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── toolbar ── */
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 14px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+#toolbar h1 { font-size: 15px; color: #7eb8f7; letter-spacing: 0.5px; }
+#clock { color: #999; font-size: 13px; margin-right: auto; margin-left: 8px; }
+#toolbar label { font-size: 13px; color: #bbb; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+#toolbar input[type=checkbox] { accent-color: #7eb8f7; width: 14px; height: 14px; }
+.btn {
+  background: #252540;
+  color: #aaa;
+  border: 1px solid #444;
+  padding: 4px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+}
+.btn:hover { background: #333; color: #fff; }
+.btn.on { background: #1a3a6e; border-color: #4a7abf; color: #7eb8f7; }
+
+/* ── 2×2 grid ── */
+#grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  background: #2a2a2a;
+}
+
+/* ── card ── */
+.card {
+  background: #111;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #2a2a3e;
+  flex-shrink: 0;
+}
+.card-head h2 { font-size: 14px; font-weight: bold; color: #eee; flex: 1; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #666; flex-shrink: 0; transition: background 0.3s; }
+.dot.ok  { background: #3a3; }
+.dot.err { background: #a33; }
+.badge { font-size: 12px; color: #aaa; min-width: 3ch; text-align: right; }
+
+.filter-bar { padding: 5px 10px; background: #161616; border-bottom: 1px solid #222; flex-shrink: 0; }
+.filter-bar input {
+  width: 100%;
+  background: #0d0d0d;
+  color: #bbb;
+  border: 1px solid #333;
+  border-radius: 2px;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.filter-bar input:focus { outline: 1px solid #4a7abf; }
+
+/* ── stream messages ── */
+.stream { flex: 1; overflow-y: auto; }
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 12px;
+  border-bottom: 1px solid #1a1a1a;
+  cursor: pointer;
+}
+.row:hover { background: #181828; }
+.row .ts  { font-size: 12px; color: #999; flex-shrink: 0; }
+.row .typ { font-size: 13px; font-weight: bold; flex-shrink: 0; min-width: 18ch; }
+.row .sum { font-size: 13px; color: #bbb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+.c-device_state, .c-device_snapshot { color: #5af; }
+.c-device_data   { color: #4c4; }
+.c-device_list   { color: #a7f; }
+.c-bridge_connected, .c-bridge_disconnected { color: #fa4; }
+.c-rotator, .c-radar_context, .c-tilt_cal, .c-signal_update { color: #888; }
+.c-default { color: #bbb; }
+
+.detail { display: none; padding: 4px 12px 8px; background: #0d0d1a; border-bottom: 1px solid #222; }
+.detail pre {
+  font-size: 13px;
+  color: #ddd;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #0a0a14;
+  border: 1px solid #2a2a3a;
+  border-radius: 3px;
+  padding: 7px 9px;
+}
+.row.open + .detail { display: block; }
+.placeholder { padding: 18px 14px; color: #888; font-size: 14px; }
+
+/* ── device state board (bottom-left) ── */
+.board { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.dev-card {
+  background: #1a1a2e;
+  border: 1px solid #2a2a4a;
+  border-radius: 4px;
+  padding: 10px 12px;
+}
+.dev-card.state-idle     { border-left: 3px solid #555; }
+.dev-card.state-scanning,
+.dev-card.state-connecting { border-left: 3px solid #7eb8f7; }
+.dev-card.state-ready    { border-left: 3px solid #3a3; }
+.dev-card.state-ota      { border-left: 3px solid #fa4; }
+.dev-card.state-error    { border-left: 3px solid #a33; }
+.dev-addr   { font-size: 14px; font-weight: bold; color: #eee; letter-spacing: 0.5px; }
+.dev-state  { display: inline-block; font-size: 12px; font-weight: bold; padding: 1px 7px; border-radius: 3px; margin-left: 10px; vertical-align: middle; }
+.dev-state.s-idle     { background: #333; color: #aaa; }
+.dev-state.s-scanning,
+.dev-state.s-connecting { background: #1a3a6e; color: #7eb8f7; }
+.dev-state.s-ready    { background: #1a3a1a; color: #5d5; }
+.dev-state.s-ota      { background: #3a2a00; color: #fa4; }
+.dev-state.s-error    { background: #3a1a1a; color: #f77; }
+.dev-meta   { margin-top: 6px; font-size: 12px; color: #bbb; line-height: 1.7; }
+.dev-meta span { margin-right: 16px; }
+.dev-msg    { margin-top: 4px; font-size: 12px; color: #f99; font-style: italic; }
+.dev-age    { font-size: 11px; color: #888; margin-top: 4px; }
+.dev-progress { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.dev-progress-track { flex: 1; height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
+.dev-progress-fill  { height: 100%; background: #fa4; border-radius: 3px; transition: width 0.3s; }
+.dev-progress span  { font-size: 12px; color: #fa4; min-width: 3ch; text-align: right; }
+.board-empty { padding: 18px 14px; color: #888; font-size: 14px; }
+
+/* ── node-dash device_list panel (bottom-right) ── */
+.snap-body { flex: 1; overflow-y: auto; padding: 8px 12px; }
+.snap-body pre { font-size: 13px; color: #ddd; white-space: pre-wrap; word-break: break-all; line-height: 1.6; }
+.snap-age { font-size: 12px; color: #aaa; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>mt-radar debug</h1>
+  <span id="clock"></span>
+  <label><input type="checkbox" id="chk-rot"> rotator</label>
+  <label><input type="checkbox" id="chk-nod"> nodes</label>
+  <button class="btn" id="btn-pause">Pause</button>
+  <button class="btn" onclick="clearAll()">Clear</button>
+</div>
+
+<div id="grid">
+
+  <!-- ① mesh-gw raw events -->
+  <div class="card">
+    <div class="card-head">
+      <div class="dot" id="dot-gw"></div>
+      <h2>mesh-gw <span style="color:#aaa;font-weight:normal">:8001/events</span></h2>
+      <span class="badge" id="cnt-gw">0</span>
+      <button class="btn" onclick="clearCard('gw')">✕</button>
+    </div>
+    <div class="filter-bar"><input id="fil-gw" placeholder="filter type…" oninput="applyFilter('gw')"></div>
+    <div class="stream" id="str-gw"><div class="placeholder">Connecting…</div></div>
+  </div>
+
+  <!-- ② node-dash enriched events -->
+  <div class="card">
+    <div class="card-head">
+      <div class="dot" id="dot-nd"></div>
+      <h2>node-dash <span style="color:#aaa;font-weight:normal">:8000/events</span></h2>
+      <span class="badge" id="cnt-nd">0</span>
+      <button class="btn" onclick="clearCard('nd')">✕</button>
+    </div>
+    <div class="filter-bar"><input id="fil-nd" placeholder="filter type…" oninput="applyFilter('nd')"></div>
+    <div class="stream" id="str-nd"><div class="placeholder">Connecting…</div></div>
+  </div>
+
+  <!-- ③ live device state board — sourced from mesh-gw WS, one card per device -->
+  <div class="card">
+    <div class="card-head">
+      <div class="dot" id="dot-board"></div>
+      <h2>BLE device state <span style="color:#aaa;font-weight:normal">live · mesh-gw WS</span></h2>
+      <span class="snap-age" id="age-board"></span>
+    </div>
+    <div class="board" id="board"><div class="board-empty">Waiting for device events…</div></div>
+  </div>
+
+  <!-- ④ last device_list from node-dash WS — zero polling -->
+  <div class="card">
+    <div class="card-head">
+      <div class="dot" id="dot-dl"></div>
+      <h2>node-dash <span style="color:#aaa;font-weight:normal">device_list (live WS)</span></h2>
+      <span class="snap-age" id="age-dl"></span>
+    </div>
+    <div class="snap-body"><pre id="pre-dl">Waiting for device_list event…</pre></div>
+  </div>
+
+</div>
+
+<script>
+const GW_WS   = `ws://${location.hostname}:8001/events`;
+const ND_WS   = `ws://${location.hostname}:${location.port||8000}/events`;
+
+const state = {
+  gw: { msgs:[], filter:'', ws:null },
+  nd: { msgs:[], filter:'', ws:null },
+};
+let paused = false;
+
+// ── live device state board ──────────────────────────────────────────────────
+// Keyed by addr. Populated from device_snapshot + device_state + device_data events on the GW WS.
+const deviceBoard = {};
+
+function stateCssClass(s) {
+  if (!s) return 'state-idle';
+  const l = s.toLowerCase();
+  if (l === 'idle') return 'state-idle';
+  if (l === 'ready') return 'state-ready';
+  if (l.includes('ota')) return 'state-ota';
+  if (l.includes('error') || l.includes('stuck') || l.includes('fail')) return 'state-error';
+  return 'state-scanning'; // connecting, scanning, syncing, reconnecting
+}
+
+function stateBadgeClass(s) {
+  if (!s) return 's-idle';
+  const l = s.toLowerCase();
+  if (l === 'idle') return 's-idle';
+  if (l === 'ready') return 's-ready';
+  if (l.includes('ota')) return 's-ota';
+  if (l.includes('error') || l.includes('stuck') || l.includes('fail')) return 's-error';
+  return 's-scanning';
+}
+
+function renderBoard() {
+  const board = document.getElementById('board');
+  const entries = Object.values(deviceBoard);
+  if (!entries.length) {
+    board.innerHTML = '<div class="board-empty">No device events received yet</div>';
+    document.getElementById('age-board').textContent = '';
+    return;
+  }
+  board.innerHTML = '';
+  entries.sort((a, b) => a.addr < b.addr ? -1 : 1);
+  for (const d of entries) {
+    const sc  = stateCssClass(d.state);
+    const sbc = stateBadgeClass(d.state);
+    const age = d.ts ? new Date(d.ts).toLocaleTimeString() : '—';
+    const div = document.createElement('div');
+    div.className = 'dev-card ' + sc;
+    div.innerHTML =
+      `<div>` +
+        `<span class="dev-addr">${esc(d.addr)}</span>` +
+        `<span class="dev-state ${sbc}">${esc(d.state || 'UNKNOWN')}</span>` +
+      `</div>` +
+      `<div class="dev-meta">` +
+        `<span>node_id: <b>${d.node_id || 'null'}</b></span>` +
+        `<span>hw: <b>${d.hw_model || '—'}</b></span>` +
+        `<span>fw: <b>${d.firmware_version || '—'}</b></span>` +
+        `<span>label: ${esc(d.label || '—')}</span>` +
+      `</div>` +
+      (d.pct != null ? `<div class="dev-progress"><div class="dev-progress-track"><div class="dev-progress-fill" style="width:${d.pct}%"></div></div><span>${d.pct}%</span></div>` : '') +
+      (d.message ? `<div class="dev-msg">${esc(d.message)}</div>` : '') +
+      `<div class="dev-age">last update: ${age}</div>`;
+    board.appendChild(div);
+  }
+  document.getElementById('age-board').textContent = new Date().toLocaleTimeString();
+  document.getElementById('dot-board').className = 'dot ok';
+}
+
+function applyGwEventToBoard(data) {
+  const t = data.type || '';
+
+  // device_snapshot: initial dump of all devices as an array
+  if (t === 'device_snapshot') {
+    const devs = data.devices || (data.addr ? [data] : []);
+    for (const d of devs) {
+      const addr = d.addr || d.state_event?.addr;
+      if (!addr) continue;
+      // flatten state_event / data_event if present (current format)
+      const se = d.state_event || d;
+      const de = d.data_event || {};
+      deviceBoard[addr] = {
+        addr,
+        state:            se.state    || d.state,
+        label:            se.label    || d.label,
+        message:          se.message  || d.message || '',
+        node_id:          se.node_id  || de.node_id  || d.node_id,
+        hw_model:         de.hw_model || d.hw_model,
+        firmware_version: de.firmware_version || d.firmware_version,
+        pct:              se.pct ?? d.pct ?? null,
+        ts: Date.now(),
+      };
+    }
+    renderBoard();
+    return;
+  }
+
+  // device_state: single device state transition
+  if (t === 'device_state') {
+    const addr = data.addr;
+    if (!addr) return;
+    deviceBoard[addr] = {
+      ...(deviceBoard[addr] || { addr }),
+      state:   data.state,
+      label:   data.label,
+      message: data.message || '',
+      node_id: data.node_id,
+      pct:     data.pct ?? null,
+      ts: Date.now(),
+    };
+    renderBoard();
+    return;
+  }
+
+  // device_data: enrichment after SYNCING — hw_model, firmware, etc.
+  if (t === 'device_data') {
+    const addr = data.addr;
+    if (!addr) return;
+    deviceBoard[addr] = {
+      ...(deviceBoard[addr] || { addr }),
+      node_id:          data.node_id,
+      hw_model:         data.hw_model,
+      firmware_version: data.firmware_version,
+      ts: Date.now(),
+    };
+    renderBoard();
+  }
+}
+
+// clock
+setInterval(() => document.getElementById('clock').textContent = new Date().toLocaleTimeString(), 500);
+
+// ── type visibility ──────────────────────────────────────────────────────────
+const ROT_TYPES = new Set(['rotator','radar_context','tilt_cal','signal_update',
+  'scan_start','scan_end','scan_contact','point_target','passive_trace_start','route_discovered']);
+const NOD_TYPES = new Set(['node_list','known_nodes']);
+
+function shouldStore(type) {
+  // Rotator events are very frequent — only keep if checkbox is on
+  if (ROT_TYPES.has(type) && !document.getElementById('chk-rot').checked) return false;
+  return true;
+}
+
+function visible(type, filter) {
+  const t = (type||'').toLowerCase();
+  if (!document.getElementById('chk-rot').checked && ROT_TYPES.has(t)) return false;
+  if (!document.getElementById('chk-nod').checked && NOD_TYPES.has(t)) return false;
+  if (filter && !t.includes(filter)) return false;
+  return true;
+}
+
+['chk-rot','chk-nod'].forEach(id =>
+  document.getElementById(id).addEventListener('change', () => { rerender('gw'); rerender('nd'); }));
+
+// ── summarise ────────────────────────────────────────────────────────────────
+function sum(data) {
+  const t = data.type || '';
+  if (t === 'device_state' || t === 'device_snapshot') {
+    const devs = data.devices || (data.addr ? [data] : []);
+    return devs.map(d => {
+      const st = d.state || d.state_event?.state || '?';
+      const msg = d.message || d.state_event?.message || '';
+      return `${d.addr} → ${st}${msg?' "'+msg+'"':''}`;
+    }).join('  |  ');
+  }
+  if (t === 'device_list') {
+    const devs = data.devices || [];
+    return `${devs.length} device(s): ` + devs.map(d => `${d.addr} ${d.state||d.state_event?.state||'?'}`).join(' | ');
+  }
+  if (t === 'device_data') return `${data.addr}  node=${data.node_id}  hw=${data.hw_model}`;
+  if (t === 'node_list')   return `${(data.nodes||[]).length} nodes`;
+  if (t === 'rotator')     return JSON.stringify(data.data||{}).slice(0, 80);
+  return JSON.stringify(data).slice(0, 120);
+}
+
+// ── DOM helpers ──────────────────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function mkRow(entry) {
+  const frag = document.createDocumentFragment();
+  const tc = (entry.type||'').replace(/[^a-z0-9_]/gi,'_');
+  const knownTypes = ['device_state','device_data','device_list','device_snapshot',
+    'bridge_connected','bridge_disconnected','rotator','radar_context','tilt_cal','signal_update'];
+  const colorCls = knownTypes.includes(entry.type) ? 'c-'+tc : 'c-default';
+
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML =
+    `<span class="ts">${new Date(entry.ts).toLocaleTimeString()}</span>` +
+    `<span class="typ ${colorCls}">${esc(entry.type)}</span>` +
+    `<span class="sum">${esc(sum(entry.data))}</span>`;
+
+  const detail = document.createElement('div');
+  detail.className = 'detail';
+  detail.innerHTML = `<pre>${esc(JSON.stringify(entry.data, null, 2))}</pre>`;
+
+  row.addEventListener('click', () => {
+    const wasOpen = row.classList.contains('open');
+    row.closest('.stream').querySelectorAll('.row.open').forEach(r => r.classList.remove('open'));
+    if (!wasOpen) row.classList.add('open');
+  });
+
+  frag.appendChild(row);
+  frag.appendChild(detail);
+  return frag;
+}
+
+function prependEntry(id, entry) {
+  const stream = document.getElementById('str-'+id);
+  const ph = stream.querySelector('.placeholder');
+  if (ph) ph.remove();
+  stream.prepend(mkRow(entry));
+  const rows = stream.querySelectorAll('.row');
+  if (rows.length > 120) { rows[rows.length-1].nextElementSibling?.remove(); rows[rows.length-1].remove(); }
+}
+
+function rerender(id) {
+  const stream = document.getElementById('str-'+id);
+  stream.innerHTML = '';
+  state[id].msgs
+    .filter(e => visible(e.type, state[id].filter))
+    .slice(0, 120)
+    .forEach(e => stream.appendChild(mkRow(e)));
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+function connect(id, url) {
+  const dot = document.getElementById('dot-'+id);
+  dot.className = 'dot';
+  const ws = new WebSocket(url);
+  state[id].ws = ws;
+
+  ws.onopen = () => { dot.className = 'dot ok'; };
+
+  ws.onmessage = (e) => {
+    if (paused) return;
+    let data;
+    try { data = JSON.parse(e.data); } catch { data = { type:'raw', raw:e.data }; }
+    const type  = data.type || 'unknown';
+    const entry = { ts: Date.now(), data, type };
+
+    // Feed GW events into the live device state board
+    if (id === 'gw') applyGwEventToBoard(data);
+
+    // Update node-dash device_list live panel (zero polling — sourced from WS)
+    if (id === 'nd' && type === 'device_list') {
+      document.getElementById('pre-dl').textContent = JSON.stringify(data, null, 2);
+      document.getElementById('age-dl').textContent = new Date().toLocaleTimeString();
+      document.getElementById('dot-dl').className = 'dot ok';
+    }
+
+    if (!shouldStore(type)) return; // skip high-frequency rotator events when filtered off
+    state[id].msgs.unshift(entry);
+    if (state[id].msgs.length > 300) state[id].msgs.pop();
+    document.getElementById('cnt-'+id).textContent = state[id].msgs.length;
+    if (visible(type, state[id].filter)) prependEntry(id, entry);
+  };
+
+  ws.onclose = () => { dot.className = 'dot err'; setTimeout(() => connect(id, url), 3000); };
+  ws.onerror = () => ws.close();
+}
+
+function applyFilter(id) {
+  state[id].filter = document.getElementById('fil-'+id).value.toLowerCase().trim();
+  rerender(id);
+}
+
+function clearCard(id) {
+  state[id].msgs = [];
+  document.getElementById('str-'+id).innerHTML = '';
+  document.getElementById('cnt-'+id).textContent = '0';
+}
+
+function clearAll() { clearCard('gw'); clearCard('nd'); }
+
+document.getElementById('btn-pause').addEventListener('click', function() {
+  paused = !paused;
+  this.textContent = paused ? 'Resume' : 'Pause';
+  this.classList.toggle('on', paused);
+});
+
+// ── init ─────────────────────────────────────────────────────────────────────
+connect('gw', GW_WS);
+connect('nd', ND_WS);
+</script>
+</body>
+</html>

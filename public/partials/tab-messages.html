@@ -3,7 +3,94 @@
           <div class="card bg-base-100 shadow flex flex-col min-h-0">
             <div class="card-body flex flex-col min-h-0">
               <h2 class="card-title shrink-0">Send Text</h2>
-              <div x-init="$nextTick(() => { const f = document.getElementById('msg-compose').content.cloneNode(true); $el.append(f); })">
+              <div class="flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
+
+                <!-- From device (hidden when only 1) -->
+                <div x-show="availableDevices.length > 1" class="flex items-center gap-2">
+                  <span class="text-xs text-base-content/60 w-12 shrink-0">From</span>
+                  <div class="join">
+                    <template x-for="dev in availableDevices" :key="dev.addr">
+                      <button class="join-item btn btn-xs"
+                              :class="msgFrom === dev.node_id ? 'btn-primary' : 'btn-outline'"
+                              @click="msgFrom = dev.node_id; persistSet('msgFrom', dev.node_id)"
+                              x-text="deviceLabel(dev.node_id)"></button>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- Broadcast / Direct toggle -->
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-base-content/60 w-12 shrink-0">To</span>
+                  <div class="join">
+                    <button class="join-item btn btn-xs" :class="!msgIsDirect ? 'btn-primary' : 'btn-outline'" @click="msgIsDirect = false">Broadcast</button>
+                    <button class="join-item btn btn-xs" :class="msgIsDirect ? 'btn-primary' : 'btn-outline'" @click="msgIsDirect = true">Direct</button>
+                  </div>
+                  <select x-show="msgIsDirect" class="select select-bordered select-xs flex-1" x-model="msgDirectTo">
+                    <option value="" disabled>Select node…</option>
+                    <template x-for="n in allMsgNodes()" :key="n.num">
+                      <option :value="n.num" x-text="(n.user?.short_name || n.num) + ' — ' + (n.user?.long_name || '')"></option>
+                    </template>
+                  </select>
+                  <span x-show="!msgIsDirect && msgDirectTo" class="text-xs text-base-content/50 italic cursor-pointer"
+                        @click="msgIsDirect = true"
+                        x-text="'→ ' + (nodeShortName(msgDirectTo) || msgDirectTo)"></span>
+                </div>
+
+                <!-- Channel -->
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-base-content/60 w-12 shrink-0">Ch</span>
+                  <select class="select select-bordered select-sm" x-model="msgChannel">
+                    <option value="0">0 — Primary</option>
+                    <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+                    <option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
+                  </select>
+                </div>
+
+                <!-- Reply indicator -->
+                <div x-show="msgReplyId" class="flex items-center gap-1 text-xs text-base-content/60 bg-base-200 rounded px-2 py-1">
+                  <span class="opacity-70">↩ Replying to</span>
+                  <span class="font-semibold" x-text="nodeShortName(msgReplyFrom) || '?'"></span>
+                  <button class="ml-auto btn btn-xs btn-ghost py-0 h-auto min-h-0 opacity-50" @click="msgReplyId = null; msgReplyFrom = null">✕</button>
+                </div>
+
+                <!-- @mention autocomplete -->
+                <div class="relative">
+                  <div x-show="mentionOpen" x-cloak
+                       class="absolute bottom-full left-0 right-0 mb-1 bg-base-200 border border-base-300 rounded-box shadow-lg z-30 overflow-hidden">
+                    <ul class="menu menu-xs p-1 max-h-48 overflow-y-auto">
+                      <template x-for="(n, idx) in mentionedNodes()" :key="n.num">
+                        <li><a :class="idx === mentionIdx ? 'active' : ''" @mousedown.prevent="selectMention(n)"
+                               class="flex items-center gap-2">
+                          <span class="contents" x-html="nodeAvatar(n.num, n.user?.short_name, 'sm')"></span>
+                          <span class="font-mono font-semibold text-xs" x-text="'@' + (n.user?.short_name || '?')"></span>
+                          <span class="text-base-content/50 text-xs truncate" x-text="n.user?.long_name || ''"></span>
+                        </a></li>
+                      </template>
+                    </ul>
+                  </div>
+                  <textarea class="textarea textarea-bordered w-full" rows="4" x-model="msgText"
+                            placeholder="Type a message… (@name to mention)"
+                            x-ref="msgInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                            @keydown="handleMsgKeydown($event)" @input="handleMsgInput($event)"
+                            @blur="$nextTick(() => { mentionOpen = false })"></textarea>
+                </div>
+
+                <!-- Quick emoji -->
+                <div class="flex w-full">
+                  <template x-for="em in msgEmojiSet" :key="em.e">
+                    <button class="btn btn-sm btn-ghost text-xl px-0 flex-1" x-text="em.e" :title="em.t"
+                            @click="insertAtCursor($refs.msgInput, em.e)"></button>
+                  </template>
+                </div>
+
+                <!-- Send -->
+                <div class="flex items-center gap-2">
+                  <button class="btn btn-primary btn-sm"
+                          :disabled="!msgText.trim() || (msgIsDirect && !msgDirectTo)"
+                          @click="sendMessage()">Send</button>
+                  <span class="text-success text-sm" x-show="msgSent" x-transition>Sent ✓</span>
+                </div>
+
               </div>
             </div>
           </div>

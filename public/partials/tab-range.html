@@ -8,7 +8,7 @@
                 <div class="join">
                   <button class="join-item btn btn-xs" :class="!rangeRxFilter ? 'btn-active' : 'btn-outline'"
                           @click="rangeRxFilter = ''">All</button>
-                  <template x-for="dev in availableDevices" :key="dev.node_id">
+                  <template x-for="dev in availableDevices" :key="dev.addr">
                     <button class="join-item btn btn-xs"
                             :class="rangeRxFilter === dev.node_id ? 'btn-active' : 'btn-outline'"
                             @click="rangeRxFilter = dev.node_id"

@@ -23,13 +23,13 @@
               <div class="stat-desc" x-text="'air tx ' + (nodeSelf.device_metrics?.air_util_tx?.toFixed(2) ?? '–') + '%'"></div>
             </div>
             <div class="stat">
-              <div class="stat-title">Heap Free</div>
-              <div class="stat-value text-lg" x-text="fmtBytes(nodeSelf.local_stats?.heap_free_bytes)"></div>
-              <div class="stat-desc" x-text="'of ' + fmtBytes(nodeSelf.local_stats?.heap_total_bytes)"></div>
+              <div class="stat-title">Mesh Nodes</div>
+              <div class="stat-value text-lg" x-text="(nodeSelf.local_stats?.num_online_nodes ?? '–') + ' online'"></div>
+              <div class="stat-desc" x-text="(nodeSelf.local_stats?.num_total_nodes != null ? nodeSelf.local_stats.num_total_nodes + ' total' : '–')"></div>
             </div>
             <div class="stat">
               <div class="stat-title">Config</div>
-              <div class="stat-value text-lg" :class="primaryDevBleState.config_complete ? 'text-success' : 'text-warning'" x-text="primaryDevBleState.config_complete ? 'complete' : 'syncing…'"></div>
+              <div class="stat-value text-lg" :class="primaryDevBleState.ble_state === 'ready' ? 'text-success' : 'text-warning'" x-text="primaryDevBleState.ble_state === 'ready' ? 'complete' : 'syncing…'"></div>
               <div class="stat-desc" x-text="(primaryDevBleState.node_count ?? nodeCount ?? 0) + ' nodes in db'"></div>
             </div>
           </div>

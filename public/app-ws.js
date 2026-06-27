@@ -80,7 +80,7 @@ export const wsMixin = {
     }
 
     if (ev.type === 'device_list') {
-      const devices = (ev.devices || []).filter(d => !String(d.node_id).startsWith('ble:'));
+      const devices = ev.devices || [];
       const knownIds = new Set(this.availableDevices.map(d => d.node_id));
       for (const dev of devices) {
         if (!knownIds.has(dev.node_id)) this.loadAutoPurge(dev.node_id);
@@ -88,10 +88,11 @@ export const wsMixin = {
       this.availableDevices = devices;
       const existing = {};
       for (const dev of devices) {
-        const cur = this.deviceBleStates[dev.node_id];
-        existing[dev.node_id] = cur
-          ? { ...cur, long_name: dev.long_name, short_name: dev.short_name, hw_model: dev.hw_model }
-          : { ...dev };
+        const key = dev.node_id ?? dev.addr;
+        if (!key) continue;
+        const cur = this.deviceBleStates[key];
+        // Gateway device_list is authoritative — always take ble_state and identity fields from it
+        existing[key] = cur ? { ...cur, ...dev } : { ...dev };
       }
       this.deviceBleStates = { ...this.deviceBleStates, ...existing };
       if (!this.activeNodeId && devices.length > 0) {
@@ -108,56 +109,63 @@ export const wsMixin = {
       return;
     }
 
-    if (ev.type === 'ota_start') {
-      this._otaSeq++;
-      this.otaActive = true;
-      this.otaDone = false;
-      this.otaPct = 0;
-      this.otaBleAddr = ev.ble_addr || ev.device || null;
-      this.otaProtocol = ev.protocol || null;
-      this.otaError = null;
-      if (ev.device) this.deviceOtaState[ev.device] = { state: 'flashing', pct: 0 };
-    }
-    if (ev.type === 'ota_progress') {
-      if (!this.otaActive) { this.otaActive = true; this.otaDone = false; this.otaBleAddr = ev.ble_addr || ev.device || null; }
-      this.otaPct = ev.data?.pct ?? this.otaPct;
-      if (ev.device) this.deviceOtaState[ev.device] = { state: 'flashing', pct: this.otaPct };
+    // OTA flash — WS drives the ops key for the duration of the flash
+    if (ev.type === 'ota_start' && ev.device) {
+      this.asyncOpStart('otaFlash_' + ev.device);
       return;
     }
-    if (ev.type === 'ota_complete') {
-      this.otaDone = true;
-      this.otaError = null;
-      if (ev.device) this.deviceOtaState[ev.device] = { state: 'done', pct: 100 };
-      const seq = ++this._otaSeq;
-      setTimeout(() => { if (this._otaSeq === seq) { this.otaActive = false; this.otaDone = false; } }, 2500);
-    }
-    if (ev.type === 'ota_error') {
-      this.otaError = ev.data?.error || 'OTA failed';
-      if (ev.device) this.deviceOtaState[ev.device] = { state: 'error', pct: this.otaPct };
-    }
-
-    if (ev.type === 'ota_download_start') {
-      if (ev.device) this.otaDownloadState[ev.device] = { state: 'downloading', pct: 0 };
-      return;
-    }
-    if (ev.type === 'ota_download_progress') {
-      if (ev.device) this.otaDownloadState[ev.device] = { state: 'downloading', pct: ev.data?.pct ?? 0 };
-      return;
-    }
-    if (ev.type === 'ota_download_complete') {
-      if (ev.device) {
-        this.otaDownloadState[ev.device] = { state: 'done', pct: 100 };
-        this.$nextTick(() => this.loadOtaFiles(ev.device));
+    if (ev.type === 'ota_progress' && ev.device) {
+      this.asyncOpProgress('otaFlash_' + ev.device, ev.data?.pct ?? 0);
+      // Show prominent toast for status events requiring user action (once per status change)
+      const st = ev.data?.status;
+      if (st && st !== this._lastOtaStatus) {
+        this._lastOtaStatus = st;
+        if (st === 'nvs_erase_required' || st === 'nvs_erase_waiting') {
+          const msg = ev.data?.message || 'Hold BOOT and press RESET on the device';
+          this.showToast(msg, 'warning', 0);  // 0 = persistent until dismissed
+        } else if (st === 'nvs_erasing') {
+          this.showToast('NVS erasing — do not power off', 'info', 5000);
+        } else if (st === 'nvs_erased') {
+          this.showToast('NVS cleared — reconnecting…', 'success', 4000);
+        }
       }
       return;
     }
-    if (ev.type === 'ota_download_error') {
-      if (ev.device) this.otaDownloadState[ev.device] = { state: 'error', pct: 0, error: ev.data?.error };
+    if (ev.type === 'ota_complete' && ev.device) {
+      this.asyncOpEnd('otaFlash_' + ev.device, true);
+      return;
+    }
+    if (ev.type === 'ota_error' && ev.device) {
+      this.asyncOpEnd('otaFlash_' + ev.device, false, ev.data?.error || 'OTA failed');
+      return;
+    }
+
+    // OTA download — WS drives the ops key; HTTP trigger just starts the task
+    if (ev.type === 'ota_download_start' && ev.device) {
+      this.asyncOpStart('otaDownload_' + ev.device);
+      return;
+    }
+    if (ev.type === 'ota_download_progress' && ev.device) {
+      this.asyncOpProgress('otaDownload_' + ev.device, ev.data?.pct ?? 0);
+      return;
+    }
+    if (ev.type === 'ota_download_complete' && ev.device) {
+      this.asyncOpEnd('otaDownload_' + ev.device, true);
+      this.loadOtaFiles(ev.device).then(() => {
+        const fname = ev.filename || ev.extracted;
+        if (fname && !this.otaSelectedFile[ev.device])
+          this.otaSelectedFile = { ...this.otaSelectedFile, [ev.device]: fname };
+      });
+      return;
+    }
+    if (ev.type === 'ota_download_error' && ev.device) {
+      this.asyncOpEnd('otaDownload_' + ev.device, false, ev.data?.error || 'Download failed');
       return;
     }
 
     if (['snapshot', 'ready', 'connecting', 'syncing', 'sync_progress',
-         'reconnecting', 'error', 'idle', 'mqtt_proxy_up', 'mqtt_proxy_down'].includes(ev.type)) {
+         'reconnecting', 'error', 'idle', 'ota_bootloader',
+         'mqtt_proxy_up', 'mqtt_proxy_down'].includes(ev.type)) {
       this._applyStateEvent(ev);
       return;
     }
@@ -188,8 +196,8 @@ export const wsMixin = {
       }
       if (ev.variant === 'environment_metrics') {
         const em = ev.data;
-        const hist = this.envHistory[nid];
-        if (hist && (em.temperature != null || em.relative_humidity != null)) {
+        const hist = this.envHistory[nid] ?? [];
+        if (em.temperature != null || em.relative_humidity != null) {
           const last = hist[hist.length - 1];
           const nowTs = Math.floor(Date.now() / 1000);
           if (!last || nowTs - last.ts > 30) {
@@ -239,6 +247,66 @@ export const wsMixin = {
 
     if (ev.type === 'known_nodes') {
       this._knownNodes = ev.nodes ?? [];
+      return;
+    }
+
+    if (ev.type === 'message_history') {
+      this._applyMessageRows(ev.messages || []);
+      return;
+    }
+
+    if (ev.type === 'tilt_history') {
+      // Store all-node tilt rows; expose only the active node's slice
+      this._tiltHistoryAll = this._tiltHistoryAll || {};
+      for (const r of (ev.rows || [])) {
+        if (!r.node_id) continue;
+        if (!this._tiltHistoryAll[r.node_id]) this._tiltHistoryAll[r.node_id] = [];
+        this._tiltHistoryAll[r.node_id].push(r);
+      }
+      if (this.activeNodeId) {
+        this.tiltHistory = this._tiltHistoryAll[this.activeNodeId] ?? [];
+        this._tiltRecomputePeak?.();
+      }
+      return;
+    }
+
+    if (ev.type === 'env_history') {
+      const updated = { ...this.envHistory };
+      for (const r of (ev.rows || [])) {
+        const nid = '!' + (r.num >>> 0).toString(16).padStart(8, '0');
+        if (!updated[nid]) updated[nid] = [];
+        updated[nid].push(r);
+      }
+      this.envHistory = updated;
+      // Seed nodeSelf.environment_metrics from most recent own-device row if not yet set
+      if (this.activeNodeId && !this.nodeSelf?.environment_metrics) {
+        const rows = updated[this.activeNodeId];
+        if (rows?.length) {
+          const latest = rows[rows.length - 1];
+          this.nodeSelf = { ...this.nodeSelf, environment_metrics: {
+            temperature:         latest.temperature         ?? null,
+            relative_humidity:   latest.relative_humidity   ?? null,
+            barometric_pressure: latest.barometric_pressure ?? null,
+          }};
+        }
+      }
+      return;
+    }
+
+    if (ev.type === 'range_test_log') {
+      this._rangeStats = null; this._rangeChartCache = null;
+      this.rangeLog = (ev.log || []).map(r => ({ ...r, _uid: 'db_' + (r.id ?? (this._rangeUid++)) }));
+      return;
+    }
+
+    if (ev.type === 'range_test_timer') {
+      this.rangeTimer = ev;
+      this._startRangeCountdown?.();
+      return;
+    }
+
+    if (ev.type === 'traceroute_history') {
+      this.perfHistory = ev.rows || [];
       return;
     }
 
@@ -334,6 +402,18 @@ export const wsMixin = {
           relay_positions: ev.relay_positions ?? {},
           ts:              ev.ts              ?? Date.now(),
         }};
+      }
+      // Prepend to perfHistory so the perf tab stays live without polling
+      if (ev.from != null) {
+        const entry = {
+          from_num: ev.from, to_num: ev.to ?? null,
+          route: ev.route ?? [], route_back: ev.route_back ?? [],
+          snr_towards: ev.snr_towards ?? [], snr_back: ev.snr_back ?? [],
+          relay_positions: ev.relay_positions ?? {},
+          ts: ev.ts ?? Math.floor(Date.now() / 1000),
+          rx_device: ev.rx_device ?? null,
+        };
+        this.perfHistory = [entry, ...(this.perfHistory || [])].slice(0, 200);
       }
       this.passiveTraceNum = ev.from;
       if (this._passiveTraceTimer) clearTimeout(this._passiveTraceTimer);

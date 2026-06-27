@@ -13,7 +13,7 @@ export const devicesMixin = {
   },
 
   devBleState(nodeId) {
-    return this.deviceBleStates[nodeId]?.ble_state || 'idle';
+    return this.deviceBleStates[nodeId]?.ble_state || 'offline';
   },
 
   devIsReady(nodeId) { return this.devBleState(nodeId) === 'ready'; },
@@ -25,7 +25,7 @@ export const devicesMixin = {
   devBleLabel(nodeId) {
     const s = this.deviceBleStates[nodeId] || {};
     if (this.devIsSaving(nodeId)) return 'Saving config…';
-    return { connecting: 'Connecting…', syncing: 'Syncing…', reconnecting: 'Reconnecting…', error: 'Error', idle: '' }[s.ble_state] || '';
+    return s.label || '';
   },
 
   _clearDeviceState() {
@@ -274,14 +274,15 @@ export const devicesMixin = {
     }
   },
 
-  async bleConnect(address) {
+  async bleConnect(address, pin) {
     const addr = address || this.bleAddress;
     if (!addr) return;
     this.bleAddress = addr;
     this.bleConnecting = true;
     this.bleError = '';
     try {
-      await fetchJSON('/devices', 'POST', { address: addr, pin: this.blePin || '' });
+      const resolvedPin = pin ?? this.blePin ?? '';
+      await fetchJSON('/devices', 'POST', { address: addr, pin: resolvedPin });
       const deadline = Date.now() + 60000;
       const bleKey = 'ble:' + addr.toUpperCase();
       const addrUpper = addr.toUpperCase();
@@ -320,34 +321,21 @@ export const devicesMixin = {
   // -- OTA firmware management ------------------------------------------------
 
   async loadOtaFiles(nodeId) {
-    this.otaFilesLoading = { ...this.otaFilesLoading, [nodeId]: true };
-    try {
+    await this.asyncOp('otaFiles_' + nodeId, async () => {
       const d = await fetchJSON(`/ota/firmware?node_id=${encodeURIComponent(nodeId)}`);
       this.otaFiles = { ...this.otaFiles, [nodeId]: d };
-      if (!this.otaSelectedFile[nodeId] && d.files?.length) {
+      if (!this.otaSelectedFile[nodeId] && d.files?.length)
         this.otaSelectedFile = { ...this.otaSelectedFile, [nodeId]: d.files[0].name };
-      }
-    } catch (e) {
-      this.otaFiles = { ...this.otaFiles, [nodeId]: { files: [], error: e.message } };
-    } finally {
-      this.otaFilesLoading = { ...this.otaFilesLoading, [nodeId]: false };
-    }
+    });
   },
 
   async loadOtaReleases() {
-    this.otaReleasesLoading = true;
-    this.otaReleasesError = '';
-    try {
+    await this.asyncOp('otaReleases', async () => {
       const d = await fetchJSON('/ota/releases');
       this.otaReleases = d.releases || [];
-      if (!this.otaSelectedRelease && this.otaReleases.length) {
+      if (!this.otaSelectedRelease && this.otaReleases.length)
         this.otaSelectedRelease = this.otaReleases[0].tag;
-      }
-    } catch (e) {
-      this.otaReleasesError = e.message || 'Failed to fetch releases';
-    } finally {
-      this.otaReleasesLoading = false;
-    }
+    });
   },
 
   otaAssetsForDevice(nodeId) {
@@ -356,13 +344,11 @@ export const devicesMixin = {
     const rel = (this.otaReleases || []).find(r => r.tag === this.otaSelectedRelease);
     if (!rel) return [];
 
-    // Map hw_model → Meshtastic release platform bundle name.
-    // Releases use SoC-family bundles, not per-device files.
-    const NRF52 = new Set(['RAK4631','NRF52840','NRF52_DK','TECHO','TECHO_V0','TECHO_V1','TECHO_V2','PPR1']);
-    const ESP32S3 = ['HELTEC_V3','HELTEC_W36','HELTEC_HT62','HELTEC_MESH_NODE_T114','SEEED_XIAO_S3','TBEAM_S3_CORE','NANO_G2_ULTRA','TRACKER_T1000_E','T_WATCH_S3'];
-    const ESP32C3 = ['SEEED_XIAO_C3','TLORA_T3S3_V1'];
+    const NRF52   = new Set(['RAK4631','NRF52840','NRF52_DK','TECHO','TECHO_V0','TECHO_V1','TECHO_V2','PPR1']);
+    const ESP32S3 = ['HELTEC_V3','HELTEC_W36','HELTEC_MESH_NODE_T114','SEEED_XIAO_S3','TBEAM_S3_CORE','NANO_G2_ULTRA','TRACKER_T1000_E','T_WATCH_S3'];
+    const ESP32C3 = ['SEEED_XIAO_C3','TLORA_T3S3_V1','HELTEC_HT62'];
     const ESP32C6 = ['T_ECHO_V3','STATION_G2'];
-    const RP2040 = ['RP2040_LORA'];
+    const RP2040  = ['RP2040_LORA'];
 
     let platform = 'esp32';
     if (NRF52.has(hwRaw)) platform = 'nrf52840';
@@ -371,29 +357,52 @@ export const devicesMixin = {
     else if (ESP32C6.some(m => hwRaw.includes(m))) platform = 'esp32c6';
     else if (RP2040.some(m => hwRaw.includes(m))) platform = 'rp2040';
 
-    return rel.assets.filter(a =>
-      a.name.startsWith('firmware-') &&
-      a.name.toLowerCase().includes(platform)
-    );
+    return rel.assets.filter(a => a.name.startsWith('firmware-') && a.name.toLowerCase().includes(platform));
   },
 
   async downloadOtaAsset(nodeId, url, filename) {
-    this.otaDownloadState = { ...this.otaDownloadState, [nodeId]: { state: 'downloading', pct: 0 } };
+    // HTTP call just triggers; WS events ota_download_* drive ops key to completion.
+    this.asyncOpStart('otaDownload_' + nodeId);
     try {
       await fetchJSON('/ota/firmware/download', 'POST', { node_id: nodeId, url, filename });
     } catch (e) {
-      this.otaDownloadState = { ...this.otaDownloadState, [nodeId]: { state: 'error', pct: 0, error: e.message } };
+      this.asyncOpEnd('otaDownload_' + nodeId, false, e.message);
     }
   },
 
+  async uploadOtaFile(nodeId, file) {
+    await this.asyncOp('otaUpload_' + nodeId, async () => {
+      const fd = new FormData();
+      fd.append('node_id', nodeId);
+      fd.append('file', file);
+      const res = await fetch('/ota/firmware/upload', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
+      await this.loadOtaFiles(nodeId);
+      if (data?.filename) this.otaSelectedFile = { ...this.otaSelectedFile, [nodeId]: data.filename };
+    });
+  },
+
   async flashOta(nodeId, bleAddr, filename) {
-    if (!filename) return;
-    this.deviceOtaState = { ...this.deviceOtaState, [nodeId]: { state: 'flashing', pct: 0 } };
+    if (!filename || this.opLoading('otaFlash_' + nodeId)) return;
+    // HTTP trigger; WS events ota_start/progress/complete/error drive ops key.
+    this.asyncOpStart('otaFlash_' + nodeId);
     try {
       const d = await fetchJSON('/ota', 'POST', { node_id: nodeId, ble_addr: bleAddr, firmware: filename });
-      if (!d.started) this.deviceOtaState = { ...this.deviceOtaState, [nodeId]: { state: 'error', pct: 0 } };
+      if (!d.started) this.asyncOpEnd('otaFlash_' + nodeId, false, 'Bridge did not start OTA');
     } catch (e) {
-      this.deviceOtaState = { ...this.deviceOtaState, [nodeId]: { state: 'error', pct: 0 } };
+      this.asyncOpEnd('otaFlash_' + nodeId, false, e.message);
     }
+  },
+
+  async deleteOtaFile(nodeId, filename) {
+    if (!confirm(`Delete ${filename}?\n\nThis cannot be undone.`)) return;
+    await this.asyncOp('otaFiles_' + nodeId, async () => {
+      await fetchJSON(`/ota/firmware?node_id=${encodeURIComponent(nodeId)}&filename=${encodeURIComponent(filename)}`, 'DELETE');
+      const cur = this.otaFiles[nodeId];
+      this.otaFiles = { ...this.otaFiles, [nodeId]: { ...cur, files: (cur?.files || []).filter(f => f.name !== filename) } };
+      if (this.otaSelectedFile[nodeId] === filename)
+        this.otaSelectedFile = { ...this.otaSelectedFile, [nodeId]: '' };
+    });
   },
 };

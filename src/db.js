@@ -365,6 +365,12 @@ export const stmts = {
     ORDER BY ts ASC
   `),
 
+  queryAllTilt: db.prepare(`
+    SELECT ts, node_id, pitch, roll, x_g, y_g, z_g FROM tilt_history
+    WHERE ts >= ? AND ncal = 0
+    ORDER BY ts ASC
+  `),
+
   markNcal: db.prepare(`
     UPDATE tilt_history SET ncal = 1
     WHERE node_id = ? AND ts BETWEEN ? AND ?
@@ -378,6 +384,12 @@ export const stmts = {
   queryEnvHistory: db.prepare(`
     SELECT ts, temperature, relative_humidity, barometric_pressure
     FROM environment_history WHERE num = ? AND ts >= ?
+    ORDER BY ts ASC
+  `),
+
+  queryAllEnvHistory: db.prepare(`
+    SELECT ts, num, temperature, relative_humidity, barometric_pressure
+    FROM environment_history WHERE ts >= ?
     ORDER BY ts ASC
   `),
 
@@ -430,6 +442,14 @@ export function queryEnvHistory(num, sinceTs) {
 
 export function queryTiltHistory(nodeId, sinceTs) {
   return stmts.queryTilt.all(nodeId, sinceTs);
+}
+
+export function queryAllTiltHistory(sinceTs) {
+  return stmts.queryAllTilt.all(sinceTs);
+}
+
+export function queryAllEnvHistory(sinceTs) {
+  return stmts.queryAllEnvHistory.all(sinceTs);
 }
 
 export function markTiltNcal(nodeId, tsFrom, tsTo) {

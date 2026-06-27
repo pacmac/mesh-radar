@@ -9,7 +9,7 @@
                 <button class="btn btn-sm btn-outline" @click="loadDevices()">Refresh</button>
               </div>
               <div x-show="!availableDevices.length" class="text-sm opacity-50 italic py-2">No radios connected.</div>
-              <template x-for="dev in availableDevices" :key="dev.node_id">
+              <template x-for="dev in availableDevices" :key="dev.addr">
                 <div class="border border-base-300 rounded-lg p-3 flex flex-col gap-3"
                      :class="dev.node_id === activeNodeId && 'border-success/40 bg-success/5'">
                   <!-- Status row -->
@@ -25,6 +25,7 @@
                   <div class="flex gap-4 text-xs opacity-60 flex-wrap">
                     <span x-show="deviceBleStates[dev.node_id]?.ble_rssi != null" class="inline-flex items-center gap-1"><span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span><span x-text="deviceBleStates[dev.node_id]?.ble_rssi + ' dBm'"></span></span>
                     <span x-show="deviceBleStates[dev.node_id]?.node_count != null" x-text="deviceBleStates[dev.node_id]?.node_count + ' nodes'"></span>
+                    <span x-show="deviceBleStates[dev.node_id]?.ready_secs != null" x-text="'sync ' + deviceBleStates[dev.node_id]?.ready_secs + 's'"></span>
                     <span x-show="dev.ble_address" x-text="dev.ble_address"></span>
                     <span x-show="dev.tcp_port" x-text="'TCP :' + dev.tcp_port + ' (' + dev.tcp_clients + ' clients)'"></span>
                   </div>
@@ -145,53 +146,94 @@
                     <div class="flex items-center gap-2 mb-2 flex-wrap">
                       <span class="text-xs font-semibold opacity-60 uppercase tracking-wide"
                             x-text="'Firmware OTA' + (otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model ? ' — ' + (otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model) : '')"></span>
-                      <span x-show="deviceOtaState[dev.node_id]?.state === 'flashing'"
+                      <span x-show="dev.firmware_version" class="font-mono text-xs opacity-40"
+                            x-text="'running ' + dev.firmware_version"></span>
+                      <!-- flash progress badges — driven by ops -->
+                      <span x-show="opLoading('otaFlash_' + dev.node_id)"
                             class="badge badge-sm badge-warning animate-pulse"
-                            x-text="'Flashing ' + (deviceOtaState[dev.node_id]?.pct ?? 0) + '%'"></span>
-                      <span x-show="deviceOtaState[dev.node_id]?.state === 'done'" class="badge badge-sm badge-success">Done</span>
-                      <span x-show="deviceOtaState[dev.node_id]?.state === 'error'" class="badge badge-sm badge-error">Error — check log</span>
+                            x-text="'Flashing ' + (opPct('otaFlash_' + dev.node_id) ?? 0) + '%'"></span>
+                      <span x-show="opOk('otaFlash_' + dev.node_id)" class="badge badge-sm badge-success">Done</span>
+                      <span x-show="opErr('otaFlash_' + dev.node_id)" class="badge badge-sm badge-error"
+                            x-text="opErr('otaFlash_' + dev.node_id)"></span>
+                      <!-- refresh files button -->
                       <button class="btn btn-xs btn-ghost opacity-50 ml-auto"
-                              :class="{'loading loading-spinner': otaFilesLoading[dev.node_id]}"
-                              @click="loadOtaFiles(dev.node_id)"
-                              title="Refresh firmware file list">
-                        <svg x-show="!otaFilesLoading[dev.node_id]" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              :class="{'loading loading-spinner': opLoading('otaFiles_' + dev.node_id)}"
+                              :disabled="opLoading('otaFiles_' + dev.node_id)"
+                              @click="loadOtaFiles(dev.node_id)" title="Refresh firmware file list">
+                        <svg x-show="!opLoading('otaFiles_' + dev.node_id)" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                         </svg>
                       </button>
                     </div>
 
-                    <!-- not configured notice -->
-                    <template x-if="otaFiles[dev.node_id]?.configured === false">
-                      <p class="text-xs opacity-40 italic">Set <code>ota.dir</code> in bridge_config.yaml to enable firmware management.</p>
-                    </template>
-
-                    <!-- file picker + flash (always shown; prompt to refresh if not loaded) -->
                     <div class="space-y-2">
-                      <div class="flex gap-2 items-center flex-wrap">
-                        <select class="select select-sm select-bordered flex-1 min-w-0 font-mono text-xs"
-                                x-model="otaSelectedFile[dev.node_id]"
-                                @focus="if (!otaFiles[dev.node_id]) loadOtaFiles(dev.node_id)">
-                          <option value="" disabled selected>
-                            <template x-if="!otaFiles[dev.node_id]">— click ↺ to load files —</template>
-                            <template x-if="otaFiles[dev.node_id] && !otaFiles[dev.node_id].files?.length">— no files in firmware dir —</template>
-                            <template x-if="otaFiles[dev.node_id]?.files?.length">Select firmware file…</template>
-                          </option>
-                          <template x-for="f in (otaFiles[dev.node_id]?.files || [])" :key="f.name">
-                            <option :value="f.name" x-text="f.name"></option>
-                          </template>
-                        </select>
+                      <!-- file list: each row = filename + OTA-ready badge + select + delete -->
+                      <div class="space-y-1">
+                        <p x-show="!otaFiles[dev.node_id]" class="text-xs opacity-40 italic">Click ↺ to load firmware files.</p>
+                        <p x-show="otaFiles[dev.node_id] && !otaFiles[dev.node_id].files?.length" class="text-xs opacity-40 italic">No firmware files in directory.</p>
+                        <template x-for="f in (otaFiles[dev.node_id]?.files || [])" :key="f.name">
+                          <div class="flex items-center gap-1.5 p-1.5 rounded"
+                               :class="otaSelectedFile[dev.node_id] === f.name ? 'bg-base-200' : 'hover:bg-base-200/50'">
+                            <!-- OTA-ready indicator -->
+                            <span class="shrink-0 w-2 h-2 rounded-full"
+                                  :class="f.ota_ready ? 'bg-success' : 'bg-warning'"
+                                  :title="f.ota_ready ? 'OTA-ready' : 'Not OTA-ready (bundle or wrong type)'"></span>
+                            <!-- filename -->
+                            <span class="font-mono text-xs flex-1 truncate cursor-pointer"
+                                  :class="otaSelectedFile[dev.node_id] === f.name ? 'text-base-content' : 'opacity-60'"
+                                  :title="f.name + (f.ota_ready ? '' : ' — not suitable for BLE OTA')"
+                                  @click="otaSelectedFile = { ...otaSelectedFile, [dev.node_id]: f.name }"
+                                  x-text="f.name"></span>
+                            <!-- size -->
+                            <span class="text-xs opacity-30 shrink-0" x-text="(f.size/1048576).toFixed(1)+'M'"></span>
+                            <!-- delete -->
+                            <button class="btn btn-xs btn-ghost text-error opacity-40 hover:opacity-100 shrink-0"
+                                    title="Delete file"
+                                    @click.stop="deleteOtaFile(dev.node_id, f.name)">✕</button>
+                          </div>
+                        </template>
+                      </div>
+
+                      <!-- upload + flash row -->
+                      <div class="flex gap-2 items-center">
+                        <!-- upload from local machine -->
+                        <label class="btn btn-sm btn-outline shrink-0"
+                               :class="{'loading loading-spinner': opLoading('otaUpload_' + dev.node_id)}"
+                               :title="opLoading('otaUpload_' + dev.node_id) ? 'Uploading…' : 'Upload firmware file from this machine'">
+                          <svg x-show="!opLoading('otaUpload_' + dev.node_id)" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                          </svg>
+                          <input type="file" class="hidden"
+                                 :accept="(otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model || '').match(/RAK|NRF|TECHO|PPR/) ? '.zip' : '.bin,.zip'"
+                                 @change="if ($event.target.files[0]) uploadOtaFile(dev.node_id, $event.target.files[0]); $event.target.value=''">
+                        </label>
+                        <!-- selected file label -->
+                        <span class="text-xs opacity-40 flex-1 truncate font-mono"
+                              x-show="otaSelectedFile[dev.node_id]"
+                              x-text="'→ ' + otaSelectedFile[dev.node_id]"></span>
+                        <span class="text-xs opacity-30 flex-1" x-show="!otaSelectedFile[dev.node_id]">Select a file above</span>
+                        <!-- flash button -->
                         <button class="btn btn-sm btn-warning shrink-0"
-                                :disabled="deviceOtaState[dev.node_id]?.state === 'flashing'
+                                :disabled="opLoading('otaFlash_' + dev.node_id)
                                            || !otaSelectedFile[dev.node_id]
+                                           || !(otaFiles[dev.node_id]?.files || []).find(f => f.name === otaSelectedFile[dev.node_id])?.ota_ready
                                            || devBleState(dev.node_id) !== 'ready'"
-                                :title="devBleState(dev.node_id) !== 'ready' ? 'Device must be connected (ready)' : 'Flash selected file via BLE OTA'"
+                                :title="!(otaFiles[dev.node_id]?.files || []).find(f => f.name === otaSelectedFile[dev.node_id])?.ota_ready
+                                        ? 'File is not OTA-ready (bundle zip or wrong type)'
+                                        : devBleState(dev.node_id) !== 'ready' ? 'Device must be ready (connected)'
+                                        : 'Flash selected file via BLE OTA'"
+                                :class="{'loading loading-spinner': opLoading('otaFlash_' + dev.node_id)}"
                                 @click="flashOta(dev.node_id, dev.ble_address, otaSelectedFile[dev.node_id])">
-                          Flash
+                          <span x-show="!opLoading('otaFlash_' + dev.node_id)">Flash</span>
                         </button>
                       </div>
 
-                      <!-- firmware dir path hint -->
+                      <!-- upload error -->
+                      <p x-show="opErr('otaUpload_' + dev.node_id)" class="text-xs text-error"
+                         x-text="opErr('otaUpload_' + dev.node_id)"></p>
+
+                      <!-- firmware dir hint -->
                       <p class="text-xs opacity-30 font-mono leading-tight"
                          x-show="otaFiles[dev.node_id]?.dir"
                          x-text="'dir: ' + (otaFiles[dev.node_id]?.dir || '')"></p>
@@ -204,21 +246,29 @@
                                fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                           </svg>
-                          Fetch from Meshtastic GitHub
+                          Fetch stock firmware from Meshtastic GitHub
                         </button>
 
-                        <div x-show="otaFetchOpen[dev.node_id]" class="px-3 pb-3 pt-1 space-y-2 border-t border-base-300">
-                          <div x-show="otaReleasesLoading" class="flex items-center gap-2 text-xs opacity-50">
+                        <div x-show="otaFetchOpen[dev.node_id]" class="px-3 pb-3 pt-2 space-y-2 border-t border-base-300">
+                          <!-- stock-only warning -->
+                          <div class="flex items-center gap-1.5 text-xs text-warning">
+                            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                            </svg>
+                            <span>Official stock builds only — will overwrite any custom firmware.</span>
+                          </div>
+
+                          <!-- releases loading / error / content -->
+                          <div x-show="opLoading('otaReleases')" class="flex items-center gap-2 text-xs opacity-50">
                             <span class="loading loading-spinner loading-xs"></span> Loading releases…
                           </div>
-                          <div x-show="otaReleasesError && !otaReleasesLoading" class="text-xs text-error" x-text="otaReleasesError"></div>
+                          <p x-show="opErr('otaReleases')" class="text-xs text-error" x-text="opErr('otaReleases')"></p>
 
-                          <div x-show="!otaReleasesLoading && otaReleases" class="space-y-2">
-                            <select class="select select-xs select-bordered w-full font-mono text-xs"
-                                    x-model="otaSelectedRelease">
+                          <div x-show="!opLoading('otaReleases') && otaReleases" class="space-y-2">
+                            <select class="select select-xs select-bordered w-full font-mono text-xs" x-model="otaSelectedRelease">
                               <template x-for="rel in (otaReleases || [])" :key="rel.tag">
-                                <option :value="rel.tag"
-                                        x-text="rel.tag + (rel.prerelease ? ' (pre)' : '')"></option>
+                                <option :value="rel.tag" x-text="rel.tag + (rel.prerelease ? ' (pre)' : '')"></option>
                               </template>
                             </select>
 
@@ -226,29 +276,29 @@
                               <template x-for="asset in otaAssetsForDevice(dev.node_id)" :key="asset.name">
                                 <div class="flex items-center gap-2 text-xs">
                                   <span class="font-mono flex-1 truncate opacity-70" x-text="asset.name"></span>
-                                  <span class="opacity-40 shrink-0"
-                                        x-text="(asset.size / 1048576).toFixed(1) + ' MB'"></span>
-                                  <span x-show="otaDownloadState[dev.node_id]?.state === 'downloading'"
+                                  <span class="opacity-40 shrink-0" x-text="(asset.size / 1048576).toFixed(1) + ' MB'"></span>
+                                  <span x-show="opLoading('otaDownload_' + dev.node_id)"
                                         class="font-mono text-warning shrink-0"
-                                        x-text="(otaDownloadState[dev.node_id]?.pct ?? 0) + '%'"></span>
+                                        x-text="(opPct('otaDownload_' + dev.node_id) ?? 0) + '%'"></span>
+                                  <span x-show="opOk('otaDownload_' + dev.node_id)" class="text-success shrink-0">✓</span>
                                   <button class="btn btn-xs btn-outline btn-primary shrink-0"
-                                          :disabled="otaDownloadState[dev.node_id]?.state === 'downloading'"
+                                          :class="{'loading loading-spinner': opLoading('otaDownload_' + dev.node_id)}"
+                                          :disabled="opLoading('otaDownload_' + dev.node_id)"
                                           @click="downloadOtaAsset(dev.node_id, asset.url, asset.name)">
-                                    <span x-show="otaDownloadState[dev.node_id]?.state !== 'downloading'">↓ Download</span>
-                                    <span x-show="otaDownloadState[dev.node_id]?.state === 'downloading'">…</span>
+                                    <span x-show="!opLoading('otaDownload_' + dev.node_id)">↓ Download</span>
                                   </button>
                                 </div>
                               </template>
-                              <p class="text-xs opacity-30">File saved to firmware dir and appears in the dropdown above.</p>
+                              <p x-show="opErr('otaDownload_' + dev.node_id)" class="text-xs text-error"
+                                 x-text="opErr('otaDownload_' + dev.node_id)"></p>
+                              <p class="text-xs opacity-30">Downloaded files appear in the selector above.</p>
                             </div>
-                            <p x-show="!otaAssetsForDevice(dev.node_id).length"
-                               class="text-xs opacity-40 italic"
+                            <p x-show="!otaAssetsForDevice(dev.node_id).length" class="text-xs opacity-40 italic"
                                x-text="'No assets match ' + (otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model || 'this device') + ' in this release'"></p>
                           </div>
 
-                          <button x-show="!otaReleasesLoading && !otaReleases"
-                                  class="btn btn-xs btn-outline w-full"
-                                  @click="loadOtaReleases()">Load releases</button>
+                          <button x-show="!opLoading('otaReleases') && !otaReleases"
+                                  class="btn btn-xs btn-outline w-full" @click="loadOtaReleases()">Load releases</button>
                         </div>
                       </div>
                     </div>
@@ -358,6 +408,14 @@
                       <span x-show="opLoading('disconnect_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                       Disconnect
                     </button>
+                    <button class="btn btn-xs btn-error"
+                            x-show="dev.ble_address"
+                            :disabled="opLoading('remove_' + dev.node_id)"
+                            @click="asyncOp('remove_' + dev.node_id, () => bleRemove(dev.ble_address), { successMsg: 'Device removed' })"
+                            title="Remove: disconnect bridge, remove from config, remove BlueZ bond">
+                      <span x-show="opLoading('remove_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
+                      <span x-show="!opLoading('remove_' + dev.node_id)">Remove</span>
+                    </button>
                   </div>
                   <!-- Auto-purge -->
                   <div class="flex items-center gap-2 text-xs text-base-content/70 mt-1">
@@ -382,7 +440,7 @@
               <h2 class="card-title text-base">Packet Sources</h2>
               <p class="text-sm opacity-60">Which radios feed the node list and overview. None selected = all radios.</p>
               <div class="flex flex-col gap-2">
-                <template x-for="dev in availableDevices" :key="dev.node_id">
+                <template x-for="dev in availableDevices" :key="dev.addr">
                   <label class="flex items-center gap-3 cursor-pointer">
                     <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
                            :checked="!packetSources.length || packetSources.includes(dev.node_id)"
@@ -421,13 +479,17 @@
                         <td class="inline-flex items-center gap-1"><span x-html="sigBars(d.rssi, null)"></span><span x-text="d.rssi + ' dBm'"></span></td>
                         <td class="text-center"><input type="checkbox" class="checkbox checkbox-xs" :checked="d.paired" disabled></td>
                         <td class="text-center"><input type="checkbox" class="checkbox checkbox-xs" :checked="d.trusted" disabled></td>
-                        <td><input class="input input-bordered input-xs font-mono w-24" x-model="blePin" placeholder="123456" type="text" inputmode="numeric" maxlength="6" :disabled="bleConnecting"></td>
+                        <td><input class="input input-bordered input-xs font-mono w-24"
+                                   :value="blePins[d.address] ?? ''"
+                                   @input="blePins = { ...blePins, [d.address]: $event.target.value }"
+                                   placeholder="123456" type="text" inputmode="numeric" maxlength="6"
+                                   :disabled="bleConnecting"></td>
                         <td class="flex gap-1">
-                          <button class="btn btn-xs btn-primary gap-1" @click="bleConnect(d.address)" :disabled="bleConnecting || bleScanning">
+                          <button class="btn btn-xs btn-primary gap-1" @click="bleConnect(d.address, blePins[d.address])" :disabled="bleConnecting || bleScanning">
                             <span x-show="bleConnecting && bleAddress === d.address" class="loading loading-spinner loading-xs" x-cloak></span>
                             Connect
                           </button>
-                          <button x-show="d.paired || d.trusted" class="btn btn-xs btn-error btn-outline" @click="bleRemove(d.address)" :disabled="bleConnecting || bleScanning" title="Remove BlueZ bonding">✕</button>
+                          <button class="btn btn-xs btn-error btn-outline" @click="bleRemove(d.address)" :disabled="bleConnecting || bleScanning" title="Remove device">✕</button>
                         </td>
                       </tr>
                     </template>

@@ -81,26 +81,13 @@ function dashboard() {
     pwmFreqInput:     null,
 
     // -- OTA ------------------------------------------------------------------
-    otaActive:    false,
-    otaDone:      false,
-    otaPct:       0,
-    otaBleAddr:   null,
-    otaProtocol:  null,
-    otaError:     null,
-    deviceOtaState: {},
-    _otaSeq:      0,
-
-    // -- OTA firmware management ----------------------------------------------
-    otaFiles:         {},   // nodeId -> {files, hw_model, dir, configured, error}
-    otaFilesLoading:  {},   // nodeId -> bool
-    otaSelectedFile:  {},   // nodeId -> filename string
-    otaFetchOpen:     {},   // nodeId -> bool (GitHub fetch panel expanded)
-    otaReleases:      null, // [{tag, name, assets, ...}]
-    otaReleasesLoading: false,
-    otaReleasesError:   '',
+    // All loading/progress/error state lives in ops[key] via asyncOp/asyncOpStart/End.
+    // Keys: 'otaFiles_!id', 'otaReleases', 'otaDownload_!id', 'otaFlash_!id', 'otaUpload_!id'
+    otaFiles:          {},   // nodeId -> {files, hw_model, dir, error}
+    otaSelectedFile:   {},   // nodeId -> filename string
+    otaFetchOpen:      {},   // nodeId -> bool (GitHub fetch panel expanded)
+    otaReleases:       null, // [{tag, name, assets, ...}]
     otaSelectedRelease: '',
-    otaSelectedAsset:   {},  // nodeId -> asset name
-    otaDownloadState:   {},  // nodeId -> {state:'downloading'|'done'|'error', pct, error?}
 
     // -- Scan -----------------------------------------------------------------
     scanMode:      false,
@@ -169,11 +156,12 @@ function dashboard() {
     bleConnecting: false,
     bleAddress:   '',
     blePin:       '',
+    blePins:      {},   // per-device PIN: { [address]: pin }
     bleError:     '',
 
     // -- Telemetry / tilt / env -----------------------------------------------
     envHistory:  {},
-    envWindow:   persistGet('envWindow', 24),
+    envWindow:   persistGet('envWindow', 72),
     tiltHistory: [],
     tiltWindow:  persistGet('tiltWindow', 4),
     tiltPeak:    0,
@@ -307,6 +295,7 @@ function dashboard() {
 
       this.loadTiltHistory();
       this.loadEnvHistory(this.activeNodeId);
+      this.loadPerfLoraCfg();
       setInterval(() => { if (this.yagiSignal.ts) this._sigTick++; }, 1000);
       setInterval(() => this._rangeTick++, 60000);
 

@@ -453,6 +453,25 @@ app.post('/:nodeId/messages', async (req, res) => {
   }
 });
 
+// -- real-time enforcement guard --------------------------------------------
+// Sec-Fetch-Dest: empty is set by browsers on every JS fetch() call and cannot
+// be forged by JavaScript. Server-side calls, curl, and Postman never send it.
+// Endpoints listed here must only be consumed via WebSocket /events — any
+// browser polling attempt is rejected hard so the violation is unmissable.
+const WS_ONLY_ROUTES = new Set(['/devices']);
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET') return next();
+  const path = '/' + req.path.split('/')[1]; // first segment only
+  if (!WS_ONLY_ROUTES.has(path)) return next();
+  if (req.headers['sec-fetch-dest'] !== 'empty') return next(); // server-side / curl — allow
+  return res.status(410).json({
+    error:   'ws_only',
+    message: 'GET /devices is not available to browser clients. Subscribe to the WebSocket stream — device_list events carry real-time device state.',
+    ws:      '/events',
+  });
+});
+
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 
 async function proxyToBridge(req, res) {
@@ -540,12 +559,19 @@ app.put('/tilt_cal', (req, res) => {
 // -- static files -----------------------------------------------------------
 app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
 
+// Debug monitor — served directly, not through the SPA assembler
+app.get('/debug', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'debug.html')));
+
 // Catch-all: serve assembled index.html for any unrecognised path (SPA deep-links)
 app.use((req, res) => serveIndex(req, res));
 
 // -- server + WS relay -------------------------------------------------------
 const server = http.createServer(app);
-const wss = attachWsRelay(server);
+const getRangeTimer = () => {
+  const remaining = _rangeTimer.endsAt ? Math.max(0, Math.round((_rangeTimer.endsAt - Date.now()) / 1000)) : null;
+  return { ..._rangeTimer, remaining };
+};
+const wss = attachWsRelay(server, getRangeTimer);
 
 function broadcastAll(msg) {
   const data = JSON.stringify(msg);

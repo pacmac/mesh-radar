@@ -49,7 +49,8 @@
   <input id="nav-drawer" type="checkbox" class="drawer-toggle" x-model="drawerOpen" />
 
   <!-- ===================== OTA OVERLAY ===================== -->
-  <div x-show="otaActive"
+  <!-- activeFlashKey getter (app-ui.js) returns the first active otaFlash_ op key, or null -->
+  <div x-show="activeFlashKey"
        x-transition:enter="transition ease-out duration-200"
        x-transition:enter-start="opacity-0"
        x-transition:enter-end="opacity-100"
@@ -58,27 +59,31 @@
        x-transition:leave-end="opacity-0"
        class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-base-300/80 backdrop-blur-sm">
     <!-- Flashing -->
-    <span class="loading loading-rings loading-lg text-warning" x-show="!otaDone && !otaError"></span>
-    <p class="text-base-content font-semibold" x-show="!otaDone && !otaError">Flashing firmware…</p>
+    <span class="loading loading-rings loading-lg text-warning" x-show="opLoading(activeFlashKey)"></span>
+    <p class="text-base-content font-semibold" x-show="opLoading(activeFlashKey)">Flashing firmware…</p>
     <!-- Done -->
-    <svg x-show="otaDone" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <svg x-show="opOk(activeFlashKey)" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
     </svg>
-    <p x-show="otaDone" class="text-success font-semibold text-lg">Flash complete</p>
+    <p x-show="opOk(activeFlashKey)" class="text-success font-semibold text-lg">Flash complete</p>
     <!-- Error -->
-    <svg x-show="otaError" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <svg x-show="opErr(activeFlashKey)" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
     </svg>
-    <p x-show="otaError" class="text-error font-semibold text-lg">Flash failed</p>
-    <p x-show="otaError" class="text-base-content/60 text-sm font-mono text-center max-w-xs" x-text="otaError || ''"></p>
-    <button x-show="otaError" class="btn btn-sm btn-ghost mt-2" @click="otaActive = false; otaError = null">Dismiss</button>
-    <!-- Shared: BLE addr + protocol + progress bar -->
-    <p class="text-base-content/50 text-sm font-mono" x-show="!otaError" x-text="otaBleAddr || ''"></p>
-    <p x-show="otaProtocol && !otaDone && !otaError" class="text-base-content/30 text-xs font-mono" x-text="otaProtocol || ''"></p>
-    <div class="w-64 bg-base-200 rounded-full h-3 overflow-hidden" x-show="!otaDone && !otaError">
-      <div class="bg-warning h-3 rounded-full transition-all duration-300" :style="`width:${otaPct}%`"></div>
+    <p x-show="opErr(activeFlashKey)" class="text-error font-semibold text-lg">Flash failed</p>
+    <p x-show="opErr(activeFlashKey)" class="text-base-content/60 text-sm font-mono text-center max-w-xs"
+       x-text="opErr(activeFlashKey) || ''"></p>
+    <button x-show="opErr(activeFlashKey)" class="btn btn-sm btn-ghost mt-2"
+            @click="ops = { ...ops, [activeFlashKey]: null }">Dismiss</button>
+    <!-- Progress while flashing -->
+    <p class="text-base-content/50 text-sm font-mono" x-show="opLoading(activeFlashKey)"
+       x-text="activeFlashKey ? activeFlashKey.replace('otaFlash_','') : ''"></p>
+    <div class="w-64 bg-base-200 rounded-full h-3 overflow-hidden" x-show="opLoading(activeFlashKey)">
+      <div class="bg-warning h-3 rounded-full transition-all duration-300"
+           :style="`width:${opPct(activeFlashKey) ?? 0}%`"></div>
     </div>
-    <p class="text-base-content/70 text-sm font-mono" x-show="!otaDone && !otaError" x-text="otaPct + '%'"></p>
+    <p class="text-base-content/70 text-sm font-mono" x-show="opLoading(activeFlashKey)"
+       x-text="(opPct(activeFlashKey) ?? 0) + '%'"></p>
   </div>
 
   <!-- ===================== DRAWER CONTENT ===================== -->
@@ -146,7 +151,7 @@
           </div>
         </div>
         <!-- Per-device not-ready indicator — all devices shown in header -->
-        <template x-for="dev in availableDevices.filter(d => devBleState(d.node_id) && devBleState(d.node_id) !== 'ready' && devBleState(d.node_id) !== 'idle')" :key="dev.node_id">
+        <template x-for="dev in availableDevices.filter(d => devBleState(d.node_id) && devBleState(d.node_id) !== 'ready' && devBleState(d.node_id) !== 'offline')" :key="dev.addr">
           <div class="tooltip tooltip-bottom" :data-tip="dev.node_id + ' — ' + devBleLabel(dev.node_id)"
                @click="setNav('devices')" style="cursor:pointer">
             <div class="badge badge-warning gap-1 text-xs animate-pulse">
@@ -161,7 +166,7 @@
             MQTT
           </div>
         </div>
-        <div class="badge badge-sm badge-info" x-text="(nodeCount || '–') + ' nodes'"></div>
+        <div class="badge badge-sm badge-info" x-text="nodeCount + ' nodes'"></div>
         <template x-if="perfScore() != null">
           <div class="badge badge-sm font-mono cursor-pointer"
                :class="perfScore() < 5 ? 'badge-success' : perfScore() < 15 ? 'badge-warning' : 'badge-error'"
