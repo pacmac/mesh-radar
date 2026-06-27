@@ -114,21 +114,23 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const { type: _t, ...fields } = ev;
       if (ev.type === 'device_state') {
         lastDeviceState[evAddr] = { ...existing, ...fields, state_event: ev, ble_state: ev.state.toLowerCase() };
-        // Translate OTA FSM states to legacy ota_start/progress/complete/error events for browser UI
-        if (ev.node_id) {
+        // Translate OTA FSM states to legacy ota_start/progress/complete/error events for browser UI.
+        // Use ev.node_id when available; fall back to ev.addr for pre-sync devices (e.g. stuck bootloader).
+        const otaDev = ev.node_id || ev.addr;
+        if (otaDev) {
           const s = ev.state;
           if (s === 'OTA_PENDING' || s === 'OTA_HANDSHAKE') {
-            broadcast({ type: 'ota_start', device: ev.node_id });
+            broadcast({ type: 'ota_start', device: otaDev, addr: ev.addr });
           } else if (s === 'OTA_FLASHING') {
-            broadcast({ type: 'ota_progress', device: ev.node_id, data: { pct: ev.pct ?? 0, status: 'flashing' } });
+            broadcast({ type: 'ota_progress', device: otaDev, addr: ev.addr, data: { pct: ev.pct ?? 0, status: 'flashing' } });
           } else if (s === 'OTA_COMPLETE') {
-            broadcast({ type: 'ota_complete', device: ev.node_id });
+            broadcast({ type: 'ota_complete', device: otaDev, addr: ev.addr });
           } else if (s === 'OTA_SERIAL_WAIT') {
-            broadcast({ type: 'ota_progress', device: ev.node_id, data: { pct: 0, status: 'nvs_erase_waiting', message: ev.message || '' } });
+            broadcast({ type: 'ota_progress', device: otaDev, addr: ev.addr, data: { pct: 0, status: 'nvs_erase_waiting', message: ev.message || '' } });
           } else if (s === 'OTA_SERIAL_ERASING') {
-            broadcast({ type: 'ota_progress', device: ev.node_id, data: { pct: 0, status: 'nvs_erasing', message: 'NVS erasing…' } });
+            broadcast({ type: 'ota_progress', device: otaDev, addr: ev.addr, data: { pct: 0, status: 'nvs_erasing', message: 'NVS erasing…' } });
           } else if (['OTA_ERROR', 'OTA_BOOTLOADER_STUCK', 'OTA_NVS_MISMATCH'].includes(s)) {
-            broadcast({ type: 'ota_error', device: ev.node_id, data: { error: ev.message || s } });
+            broadcast({ type: 'ota_error', device: otaDev, addr: ev.addr, data: { error: ev.message || s } });
           }
         }
       } else if (ev.type === 'device_data') {

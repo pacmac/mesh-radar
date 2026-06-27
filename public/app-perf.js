@@ -88,6 +88,24 @@ export const perfMixin = {
     return this.perfTheoChipSnr(distKm) - actualSnr;
   },
 
+  perfMargin(actualSnr) {
+    if (actualSnr == null) return null;
+    return actualSnr - this.perfSfSnrLimitDb();
+  },
+
+  _perfMedian(values) {
+    const nums = (values || []).filter(v => Number.isFinite(v)).sort((a, b) => a - b);
+    if (!nums.length) return null;
+    const mid = Math.floor(nums.length / 2);
+    return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+  },
+
+  _perfSnr(raw) {
+    // Meshtastic uses signed quarter-dB units. -128 is a sentinel in some route rows.
+    if (raw == null || raw <= -127) return null;
+    return raw / 4;
+  },
+
   // ── Traceroute history ────────────────────────────────────────────────────
 
   async loadPerfLoraCfg() {
@@ -133,7 +151,18 @@ export const perfMixin = {
     else            this.perfAutoNodes = this.perfAutoNodes.filter(n => n !== num);
   },
 
-  loadPerfHistory() { /* no-op — history arrives via WS traceroute_history on connect; new results via route_discovered */ },
+  async loadPerfHistory() {
+    this.perfLoading = true;
+    try {
+      const rows = await fetchJSON('/traceroute_history?limit=1000');
+      this.perfHistory = Array.isArray(rows) ? rows : [];
+      this.$nextTick?.(() => this.updatePerfCharts());
+    } catch (e) {
+      console.warn('[perf] loadPerfHistory failed', e);
+    } finally {
+      this.perfLoading = false;
+    }
+  },
 
   // Distance (km) from home to a lat/lon pair using Haversine
   _haversineKm(lat, lon) {
@@ -156,132 +185,542 @@ export const perfMixin = {
     return this._haversineKm(lat, lon);
   },
 
+  _perfNodePoint(row, num) {
+    if (num == null) return null;
+    if (num === row.to_num && row.to_lat != null && row.to_lon != null) {
+      return { lat: row.to_lat, lon: row.to_lon };
+    }
+    const relay = row.relay_positions?.[num] ?? row.relay_positions?.[String(num)];
+    if (relay?.latitude_i != null && relay?.longitude_i != null) {
+      return { lat: relay.latitude_i / 1e7, lon: relay.longitude_i / 1e7 };
+    }
+    const node = this.nodes.find(n => n.num === num);
+    if (node?.position?.latitude_i != null && node?.position?.longitude_i != null) {
+      return { lat: node.position.latitude_i / 1e7, lon: node.position.longitude_i / 1e7 };
+    }
+    if (node?.lat != null && node?.lon != null) return { lat: node.lat, lon: node.lon };
+    return null;
+  },
+
+  _perfDistFromHomeToPoint(point) {
+    return point ? this._haversineKm(point.lat, point.lon) : null;
+  },
+
   // Enrich a history row with calculated fields
   perfEnrich(row) {
-    // Prefer position from DB join (to_lat/to_lon), fall back to live node list
-    const distKm = (row.to_lat != null && row.to_lon != null)
-      ? this._haversineKm(row.to_lat, row.to_lon)
-      : this.perfDistKm(row.to_num);
-    const direct  = (row.route?.length ?? 0) === 0;
+    const route = Array.isArray(row.route) ? row.route.filter(n => n != null && n !== 0xffffffff) : [];
+    const routeHops = route.length;
+    const direct = routeHops === 0;
+    const targetPoint = this._perfNodePoint(row, row.to_num);
+    const targetDistKm = this._perfDistFromHomeToPoint(targetPoint);
+    const firstHopNum = direct ? row.to_num : route[0];
+    const firstHopPoint = direct ? targetPoint : this._perfNodePoint(row, firstHopNum);
+    const firstHopDistKm = this._perfDistFromHomeToPoint(firstHopPoint);
+    const metricDistKm = direct ? targetDistKm : firstHopDistKm;
     // snr_towards / snr_back are stored in units of 0.25 dB (Meshtastic proto)
-    const snrTx   = row.snr_towards?.[0] != null ? row.snr_towards[0] / 4 : null;
+    const snrTx   = this._perfSnr(row.snr_towards?.[0]);
     const snrRx   = direct
-      ? (row.snr_back?.[0]  != null ? row.snr_back[0] / 4  : null)
-      : (row.snr_back?.[row.snr_back.length - 1] != null ? row.snr_back[row.snr_back.length - 1] / 4 : null);
-    const gapTx   = this.perfSnrGap(snrTx, distKm);
-    return { ...row, distKm, direct, snrTx, snrRx, gapTx };
+      ? this._perfSnr(row.snr_back?.[0])
+      : this._perfSnr(row.snr_back?.[row.snr_back.length - 1]);
+    const gapTx = this.perfSnrGap(snrTx, metricDistKm);
+    const marginTx = this.perfMargin(snrTx);
+    const validTx = snrTx != null && metricDistKm != null && metricDistKm > 0.1;
+    const confidence = !validTx ? 'low' : direct ? 'high' : 'medium';
+    const routeKind = direct ? 'direct' : 'first-hop';
+    return {
+      ...row,
+      route,
+      routeHops,
+      direct,
+      routeKind,
+      confidence,
+      validTx,
+      distKm: metricDistKm,
+      metricDistKm,
+      targetDistKm,
+      firstHopNum,
+      firstHopDistKm,
+      firstHopName: firstHopNum === row.to_num
+        ? (row.to_short_name || (this.nodeLabel ? this.nodeLabel(row.to_num) : row.to_num))
+        : (this.nodeLabel ? this.nodeLabel(firstHopNum) : firstHopNum),
+      distLabel: direct ? 'target' : 'first hop',
+      snrTx,
+      snrRx,
+      gapTx,
+      marginTx,
+    };
   },
 
-  // Aggregate efficiency score: mean SNR gap across recent direct first-hops
-  perfScore() {
-    const rows = this.perfHistory
+  perfValidRows(kind = 'all') {
+    return this.perfHistory
       .map(r => this.perfEnrich(r))
-      .filter(r => r.snrTx != null && r.distKm != null && r.distKm > 0.1);
-    if (!rows.length) return null;
-    const gaps = rows.map(r => this.perfSnrGap(r.snrTx, r.distKm)).filter(g => g != null);
-    if (!gaps.length) return null;
-    return gaps.reduce((a, b) => a + b, 0) / gaps.length;
+      .filter(r => r.validTx && (
+        kind === 'all' ||
+        (kind === 'direct' && r.direct) ||
+        (kind === 'first-hop' && !r.direct)
+      ));
   },
 
-  // ── SVG chart helpers ─────────────────────────────────────────────────────
-  // Chart area: x:[48,546] y:[10,400]  (viewBox 560x430)
-  _CHART: { x0: 48, x1: 546, y0: 10, y1: 400 },
-
-  // Determine axis ranges from data + theory
-  _perfChartRanges() {
-    const { x0, x1, y0, y1 } = this._CHART;
-    const enriched = this.perfHistory.map(r => this.perfEnrich(r)).filter(r => r.snrTx != null && r.distKm > 0);
-    const maxKm = enriched.length ? Math.max(...enriched.map(r => r.distKm), 5) * 1.1 : 50;
-
-    // Y axis: auto-scale to fit actual SNR, SF decode limit, and reference curve endpoints
-    const sfLimit    = this.perfSfSnrLimitDb();
-    const theoAtFar  = this.perfTheoChipSnr(maxKm);
-    const n3AtFar    = theoAtFar - 10 * Math.log10(maxKm);  // n=3 model at max distance
-    const actualSnrs = enriched.map(r => r.snrTx);
-
-    const rawMin = Math.min(...(actualSnrs.length ? actualSnrs : [0]), sfLimit - 3, n3AtFar);
-    const rawMax = Math.max(...(actualSnrs.length ? actualSnrs : [0]), theoAtFar, sfLimit + 5);
-
-    // Snap to 5-dB grid with a little padding
-    const snrMin = Math.floor((rawMin - 4) / 5) * 5;
-    const snrMax = Math.ceil ((rawMax + 4) / 5) * 5;
-
-    const xScale = (km)  => x0 + (km  / maxKm) * (x1 - x0);
-    const yScale = (snr) => y1 - ((snr - snrMin) / (snrMax - snrMin)) * (y1 - y0);
-    return { maxKm, snrMin, snrMax, xScale, yScale };
+  perfSummary(kind = 'all') {
+    const rows = this.perfValidRows(kind);
+    const gaps = rows.map(r => r.gapTx);
+    const snrs = rows.map(r => r.snrTx);
+    const margins = rows.map(r => r.marginTx);
+    return {
+      n: rows.length,
+      direct: rows.filter(r => r.direct).length,
+      relayed: rows.filter(r => !r.direct).length,
+      medianGap: this._perfMedian(gaps),
+      medianSnr: this._perfMedian(snrs),
+      medianMargin: this._perfMedian(margins),
+    };
   },
 
-  perfChartSnrToY(snr) {
-    return this._perfChartRanges().yScale(snr);
+  // Aggregate setup health: median direct headroom. Falls back to first-hop if no direct rows exist.
+  perfScore() {
+    const direct = this.perfSummary('direct');
+    if (direct.medianMargin != null) return direct.medianMargin;
+    return this.perfSummary('first-hop').medianMargin;
   },
 
-  perfChartYLabels() {
-    const { snrMin, snrMax, yScale } = this._perfChartRanges();
-    const { x0, x1, y0, y1 } = this._CHART;
-    const midY = (y0 + y1) / 2;
-    let s = '';
-    for (let snr = Math.ceil(snrMin / 5) * 5; snr <= snrMax; snr += 5) {
-      const y = yScale(snr);
-      s += `<line x1="${x0}" y1="${y.toFixed(1)}" x2="${x1}" y2="${y.toFixed(1)}" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>`;
-      s += `<text x="${x0 - 4}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="rgba(0,255,80,0.45)" font-family="monospace">${snr}</text>`;
+  perfScoreKind() {
+    return this.perfSummary('direct').medianMargin != null ? 'direct RF' : 'first hop';
+  },
+
+  perfSetExpert(v) {
+    this.perfExpert = !!v;
+    persistSet('perfExpert', this.perfExpert ? 'true' : 'false');
+    this.destroyPerfCharts();
+    this.$nextTick?.(() => this.initPerfCharts());
+  },
+
+  perfHealth(margin) {
+    if (margin == null) return { label: 'No data', desc: 'Need valid traceroute samples', cls: 'text-base-content/40', badge: 'badge-ghost' };
+    if (margin >= 20) return { label: 'Excellent', desc: 'Plenty of signal headroom', cls: 'text-success', badge: 'badge-success' };
+    if (margin >= 10) return { label: 'Good', desc: 'Comfortable margin', cls: 'text-success', badge: 'badge-success' };
+    if (margin >= 3)  return { label: 'Usable', desc: 'Works, but not much spare margin', cls: 'text-warning', badge: 'badge-warning' };
+    if (margin >= 0)  return { label: 'Fragile', desc: 'Close to the decode limit', cls: 'text-warning', badge: 'badge-warning' };
+    return { label: 'Failing', desc: 'Below the reliable decode limit', cls: 'text-error', badge: 'badge-error' };
+  },
+
+  perfHealthLabel(margin) {
+    return this.perfHealth(margin).label;
+  },
+
+  perfHealthDesc(margin) {
+    return this.perfHealth(margin).desc;
+  },
+
+  perfHealthClass(margin) {
+    return this.perfHealth(margin).cls;
+  },
+
+  perfHealthBadge(margin) {
+    return this.perfHealth(margin).badge;
+  },
+
+  perfHealthBars(margin, scale = 1.6) {
+    const health = this.perfHealth(margin);
+    const bars = margin == null ? 0
+      : margin >= 20 ? 4
+      : margin >= 10 ? 3
+      : margin >= 3  ? 2
+      : margin >= 0  ? 1
+      : 0;
+    const cls = margin == null ? 'text-base-content/30'
+      : margin >= 10 ? 'text-success'
+      : margin >= 0  ? 'text-warning'
+      : 'text-error';
+    const html = [3, 6, 9, 12].map((h, i) =>
+      `<i style="height:${Math.round(h * scale)}px;opacity:${bars > i ? 1 : 0.16}"></i>`
+    ).join('');
+    return `<span class="sig-bars perf-health-bars ${cls}" title="${health.label} · ${this.perfSignedDb(margin)} headroom">${html}</span>`;
+  },
+
+  perfSignedDb(v, digits = 1, compact = false) {
+    if (v == null || !Number.isFinite(v)) return '–';
+    const sign = v > 0 ? '+' : '';
+    return `${sign}${v.toFixed(digits)}${compact ? '' : ' '}dB`;
+  },
+
+  perfConfidence(kind = 'all') {
+    const n = this.perfSummary(kind).n;
+    if (n >= 40) return 'high';
+    if (n >= 12) return 'medium';
+    if (n > 0) return 'low';
+    return 'none';
+  },
+
+  perfTrendChange() {
+    const buckets = this.perfTrendBuckets().filter(b => b.margin != null);
+    if (buckets.length < 2) return null;
+    const first = buckets[0].margin;
+    const last = buckets[buckets.length - 1].margin;
+    return last - first;
+  },
+
+  perfTrendChangeLabel() {
+    const delta = this.perfTrendChange();
+    if (delta == null) return 'No baseline yet';
+    const sign = delta > 0 ? '+' : '';
+    if (Math.abs(delta) < 1) return `${sign}${delta.toFixed(1)} dB · little change`;
+    return `${sign}${delta.toFixed(1)} dB · ${delta > 0 ? 'better' : 'worse'}`;
+  },
+
+  perfTrendDirection() {
+    const delta = this.perfTrendChange();
+    if (delta == null) return 'baseline';
+    if (Math.abs(delta) < 1) return 'flat';
+    return delta > 0 ? 'better' : 'worse';
+  },
+
+  perfTrendDirectionBadge() {
+    const d = this.perfTrendDirection();
+    if (d === 'better') return 'badge-success';
+    if (d === 'worse') return 'badge-error';
+    if (d === 'flat') return 'badge-warning';
+    return 'badge-ghost';
+  },
+
+  perfHistoryTime(ts) {
+    if (!ts) return '–';
+    const d = new Date(ts * 1000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const startToday = new Date();
+    startToday.setHours(0, 0, 0, 0);
+    const startRow = new Date(d);
+    startRow.setHours(0, 0, 0, 0);
+    const dayDiff = Math.floor((startToday - startRow) / 86400000);
+    return `${hh}:${mm}${dayDiff > 0 ? ' -' + dayDiff : ''}`;
+  },
+
+  // ── uPlot chart helpers ───────────────────────────────────────────────────
+
+  _perfChartTheme() {
+    const dark = document.documentElement.getAttribute('data-theme') === 'business';
+    return {
+      text:    dark ? '#e5e7eb' : '#1f2937',
+      grid:    dark ? 'rgba(229,231,235,0.18)' : 'rgba(31,41,55,0.16)',
+      bg:      dark ? '#111827' : '#ffffff',
+      primary: dark ? '#22d3ee' : '#0891b2',
+      success: dark ? '#4ade80' : '#16a34a',
+      info:    dark ? '#60a5fa' : '#2563eb',
+      warning: dark ? '#fbbf24' : '#d97706',
+      error:   dark ? '#f87171' : '#dc2626',
+    };
+  },
+
+  _perfChartSize(el) {
+    const r = el?.getBoundingClientRect?.();
+    return {
+      width:  Math.max(360, Math.floor(r?.width  || 360)),
+      height: Math.max(260, Math.floor(r?.height || 260)),
+    };
+  },
+
+  _perfBaseUplotOptions(el, time = false) {
+    const c = this._perfChartTheme();
+    const { width, height } = this._perfChartSize(el);
+    return {
+      width, height,
+      cursor: { drag: { x: true, y: true }, focus: { prox: 24 } },
+      legend: { show: false },
+      scales: {
+        x: { time },
+        y: {
+          auto: true,
+          range: (u, min, max) => [
+            Math.min(Number.isFinite(min) ? min : 0, 0) - 2,
+            Math.max(Number.isFinite(max) ? max : 10, 10) + 2,
+          ],
+        },
+      },
+      axes: [
+        {
+          stroke: c.text,
+          grid: { stroke: c.grid, width: 1 },
+          ticks: { stroke: c.grid, width: 1 },
+          size: 30,
+          gap: 4,
+          font: '11px ui-monospace, SFMono-Regular, Menlo, monospace',
+          values: time ? (u, vals) => vals.map(v => this._perfTimeTick(v)) : null,
+        },
+        {
+          stroke: c.text,
+          grid: { stroke: c.grid, width: 1 },
+          ticks: { stroke: c.grid, width: 1 },
+          size: 42,
+          gap: 4,
+          font: '11px ui-monospace, SFMono-Regular, Menlo, monospace',
+        },
+      ],
+    };
+  },
+
+  _perfDrawSeries(u, yIdx, color, width = 3, dash = [], points = false) {
+    const xs = u.data?.[0] || [];
+    const ys = u.data?.[yIdx] || [];
+    const ctx = u.ctx;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = width * dpr;
+    ctx.setLineDash(dash.map(v => v * dpr));
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    let open = false;
+    ctx.beginPath();
+    for (let i = 0; i < xs.length; i++) {
+      const yv = ys[i];
+      if (!Number.isFinite(yv)) {
+        if (open) {
+          ctx.stroke();
+          ctx.beginPath();
+          open = false;
+        }
+        continue;
+      }
+      const x = u.valToPos(xs[i], 'x', true);
+      const y = u.valToPos(yv, 'y', true);
+      if (!open) {
+        ctx.moveTo(x, y);
+        open = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
     }
-    s += `<text x="10" y="${midY.toFixed(1)}" text-anchor="middle" font-size="9" fill="rgba(0,255,80,0.30)" font-family="monospace" transform="rotate(-90,10,${midY.toFixed(1)})">SNR (dB)</text>`;
-    return s;
+    if (open) ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (points) {
+      for (let i = 0; i < xs.length; i++) {
+        const yv = ys[i];
+        if (!Number.isFinite(yv)) continue;
+        const x = u.valToPos(xs[i], 'x', true);
+        const y = u.valToPos(yv, 'y', true);
+        ctx.beginPath();
+        ctx.arc(x, y, 3.5 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
   },
 
-  perfChartXLabels() {
-    const { maxKm, xScale } = this._perfChartRanges();
-    const { y0, y1 } = this._CHART;
-    const steps = maxKm > 200 ? 5 : maxKm > 50 ? 6 : 5;
-    let s = '';
-    for (let i = 0; i <= steps; i++) {
-      const km = (i / steps) * maxKm;
-      const x  = xScale(km);
-      s += `<line x1="${x.toFixed(1)}" y1="${y0}" x2="${x.toFixed(1)}" y2="${y1}" stroke="rgba(0,255,80,0.07)" stroke-width="0.6" stroke-dasharray="3,3"/>`;
-      s += `<text x="${x.toFixed(1)}" y="${(y1 + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="rgba(0,255,80,0.45)" font-family="monospace">${km.toFixed(0)}</text>`;
-    }
-    s += `<text x="297" y="426" text-anchor="middle" font-size="9" fill="rgba(0,255,80,0.30)" font-family="monospace">Distance (km)</text>`;
-    return s;
+  _perfDrawHeadroomBands(u) {
+    const ctx = u.ctx;
+    if (!u.bbox) return;
+    const left = u.bbox.left;
+    const width = u.bbox.width;
+    const yMin = u.scales.y.min;
+    const yMax = u.scales.y.max;
+    const band = (from, to, color) => {
+      const lo = Math.max(from, yMin);
+      const hi = Math.min(to, yMax);
+      if (hi <= yMin || lo >= yMax || hi <= lo) return;
+      const y1 = u.valToPos(hi, 'y', true);
+      const y2 = u.valToPos(lo, 'y', true);
+      ctx.fillStyle = color;
+      ctx.fillRect(left, y1, width, y2 - y1);
+    };
+    ctx.save();
+    band(yMin, 0, 'rgba(248,113,113,0.16)');
+    band(0, 3, 'rgba(251,191,36,0.16)');
+    band(3, 10, 'rgba(250,204,21,0.10)');
+    band(10, yMax, 'rgba(74,222,128,0.08)');
+    ctx.restore();
   },
 
-  // Free-space theoretical chip SNR curve (n=2, best case)
-  perfChartFreeCurve() {
-    const { maxKm, xScale, yScale, snrMax } = this._perfChartRanges();
-    const pts = [];
-    for (let i = 1; i <= 80; i++) {
-      const d   = (i / 80) * maxKm;
-      const snr = Math.min(snrMax, this.perfTheoChipSnr(d));
-      pts.push(`${xScale(d).toFixed(1)},${yScale(snr).toFixed(1)}`);
-    }
-    return pts.join(' ');
+  _perfDrawTrend(u) {
+    const c = this._perfChartTheme();
+    this._perfDrawHeadroomBands(u);
+    this._perfDrawSeries(u, 1, c.success, 3, [], true);
+    this._perfDrawSeries(u, 2, c.info, 3, [8, 5], true);
   },
 
-  // Log-distance n=3 model curve: FSPL + 10·log10(d) extra loss vs free-space
-  perfChartRealCurve() {
-    const { maxKm, xScale, yScale, snrMax } = this._perfChartRanges();
-    const pts = [];
-    for (let i = 1; i <= 80; i++) {
-      const d   = (i / 80) * maxKm;
-      const snr = Math.min(snrMax, this.perfTheoChipSnr(d) - 10 * Math.log10(d));
-      pts.push(`${xScale(d).toFixed(1)},${yScale(snr).toFixed(1)}`);
+  _perfDrawScatter(u) {
+    const c = this._perfChartTheme();
+    this._perfDrawHeadroomBands(u);
+    if (this.perfExpert) {
+      this._perfDrawSeries(u, 1, c.primary, 3);
+      this._perfDrawSeries(u, 2, c.warning, 2, [8, 5]);
     }
-    return pts.join(' ');
+    this._perfDrawSeries(u, 3, c.error, 2, [4, 6]);
+    this._perfDrawSeries(u, 4, c.success, 0, [], true);
+    this._perfDrawSeries(u, 5, c.info, 0, [], true);
   },
 
-  perfChartScatter() {
-    const { xScale, yScale, snrMin, snrMax, maxKm } = this._perfChartRanges();
-    const enriched = this.perfHistory.map(r => this.perfEnrich(r)).filter(r => r.snrTx != null && r.distKm > 0);
-    let s = '';
-    for (const r of enriched) {
-      const x   = xScale(Math.min(r.distKm, maxKm));
-      const snr = Math.max(snrMin, Math.min(snrMax, r.snrTx));
-      const y   = yScale(snr);
-      const gap = r.gapTx ?? 99;
-      // gap = excess path loss above FSPL: <15 dB good, <35 dB ok, ≥35 dB heavy terrain
-      const col = gap < 15 ? 'rgba(74,222,128,0.90)' : gap < 35 ? 'rgba(251,191,36,0.90)' : 'rgba(248,113,113,0.85)';
-      const node = r.to_short_name || (this.nodeLabel ? this.nodeLabel(r.to_num) : r.to_num);
-      s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" fill="${col}"><title>${node} · ${r.distKm.toFixed(1)}km · SNR ${r.snrTx.toFixed(1)}dB · excess ${gap.toFixed(1)}dB</title></circle>`;
+  _perfTimeTick(ts) {
+    const d = new Date(ts * 1000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    if ((this.perfTrendWindowHours ?? 24) > 24) {
+      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${hh}:${mm}`;
     }
-    return s;
+    return `${hh}:${mm}`;
+  },
+
+  perfTrendSetWindow(hours) {
+    this.perfTrendWindowHours = hours;
+    persistSet('perfTrendWindowHours', String(hours));
+  },
+
+  perfTrendRows() {
+    const rows = this.perfValidRows('all');
+    if (!rows.length) return [];
+    const maxTs = Math.max(...rows.map(r => r.ts));
+    const cutoff = maxTs - ((this.perfTrendWindowHours ?? 24) * 3600);
+    return rows.filter(r => r.ts >= cutoff);
+  },
+
+  _perfTrendBucketSecs() {
+    const hours = this.perfTrendWindowHours ?? 24;
+    if (hours <= 4) return 15 * 60;
+    if (hours <= 8) return 30 * 60;
+    if (hours <= 24) return 60 * 60;
+    return 3 * 60 * 60;
+  },
+
+  perfTrendBuckets() {
+    const bucketSecs = this._perfTrendBucketSecs();
+    const buckets = new Map();
+    for (const r of this.perfTrendRows()) {
+      if (!r.ts) continue;
+      const bucket = Math.floor(r.ts / bucketSecs) * bucketSecs;
+      const cur = buckets.get(bucket) || { ts: bucket, direct: [], firstHop: [], all: [] };
+      (r.direct ? cur.direct : cur.firstHop).push(r.marginTx);
+      cur.all.push(r.marginTx);
+      buckets.set(bucket, cur);
+    }
+    return [...buckets.values()].sort((a, b) => a.ts - b.ts).map(b => ({
+      ts: b.ts,
+      margin: this._perfMedian(b.all),
+      directMargin: this._perfMedian(b.direct),
+      firstHopMargin: this._perfMedian(b.firstHop),
+      directN: b.direct.length,
+      firstHopN: b.firstHop.length,
+    }));
+  },
+
+  perfTrendUplotData() {
+    const buckets = this.perfTrendBuckets();
+    return [
+      buckets.map(b => b.ts),
+      buckets.map(b => b.directMargin),
+      buckets.map(b => b.firstHopMargin),
+    ];
+  },
+
+  perfScatterUplotData() {
+    const rows = this.perfValidRows('all');
+    const maxKm = rows.length ? Math.max(...rows.map(r => r.metricDistKm), 5) * 1.1 : 50;
+    const entries = [];
+    for (let i = 0; i <= 96; i++) {
+      const km = Math.max(0.1, (i / 96) * maxKm);
+      entries.push({ x: km });
+    }
+    rows.forEach((r, idx) => {
+      // Tiny deterministic offset avoids duplicate x collapse while remaining visually invisible.
+      entries.push({
+        x: r.metricDistKm + (idx * 1e-6),
+        direct: r.direct ? r.marginTx : null,
+        firstHop: r.direct ? null : r.marginTx,
+      });
+    });
+    entries.sort((a, b) => a.x - b.x);
+    return [
+      entries.map(e => e.x),
+      entries.map(e => this.perfTheoChipSnr(e.x) - this.perfSfSnrLimitDb()),
+      entries.map(e => this.perfTheoChipSnr(e.x) - 10 * Math.log10(e.x) - this.perfSfSnrLimitDb()),
+      entries.map(() => 0),
+      entries.map(e => e.direct   ?? null),
+      entries.map(e => e.firstHop ?? null),
+    ];
+  },
+
+  _perfTrendOptions(el) {
+    const c = this._perfChartTheme();
+    return {
+      ...this._perfBaseUplotOptions(el, true),
+      hooks: { draw: [u => this._perfDrawTrend(u)] },
+      series: [
+        {},
+        { label: 'Direct RF', stroke: c.success, width: 4, spanGaps: true, points: { show: true, size: 7, width: 2, stroke: c.success, fill: c.bg } },
+        { label: 'First hop', stroke: c.info, width: 4, spanGaps: true, points: { show: true, size: 7, width: 2, stroke: c.info, fill: c.bg } },
+      ],
+    };
+  },
+
+  _perfScatterOptions(el) {
+    const c = this._perfChartTheme();
+    return {
+      ...this._perfBaseUplotOptions(el, false),
+      hooks: { draw: [u => this._perfDrawScatter(u)] },
+      series: [
+        {},
+        { label: 'Ideal free-space', show: this.perfExpert, stroke: c.primary, width: 4, points: { show: false } },
+        { label: 'Typical rural', show: this.perfExpert, stroke: c.warning, width: 3, dash: [8, 5], points: { show: false } },
+        { label: 'SF limit', stroke: c.error, width: 3, dash: [4, 6], points: { show: false } },
+        { label: 'Direct RF', stroke: c.success, width: 0, points: { show: true, size: 8, width: 2, stroke: c.success, fill: c.success } },
+        { label: 'First hop', stroke: c.info, width: 0, points: { show: true, size: 8, width: 2, stroke: c.info, fill: c.info } },
+      ],
+    };
+  },
+
+  initPerfCharts() {
+    if (this.tab !== 'perf') return;
+    const trendEl = this.$refs?.perfTrendChart;
+    const scatterEl = this.$refs?.perfScatterChart;
+    if (!trendEl || !scatterEl) return;
+    if (!window.uPlot) {
+      const msg = '<div class="perf-chart-error">uPlot failed to load</div>';
+      trendEl.innerHTML = msg;
+      scatterEl.innerHTML = msg;
+      console.warn('[perf] uPlot is not loaded');
+      return;
+    }
+
+    if (!this._perfCharts.trend) {
+      trendEl.innerHTML = '';
+      this._perfCharts.trend = new window.uPlot(this._perfTrendOptions(trendEl), this.perfTrendUplotData(), trendEl);
+    }
+    if (!this._perfCharts.scatter) {
+      scatterEl.innerHTML = '';
+      this._perfCharts.scatter = new window.uPlot(this._perfScatterOptions(scatterEl), this.perfScatterUplotData(), scatterEl);
+    }
+
+    if (!this._perfResizeObserver) {
+      this._perfResizeObserver = new ResizeObserver(() => this.updatePerfCharts());
+      this._perfResizeObserver.observe(trendEl);
+      this._perfResizeObserver.observe(scatterEl);
+    }
+    this.updatePerfCharts();
+  },
+
+  updatePerfCharts() {
+    if (this.tab !== 'perf') return;
+    if (!this._perfCharts?.trend || !this._perfCharts?.scatter) {
+      this.initPerfCharts();
+      return;
+    }
+    const trendEl = this.$refs?.perfTrendChart;
+    const scatterEl = this.$refs?.perfScatterChart;
+    if (!trendEl || !scatterEl) return;
+
+    this._perfCharts.trend.setSize(this._perfChartSize(trendEl));
+    this._perfCharts.trend.setData(this.perfTrendUplotData());
+    this._perfCharts.scatter.setSize(this._perfChartSize(scatterEl));
+    this._perfCharts.scatter.setData(this.perfScatterUplotData());
+  },
+
+  destroyPerfCharts() {
+    this._perfCharts?.trend?.destroy();
+    this._perfCharts?.scatter?.destroy();
+    this._perfCharts = {};
+    this._perfResizeObserver?.disconnect();
+    this._perfResizeObserver = null;
   },
 };

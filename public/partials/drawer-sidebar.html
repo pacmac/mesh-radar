@@ -68,8 +68,8 @@
             </span>
             <template x-if="perfScore() != null">
               <span class="badge badge-xs font-mono"
-                    :class="perfScore() < 5 ? 'badge-success' : perfScore() < 15 ? 'badge-warning' : 'badge-error'"
-                    x-text="(perfScore() > 0 ? '-' : '+') + Math.abs(perfScore()).toFixed(1) + 'dB'"></span>
+                    :class="perfHealthBadge(perfScore())"
+                    x-text="perfSignedDb(perfScore(), 1, true)"></span>
             </template>
           </a>
         </li>

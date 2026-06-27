@@ -187,6 +187,21 @@
                                   x-text="f.name"></span>
                             <!-- size -->
                             <span class="text-xs opacity-30 shrink-0" x-text="(f.size/1048576).toFixed(1)+'M'"></span>
+                            <!-- prepare NVS (ESP32 only: .bin with a version number) -->
+                            <template x-if="f.version && f.ota_ready">
+                              <button class="btn btn-xs shrink-0"
+                                      :class="f.prepared
+                                        ? 'btn-ghost opacity-30 hover:opacity-60'
+                                        : 'btn-ghost text-info opacity-60 hover:opacity-100'"
+                                      :title="f.prepared ? 'NVS prepared (v' + f.version + ')' : 'Prepare NVS hash for v' + f.version"
+                                      :disabled="opLoading('otaPrepare_' + dev.node_id + '_' + f.name)"
+                                      :class="opLoading('otaPrepare_' + dev.node_id + '_' + f.name) ? 'loading loading-spinner' : ''"
+                                      @click.stop="prepareOtaVersion(dev.node_id, f.name)">
+                                <template x-if="!opLoading('otaPrepare_' + dev.node_id + '_' + f.name)">
+                                  <span x-text="f.prepared ? '✓' : '⚙'"></span>
+                                </template>
+                              </button>
+                            </template>
                             <!-- delete -->
                             <button class="btn btn-xs btn-ghost text-error opacity-40 hover:opacity-100 shrink-0"
                                     title="Delete file"

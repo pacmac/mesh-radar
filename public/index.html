@@ -16,8 +16,10 @@
 </script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><text y=%22.9em%22 font-size=%2220%22>📡</text></svg>">
 <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+<link href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<script type="module" src="app.js?v=20260624a"></script>
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+<script type="module" src="app.js?v=20260627headroom4"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 <style>
   /* Reusable node avatar — set size via --sz custom property or modifier class.
@@ -41,7 +43,7 @@
   .node-avatar-lg { --sz: 2.75rem; }
   [x-cloak] { display: none !important; }
 </style>
-<link rel="stylesheet" href="style.css?v=20260619">
+<link rel="stylesheet" href="style.css?v=20260627headroom4">
 </head>
 <body class="h-screen overflow-hidden bg-base-200">
 
@@ -151,12 +153,12 @@
           </div>
         </div>
         <!-- Per-device not-ready indicator — all devices shown in header -->
-        <template x-for="dev in availableDevices.filter(d => devBleState(d.node_id) && devBleState(d.node_id) !== 'ready' && devBleState(d.node_id) !== 'offline')" :key="dev.addr">
-          <div class="tooltip tooltip-bottom" :data-tip="dev.node_id + ' — ' + devBleLabel(dev.node_id)"
+        <template x-for="dev in availableDevices.filter(d => { const k = d.node_id ?? d.addr; const s = devBleState(k); return s && s !== 'ready' && s !== 'offline'; })" :key="dev.addr">
+          <div class="tooltip tooltip-bottom" :data-tip="(dev.node_id ?? dev.addr) + ' — ' + devBleLabel(dev.node_id ?? dev.addr)"
                @click="setNav('devices')" style="cursor:pointer">
             <div class="badge badge-warning gap-1 text-xs animate-pulse">
-              <span class="font-mono" x-text="deviceLabel(dev.node_id)"></span>
-              <span x-text="devBleLabel(dev.node_id)"></span>
+              <span class="font-mono" x-text="deviceLabel(dev.node_id ?? dev.addr)"></span>
+              <span x-text="devBleLabel(dev.node_id ?? dev.addr)"></span>
             </div>
           </div>
         </template>
@@ -169,10 +171,10 @@
         <div class="badge badge-sm badge-info" x-text="nodeCount + ' nodes'"></div>
         <template x-if="perfScore() != null">
           <div class="badge badge-sm font-mono cursor-pointer"
-               :class="perfScore() < 5 ? 'badge-success' : perfScore() < 15 ? 'badge-warning' : 'badge-error'"
-               :title="'RF efficiency: ' + Math.abs(perfScore()).toFixed(1) + ' dB below theoretical'"
+               :class="perfHealthBadge(perfScore())"
+               :title="'Signal headroom: ' + perfSignedDb(perfScore()) + ' above decode limit'"
                @click="setNav('perf')"
-               x-text="'RF ' + (perfScore() > 0 ? '-' : '+') + Math.abs(perfScore()).toFixed(1) + 'dB'"></div>
+               x-text="'RF ' + perfSignedDb(perfScore(), 1, true)"></div>
         </template>
         <div class="badge badge-sm" :class="wsConnected ? 'badge-primary' : 'badge-ghost'" x-text="wsConnected ? 'live' : 'offline'"></div>
       </div>

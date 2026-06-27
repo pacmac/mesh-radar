@@ -9,7 +9,7 @@ import { rotatorMixin }   from './app-rotator.js';
 import { radarMixin }     from './app-radar.js';
 import { messagesMixin }  from './app-messages.js';
 import { rangeMixin }     from './app-range.js';
-import { perfMixin }      from './app-perf.js';
+import { perfMixin }      from './app-perf.js?v=20260627headroom4';
 import { telemetryMixin } from './app-telemetry.js';
 import { configMixin }      from './app-config.js';
 import { componentsMixin }  from './app-components.js';
@@ -214,7 +214,11 @@ function dashboard() {
     perfLoading:          false,
     perfAutoNodes:        JSON.parse(persistGet('perfAutoNodes', '[]')),
     perfAutoIntervalMin:  parseInt(persistGet('perfAutoIntervalMin', '5'), 10) || 5,
+    perfTrendWindowHours: parseInt(persistGet('perfTrendWindowHours', '24'), 10) || 24,
+    perfExpert:           persistGet('perfExpert', 'false') === 'true',
     _perfAutoTimer:       null,
+    _perfCharts:          {},
+    _perfResizeObserver:  null,
 
     // -- Range test -----------------------------------------------------------
     rangeLog:     [],
@@ -286,6 +290,13 @@ function dashboard() {
       this.$watch('envWindow',         () => this.loadEnvHistory(this.activeNodeId));
       this.$watch('rangeNodeFilter',   () => { this._rangeStats = null; this._rangeChartCache = null; });
       this.$watch('rangeRxFilter',     () => { this._rangeStats = null; this._rangeChartCache = null; this.rangeNodeFilter = ''; });
+      this.$watch('tab',               t => { if (t === 'perf') this.$nextTick(() => this.initPerfCharts()); });
+      this.$watch('perfHistory',       () => this.$nextTick(() => this.updatePerfCharts()));
+      this.$watch('perfTrendWindowHours', () => this.$nextTick(() => this.updatePerfCharts()));
+      this.$watch('loraCfg',           () => this.$nextTick(() => this.updatePerfCharts()));
+      this.$watch('homePos',           () => this.$nextTick(() => this.updatePerfCharts()));
+      this.$watch('nodes',             () => this.$nextTick(() => this.updatePerfCharts()));
+      this.$watch('deviceConfigs',     () => this.$nextTick(() => this.updatePerfCharts()));
       this.$watch('tiltPeak', peak => {
         const stops = [0.25, 0.5, 1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90];
         const maxRing = stops.find(v => v >= Math.max(peak * 1.25, 0.5)) ?? 90;
@@ -302,7 +313,7 @@ function dashboard() {
       if (this.tab === 'radar') this.$nextTick(() => this.initRadar());
       else if (this.tab === 'cfg') this.switchCfgTab(this.cfgTab);
       else if (this.tab === 'range') { this.loadRangeTest(); this.loadRangeTimer(); }
-      else if (this.tab === 'perf') { this.loadPerfLoraCfg(); this.loadPerfHistory(); }
+      else if (this.tab === 'perf') { this.loadPerfLoraCfg(); this.loadPerfHistory(); this.$nextTick(() => this.initPerfCharts()); }
     },
   };
 }

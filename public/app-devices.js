@@ -395,6 +395,14 @@ export const devicesMixin = {
     }
   },
 
+  async prepareOtaVersion(nodeId, filename) {
+    const key = 'otaPrepare_' + nodeId + '_' + filename;
+    await this.asyncOp(key, async () => {
+      await fetchJSON('/ota/firmware/prepare', 'POST', { node_id: nodeId, filename });
+      await this.loadOtaFiles(nodeId);
+    });
+  },
+
   async deleteOtaFile(nodeId, filename) {
     if (!confirm(`Delete ${filename}?\n\nThis cannot be undone.`)) return;
     await this.asyncOp('otaFiles_' + nodeId, async () => {
