@@ -58,6 +58,8 @@ SKIP = {
     # Fixed position changes radio state (skip unless explicitly requested)
     "fixed_position_push",
     "fixed_position_clear",
+    # Home position stores real lat/lon — example_payload would overwrite with a placeholder
+    "home_position",
     # Channel config changes live radio channel (skip unless explicitly requested)
     "channel_config",
     # Alert test requires SMTP to be configured

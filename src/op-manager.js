@@ -76,7 +76,7 @@ const REGISTRY = new Map([
     method: 'PUT', endpoint: p => `/device-config/${p.target}`,
     read_back_path: p => `/device-config/${p.target}`,
     match_fields: ['fixed_lat', 'fixed_lon'],
-    example_payload: { target: '!2687afb1', values: { fixed_lat: 51.5074, fixed_lon: -0.1278 } },
+    example_payload: { target: null, values: { fixed_lat: null, fixed_lon: null } },
     timeout_s: 5, reboot: false,
   }],
   ['bridge_config', {
