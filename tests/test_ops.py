@@ -15,8 +15,9 @@ import time
 import requests
 import websockets
 
-BASE = os.environ.get("NODE_DASH_URL", "http://localhost:8000")
-WS   = BASE.replace("http", "ws") + "/events"
+BASE     = os.environ.get("NODE_DASH_URL", "http://localhost:8000")
+MESH_GW  = os.environ.get("MESH_GW_URL", "http://localhost:8001")
+WS       = BASE.replace("http", "ws") + "/events"
 
 # Ops skipped because they reboot the radio (always or conditionally with the
 # example values), affect live BLE state, require hardware not present, or have
@@ -66,6 +67,27 @@ SKIP = {
 TIMEOUT_S = int(os.environ.get("OP_TIMEOUT", "20"))
 
 
+async def _wait_device_ready(node_id, timeout_s=60):
+    """Wait for the device to be READY in mesh-gw.
+
+    Sleeps 5s first to let any firmware-triggered reconnect begin, then polls
+    mesh-gw status every 2s until READY or timeout. One full reconnect cycle
+    typically takes ~7s (RECONNECTING→DISCOVERING→SYNCING→READY).
+    """
+    await asyncio.sleep(5.0)
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            data = requests.get(f"{MESH_GW}/status", timeout=3).json()
+            for dev in data.get("devices", []):
+                if dev.get("node_id") == node_id and dev.get("state") == "READY":
+                    return True
+        except Exception:
+            pass
+        await asyncio.sleep(2.0)
+    return False
+
+
 def _infer_section(kind):
     """Infer the config section name from a Radio op kind, for pre-read merge."""
     if kind.startswith("radio_config_"):
@@ -98,8 +120,11 @@ def resolve_target(example_target, active_node_id):
     return example_target
 
 
-async def run_op(ws, kind, target, values, timeout_s):
-    """Submit op and wait for terminal WS event. Returns (state, error)."""
+_TRANSIENT_BLE_ERRORS = ("Service Discovery has not been performed yet", "UNLIKELY_ERROR", "Device not connected")
+
+
+async def _submit_op(ws, kind, target, values, timeout_s):
+    """Submit one op and wait for terminal WS event. Returns (state, error_str)."""
     r = requests.post(
         f"{BASE}/ops",
         json={"kind": kind, "target": target, "payload": {"values": values}},
@@ -123,6 +148,17 @@ async def run_op(ws, kind, target, values, timeout_s):
         except asyncio.TimeoutError:
             pass
     return "timeout", f"no terminal event within {timeout_s}s"
+
+
+async def run_op(ws, kind, target, values, timeout_s, node_id=None):
+    """Submit op with one automatic retry on transient BLE errors."""
+    state, err = await _submit_op(ws, kind, target, values, timeout_s)
+    if state == "error" and err and any(t in err for t in _TRANSIENT_BLE_ERRORS):
+        # BLE transient error — wait for device to return READY then retry once
+        if node_id:
+            await _wait_device_ready(node_id)
+        state, err = await _submit_op(ws, kind, target, values, timeout_s)
+    return state, err
 
 
 async def main():
@@ -169,8 +205,12 @@ async def main():
                     pass
 
             t0 = time.time()
-            state, err = await run_op(ws, kind, target, values, TIMEOUT_S)
+            state, err = await run_op(ws, kind, target, values, TIMEOUT_S, node_id=active_node)
             elapsed = time.time() - t0
+            # After Radio writes, wait for device to return READY (mqtt write
+            # triggers a broker reconnect that briefly drops the BLE state).
+            if op.get("class") == "Radio" and active_node:
+                await _wait_device_ready(active_node)
 
             ok = state == "success"
             marker = "✓" if ok else "✗"

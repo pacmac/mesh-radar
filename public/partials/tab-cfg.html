@@ -257,7 +257,7 @@
               <div class="card-body py-3">
                 <div id="bridge_cfg_form"></div>
                 <div class="flex items-center gap-2 mt-3" x-show="bridgeConfigSchema">
-                  <button class="btn btn-sm btn-primary" @click="saveBridgeConfig()">Save</button>
+                  <button class="btn btn-sm btn-primary" data-op-kind="bridge_config" @click="saveBridgeConfig()">Save</button>
                   <span class="text-success text-sm" x-show="bridgeConfigSaved" x-transition>Saved ✓</span>
                   <span class="text-error text-sm" x-show="bridgeConfigError" x-text="bridgeConfigError"></span>
                 </div>
@@ -480,7 +480,7 @@
 
             <!-- Save -->
             <div class="flex items-center gap-2">
-              <button class="btn btn-sm btn-primary" @click="saveRadarCfg()" :disabled="radarCfgSaving">
+              <button class="btn btn-sm btn-primary" data-op-kind="radar_config" @click="saveRadarCfg()" :disabled="radarCfgSaving">
                 <span x-show="radarCfgSaving" class="loading loading-spinner loading-xs"></span>
                 Save all
               </button>

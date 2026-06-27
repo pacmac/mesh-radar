@@ -100,6 +100,13 @@ const REGISTRY = new Map([
     example_payload: { target: 'node_offline', values: { enabled: true, threshold: 0, cooldown_minutes: 60 } },
     timeout_s: 5, reboot: false,
   }],
+  ['radar_config', {
+    class: 'Local', description: 'Radar display settings',
+    method: 'PUT', endpoint: () => '/config/radar',
+    read_back_path: () => '/config/radar', match_fields: [],
+    example_payload: { target: null, values: { display: { max_range_km: 100, log_scale: false, crosshair: true } } },
+    timeout_s: 5, reboot: false,
+  }],
   ['auto_purge_settings', {
     class: 'Local', description: 'Scheduled auto-purge settings',
     method: 'PUT', endpoint: () => '/auto-purge',
