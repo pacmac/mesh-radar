@@ -220,7 +220,7 @@ function dashboard() {
     perfLoading:          false,
     perfAutoNodes:        JSON.parse(persistGet('perfAutoNodes', '[]')),
     perfAutoIntervalMin:  parseInt(persistGet('perfAutoIntervalMin', '5'), 10) || 5,
-    perfTrendWindowHours: parseInt(persistGet('perfTrendWindowHours', '24'), 10) || 24,
+    perfTrendWindowHours: parseInt(persistGet('perfTrendWindowHours', '72'), 10) || 72,
     perfExpert:           persistGet('perfExpert', 'false') === 'true',
     _perfAutoTimer:       null,
     _perfCharts:          {},

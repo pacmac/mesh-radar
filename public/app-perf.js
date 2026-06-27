@@ -546,7 +546,7 @@ export const perfMixin = {
     const d = new Date(ts * 1000);
     const hh = String(d.getHours()).padStart(2, '0');
     const mm = String(d.getMinutes()).padStart(2, '0');
-    if ((this.perfTrendWindowHours ?? 24) > 24) {
+    if ((this.perfTrendWindowHours ?? 72) > 24) {
       return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${hh}:${mm}`;
     }
     return `${hh}:${mm}`;
@@ -561,12 +561,12 @@ export const perfMixin = {
     const rows = this.perfValidRows('all');
     if (!rows.length) return [];
     const maxTs = Math.max(...rows.map(r => r.ts));
-    const cutoff = maxTs - ((this.perfTrendWindowHours ?? 24) * 3600);
+    const cutoff = maxTs - ((this.perfTrendWindowHours ?? 72) * 3600);
     return rows.filter(r => r.ts >= cutoff);
   },
 
   _perfTrendBucketSecs() {
-    const hours = this.perfTrendWindowHours ?? 24;
+    const hours = this.perfTrendWindowHours ?? 72;
     if (hours <= 4) return 15 * 60;
     if (hours <= 8) return 30 * 60;
     if (hours <= 24) return 60 * 60;
