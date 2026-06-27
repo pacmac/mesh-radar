@@ -410,6 +410,22 @@ app.put('/auto-purge', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/purge-nodedb', async (req, res) => {
+  const { device: nodeId } = req.body;
+  if (!nodeId) return res.status(400).json({ error: 'device required' });
+  try {
+    const result = await bridge.post(`/${nodeId}/purge_nodedb`, {});
+    const nodeCount = result?.node_count ?? null;
+    const ts = Math.floor(Date.now() / 1000);
+    setConfig(`auto_purge_last_run_ts_${nodeId}`, ts);
+    broadcastAll({ type: 'auto_purge_complete', device: nodeId, ts, node_count: nodeCount });
+    res.json({ ok: true, node_count: nodeCount });
+  } catch (e) {
+    broadcastAll({ type: 'auto_purge_error', device: nodeId, error: e.message });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // -- send text message: forward to bridge, then persist our own TX in the DB --
 
 app.post('/:nodeId/messages', async (req, res) => {
@@ -781,11 +797,15 @@ rotator.on('point_target', (data) => {
 async function runAutoPurge(nodeId) {
   console.log(`[auto-purge] wiping nodedb on ${nodeId}`);
   try {
-    await bridge.post(`/${nodeId}/admin`, { message: { nodedb_reset: true }, want_response: false });
+    const result = await bridge.post(`/${nodeId}/purge_nodedb`, {});
+    const nodeCount = result?.node_count ?? null;
+    if (nodeCount !== null && nodeCount > 1) {
+      console.warn(`[auto-purge] ${nodeId}: purge complete but node_count=${nodeCount} (expected 1)`);
+    }
     const ts = Math.floor(Date.now() / 1000);
     setConfig(`auto_purge_last_run_ts_${nodeId}`, ts);
-    broadcastAll({ type: 'auto_purge_complete', device: nodeId, ts });
-    console.log(`[auto-purge] done`);
+    broadcastAll({ type: 'auto_purge_complete', device: nodeId, ts, node_count: nodeCount });
+    console.log(`[auto-purge] done — node_count=${nodeCount}`);
   } catch (e) {
     console.error(`[auto-purge] failed on ${nodeId}:`, e.message);
     broadcastAll({ type: 'auto_purge_error', device: nodeId, error: e.message });
