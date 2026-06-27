@@ -26,6 +26,7 @@ import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
+import { OpManager } from './op-manager.js';
 
 const PORT = process.env.PORT || 8000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
@@ -572,6 +573,12 @@ app.put('/tilt_cal', (req, res) => {
   res.json({ ok: true });
 });
 
+// -- OpManager (must register before static middleware to avoid catch-all) ---
+// broadcastAll is defined after wss; forward-reference via closure.
+let _broadcast = () => {};
+const opManager = new OpManager((msg) => _broadcast(msg));
+app.use('/ops', opManager.router);  // POST /ops, GET /ops/manifest, GET /ops/:op_id
+
 // -- static files -----------------------------------------------------------
 app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
 
@@ -595,6 +602,7 @@ function broadcastAll(msg) {
     if (client.readyState === 1) client.send(data);
   }
 }
+_broadcast = broadcastAll;  // wire forward reference
 
 server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);
