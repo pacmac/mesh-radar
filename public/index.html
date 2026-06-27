@@ -88,6 +88,46 @@
        x-text="(opPct(activeFlashKey) ?? 0) + '%'"></p>
   </div>
 
+  <!-- ===================== NEED_PAIR PIN OVERLAY ===================== -->
+  <div x-show="needPairAddr"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-base-300/80 backdrop-blur-sm">
+    <div class="card bg-base-100 shadow-xl w-80 max-w-full">
+      <div class="card-body gap-3">
+        <!-- Title -->
+        <h2 class="card-title text-base-content">Bluetooth Pairing</h2>
+        <p class="text-base-content/60 text-sm">
+          Enter the 6-digit PIN shown on the device
+          <span class="font-mono font-semibold text-base-content/80" x-text="needPairAddr ? needPairAddr.slice(-8) : ''"></span>.
+        </p>
+        <!-- PIN input -->
+        <input type="text" inputmode="numeric" maxlength="6" placeholder="000000"
+               x-model="needPairPin"
+               :disabled="needPairBusy"
+               @keydown.enter="submitPairPin()"
+               class="input input-bordered font-mono tracking-widest text-center text-xl w-full" />
+        <!-- Error -->
+        <p x-show="needPairError" x-text="needPairError"
+           class="text-error text-sm text-center"></p>
+        <!-- Busy spinner -->
+        <div x-show="needPairBusy" class="flex items-center justify-center gap-2 text-base-content/60 text-sm">
+          <span class="loading loading-spinner loading-sm"></span>
+          <span>Pairing…</span>
+        </div>
+        <!-- Buttons -->
+        <div class="card-actions justify-end gap-2 mt-1" x-show="!needPairBusy">
+          <button class="btn btn-ghost btn-sm" @click="needPairAddr = null; needPairError = ''">Cancel</button>
+          <button class="btn btn-primary btn-sm" :disabled="!needPairPin" @click="submitPairPin()">Pair</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== DRAWER CONTENT ===================== -->
   <div class="drawer-content flex flex-col h-screen overflow-hidden">
 

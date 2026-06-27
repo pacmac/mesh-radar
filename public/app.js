@@ -159,6 +159,12 @@ function dashboard() {
     blePins:      {},   // per-device PIN: { [address]: pin }
     bleError:     '',
 
+    // NEED_PAIR overlay — shown when a BLE device requires a PIN to pair
+    needPairAddr:  null,   // MAC address of device stuck in NEED_PAIR
+    needPairPin:   '',     // user-entered PIN value
+    needPairError: '',     // e.g. "Wrong PIN — try again"
+    needPairBusy:  false,  // true while submitting
+
     // -- Telemetry / tilt / env -----------------------------------------------
     envHistory:  {},
     envWindow:   persistGet('envWindow', 72),

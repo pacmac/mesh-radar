@@ -76,6 +76,36 @@ export const wsMixin = {
       return;
     }
 
+    // NEED_PAIR — BLE device requires a PIN to complete pairing.
+    // device_state events flow directly from node-dash WS relay.
+    if (ev.type === 'device_state' && ev.addr) {
+      if (ev.state === 'NEED_PAIR' && !this.needPairBusy) {
+        if (this.needPairAddr !== ev.addr) {
+          // New device needing pairing — reset overlay
+          this.needPairAddr  = ev.addr;
+          this.needPairError = '';
+          this.needPairPin   = this.deviceConfigs[ev.node_id]?.ble_pin || '';
+        } else if (this.needPairAddr === ev.addr && this.needPairBusy) {
+          // Was submitting but device came back to NEED_PAIR → wrong PIN
+          this.needPairError = 'Incorrect PIN — check the device display and try again';
+          this.needPairBusy  = false;
+        }
+      } else if (this.needPairAddr === ev.addr) {
+        const s = ev.state;
+        if (s === 'DISCOVERING' || s === 'SYNCING' || s === 'READY') {
+          // Pairing succeeded — dismiss overlay
+          this.needPairAddr  = null;
+          this.needPairError = '';
+          this.needPairBusy  = false;
+          this.showToast('Device paired successfully', 'success');
+        } else if (s === 'OFFLINE' && this.needPairBusy) {
+          // Pairing failed after our PIN submission — will loop back to NEED_PAIR
+          this.needPairError = 'Pairing failed — wrong PIN?';
+          this.needPairBusy  = false;
+        }
+      }
+    }
+
     // OTA flash — WS drives the ops key for the duration of the flash.
     // ws-relay.js translates device_state OTA_* → ota_start/progress/complete/error with ev.node_id.
     if (ev.type === 'ota_start' && (ev.node_id || ev.device)) {

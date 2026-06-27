@@ -272,6 +272,24 @@ export const devicesMixin = {
     }
   },
 
+  async submitPairPin() {
+    if (!this.needPairAddr || !this.needPairPin) return;
+    this.needPairBusy  = true;
+    this.needPairError = '';
+    try {
+      // Save PIN to node-dash device config
+      await fetchJSON(`/device-config/${encodeURIComponent(this.needPairAddr)}`, 'PUT', {
+        ble_pin: this.needPairPin,
+      });
+      // Wake mesh-gw pairing retry loop
+      await fetchJSON(`/ble/${encodeURIComponent(this.needPairAddr)}/pair`, 'POST');
+      // needPairBusy stays true — WS event clears it when device transitions out of NEED_PAIR
+    } catch (e) {
+      this.needPairError = 'Submit failed: ' + (e.message || String(e));
+      this.needPairBusy  = false;
+    }
+  },
+
   async bleRemove(address) {
     try {
       await fetchJSON(`/ble/known/${encodeURIComponent(address)}`, 'DELETE');
