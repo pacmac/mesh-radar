@@ -98,6 +98,8 @@ class PassiveTracer extends EventEmitter {
     // Never traceroute own bridge radios, and don't transmit via the rotator
     if (ownDeviceNums().has(pkt.from)) return;
     if (rxDevice === getRotatorDeviceId()) return;
+    // Skip MQTT-relayed nodes (firmware returns NO_ROUTE immediately)
+    if (pkt.via_mqtt) return;
     if (!needsTrace(pkt.from)) return;
 
     this._trace(pkt.from, rxDevice);
