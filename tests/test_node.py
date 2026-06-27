@@ -423,6 +423,36 @@ def rest_checks():
     rest_check("GET", "/range_test/timer", expect_keys=["active"])
     rest_check("GET", "/traceroute_history")
     rest_check("GET", "/auto-purge",       skip_reason="requires ?device= param; tested indirectly via device list")
+
+    # Purge nodedb — skipped by default (25s + physical radio reboot).
+    # Set PURGE_TEST=1 env var to run: PURGE_TEST=1 python3 test_node.py
+    if os.environ.get("PURGE_TEST") == "1":
+        primary = next((d for d in requests.get(BASE + "/devices").json().get("devices", [])
+                        if d.get("state") == "ready"), None)
+        if not primary:
+            report("SKIP", "POST /purge-nodedb", "no READY device found")
+        else:
+            node_id = primary["node_id"]
+            try:
+                r = requests.post(BASE + "/purge-nodedb",
+                                  json={"device": node_id}, timeout=70)
+                if r.status_code == 200:
+                    d = r.json()
+                    nc = d.get("node_count")
+                    if d.get("ok") and nc is not None:
+                        report("PASS", "POST /purge-nodedb",
+                               f"node_count={nc} (expected 1) ok={d['ok']}")
+                    else:
+                        report("FAIL", "POST /purge-nodedb",
+                               f"missing ok/node_count in response: {d}")
+                else:
+                    report("FAIL", "POST /purge-nodedb",
+                           f"HTTP {r.status_code}: {r.text[:120]}")
+            except Exception as e:
+                report("FAIL", "POST /purge-nodedb", f"error: {e}")
+    else:
+        report("SKIP", "POST /purge-nodedb",
+               "set PURGE_TEST=1 to run (25s, reboots radio)")
     rest_check("GET", "/alerts/config")
     rest_check("GET", "/alerts/rules")
     rest_check("GET", "/schema/rotator_config")
