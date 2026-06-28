@@ -206,6 +206,13 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       return;
     }
 
+    if (ev.type === 'message_status' && ev.packet_id != null) {
+      try { stmts.updateMessageStatus.run({ packet_id: ev.packet_id, status: ev.status }); }
+      catch (e) { console.error('[message_status] db update failed:', e.message); }
+      broadcast(ev);
+      return;
+    }
+
     handleAlertEvent(ev);
     broadcast(ev);
   });

@@ -170,6 +170,7 @@ if (!existingCols.includes('hops'))       db.exec(`ALTER TABLE messages ADD COLU
 if (!existingCols.includes('short_name')) db.exec(`ALTER TABLE messages ADD COLUMN short_name TEXT`);
 if (!existingCols.includes('long_name'))  db.exec(`ALTER TABLE messages ADD COLUMN long_name TEXT`);
 if (!existingCols.includes('alerted_at')) db.exec(`ALTER TABLE messages ADD COLUMN alerted_at INTEGER`);
+if (!existingCols.includes('status'))    db.exec(`ALTER TABLE messages ADD COLUMN status TEXT`);
 const tiltCols = db.prepare(`PRAGMA table_info(tilt_history)`).all().map(r => r.name);
 if (!tiltCols.includes('ncal')) {
   db.exec(`ALTER TABLE tilt_history ADD COLUMN ncal INTEGER NOT NULL DEFAULT 0`);
@@ -224,6 +225,10 @@ export const stmts = {
   insertMessage: db.prepare(`
     INSERT OR IGNORE INTO messages (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi, packet_id, reply_id, device, replay, hops, short_name, long_name)
     VALUES (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name)
+  `),
+
+  updateMessageStatus: db.prepare(`
+    UPDATE messages SET status = @status WHERE packet_id = @packet_id
   `),
 
   upsertNodeinfo: db.prepare(`

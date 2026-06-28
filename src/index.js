@@ -441,7 +441,10 @@ app.post('/purge-nodedb', async (req, res) => {
 
 app.post('/:nodeId/messages', async (req, res) => {
   const nodeId = req.params.nodeId;
-  const fromNum = parseInt(nodeId.replace('!', ''), 16) || 0;
+  // Resolve to live !hexid — nodeId may be a BLE MAC when the live node_id is not yet known.
+  // parseInt on a raw MAC (e.g. "E9:B0:3F:17:27:91") only reads the first byte (0xE9=233).
+  const resolvedId = nodeId.startsWith('!') ? nodeId : (getLiveNodeIdByMac(nodeId) || nodeId);
+  const fromNum = resolvedId.startsWith('!') ? (parseInt(resolvedId.slice(1), 16) || 0) : 0;
   try {
     const upstream = await fetch(`${BRIDGE_URL}/${nodeId}/messages`, {
       method: 'POST',

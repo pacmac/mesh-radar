@@ -36,7 +36,8 @@ export function queryMessages(limit = 100) {
       GROUP_CONCAT(m.device)                              AS rx_devices,
       MAX(m.replay)                                       AS replay,
       COALESCE(MIN(m.short_name), MIN(n.short_name))     AS short_name,
-      COALESCE(MIN(m.long_name),  MIN(n.long_name))      AS long_name
+      COALESCE(MIN(m.long_name),  MIN(n.long_name))      AS long_name,
+      MIN(m.status)                                       AS status
     FROM messages m
     LEFT JOIN nodes n ON n.num = m.from_num
     ${where}
