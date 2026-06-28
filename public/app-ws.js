@@ -437,44 +437,34 @@ export const wsMixin = {
       if (portnum === 'TEXT_MESSAGE_APP' && pkt?.decoded?.payload) {
         try {
           const pktId = pkt.id;
-          if (pktId && this._seenPacketIds.has(pktId)) {
-            const rxDev = ev.node_id || ev.addr || ev.device;
-            if (rxDev) {
-              const existing = this.messages.find(m => m.pktId === pktId);
-              if (existing && !existing.src.includes(rxDev)) existing.src = [...existing.src, rxDev];
-            }
-          } else {
-            if (pktId) {
-              this._seenPacketIds.add(pktId);
-              if (this._seenPacketIds.size > 200) this._seenPacketIds.delete(this._seenPacketIds.values().next().value);
-            }
-            const text = b64ToUtf8(pkt.decoded.payload);
-            const toNum = pkt.to >>> 0;
-            const fromNum = pkt.from ?? 0;
-            const injectedUser = pkt.decoded.user;
-            const fromNode = !injectedUser ? this.nodes.find(n => n.num === fromNum) : null;
-            const fromName  = ev.from_name || injectedUser?.short_name || fromNode?.display_name || fromNode?.user?.short_name || null;
-            const longName  = injectedUser?.long_name  || fromNode?.user?.long_name  || null;
-            const hops = (pkt.hop_start != null && pkt.hop_limit != null)
-              ? Math.max(0, pkt.hop_start - pkt.hop_limit) : null;
-            if (fromName || longName) {
-              this.msgNodeCache[fromNum] = { num: fromNum, display_name: fromName, user: { short_name: fromName, long_name: longName } };
-            }
-            this.messages.unshift({
-              pktId, fromNum, to: toNum,
-              fromShortName: fromName,
-              fromLongName:  longName,
-              hops, rssi: pkt.rx_rssi ?? null, snr: pkt.rx_snr ?? null,
-              broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
-              channel: pkt.channel ?? 0,
-              replyId: pkt.decoded.reply_id || null,
-              text, ts: pkt.rx_time || Math.floor(Date.now() / 1000), time, direction: 'rx', ackStatus: null,
-              src: (ev.node_id || ev.addr || ev.device) ? [ev.node_id || ev.addr || ev.device] : [],
-            });
-            if (this.messages.length > 50) this.messages.pop();
-            try { localStorage.setItem('msgHistory', JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
-            if (this.tab !== 'messages') { this.unreadMessages++; this.playMsgSound(); }
+          const text = b64ToUtf8(pkt.decoded.payload);
+          const toNum = pkt.to >>> 0;
+          const fromNum = pkt.from ?? 0;
+          const injectedUser = pkt.decoded.user;
+          const fromNode = !injectedUser ? this.nodes.find(n => n.num === fromNum) : null;
+          const fromName  = ev.from_name || injectedUser?.short_name || fromNode?.display_name || fromNode?.user?.short_name || null;
+          const longName  = injectedUser?.long_name  || fromNode?.user?.long_name  || null;
+          const hops = (pkt.hop_start != null && pkt.hop_limit != null)
+            ? Math.max(0, pkt.hop_start - pkt.hop_limit) : null;
+          if (fromName || longName) {
+            this.msgNodeCache[fromNum] = { num: fromNum, display_name: fromName, user: { short_name: fromName, long_name: longName } };
           }
+          // Thread structure for live events: treat as root; corrected on next message_history replay.
+          this.messages.unshift({
+            pktId, fromNum, to: toNum,
+            fromShortName: fromName,
+            fromLongName:  longName,
+            hops, rssi: pkt.rx_rssi ?? null, snr: pkt.rx_snr ?? null,
+            broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
+            channel: pkt.channel ?? 0,
+            replyId: pkt.decoded.reply_id || null,
+            threadRootPktId: pktId, replyDepth: 0, isOrphan: false,
+            text, ts: pkt.rx_time || Math.floor(Date.now() / 1000), time, direction: 'rx', ackStatus: null,
+            src: (ev.node_id || ev.addr || ev.device) ? [ev.node_id || ev.addr || ev.device] : [],
+          });
+          if (this.messages.length > 50) this.messages.pop();
+          try { localStorage.setItem('msgHistory', JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
+          if (this.tab !== 'messages') { this.unreadMessages++; this.playMsgSound(); }
         } catch (_) {}
       }
       if (pkt?.from != null) {

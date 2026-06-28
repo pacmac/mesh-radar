@@ -41,6 +41,64 @@ export function getLiveNodeIdByMac(mac) {
   return mac ? (_liveNodeIds.get(mac.toUpperCase()) ?? null) : null;
 }
 
+// Session-level seen packet IDs for live TEXT_MESSAGE_APP events.
+// Cleared on bridge reconnect. Prevents duplicate live events reaching the browser
+// when the same packet is heard by multiple gateway radios.
+const _seenLivePktIds = new Set();
+
+// Returns the set of own gateway node numbers (uint32) from the live node_id map.
+function _ownNums() {
+  const nums = new Set();
+  for (const nodeId of _liveNodeIds.values()) {
+    if (nodeId && nodeId.startsWith('!')) {
+      const n = parseInt(nodeId.slice(1), 16);
+      if (n) nums.add(n);
+    }
+  }
+  return nums;
+}
+
+// Pre-compute direction, thread_root_packet_id, is_orphan, reply_depth for
+// every row so the browser renders without deriving any of these itself.
+function _enrichMessages(rows) {
+  const own = _ownNums();
+  const byPktId = new Map();
+  for (const r of rows) {
+    r.direction = own.has(r.from_num) ? 'tx' : 'rx';
+    if (r.packet_id) byPktId.set(r.packet_id, r);
+  }
+
+  const rootCache = new Map();
+  function findRoot(pktId, visited) {
+    if (!pktId) return pktId;
+    if (rootCache.has(pktId)) return rootCache.get(pktId);
+    if (visited.has(pktId)) { rootCache.set(pktId, pktId); return pktId; }
+    const r = byPktId.get(pktId);
+    if (!r || !r.reply_id || !byPktId.has(r.reply_id)) {
+      rootCache.set(pktId, pktId);
+      return pktId;
+    }
+    visited.add(pktId);
+    const root = findRoot(r.reply_id, visited);
+    rootCache.set(pktId, root);
+    return root;
+  }
+
+  for (const r of rows) {
+    r.thread_root_packet_id = findRoot(r.packet_id, new Set()) ?? r.packet_id;
+    r.is_orphan             = !!(r.reply_id && !byPktId.has(r.reply_id));
+    let depth = 0, cur = r;
+    const visited = new Set();
+    while (cur && cur.reply_id && byPktId.has(cur.reply_id) && !visited.has(cur.packet_id)) {
+      visited.add(cur.packet_id);
+      cur = byPktId.get(cur.reply_id);
+      depth++;
+    }
+    r.reply_depth = depth;
+  }
+  return rows;
+}
+
 export function attachWsRelay(server, getRangeTimer = () => ({ active: false, endsAt: null, nodeId: null })) {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -82,7 +140,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     if (ws.readyState === 1) ws.send(JSON.stringify(enrichEvent(msg)));
   }
 
-  bridge.on('connected',    () => { broadcast({ type: 'bridge_connected' }); });
+  bridge.on('connected',    () => { _seenLivePktIds.clear(); broadcast({ type: 'bridge_connected' }); });
   bridge.on('disconnected', () => {
     broadcast({ type: 'bridge_disconnected' });
     handleAlertEvent({ type: 'bridge_disconnected' });
@@ -211,6 +269,18 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       catch (e) { console.error('[message_status] db update failed:', e.message); }
       broadcast(ev);
       return;
+    }
+
+    // Live dedup: suppress duplicate TEXT_MESSAGE_APP packet events so the browser
+    // receives exactly one event per logical message regardless of how many gateway
+    // radios heard it. The second reception is persisted to SQLite and visible in
+    // the next message_history replay.
+    if (ev.type === 'packet' && ev.data?.packet?.decoded?.portnum === 'TEXT_MESSAGE_APP') {
+      const pktId = ev.data.packet.id;
+      if (pktId) {
+        if (_seenLivePktIds.has(pktId)) return;
+        _seenLivePktIds.add(pktId);
+      }
     }
 
     handleAlertEvent(ev);
@@ -380,7 +450,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     try {
       const since24h = Math.floor(Date.now() / 1000) - 86400;
 
-      const msgRows = queryMessages(50).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) }));
+      const msgRows = _enrichMessages(queryMessages(50).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) })));
       ws.send(JSON.stringify({ type: 'message_history', messages: msgRows }));
 
       const tiltRows = queryAllTiltHistory(since24h);

@@ -137,7 +137,6 @@ function dashboard() {
     mentionPos: 0,
     mentionIdx: 0,
     unreadMessages: 0,
-    _seenPacketIds: new Set(),
     msgChannel: '0',
     msgText: '',
     msgSent: false,
@@ -262,10 +261,7 @@ function dashboard() {
 
       try {
         const saved = JSON.parse(localStorage.getItem('msgHistory') || '[]');
-        if (Array.isArray(saved) && saved.length) {
-          this.messages = saved;
-          saved.forEach(m => { if (m.pktId) this._seenPacketIds.add(m.pktId); });
-        }
+        if (Array.isArray(saved) && saved.length) this.messages = saved;
       } catch (_) {}
 
       await this.loadConfig();

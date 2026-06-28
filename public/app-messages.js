@@ -7,91 +7,56 @@ export const messagesMixin = {
   _applyMessageRows(rows) {
     if (!Array.isArray(rows)) return;
     if (!rows.length) { this.messages = []; return; }
-    const ownNums = new Set(
-      Object.keys(this.deviceConfigs || {})
-        .filter(id => id.startsWith('!'))
-        .map(id => parseInt(id.slice(1), 16))
-        .filter(Boolean)
-    );
     this.messages = rows.map(r => {
       if (r.from_num) {
         this.msgNodeCache[r.from_num] = { num: r.from_num, display_name: r.display_name || null, user: { short_name: r.short_name, long_name: r.long_name } };
       }
       return {
-        pktId:         r.packet_id,
-        replyId:       r.reply_id || null,
-        fromNum:       r.from_num,
-        fromShortName: r.display_name || r.short_name || null,
-        fromLongName:  r.long_name  || null,
-        hops:          r.hops ?? null,
-        rssi:          r.rssi ?? null,
-        snr:           r.snr  ?? null,
-        to:            r.to_num >>> 0,
-        broadcast:     (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
-        channel:       r.channel ?? 0,
-        text:          r.text,
-        ts:            r.ts,
-        time:          new Date(r.ts * 1000).toLocaleTimeString(),
-        direction:     ownNums.has(r.from_num) ? 'tx' : 'rx',
-        ackStatus:     r.status || null,
-        src:           r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
+        pktId:              r.packet_id,
+        replyId:            r.reply_id || null,
+        threadRootPktId:    r.thread_root_packet_id ?? r.packet_id,
+        isOrphan:           !!r.is_orphan,
+        replyDepth:         r.reply_depth ?? 0,
+        fromNum:            r.from_num,
+        fromShortName:      r.display_name || r.short_name || null,
+        fromLongName:       r.long_name  || null,
+        hops:               r.hops ?? null,
+        rssi:               r.rssi ?? null,
+        snr:                r.snr  ?? null,
+        to:                 r.to_num >>> 0,
+        broadcast:          (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
+        channel:            r.channel ?? 0,
+        text:               r.text,
+        ts:                 r.ts,
+        time:               new Date(r.ts * 1000).toLocaleTimeString(),
+        direction:          r.direction || 'rx',
+        ackStatus:          r.status || null,
+        src:                r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
       };
     });
-    this.messages.forEach(m => { if (m.pktId) this._seenPacketIds.add(m.pktId); });
     try { localStorage.setItem('msgHistory', JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
-    // Restore pending TX messages not yet confirmed (echoed).
-    try {
-      const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
-      if (_pt.length) {
-        const _rem = _pt.filter(p => {
-          if (this.messages.some(m => m.fromNum === p.fromNum && m.text === p.text && Math.abs((m.ts||0) - (p.ts||0)) < 120)) return false;
-          this.messages.unshift(p);
-          return true;
-        });
-        sessionStorage.setItem('pendingTx', JSON.stringify(_rem));
-      }
-    } catch (_) {}
   },
 
   loadMessages() { /* no-op — history arrives via WS message_history on connect */ },
 
   displayMessages() {
+    // Thread structure is pre-computed by node-dash: threadRootPktId, replyDepth, isOrphan.
+    // Sort threads by latest-ts descending, then within a thread by ts ascending.
     const msgs = this.messages;
-    const byPktId = new Map();
-    for (const m of msgs) { if (m.pktId) byPktId.set(m.pktId, m); }
-
-    const getRoot = (m, visited = new Set()) => {
-      if (!m.replyId || !byPktId.has(m.replyId) || visited.has(m.pktId)) return m;
-      visited.add(m.pktId);
-      return getRoot(byPktId.get(m.replyId), visited);
-    };
-
-    const childrenOf = new Map();
-    const knownChildren = new Set();
+    const threadLatest = new Map();
     for (const m of msgs) {
-      if (!m.replyId) continue;
-      const root = getRoot(m);
-      if (root === m) continue;
-      if (!childrenOf.has(root.pktId)) childrenOf.set(root.pktId, []);
-      childrenOf.get(root.pktId).push(m);
-      knownChildren.add(m);
+      const root = m.threadRootPktId ?? m.pktId;
+      if (root != null && (m.ts || 0) > (threadLatest.get(root) || 0)) {
+        threadLatest.set(root, m.ts);
+      }
     }
-
-    const roots = msgs.filter(m => !knownChildren.has(m));
-    roots.sort((a, b) => {
-      const latestA = Math.max(a.ts, ...(childrenOf.get(a.pktId) || []).map(r => r.ts));
-      const latestB = Math.max(b.ts, ...(childrenOf.get(b.pktId) || []).map(r => r.ts));
-      return latestB - latestA;
-    });
-
-    const result = [];
-    for (const root of roots) {
-      const rootIsOrphan = !!(root.replyId && !byPktId.has(root.replyId));
-      result.push({ ...root, isReply: rootIsOrphan, replyDepth: 0 });
-      const replies = (childrenOf.get(root.pktId) || []).slice().sort((a, b) => a.ts - b.ts);
-      for (const r of replies) result.push({ ...r, isReply: true, replyDepth: 1 });
-    }
-    return result;
+    return [...msgs].sort((a, b) => {
+      const rootA = a.threadRootPktId ?? a.pktId;
+      const rootB = b.threadRootPktId ?? b.pktId;
+      const latestDiff = (threadLatest.get(rootB) || 0) - (threadLatest.get(rootA) || 0);
+      if (latestDiff !== 0) return latestDiff;
+      return (a.ts || 0) - (b.ts || 0);
+    }).map(m => ({ ...m, isReply: m.replyDepth > 0 || m.isOrphan }));
   },
 
   async sendMessage() {
@@ -104,7 +69,11 @@ export const messagesMixin = {
     }
     this.msgSent = false;
     const text = this.msgText, channel = Number(this.msgChannel), time = new Date().toLocaleTimeString();
-    const fromId = this.msgFrom || this.activeNodeId;
+    const fromId = this.msgFrom;
+    if (!fromId) {
+      this.showToast('No sender selected — choose a gateway device before sending', 'error', 0);
+      return;
+    }
     const to = this.msgIsDirect ? Number(this.msgDirectTo) : 0xFFFFFFFF;
     const fromNum = parseInt((fromId || '').replace('!', ''), 16) || 0;
     const pktIdHint = (Math.random() * 0xFFFFFFFF | 0) >>> 0 || 1;
@@ -113,7 +82,6 @@ export const messagesMixin = {
     if (this.msgReplyId) body.reply_id = this.msgReplyId;
 
     const txKey = Date.now();
-    const txNode = this.nodes.find(n => n.num === fromNum);
     const txEntry = {
       _txKey: txKey,
       fromNum, to: to >>> 0,
@@ -122,15 +90,11 @@ export const messagesMixin = {
       broadcast: to === 0xFFFFFFFF, channel, text,
       ts: Math.floor(Date.now() / 1000), time, direction: 'tx', ackStatus: 'sending',
       src: fromId ? [fromId] : [], replyId: this.msgReplyId || null,
+      threadRootPktId: pktIdHint, replyDepth: 0, isOrphan: false,
       _localTx: true,
     };
     this.messages.unshift(txEntry);
     if (this.messages.length > 50) this.messages.pop();
-    try {
-      const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
-      _pt.unshift({...txEntry});
-      sessionStorage.setItem('pendingTx', JSON.stringify(_pt.slice(0, 20)));
-    } catch (_) {}
 
     this.msgInputHistory = [text, ...this.msgInputHistory.filter(t => t !== text)].slice(0, 50);
     persistSet('msgInputHistory', this.msgInputHistory);
@@ -141,50 +105,20 @@ export const messagesMixin = {
     this.msgReplyFrom = null;
     if (this.msgIsModal) this.closeMessageModal();
 
-    let _lastErr = null;
-    for (let _attempt = 1; _attempt <= 3; _attempt++) {
-      try {
-        const res = await fetchJSON('/' + fromId + '/messages', 'POST', body);
-        if (res?.error) throw new Error(res.error?.message || String(res.error));
-        if (res?.detail) throw new Error(res.detail);
-        const m = this.messages.find(x => x._txKey === txKey);
-        if (m) {
-          // HTTP 200 = mesh-gw accepted and queued the packet.
-          m.ackStatus = 'queued';
-          // pktId from HTTP response is authoritative for routing and reply threading.
-          if (res?.id && !m.pktId) {
-            m.pktId = res.id;
-            this._seenPacketIds.add(res.id);
-          }
-        }
-        try {
-          const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
-          const _p = _pt.find(x => x._txKey === txKey);
-          if (_p) _p.ackStatus = 'sent';
-          sessionStorage.setItem('pendingTx', JSON.stringify(_pt));
-        } catch (_) {}
-        this.msgSent = true;
-        setTimeout(() => (this.msgSent = false), 2000);
-        _lastErr = null;
-        break;
-      } catch (e) {
-        _lastErr = e;
-        if (_attempt < 3) {
-          const m = this.messages.find(x => x._txKey === txKey);
-          if (m) { m.ackStatus = 'retrying'; m._retryCount = _attempt; }
-          await new Promise(r => setTimeout(r, 1000 * _attempt));
-        }
-      }
-    }
-    if (_lastErr) {
+    try {
+      const res = await fetchJSON('/' + fromId + '/messages', 'POST', body);
+      if (res?.error) throw new Error(res.error?.message || String(res.error));
+      if (res?.detail) throw new Error(res.detail);
       const m = this.messages.find(x => x._txKey === txKey);
-      if (m) { m.ackStatus = 'failed'; m._sendError = _lastErr.message; }
-      try {
-        const _pt = JSON.parse(sessionStorage.getItem('pendingTx') || '[]');
-        const _p = _pt.find(x => x._txKey === txKey);
-        if (_p) { _p.ackStatus = 'failed'; _p._sendError = _lastErr.message; }
-        sessionStorage.setItem('pendingTx', JSON.stringify(_pt));
-      } catch (_) {}
+      if (m) {
+        m.ackStatus = 'queued';
+        if (res?.id && !m.pktId) m.pktId = res.id;
+      }
+      this.msgSent = true;
+      setTimeout(() => (this.msgSent = false), 2000);
+    } catch (e) {
+      const m = this.messages.find(x => x._txKey === txKey);
+      if (m) { m.ackStatus = 'failed'; m._sendError = e.message; }
     }
   },
 
