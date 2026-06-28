@@ -27,11 +27,12 @@ function _upsertCache(num, nodeId, u, pos) {
 const BROADCAST_NUM = 0xffffffff;
 
 export function handleEvent(event) {
-  const { type, data, device, _replay } = event;
+  const { type, data, device, node_id, _replay } = event;
+  const rxDevice = node_id || device;
   const ts = Math.floor(Date.now() / 1000);
 
   if (type === 'packet') {
-    handlePacket(data?.packet, device, ts, !!_replay);
+    handlePacket(data?.packet, rxDevice, ts, !!_replay);
   } else if (type === 'node_info' || type === 'nodeinfo') {
     handleNodeInfo(data, device);
   } else if (type === 'telemetry') {

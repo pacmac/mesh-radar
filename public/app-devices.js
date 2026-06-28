@@ -217,7 +217,8 @@ export const devicesMixin = {
 
   deviceLabel(nodeId) {
     if (!nodeId) return '';
-    const d = this.availableDevices.find(d => d.node_id === nodeId);
+    const upper = nodeId.toUpperCase();
+    const d = this.availableDevices.find(d => d.node_id === nodeId || d.addr?.toUpperCase() === upper);
     return d?.display_name || '';
   },
 
