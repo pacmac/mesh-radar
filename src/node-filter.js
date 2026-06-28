@@ -1,5 +1,5 @@
 import { getConfig } from './db.js';
-import { getRotatorDeviceId, getAllDeviceCfgs } from './device-config.js';
+import { getRotatorAddress, getAllDeviceCfgs } from './device-config.js';
 import { nodeIdToNum } from './utils.js';
 
 // Returns the set of nums for all configured BLE devices.
@@ -31,7 +31,7 @@ export function passesFilter(node, { scanActive = false, ownNums = null } = {}) 
   const msgOnly   = getConfig('node_filters.msg_only',   false);
   const roles     = getConfig('node_filters.roles',      []);
   const source    = scanActive ? 'yagi' : getConfig('node_filters.node_source', 'both');
-  const rotatorId = getRotatorDeviceId();
+  const rotatorId = getRotatorAddress();
 
   if (maxAge > 0 && node.last_heard && (now - node.last_heard) > maxAge) return false;
 

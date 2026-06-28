@@ -6,7 +6,7 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, onHomePosChange } from './device-config.js';
+import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, getRotatorAddress, onHomePosChange } from './device-config.js';
 import { ownDeviceNums } from './node-filter.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule, getTiltCal, saveTiltCal } from './db.js';
@@ -631,7 +631,7 @@ scanner.on('start', () => {
   nodeList.setScanActive(true);
 });
 scanner.on('contact', (contact) => {
-  const rotatorId = getRotatorDeviceId();
+  const rotatorId = getRotatorAddress();
   if (contact.from && rotatorId)
     nodeList.confirmScanContact(contact.from, rotatorId, contact.az, contact.rssi, contact.snr);
   if (FF.SSOT_TRACEROUTE && contact.from) {
@@ -689,7 +689,7 @@ bridge.on('event', (ev) => {
     scanner.handlePacket(ev);
     const pkt = ev.data?.packet;
     const rxDevice = ev.addr || ev.device || null;
-    const rotatorId = getRotatorDeviceId();
+    const rotatorId = getRotatorAddress();
     const yagiOnly = scanner.active && rotatorId && rxDevice !== rotatorId;
     if (pkt?.from && !yagiOnly) nodeList.touchLastHeard(pkt.from, pkt.rx_time, rxDevice);
     // environment_metrics are now handled via the typed `telemetry` event from AppRouter

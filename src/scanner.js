@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { rotator } from './rotator.js';
-import { getRotatorDeviceId } from './device-config.js';
+import { getRotatorAddress } from './device-config.js';
 import { getConfig, setConfig } from './db.js';
 
 class Scanner extends EventEmitter {
@@ -63,7 +63,7 @@ class Scanner extends EventEmitter {
 
   handlePacket(ev) {
     if (!this._active || this._dwellAz == null) return;
-    const rotatorId = getRotatorDeviceId();
+    const rotatorId = getRotatorAddress();
     if (rotatorId && ev.device !== rotatorId) return;
     const pkt = ev.data?.packet;
     if (!pkt?.from) return;

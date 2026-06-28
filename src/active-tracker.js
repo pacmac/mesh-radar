@@ -1,6 +1,6 @@
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
-import { getRotatorDeviceId, getDeviceCfgByNodeId } from './device-config.js';
+import { getRotatorDeviceId, getRotatorAddress, getDeviceCfgByNodeId } from './device-config.js';
 import { stmts, getConfig, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
 import { nodeList } from './node-list.js';
 import { bearing } from './utils.js';
@@ -109,7 +109,7 @@ export const activeTracker = {
   },
 
   handlePacket(ev) {
-    const rotatorId = getRotatorDeviceId();
+    const rotatorId = getRotatorAddress();
     if (!rotatorId || ev.device !== rotatorId) return;
 
     if (ev.type === 'packet') {

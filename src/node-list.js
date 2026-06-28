@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { setConfig, getMqttNode, stmts } from './db.js';
-import { getRotatorDeviceId, getAllDeviceCfgs } from './device-config.js';
+import { getRotatorAddress, getAllDeviceCfgs } from './device-config.js';
 import { passesFilter, ownDeviceNums } from './node-filter.js';
 import { haversine, bearing } from './utils.js';
 
@@ -71,7 +71,7 @@ class NodeList extends EventEmitter {
       return;
     }
 
-    const rotatorId = getRotatorDeviceId();
+    const rotatorId = getRotatorAddress();
     // During scan, ignore updates from non-rotator devices
     if (this._scanActive && rotatorId && ev.device && ev.device !== rotatorId) return;
     const newDev = ev.device ?? null;
