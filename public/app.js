@@ -138,7 +138,6 @@ function dashboard() {
     mentionIdx: 0,
     unreadMessages: 0,
     _seenPacketIds: new Set(),
-    _ackTimers: {},
     msgChannel: '0',
     msgText: '',
     msgSent: false,

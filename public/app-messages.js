@@ -33,7 +33,7 @@ export const messagesMixin = {
         ts:            r.ts,
         time:          new Date(r.ts * 1000).toLocaleTimeString(),
         direction:     ownNums.has(r.from_num) ? 'tx' : 'rx',
-        ackStatus:     ownNums.has(r.from_num) ? 'confirmed' : null,
+        ackStatus:     r.status || null,
         src:           r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
       };
     });
@@ -149,16 +149,12 @@ export const messagesMixin = {
         if (res?.detail) throw new Error(res.detail);
         const m = this.messages.find(x => x._txKey === txKey);
         if (m) {
-          // HTTP 200 = bridge accepted the packet. Keep showing 'sending' — the BLE echo
-          // (via WS packet event) will advance to 'sent'/'confirmed'. For DMs, routing_ack
-          // will then advance to 'acked'/'no_ack'. Only move to 'sent' on retries to show
-          // the retry cleared.
-          if (m.ackStatus === 'retrying') m.ackStatus = 'sending';
-          // pktId from HTTP response is authoritative for reply threading — don't wait for echo.
+          // HTTP 200 = mesh-gw accepted and queued the packet.
+          m.ackStatus = 'queued';
+          // pktId from HTTP response is authoritative for routing and reply threading.
           if (res?.id && !m.pktId) {
             m.pktId = res.id;
             this._seenPacketIds.add(res.id);
-            if (!m.broadcast) this._startAckTimeout(res.id);
           }
         }
         try {
