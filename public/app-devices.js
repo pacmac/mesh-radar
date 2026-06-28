@@ -5,7 +5,14 @@ import { persistSet } from './app-persist.js';
 export const devicesMixin = {
   get primaryDeviceId() {
     const e = Object.entries(this.deviceConfigs).find(([, c]) => c?.is_primary);
-    return e?.[0] || this.availableDevices[0]?.node_id || '';
+    if (e) {
+      const suffix = e[0].slice(1); // MAC-derived key '!3f172791' → '3f172791'
+      const live = this.availableDevices.find(
+        d => d.addr.replace(/:/g, '').toLowerCase().endsWith(suffix)
+      );
+      if (live?.node_id) return live.node_id;
+    }
+    return this.availableDevices[0]?.node_id || '';
   },
 
   get primaryDevBleState() {
@@ -229,8 +236,7 @@ export const devicesMixin = {
 
   async loadDeviceConfigs() {
     try {
-      // API returns { [MAC]: cfg } — transform to { [nodeId]: cfg } for UI consistency.
-      // nodeId is deterministic from MAC: '!' + last 4 bytes lowercase hex.
+      // API returns { [MAC]: cfg } — transform to { [MAC-derived-id]: cfg } for internal keying.
       const byMac = await fetchJSON('/device-config');
       this.deviceConfigs = Object.fromEntries(
         Object.entries(byMac).map(([mac, cfg]) => [
@@ -238,12 +244,21 @@ export const devicesMixin = {
           cfg,
         ])
       );
-      const primaryEntry = Object.entries(this.deviceConfigs).find(([, c]) => c?.is_primary);
-      if (primaryEntry) {
-        const [primaryId] = primaryEntry;
-        this.activeNodeId = primaryId;
-        persistSet('activeNodeId', primaryId);
-        if (!this.msgFrom) { this.msgFrom = primaryId; persistSet('msgFrom', primaryId); }
+      // Resolve the primary device's actual node_id from the live device_list.
+      // Never derive it from the MAC — the firmware-assigned node_id may differ.
+      const primaryMacEntry = Object.entries(byMac).find(([, c]) => c?.is_primary);
+      if (primaryMacEntry) {
+        const [primaryMac] = primaryMacEntry;
+        const liveDevice = this.availableDevices.find(
+          d => d.addr.toUpperCase() === primaryMac.toUpperCase()
+        );
+        if (liveDevice?.node_id) {
+          this.activeNodeId = liveDevice.node_id;
+          persistSet('activeNodeId', liveDevice.node_id);
+          if (!this.msgFrom) { this.msgFrom = liveDevice.node_id; persistSet('msgFrom', liveDevice.node_id); }
+        }
+        // If device not yet in device_list, skip — the device_list WS handler sets
+        // activeNodeId correctly from live state when the first device_list arrives.
       }
     } catch (e) {
       console.warn('Failed to load device configs', e);
