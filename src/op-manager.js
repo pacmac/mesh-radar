@@ -10,7 +10,7 @@
  *   RadioRunner  — BLE writes + opportunistic reboot detection + read-back
  *   ModeRunner   — action triggers + WS postcondition monitoring
  *
- * State machine: idle → saving → [rebooting?] → validating → success | error
+ * State machine: idle → saving → validating → success | error
  */
 
 import { Router } from 'express';
@@ -25,11 +25,10 @@ import { randomUUID } from 'crypto';
 //   description:     human-readable label
 //   method:          HTTP method for the write
 //   endpoint:        (params) => path string (relative to node-dash base)
-//   read_back_path:  (params) => path string for GET after write; null for Mode ops
+//   read_back_path:  (params) => path string for GET after write; null skips read-back
 //   match_fields:    field names to compare in read-back; [] = any 2xx = success
 //   example_payload: safe test payload used by test_ops.py
 //   timeout_s:       max seconds for the full operation
-//   reboot:          false | 'never' | 'always' | 'conditional' (Radio only)
 
 const REGISTRY = new Map([
 
@@ -137,106 +136,16 @@ const REGISTRY = new Map([
   }],
 
   // ── Class 2 — Radio ───────────────────────────────────────────────────────
-  // RadioRunner: write → optional reboot wait → read-back compare
-  // Reboot is detected opportunistically (wait 3s for device_state OFFLINE/RECONNECTING)
+  // RadioRunner: write → read-back compare
+  // The firmware decides whether to reboot after a config write — we never predict
+  // or command it. device_state WS events inform the UI independently.
 
-  ['radio_config_lora', {
-    class: 'Radio', description: 'LoRa radio config section',
-    method: 'PUT', endpoint: p => `/${p.target}/config/lora`,
-    read_back_path: p => `/${p.target}/config/lora`, match_fields: ['modem_preset', 'region', 'hop_limit'],
-    example_payload: { target: '!2687afb1', values: { hop_limit: 3 } },
-    timeout_s: 60, reboot: 'conditional',
-  }],
-  ['radio_config_device', {
-    class: 'Radio', description: 'Device role and GPIO config',
-    method: 'PUT', endpoint: p => `/${p.target}/config/device`,
-    read_back_path: p => `/${p.target}/config/device`, match_fields: ['role', 'rebroadcast_mode'],
-    example_payload: { target: '!2687afb1', values: { rebroadcast_mode: 'ALL' } },
-    timeout_s: 60, reboot: 'conditional',
-  }],
-  ['radio_config_network', {
-    class: 'Radio', description: 'Network (WiFi/Ethernet) config — always reboots',
-    method: 'PUT', endpoint: p => `/${p.target}/config/network`,
-    read_back_path: p => `/${p.target}/config/network`, match_fields: ['wifi_enabled'],
-    example_payload: { target: '!2687afb1', values: { wifi_enabled: false } },
-    timeout_s: 60, reboot: 'always',
-  }],
-  ['radio_config_bluetooth', {
-    class: 'Radio', description: 'Bluetooth config — always reboots',
-    method: 'PUT', endpoint: p => `/${p.target}/config/bluetooth`,
-    read_back_path: p => `/${p.target}/config/bluetooth`, match_fields: ['enabled', 'mode'],
-    example_payload: { target: '!2687afb1', values: { mode: 'RANDOM_PIN' } },
-    timeout_s: 60, reboot: 'always',
-  }],
-  ['radio_config_display', {
-    class: 'Radio', description: 'Display config',
-    method: 'PUT', endpoint: p => `/${p.target}/config/display`,
-    read_back_path: p => `/${p.target}/config/display`, match_fields: ['screen_on_secs', 'flip_screen'],
-    example_payload: { target: '!2687afb1', values: { screen_on_secs: 300 } },
-    timeout_s: 60, reboot: 'conditional',
-  }],
-  ['radio_config_power', {
-    class: 'Radio', description: 'Power management config',
-    method: 'PUT', endpoint: p => `/${p.target}/config/power`,
-    read_back_path: p => `/${p.target}/config/power`, match_fields: [],
-    example_payload: { target: '!2687afb1', values: { is_power_saving: false } },
-    timeout_s: 60, reboot: 'conditional',
-  }],
-  ['radio_config_position', {
-    class: 'Radio', description: 'GPS/position config — always reboots',
-    method: 'PUT', endpoint: p => `/${p.target}/config/position`,
-    read_back_path: p => `/${p.target}/config/position`, match_fields: [],
-    example_payload: { target: '!2687afb1', values: { gps_mode: 'ENABLED' } },
-    timeout_s: 60, reboot: 'always',
-  }],
-  ['module_config_mqtt', {
-    class: 'Radio', description: 'MQTT module config — never reboots',
-    method: 'PUT', endpoint: p => `/${p.target}/config/mqtt`,
-    read_back_path: p => `/${p.target}/config/mqtt`, match_fields: ['enabled'],
-    example_payload: { target: '!2687afb1', values: { enabled: false } },
-    timeout_s: 15, reboot: 'never',
-  }],
-  ['module_config_telemetry', {
-    class: 'Radio', description: 'Telemetry module config — never reboots',
-    method: 'PUT', endpoint: p => `/${p.target}/config/telemetry`,
-    read_back_path: p => `/${p.target}/config/telemetry`, match_fields: ['device_update_interval'],
-    example_payload: { target: '!2687afb1', values: { device_update_interval: 900 } },
-    timeout_s: 15, reboot: 'never',
-  }],
-  ['module_config_neighbor', {
-    class: 'Radio', description: 'Neighbor info module config — never reboots',
-    method: 'PUT', endpoint: p => `/${p.target}/config/neighbor_info`,
-    read_back_path: p => `/${p.target}/config/neighbor_info`, match_fields: ['enabled'],
-    example_payload: { target: '!2687afb1', values: { enabled: true } },
-    timeout_s: 15, reboot: 'never',
-  }],
-  ['radio_config_security', {
-    class: 'Radio', description: 'Security config — may reboot',
-    method: 'PUT', endpoint: p => `/${p.target}/config/security`,
-    read_back_path: p => `/${p.target}/config/security`, match_fields: [],
-    example_payload: { target: '!2687afb1', values: {} },
-    timeout_s: 60, reboot: 'conditional',
-  }],
-  ['module_config_range_test', {
-    class: 'Radio', description: 'Range test module config — never reboots',
-    method: 'PUT', endpoint: p => `/${p.target}/config/range_test`,
-    read_back_path: p => `/${p.target}/config/range_test`, match_fields: ['sender'],
-    example_payload: { target: '!2687afb1', values: { sender: 0 } },
-    timeout_s: 15, reboot: 'never',
-  }],
-  ['module_config_serial', {
-    class: 'Radio', description: 'Serial module config — never reboots',
-    method: 'PUT', endpoint: p => `/${p.target}/config/serial`,
-    read_back_path: p => `/${p.target}/config/serial`, match_fields: [],
-    example_payload: { target: '!2687afb1', values: {} },
-    timeout_s: 15, reboot: 'never',
-  }],
-  ['module_config_canned_msg', {
-    class: 'Radio', description: 'Canned messages module config — never reboots',
-    method: 'PUT', endpoint: p => `/${p.target}/config/canned_message`,
-    read_back_path: p => `/${p.target}/config/canned_message`, match_fields: [],
-    example_payload: { target: '!2687afb1', values: {} },
-    timeout_s: 15, reboot: 'never',
+  ['radio_config_section', {
+    class: 'Radio', description: 'Any radio/module config section (section name is a parameter)',
+    method: 'PUT', endpoint: p => `/${p.target}/config/${p.section}`,
+    read_back_path: null, match_fields: [],
+    example_payload: { target: '!2687afb1', section: 'lora', values: { hop_limit: 3 } },
+    timeout_s: 15,
   }],
   ['channel_config', {
     class: 'Radio', description: 'Channel settings and role',
@@ -496,15 +405,6 @@ export class OpManager {
   async _radioRunner(entry, params, op) {
     const path = entry.endpoint(params);
     const body = params.values ?? {};
-    const target = params.target;
-
-    // Start reboot listener BEFORE the write — firmware reboot delay is ~7s
-    // and the listener must be in place before device_state transitions happen.
-    // `reboot: 'never'` (module configs) and `reboot: false` skip detection entirely.
-    const skipReboot = entry.reboot === 'never' || entry.reboot === false;
-    const rebootPromise = skipReboot
-      ? Promise.resolve(false)
-      : this._waitForStateChange(target, s => s !== 'READY', 15000);
 
     const wr = await _localFetch(entry.method, path, body);
     if (!wr.ok) {
@@ -512,22 +412,14 @@ export class OpManager {
       throw new Error(`Write failed HTTP ${wr.status}: ${detail}`);
     }
 
-    const rebooting = await rebootPromise;
-
-    if (rebooting) {
-      this._transition(op, 'rebooting');
-      const recovered = await this._waitForStateChange(target, s => s === 'READY', 45000);
-      if (!recovered) throw new Error(`Device ${target} did not recover after reboot (45 s timeout)`);
-    }
-
-    if (!entry.read_back_path) return { ok: true, rebooted: rebooting };
+    if (!entry.read_back_path) return { ok: true };
 
     this._transition(op, 'validating');
     const rbr = await _localFetch('GET', entry.read_back_path(params));
     if (!rbr.ok) throw new Error(`Read-back failed HTTP ${rbr.status}`);
     _compareMatchFields(entry, body, rbr.json);
 
-    return { ok: true, rebooted: rebooting };
+    return { ok: true };
   }
 
   async _modeRunner(entry, params, op) {

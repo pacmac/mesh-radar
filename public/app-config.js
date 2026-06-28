@@ -5,22 +5,6 @@ import { buildForm, collectForm } from './app-forms.js';
 import { submitOp } from './op-client.js';
 import { opFlow } from './op-flow.js';
 
-const SECTION_OP_KIND = {
-  lora:           'radio_config_lora',
-  device:         'radio_config_device',
-  network:        'radio_config_network',
-  bluetooth:      'radio_config_bluetooth',
-  display:        'radio_config_display',
-  power:          'radio_config_power',
-  position:       'radio_config_position',
-  security:       'radio_config_security',
-  mqtt:           'module_config_mqtt',
-  serial:         'module_config_serial',
-  telemetry:      'module_config_telemetry',
-  range_test:     'module_config_range_test',
-  canned_message: 'module_config_canned_msg',
-  neighbor_info:  'module_config_neighbor',
-};
 
 export const configMixin = {
   async loadConfig() {
@@ -150,14 +134,12 @@ export const configMixin = {
 
   async saveSection(sec) {
     const el = document.getElementById('sec_' + sec.name);
-    const payload = collectForm(el, sec.schema.fields);
-    const kind = SECTION_OP_KIND[sec.name];
-    if (!kind) throw new Error(`No op kind for section: ${sec.name}`);
+    const formValues = collectForm(el, sec.schema.fields);
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp(kind, target, payload);
+    await submitOp('radio_config_section', target, { section: sec.name, values: formValues });
     // Refresh the form UI with the verified server state
-    const values = await fetchJSON(this.cd(`/config/${sec.name}`));
-    sec.data = values[sec.name] || values || {};
+    const fresh = await fetchJSON(this.cd(`/config/${sec.name}`));
+    sec.data = fresh[sec.name] || fresh || {};
     const formEl = document.getElementById('sec_' + sec.name);
     if (formEl && !formEl.dataset.dirty) {
       formEl.innerHTML = '';
