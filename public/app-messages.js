@@ -5,7 +5,8 @@ import { persistSet } from './app-persist.js';
 export const messagesMixin = {
   // Called by WS message_history event — no HTTP fetch.
   _applyMessageRows(rows) {
-    if (!Array.isArray(rows) || !rows.length) return;
+    if (!Array.isArray(rows)) return;
+    if (!rows.length) { this.messages = []; return; }
     const ownNums = new Set(
       Object.keys(this.deviceConfigs || {})
         .filter(id => id.startsWith('!'))
