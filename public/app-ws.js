@@ -82,7 +82,7 @@ export const wsMixin = {
         this.needPairAddr = null;
       }
 
-      if (!this.activeNodeId && devices.length > 0) {
+      if (devices.length > 0 && (!this.activeNodeId || !devices.find(d => d.node_id === this.activeNodeId))) {
         this.activeNodeId = devices[0].node_id;
         persistSet('activeNodeId', this.activeNodeId);
       }
