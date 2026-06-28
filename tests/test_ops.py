@@ -1,8 +1,9 @@
 """
 test_ops.py — Manifest-driven op registry test.
 
-Reads GET /ops/manifest, submits every op in SAFE_TO_TEST with its example_payload,
-waits for a terminal WS event, and asserts success.
+GET /ops/manifest drives the op list.
+GET /sections drives the radio_config_section expansion — section names are
+never hardcoded in this file.
 
 Run: python3 tests/test_ops.py
 """
@@ -15,93 +16,51 @@ import time
 import requests
 import websockets
 
-BASE     = os.environ.get("NODE_DASH_URL", "http://localhost:8000")
-MESH_GW  = os.environ.get("MESH_GW_URL", "http://localhost:8001")
-WS       = BASE.replace("http", "ws") + "/events"
+BASE    = os.environ.get("NODE_DASH_URL", "http://localhost:8000")
+WS      = BASE.replace("http", "ws") + "/events"
 
-# Ops skipped because they reboot the radio (always or conditionally with the
-# example values), affect live BLE state, require hardware not present, or have
-# destructive side effects that need explicit intent.
-SKIP = {
-    # Rebooting radio configs
-    "radio_config_network",
-    "radio_config_bluetooth",
-    "radio_config_position",
-    "radio_config_lora",
-    "radio_config_device",
-    "radio_config_display",
-    "radio_config_power",
-    "radio_config_security",
-    # BLE state
+# Op kinds skipped entirely.
+SKIP_OPS = {
+    # BLE lifecycle — changes connected device state
     "ble_connect",
     "ble_disconnect",
-    "ble_scan",
-    "ble_remove",
-    # Destructive / OTA
+    # Destructive
     "wipe_nodedb",
-    "flash_firmware",
-    "upload_ota_file",
-    "download_ota_asset",
     # Rotator hardware not always present
     "rotator_mode_pasv",
     "rotator_mode_actv",
     "rotator_move",
     "rotator_scan_start",
     "rotator_scan_abort",
-    "rotator_calibrate",
-    "rotator_firmware_config",
-    "manual_target",
-    # Live network side effects
+    # Live network / RF side effects
     "send_message",
     "send_traceroute",
     "restart_mqtt_proxy",
-    # Fixed position changes radio state (skip unless explicitly requested)
+    # Fixed position changes radio state
     "fixed_position_push",
     "fixed_position_clear",
-    # Home position stores real lat/lon — example_payload would overwrite with a placeholder
+    # Overwrites real coordinates with placeholder
     "home_position",
-    # Channel config changes live radio channel (skip unless explicitly requested)
+    # Changes live radio channel
     "channel_config",
-    # Alert test requires SMTP to be configured
+    # Requires SMTP to be configured
     "send_alert_test",
+}
+
+# Sections skipped within radio_config_section expansion.
+# These sections always reboot the device even when values are unchanged,
+# which disrupts the rest of the test run.
+SKIP_SECTIONS = {
+    "network",    # always reboots
+    "bluetooth",  # always reboots
+    "position",   # always reboots
 }
 
 TIMEOUT_S = int(os.environ.get("OP_TIMEOUT", "20"))
 
 
-async def _wait_device_ready(node_id, timeout_s=60):
-    """Wait for the device to be READY in mesh-gw.
-
-    Sleeps 5s first to let any firmware-triggered reconnect begin, then polls
-    mesh-gw status every 2s until READY or timeout. One full reconnect cycle
-    typically takes ~7s (RECONNECTING→DISCOVERING→SYNCING→READY).
-    """
-    await asyncio.sleep(5.0)
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        try:
-            data = requests.get(f"{MESH_GW}/status", timeout=3).json()
-            for dev in data.get("devices", []):
-                if dev.get("node_id") == node_id and dev.get("state") == "READY":
-                    return True
-        except Exception:
-            pass
-        await asyncio.sleep(2.0)
-    return False
-
-
-def _infer_section(kind):
-    """Infer the config section name from a Radio op kind, for pre-read merge."""
-    if kind.startswith("radio_config_"):
-        return kind[len("radio_config_"):]
-    if kind.startswith("module_config_"):
-        name = kind[len("module_config_"):]
-        return {"canned_msg": "canned_message", "neighbor": "neighbor_info"}.get(name, name)
-    return None
-
-
 def get_active_node_id():
-    """Return the first READY device node_id, or None."""
+    """Return the first READY device node_id from node-dash /status, or None."""
     try:
         data = requests.get(f"{BASE}/status", timeout=5).json()
         for dev in data.get("bridge", {}).get("devices", []):
@@ -112,24 +71,31 @@ def get_active_node_id():
     return None
 
 
+
 def resolve_target(example_target, active_node_id):
-    """Replace placeholder node_id in example_payload with the active device."""
+    """Replace placeholder !hex node_id with the active device."""
     if example_target is None:
         return None
-    # If it looks like a node_id (!hex), replace with active
     if isinstance(example_target, str) and example_target.startswith("!"):
         return active_node_id or example_target
     return example_target
 
 
-_TRANSIENT_BLE_ERRORS = ("Service Discovery has not been performed yet", "UNLIKELY_ERROR", "Device not connected")
+def pre_read_section(base, node_id, section):
+    """Fetch current section values to write back unchanged."""
+    try:
+        rb = requests.get(f"{base}/{node_id}/config/{section}", timeout=5).json()
+        current = rb.get(section, rb) if isinstance(rb, dict) else {}
+        return current if isinstance(current, dict) else {}
+    except Exception:
+        return {}
 
 
-async def _submit_op(ws, kind, target, values, timeout_s):
-    """Submit one op and wait for terminal WS event. Returns (state, error_str)."""
+async def _submit_op(ws, kind, target, payload, timeout_s):
+    """POST /ops and wait for terminal config_op WS event. Returns (state, error)."""
     r = requests.post(
         f"{BASE}/ops",
-        json={"kind": kind, "target": target, "payload": {"values": values}},
+        json={"kind": kind, "target": target, "payload": payload},
         timeout=10,
     )
     if not r.ok:
@@ -144,94 +110,99 @@ async def _submit_op(ws, kind, target, values, timeout_s):
             raw = await asyncio.wait_for(ws.recv(), timeout=0.5)
             ev = json.loads(raw)
             if ev.get("type") == "config_op" and ev.get("op_id") == op_id:
-                state = ev.get("state")
-                if state in ("success", "error"):
-                    return state, ev.get("error")
+                if ev.get("state") in ("success", "error"):
+                    return ev["state"], ev.get("error")
         except asyncio.TimeoutError:
             pass
     return "timeout", f"no terminal event within {timeout_s}s"
 
 
-async def run_op(ws, kind, target, values, timeout_s, node_id=None):
-    """Submit op with one automatic retry on transient BLE errors."""
-    state, err = await _submit_op(ws, kind, target, values, timeout_s)
-    if state == "error" and err and any(t in err for t in _TRANSIENT_BLE_ERRORS):
-        # BLE transient error — wait for device to return READY then retry once
-        if node_id:
-            await _wait_device_ready(node_id)
-        state, err = await _submit_op(ws, kind, target, values, timeout_s)
-    return state, err
-
-
 async def main():
-    # Fetch manifest
+    # ── Fetch manifest ────────────────────────────────────────────────────────
     try:
         manifest = requests.get(f"{BASE}/ops/manifest", timeout=5).json()
     except Exception as e:
         print(f"FATAL: cannot reach {BASE}/ops/manifest — {e}")
         sys.exit(1)
 
-    ops = manifest.get("ops", [])
-    active_node = get_active_node_id()
-    print(f"Active device: {active_node}")
-    print(f"Total ops in registry: {len(ops)}")
+    # ── Fetch section list (SSOT — never hardcoded here) ─────────────────────
+    try:
+        sec_resp = requests.get(f"{BASE}/sections", timeout=5).json()
+    except Exception as e:
+        print(f"FATAL: cannot reach {BASE}/sections — {e}")
+        sys.exit(1)
 
-    to_run = [op for op in ops if op["kind"] not in SKIP]
-    skipped = [op["kind"] for op in ops if op["kind"] in SKIP]
-    print(f"Testing: {len(to_run)}  Skipping: {len(skipped)}")
-    if skipped:
-        print(f"  Skipped: {', '.join(sorted(skipped))}")
+    all_sections = sec_resp.get("config", []) + sec_resp.get("module_config", [])
+
+    active_node = get_active_node_id()
+    print(f"Active device : {active_node}")
+    print(f"Total sections: {len(all_sections)}")
+
+    ops_by_kind = {op["kind"]: op for op in manifest.get("ops", [])}
+
+    # ── Build test cases ───────────────────────────────────────────────────────
+    # radio_config_section is expanded into one case per section using the
+    # section list from GET /sections above.
+    test_cases = []
+
+    for kind, op in ops_by_kind.items():
+        if kind in SKIP_OPS:
+            continue
+
+        if kind == "radio_config_section":
+            for section in all_sections:
+                if section in SKIP_SECTIONS:
+                    continue
+                values = pre_read_section(BASE, active_node, section) if active_node else {}
+                test_cases.append({
+                    "label": f"radio_config_section:{section}",
+                    "kind": kind,
+                    "target": active_node,
+                    "payload": {"section": section, "values": values},
+                    "timeout_s": op["timeout_s"],
+                })
+        else:
+            example = op.get("example_payload") or {}
+            test_cases.append({
+                "label": kind,
+                "kind": kind,
+                "target": resolve_target(example.get("target"), active_node),
+                "payload": {"values": dict(example.get("values") or {})},
+                "timeout_s": op["timeout_s"],
+            })
+
+    skipped_ops  = [k for k in ops_by_kind if k in SKIP_OPS]
+    skipped_secs = [s for s in all_sections if s in SKIP_SECTIONS]
+    print(f"Test cases    : {len(test_cases)}")
+    print(f"Skipped ops   : {len(skipped_ops)} ({', '.join(sorted(skipped_ops))})")
+    print(f"Skipped secs  : {len(skipped_secs)} ({', '.join(sorted(skipped_secs))})")
     print()
 
     results = []
 
     async with websockets.connect(WS, open_timeout=10) as ws:
-        for op in to_run:
-            kind = op["kind"]
-            example = op.get("example_payload") or {}
-            raw_target = example.get("target")
-            values = dict(example.get("values") or {})
-            target = resolve_target(raw_target, active_node)
-
-            # Radio module config ops require a full section payload.
-            # Pre-read the current section and merge example overrides into it.
-            section = _infer_section(kind)
-            if op["class"] == "Radio" and section and active_node:
-                rb_url = f"{BASE}/{active_node}/config/{section}"
-                try:
-                    rb = requests.get(rb_url, timeout=5).json()
-                    current = rb.get(section, rb) if isinstance(rb, dict) else {}
-                    if isinstance(current, dict):
-                        values = {**current, **values}
-                except Exception:
-                    pass
-
+        for tc in test_cases:
             t0 = time.time()
-            state, err = await run_op(ws, kind, target, values, TIMEOUT_S, node_id=active_node)
+            state, err = await _submit_op(ws, tc["kind"], tc["target"], tc["payload"], tc["timeout_s"])
             elapsed = time.time() - t0
-            # After Radio writes, wait for device to return READY (mqtt write
-            # triggers a broker reconnect that briefly drops the BLE state).
-            if op.get("class") == "Radio" and active_node:
-                await _wait_device_ready(active_node)
-
             ok = state == "success"
             marker = "✓" if ok else "✗"
             detail = f" — {err}" if err else ""
-            print(f"  {marker} {kind:40} {state:10} ({elapsed:.1f}s){detail}")
-            results.append((kind, ok, state, err))
+            print(f"  {marker} {tc['label']:45} {state:12} ({elapsed:.1f}s){detail}")
+            results.append((tc["label"], ok, state, err))
 
     passed = sum(1 for _, ok, _, _ in results if ok)
     failed = [(k, s, e) for k, ok, s, e in results if not ok]
 
     print()
-    print("═" * 65)
+    print("═" * 70)
     if failed:
         print(f"  RESULT: FAIL  ({passed} passed, {len(failed)} failed)")
         for k, s, e in failed:
             print(f"    ✗ {k}: {s} — {e}")
     else:
-        print(f"  RESULT: PASS  ({passed}/{len(results)} ops succeeded)")
-    print("═" * 65)
+        print(f"  RESULT: PASS  ({passed}/{len(results)} cases succeeded)")
+    print("═" * 70)
 
     sys.exit(0 if not failed else 1)
 
