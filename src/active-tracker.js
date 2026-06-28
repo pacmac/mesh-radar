@@ -1,6 +1,6 @@
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
-import { getRotatorDeviceId, getDeviceCfg } from './device-config.js';
+import { getRotatorDeviceId, getDeviceCfgByNodeId } from './device-config.js';
 import { stmts, getConfig, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
 import { nodeList } from './node-list.js';
 import { bearing } from './utils.js';
@@ -29,7 +29,7 @@ const log = {
 function getHomePos() {
   const rotatorId = getRotatorDeviceId();
   if (!rotatorId) return null;
-  const cfg = getDeviceCfg(rotatorId);
+  const cfg = getDeviceCfgByNodeId(rotatorId);
   if (cfg.fixed_lat == null || cfg.fixed_lon == null) return null;
   return { lat: cfg.fixed_lat, lon: cfg.fixed_lon };
 }
