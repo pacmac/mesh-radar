@@ -44,7 +44,17 @@ export function getAllDeviceCfgs() {
   return getConfigByPrefix(PREFIX);
 }
 
+// Returns the BLE MAC address of the primary device.
+export function getPrimaryMac() {
+  for (const [mac, cfg] of Object.entries(getConfigByPrefix(PREFIX))) {
+    if (cfg?.is_primary) return mac;
+  }
+  return null;
+}
+
 // Returns node_id (!hexid) of the primary device, derived from its MAC key.
+// NOTE: this is MAC-derived and may not match the live firmware node_id for
+// some radios (e.g. RAK nRF52840). Prefer getPrimaryMac() + getLiveNodeIdByMac().
 export function getPrimaryDeviceId() {
   for (const [mac, cfg] of Object.entries(getConfigByPrefix(PREFIX))) {
     if (cfg?.is_primary) return macToNodeId(mac);

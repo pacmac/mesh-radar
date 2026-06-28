@@ -6,7 +6,7 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getRotatorDeviceId, getRotatorAddress, onHomePosChange } from './device-config.js';
+import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getPrimaryMac, getRotatorAddress, onHomePosChange } from './device-config.js';
 import { ownDeviceNums } from './node-filter.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule, getTiltCal, saveTiltCal } from './db.js';
@@ -16,7 +16,7 @@ import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
-import { attachWsRelay } from './ws-relay.js';
+import { attachWsRelay, getLiveNodeIdByMac } from './ws-relay.js';
 import { BRIDGE_CONFIG_SCHEMA } from './bridge-config-schema.js';
 import { ROTATOR_CONFIG_SCHEMA } from './rotator-config-schema.js';
 import { startAlertPoller, ALERT_META } from './alerts.js';
@@ -30,6 +30,14 @@ import { OpManager } from './op-manager.js';
 
 const PORT = process.env.PORT || 8000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
+
+// Returns the live firmware node_id for the primary device, falling back to
+// the MAC-derived ID if the radio has not yet synced.
+function resolvePrimaryNodeId() {
+  const mac = getPrimaryMac();
+  if (!mac) return null;
+  return getLiveNodeIdByMac(mac) || getPrimaryDeviceId();
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -357,7 +365,7 @@ app.post('/range_test/stop', async (req, res) => {
 app.post('/:nodeId/traceroute', async (req, res) => {
   const targetNum = parseInt((req.params.nodeId || '').replace('!', ''), 16);
   if (!targetNum) return res.status(400).json({ error: 'invalid nodeId' });
-  const sender = getPrimaryDeviceId();
+  const sender = resolvePrimaryNodeId();
   if (!sender) return res.status(503).json({ error: 'no primary device configured' });
   try {
     // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────
@@ -641,7 +649,7 @@ scanner.on('contact', (contact) => {
   if (contact.from && rotatorId)
     nodeList.confirmScanContact(contact.from, rotatorId, contact.az, contact.rssi, contact.snr);
   if (FF.SSOT_TRACEROUTE && contact.from) {
-    const sender = getPrimaryDeviceId();
+    const sender = resolvePrimaryNodeId();
     if (sender)
       traceroute.dispatch({ to: contact.from, device: sender, cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: contact.from })
         .catch(() => {});
@@ -786,7 +794,7 @@ const TRACE_COOLDOWN_MS = 5 * 60 * 1000;
 
 rotator.on('point_target', (data) => {
   const num    = data.point_target;
-  const sender = getPrimaryDeviceId();
+  const sender = resolvePrimaryNodeId();
   if (!num || !sender) return;
 
   // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
@@ -843,8 +851,8 @@ setInterval(() => {
 }, 60 * 1000);
 
 bridge.on('connected', async () => {
-  const primaryId = getPrimaryDeviceId();
-  const cfg = primaryId ? getDeviceCfg(primaryId) : {};
+  const primaryMac = getPrimaryMac();
+  const cfg = primaryMac ? getDeviceCfg(primaryMac) : {};
 
   // Seed NodeList from merged node list, then restore device attribution from SQLite.
   // nodes.device persists which device last received each node's packet across restarts.

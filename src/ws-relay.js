@@ -32,11 +32,20 @@ function makeRotatorThrottle(sendFn) {
 // State event types from the bridge BLE state machine — buffered per device
 const STATE_EVENT_TYPES = new Set(['device_state', 'device_data']);
 
+// Module-level map: uppercase BLE MAC → live firmware node_id (!hexid).
+// Populated from device_snapshot and device_data events. Used by callers that
+// need the authoritative node_id rather than a MAC-derived approximation.
+const _liveNodeIds = new Map();
+
+export function getLiveNodeIdByMac(mac) {
+  return mac ? (_liveNodeIds.get(mac.toUpperCase()) ?? null) : null;
+}
+
 export function attachWsRelay(server, getRangeTimer = () => ({ active: false, endsAt: null, nodeId: null })) {
   const wss = new WebSocketServer({ noServer: true });
 
-  // Last-known BLE state per device (node_id → event object).
-  // Seeded from HTTP once on bridge (re)connect, then kept live by WS events.
+  // Last-known BLE state per device (addr → event object).
+  // Seeded from device_snapshot on bridge connect, then kept live by WS events.
   // Replayed to new frontend clients on connect — no per-client HTTP calls.
   const lastDeviceState = {};
 
@@ -101,6 +110,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         // ble_state: lowercase state for UI logic (devBleState, devIsReady, etc.)
         flat.ble_state = (d.state_event?.state || 'OFFLINE').toLowerCase();
         lastDeviceState[d.addr] = flat;
+        if (flat.node_id) _liveNodeIds.set(d.addr.toUpperCase(), flat.node_id);
       }
       broadcastDeviceList();
       return;
@@ -138,6 +148,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         }
       } else if (ev.type === 'device_data') {
         lastDeviceState[evAddr] = { ...existing, ...fields, data_event: ev };
+        if (ev.node_id) _liveNodeIds.set(evAddr.toUpperCase(), ev.node_id);
       }
       broadcastDeviceList();
       return;
