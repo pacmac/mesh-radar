@@ -398,8 +398,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   const wssDevice = new WebSocketServer({ noServer: true });
 
   function attachDeviceClient(ws, nodeId) {
+    // nodeId from URL is !hexid; lastDeviceState is keyed by BLE MAC (ev.addr).
+    // Resolve the MAC by scanning for a matching node_id in existing state entries.
+    const addr = Object.keys(lastDeviceState).find(k =>
+      lastDeviceState[k]?.node_id === nodeId || lastDeviceState[k]?.state_event?.node_id === nodeId
+    ) ?? nodeId;
+
     // Replay last-known state for this device — no HTTP
-    const state = lastDeviceState[nodeId];
+    const state = lastDeviceState[addr];
     if (state && ws.readyState === 1) {
       ws.send(JSON.stringify(state));
     }
@@ -427,7 +433,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
 
     function onEvent(ev) {
       if (ws.readyState !== 1) return;
-      if (!ev.device || ev.device === nodeId || ev.type?.startsWith('ota_')) sendEnriched(ws, ev);
+      const evAddr = ev.addr || ev.device;
+      if (!evAddr || evAddr === addr || ev.node_id === nodeId || ev.type?.startsWith('ota_')) sendEnriched(ws, ev);
     }
 
     const onRotatorStatus = makeRotatorThrottle((data) => {
