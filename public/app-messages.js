@@ -17,6 +17,7 @@ export const messagesMixin = {
         threadRootPktId:    r.thread_root_packet_id ?? r.packet_id,
         isOrphan:           !!r.is_orphan,
         replyDepth:         r.reply_depth ?? 0,
+        isReply:            (r.reply_depth ?? 0) > 0 || !!r.is_orphan,
         fromNum:            r.from_num,
         fromShortName:      r.display_name || r.short_name || null,
         fromLongName:       r.long_name  || null,
@@ -40,23 +41,9 @@ export const messagesMixin = {
   loadMessages() { /* no-op — history arrives via WS message_history on connect */ },
 
   displayMessages() {
-    // Thread structure is pre-computed by node-dash: threadRootPktId, replyDepth, isOrphan.
-    // Sort threads by latest-ts descending, then within a thread by ts ascending.
-    const msgs = this.messages;
-    const threadLatest = new Map();
-    for (const m of msgs) {
-      const root = m.threadRootPktId ?? m.pktId;
-      if (root != null && (m.ts || 0) > (threadLatest.get(root) || 0)) {
-        threadLatest.set(root, m.ts);
-      }
-    }
-    return [...msgs].sort((a, b) => {
-      const rootA = a.threadRootPktId ?? a.pktId;
-      const rootB = b.threadRootPktId ?? b.pktId;
-      const latestDiff = (threadLatest.get(rootB) || 0) - (threadLatest.get(rootA) || 0);
-      if (latestDiff !== 0) return latestDiff;
-      return (a.ts || 0) - (b.ts || 0);
-    }).map(m => ({ ...m, isReply: m.replyDepth > 0 || m.isOrphan }));
+    // Order and thread structure are pre-computed by node-dash.
+    // Browser renders the array as-is — no sorting, no classification.
+    return this.messages;
   },
 
   async sendMessage() {
@@ -90,7 +77,7 @@ export const messagesMixin = {
       broadcast: to === 0xFFFFFFFF, channel, text,
       ts: Math.floor(Date.now() / 1000), time, direction: 'tx', ackStatus: 'sending',
       src: fromId ? [fromId] : [], replyId: this.msgReplyId || null,
-      threadRootPktId: pktIdHint, replyDepth: 0, isOrphan: false,
+      threadRootPktId: pktIdHint, replyDepth: 0, isOrphan: false, isReply: false,
       _localTx: true,
     };
     this.messages.unshift(txEntry);

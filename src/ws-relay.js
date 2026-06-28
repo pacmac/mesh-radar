@@ -96,6 +96,23 @@ function _enrichMessages(rows) {
     }
     r.reply_depth = depth;
   }
+
+  // Sort into display order: threads newest-first (by latest message in thread),
+  // replies within a thread oldest-first directly after their root.
+  const threadLatest = new Map();
+  for (const r of rows) {
+    const root = r.thread_root_packet_id ?? r.packet_id;
+    if (root != null && (r.ts || 0) > (threadLatest.get(root) || 0)) {
+      threadLatest.set(root, r.ts);
+    }
+  }
+  rows.sort((a, b) => {
+    const rootA = a.thread_root_packet_id ?? a.packet_id;
+    const rootB = b.thread_root_packet_id ?? b.packet_id;
+    const latestDiff = (threadLatest.get(rootB) || 0) - (threadLatest.get(rootA) || 0);
+    if (latestDiff !== 0) return latestDiff;
+    return (a.ts || 0) - (b.ts || 0);
+  });
   return rows;
 }
 

@@ -458,7 +458,7 @@ export const wsMixin = {
             broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
             channel: pkt.channel ?? 0,
             replyId: pkt.decoded.reply_id || null,
-            threadRootPktId: pktId, replyDepth: 0, isOrphan: false,
+            threadRootPktId: pktId, replyDepth: 0, isOrphan: false, isReply: false,
             text, ts: pkt.rx_time || Math.floor(Date.now() / 1000), time, direction: 'rx', ackStatus: null,
             src: (ev.node_id || ev.addr || ev.device) ? [ev.node_id || ev.addr || ev.device] : [],
           });
