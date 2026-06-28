@@ -562,6 +562,10 @@ app.post('/alerts/test', async (req, res) => {
 
 // -- tilt calibration --------------------------------------------------------
 
+app.get('/tilt_cal', (_req, res) => {
+  res.json(getTiltCal());
+});
+
 app.put('/tilt_cal', (req, res) => {
   const body = req.body;
   saveTiltCal({

@@ -168,6 +168,13 @@ const REGISTRY = new Map([
     example_payload: { target: '!2687afb1', values: { latitude_i: 515074000, longitude_i: -1278000 } },
     timeout_s: 15, reboot: false,
   }],
+  ['fixed_position_clear', {
+    class: 'Radio', description: 'Remove fixed position from device',
+    method: 'DELETE', endpoint: p => `/${p.target}/fixed_position`,
+    read_back_path: null, match_fields: [],
+    example_payload: { target: '!2687afb1', values: {} },
+    timeout_s: 15, reboot: false,
+  }],
   ['send_message', {
     class: 'Radio', description: 'Send mesh text message',
     method: 'POST', endpoint: p => `/${p.target}/messages`,
