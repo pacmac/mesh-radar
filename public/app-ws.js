@@ -53,6 +53,7 @@ export const wsMixin = {
         if (!knownIds.has(dev.node_id)) this.loadAutoPurge(dev.node_id);
       }
       this.availableDevices = devices;
+      this._rebuildDeviceConfigs?.();
       const existing = {};
       for (const dev of devices) {
         const key = dev.node_id ?? dev.addr;

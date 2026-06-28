@@ -236,16 +236,10 @@ export const devicesMixin = {
 
   async loadDeviceConfigs() {
     try {
-      // API returns { [MAC]: cfg } — transform to { [MAC-derived-id]: cfg } for internal keying.
       const byMac = await fetchJSON('/device-config');
-      this.deviceConfigs = Object.fromEntries(
-        Object.entries(byMac).map(([mac, cfg]) => [
-          '!' + mac.replace(/:/g, '').slice(-8).toLowerCase(),
-          cfg,
-        ])
-      );
-      // Resolve the primary device's actual node_id from the live device_list.
-      // Never derive it from the MAC — the firmware-assigned node_id may differ.
+      this._deviceConfigsByMac = byMac;
+      this._rebuildDeviceConfigs();
+      // Resolve primary device's actual node_id for activeNodeId.
       const primaryMacEntry = Object.entries(byMac).find(([, c]) => c?.is_primary);
       if (primaryMacEntry) {
         const [primaryMac] = primaryMacEntry;
@@ -257,12 +251,24 @@ export const devicesMixin = {
           persistSet('activeNodeId', liveDevice.node_id);
           if (!this.msgFrom) { this.msgFrom = liveDevice.node_id; persistSet('msgFrom', liveDevice.node_id); }
         }
-        // If device not yet in device_list, skip — the device_list WS handler sets
-        // activeNodeId correctly from live state when the first device_list arrives.
       }
     } catch (e) {
       console.warn('Failed to load device configs', e);
     }
+  },
+
+  _rebuildDeviceConfigs() {
+    const byMac = this._deviceConfigsByMac;
+    if (!byMac) return;
+    const configs = {};
+    for (const [mac, cfg] of Object.entries(byMac)) {
+      const macKey = '!' + mac.replace(/:/g, '').slice(-8).toLowerCase();
+      const liveDevice = (this.availableDevices || []).find(
+        d => d.addr?.toUpperCase() === mac.toUpperCase()
+      );
+      configs[liveDevice?.node_id || macKey] = cfg;
+    }
+    this.deviceConfigs = configs;
   },
 
   _drainReadbackQueue(nodeId) {
