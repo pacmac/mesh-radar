@@ -107,7 +107,8 @@ export const messagesMixin = {
     const fromId = this.msgFrom || this.activeNodeId;
     const to = this.msgIsDirect ? Number(this.msgDirectTo) : 0xFFFFFFFF;
     const fromNum = parseInt((fromId || '').replace('!', ''), 16) || 0;
-    const body = { text, channel };
+    const pktIdHint = (Math.random() * 0xFFFFFFFF | 0) >>> 0 || 1;
+    const body = { text, channel, pkt_id: pktIdHint };
     if (this.msgIsDirect) body.to = to;
     if (this.msgReplyId) body.reply_id = this.msgReplyId;
 
