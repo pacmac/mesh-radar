@@ -2,7 +2,7 @@
 // Parses replies to alert emails and forwards the reply text to the mesh as messages.
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
-import { getConfig, consumeReplyToken } from './db.js';
+import { getConfig, getReplyToken, consumeReplyToken } from './db.js';
 
 const POLL_INTERVAL_MS = 60_000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
@@ -89,7 +89,7 @@ async function _handleMessage(rawMsg) {
   if (!tokenMatch) return; // not a reply to one of our alerts
 
   const token = tokenMatch[1];
-  const ctx   = consumeReplyToken(token);
+  const ctx   = getReplyToken(token);
   if (!ctx) {
     console.warn('[imap] reply token not found or expired:', token);
     return;
@@ -118,6 +118,7 @@ async function _handleMessage(rawMsg) {
     const err = await res.text().catch(() => '?');
     console.error(`[imap] failed to send reply: ${res.status} ${err}`);
   } else {
+    consumeReplyToken(token);
     console.log(`[imap] reply sent from ${ctx.from_node_id} → ${ctx.to_num?.toString(16)}: "${replyText.trim().slice(0, 40)}…"`);
   }
 }
