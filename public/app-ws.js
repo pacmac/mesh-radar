@@ -452,7 +452,7 @@ export const wsMixin = {
             if (localTx) {
               localTx.pktId = pktId;
               // BLE echo = radio confirmed TX queued. For broadcasts this is the final state.
-              // For DMs, start a 30s timeout; DM ack events are not emitted by this gateway version.
+              // For DMs, start a 30s timeout; routing_ack will advance to 'acked' or 'failed'.
               localTx.ackStatus = localTx.broadcast ? 'confirmed' : 'sent';
               if (!localTx.broadcast) this._startAckTimeout(pktId);
               const _txKey = localTx._txKey;
@@ -496,6 +496,15 @@ export const wsMixin = {
         if (this.tab === 'radar') this.drawRadar();
       }
       if (this.tab === 'nodes' && portnum === 'TELEMETRY_APP') this.sortNodes(this.nodeSort.key, true);
+    }
+
+    if (ev.type === 'routing_ack' && ev.packet_id) {
+      const m = this.messages.find(m => m.pktId === ev.packet_id);
+      if (m) {
+        this._clearAckTimeout(ev.packet_id);
+        m.ackStatus = ev.error_reason === 0 ? 'acked' : 'failed';
+        if (ev.error_reason !== 0) m.ackError = ev.error_name || String(ev.error_reason);
+      }
     }
 
     if (ev.type === 'range_test_entry' && ev.data) {
