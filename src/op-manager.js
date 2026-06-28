@@ -263,7 +263,8 @@ const REGISTRY = new Map([
     method: 'POST', endpoint: () => '/devices',
     read_back_path: null, match_fields: [],
     confirming: 'device_state_ready',
-    example_payload: { target: null, values: { address: 'E9:B0:3F:17:27:91' } },
+    // target must be the BLE MAC address — used by _waitForStateChange to match ev.addr
+    example_payload: { target: 'E9:B0:3F:17:27:91', values: { address: 'E9:B0:3F:17:27:91' } },
     timeout_s: 30, reboot: false,
   }],
   ['ble_disconnect', {
@@ -272,14 +273,6 @@ const REGISTRY = new Map([
     read_back_path: null, match_fields: [],
     confirming: 'http_200',
     example_payload: { target: 'E9:B0:3F:17:27:91', values: {} },
-    timeout_s: 10, reboot: false,
-  }],
-  ['restart_mqtt_proxy', {
-    class: 'Mode', description: 'Reconnect MQTT proxy',
-    method: 'POST', endpoint: () => '/mqtt_proxy/restart',
-    read_back_path: null, match_fields: [],
-    confirming: 'http_200',
-    example_payload: { target: null, values: {} },
     timeout_s: 10, reboot: false,
   }],
   ['send_traceroute', {

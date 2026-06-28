@@ -190,7 +190,7 @@ export const configMixin = {
     const body = { settings: { ...payload }, role: payload.role, index: ch.index };
     delete body.settings.role;
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp('channel_config', target, { values: body });
+    await submitOp('channel_config', target, { index: ch.index, values: body });
     // Refresh the form UI
     const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
     ch.data = live || {};
