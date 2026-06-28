@@ -121,7 +121,7 @@ export const configMixin = {
     if (this.fixedPosition.alt != null && this.fixedPosition.alt !== '')
       body.altitude = Math.round(this.fixedPosition.alt);
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp('fixed_position_push', target, body);
+    await submitOp('fixed_position_push', target, { values: body });
   },
 
   async clearFixedPosition() {
@@ -190,7 +190,7 @@ export const configMixin = {
     const body = { settings: { ...payload }, role: payload.role, index: ch.index };
     delete body.settings.role;
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp('channel_config', target, body);
+    await submitOp('channel_config', target, { values: body });
     // Refresh the form UI
     const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
     ch.data = live || {};
@@ -231,7 +231,7 @@ export const configMixin = {
     const currentRole = this.ownerData?.role ?? 'CLIENT';
     if (payload.role === currentRole) delete payload.role;
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp('owner_info', target, payload);
+    await submitOp('owner_info', target, { values: payload });
   },
 
   async loadBridgeConfig() {
@@ -259,7 +259,7 @@ export const configMixin = {
     try {
       const el = document.getElementById('bridge_cfg_form');
       const payload = collectForm(el, this.bridgeConfigSchema.fields);
-      await opFlow('bridge_config', null, payload, { successMsg: 'Bridge config saved' });
+      await opFlow('bridge_config', null, { values: payload }, { successMsg: 'Bridge config saved' });
       el.removeAttribute('data-dirty');
       this.bridgeConfigSaved = true;
       setTimeout(() => { this.bridgeConfigSaved = false; }, 2000);
@@ -308,7 +308,7 @@ export const configMixin = {
     this.alertSmtpSaved  = false;
     this.alertSmtpError  = '';
     try {
-      await opFlow('alert_config', null, payload, { successMsg: 'SMTP settings saved' });
+      await opFlow('alert_config', null, { values: payload }, { successMsg: 'SMTP settings saved' });
       Object.assign(this.alertSmtp, {
         host: payload['alerts.smtp_host'], port: payload['alerts.smtp_port'],
         user: payload['alerts.smtp_user'], pass: payload['alerts.smtp_pass'],
@@ -327,7 +327,7 @@ export const configMixin = {
 
   async saveSmtp(key, value) {
     try {
-      await opFlow('alert_config', null, { [key]: value }, { successMsg: null });
+      await opFlow('alert_config', null, { values: { [key]: value } }, { successMsg: null });
       const field = key.replace('alerts.smtp_', '').replace('alerts.imap_', 'imap_');
       if (this.alertSmtp) this.alertSmtp[field] = value;
     } catch (_) {} // opFlow already showed the error toast
@@ -335,7 +335,7 @@ export const configMixin = {
 
   async updateAlertRule(type, changes) {
     try {
-      await opFlow('alert_rule', type, changes, { successMsg: null });
+      await opFlow('alert_rule', type, { values: changes }, { successMsg: null });
       const r = this.alertRules.find(x => x.type === type);
       if (r) Object.assign(r, changes);
     } catch (_) {} // opFlow already showed the error toast
@@ -354,7 +354,7 @@ export const configMixin = {
     this.radarCfgSaved  = false;
     this.radarCfgError  = '';
     try {
-      await opFlow('radar_config', null, this.radarCfg, { successMsg: 'Radar config saved' });
+      await opFlow('radar_config', null, { values: this.radarCfg }, { successMsg: 'Radar config saved' });
       this.radarCfgSaved = true;
       setTimeout(() => { this.radarCfgSaved = false; }, 3000);
     } catch (e) {

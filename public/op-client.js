@@ -10,11 +10,11 @@ const _earlyTerminal = new Map(); // op_id → ev (cleared after 5s)
 
 const OP_TIMEOUT_MS = 90_000; // outer safety net; individual ops have their own timeout_s
 
-export async function submitOp(kind, target, values = {}) {
+export async function submitOp(kind, target, payload = {}) {
   const res = await fetch('/ops', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind, target: target ?? null, payload: { values } }),
+    body: JSON.stringify({ kind, target: target ?? null, payload }),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');

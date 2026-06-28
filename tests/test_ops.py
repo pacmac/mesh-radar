@@ -180,7 +180,7 @@ async def main():
 
     results = []
 
-    async with websockets.connect(WS, open_timeout=10) as ws:
+    async with websockets.connect(WS, open_timeout=10, max_size=10 * 1024 * 1024) as ws:
         for tc in test_cases:
             t0 = time.time()
             state, err = await _submit_op(ws, tc["kind"], tc["target"], tc["payload"], tc["timeout_s"])
