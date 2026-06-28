@@ -135,6 +135,8 @@ app.post('/rotator/move', (req, res) => {
 app.post('/rotator/mode', (req, res) => {
   const { mode } = req.body;
   if (mode == null) return res.status(400).json({ error: 'mode required' });
+  if (mode === 1 && scanner.active)
+    return res.json({ mode: dashMode.value, refused: true });
   dashMode.set(mode);
   res.json({ mode });
 });
