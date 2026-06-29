@@ -550,13 +550,21 @@ const _isAlerted = db.prepare(
   `SELECT 1 FROM messages WHERE packet_id = ? AND alerted_at IS NOT NULL LIMIT 1`
 );
 
+const _alertedPacketIds = new Set();
+const _ALERTED_CAP = 2000;
+
 export function markPacketAlerted(packetId) {
   if (packetId == null) return;
+  _alertedPacketIds.add(packetId);
+  if (_alertedPacketIds.size > _ALERTED_CAP) {
+    _alertedPacketIds.delete(_alertedPacketIds.values().next().value);
+  }
   _markAlerted.run(Math.floor(Date.now() / 1000), packetId);
 }
 
 export function isPacketAlerted(packetId) {
   if (packetId == null) return false;
+  if (_alertedPacketIds.has(packetId)) return true;
   return !!_isAlerted.get(packetId);
 }
 

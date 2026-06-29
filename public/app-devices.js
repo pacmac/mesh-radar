@@ -5,14 +5,11 @@ import { persistSet } from './app-persist.js';
 export const devicesMixin = {
   get primaryDeviceId() {
     const e = Object.entries(this.deviceConfigs).find(([, c]) => c?.is_primary);
-    if (e) {
-      const suffix = e[0].slice(1); // MAC-derived key '!3f172791' → '3f172791'
-      const live = this.availableDevices.find(
-        d => d.addr.replace(/:/g, '').toLowerCase().endsWith(suffix)
-      );
-      if (live?.node_id) return live.node_id;
-    }
-    return this.availableDevices[0]?.node_id || '';
+    if (!e) return this.availableDevices[0]?.node_id || '';
+    const key = e[0]; // live node_id, or MAC fallback for non-live devices
+    if (this.availableDevices.some(d => d.node_id === key)) return key;
+    const live = this.availableDevices.find(d => d.addr?.toUpperCase() === key.toUpperCase());
+    return live?.node_id || this.availableDevices[0]?.node_id || '';
   },
 
   get primaryDevBleState() {
@@ -224,7 +221,11 @@ export const devicesMixin = {
 
   rotatorDeviceId() {
     const entry = Object.entries(this.deviceConfigs).find(([, c]) => c?.is_rotator);
-    return entry ? entry[0] : null;
+    if (!entry) return null;
+    const key = entry[0]; // live node_id, or MAC fallback for non-live devices
+    if (this.availableDevices.some(d => d.node_id === key)) return key;
+    const live = this.availableDevices.find(d => d.addr?.toUpperCase() === key.toUpperCase());
+    return live?.node_id || null;
   },
 
   async restartMqttProxy() {
@@ -263,11 +264,10 @@ export const devicesMixin = {
     if (!byMac) return;
     const configs = {};
     for (const [mac, cfg] of Object.entries(byMac)) {
-      const macKey = '!' + mac.replace(/:/g, '').slice(-8).toLowerCase();
       const liveDevice = (this.availableDevices || []).find(
         d => d.addr?.toUpperCase() === mac.toUpperCase()
       );
-      configs[liveDevice?.node_id || macKey] = cfg;
+      configs[liveDevice?.node_id || mac] = cfg;
     }
     this.deviceConfigs = configs;
   },

@@ -4,6 +4,12 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { getConfig, getReplyToken, consumeReplyToken } from './db.js';
 
+function truncateUtf8Bytes(str, maxBytes) {
+  const buf = Buffer.from(str, 'utf8');
+  if (buf.length <= maxBytes) return str;
+  return buf.subarray(0, maxBytes).toString('utf8').replace(/�+$/, '');
+}
+
 const POLL_INTERVAL_MS = 60_000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
 
@@ -102,7 +108,7 @@ async function _handleMessage(rawMsg) {
   }
 
   const body = {
-    text:     replyText.trim().slice(0, 228), // Meshtastic max payload
+    text:     truncateUtf8Bytes(replyText.trim(), 228),
     channel:  ctx.channel ?? 0,
   };
   if (ctx.to_num && ctx.to_num !== 0xffffffff) body.to = ctx.to_num;
