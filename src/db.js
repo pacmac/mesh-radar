@@ -488,6 +488,14 @@ export function getConfigByPrefix(prefix) {
   return result;
 }
 
+export function persistNodeMac(nodeId, mac) {
+  setConfig('node_mac.' + nodeId, mac);
+}
+
+export function loadNodeMacMap() {
+  return new Map(Object.entries(getConfigByPrefix('node_mac.')));
+}
+
 // -- Alert rules --------------------------------------------------------------
 
 const _getAllAlertRules  = db.prepare(`SELECT * FROM alert_rules ORDER BY type`);

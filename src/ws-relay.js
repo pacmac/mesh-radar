@@ -3,7 +3,7 @@ import { bridge } from './bridge.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
-import { insertTilt, insertEnvHistory, getTiltCal, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts } from './db.js';
+import { insertTilt, insertEnvHistory, getTiltCal, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts, persistNodeMac, loadNodeMacMap } from './db.js';
 import { queryMessages } from './filters.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode } from './dash-mode.js';
@@ -36,6 +36,10 @@ const STATE_EVENT_TYPES = new Set(['device_state', 'device_data']);
 // Populated from device_snapshot and device_data events. Used by callers that
 // need the authoritative node_id rather than a MAC-derived approximation.
 const _liveNodeIds = new Map();
+// Seed from persisted mapping so ownDeviceNums() is correct immediately on cold start.
+for (const [nodeId, mac] of loadNodeMacMap()) {
+  _liveNodeIds.set(mac.toUpperCase(), nodeId);
+}
 
 export function getLiveNodeIdByMac(mac) {
   return mac ? (_liveNodeIds.get(mac.toUpperCase()) ?? null) : null;
@@ -193,7 +197,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         // ble_state: lowercase state for UI logic (devBleState, devIsReady, etc.)
         flat.ble_state = (d.state_event?.state || 'OFFLINE').toLowerCase();
         lastDeviceState[d.addr] = flat;
-        if (flat.node_id) _liveNodeIds.set(d.addr.toUpperCase(), flat.node_id);
+        if (flat.node_id) {
+          _liveNodeIds.set(d.addr.toUpperCase(), flat.node_id);
+          persistNodeMac(flat.node_id, d.addr.toUpperCase());
+        }
       }
       broadcastDeviceList();
       return;
@@ -231,7 +238,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         }
       } else if (ev.type === 'device_data') {
         lastDeviceState[evAddr] = { ...existing, ...fields, data_event: ev };
-        if (ev.node_id) _liveNodeIds.set(evAddr.toUpperCase(), ev.node_id);
+        if (ev.node_id) {
+          _liveNodeIds.set(evAddr.toUpperCase(), ev.node_id);
+          persistNodeMac(ev.node_id, evAddr.toUpperCase());
+        }
       }
       broadcastDeviceList();
       return;
