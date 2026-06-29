@@ -1,6 +1,6 @@
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
-import { getRotatorAddress, getDeviceCfg } from './device-config.js';
+import { getRotatorAddress } from './device-config.js';
 import { stmts, getConfig, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
 import { nodeList } from './node-list.js';
 import { bearing } from './utils.js';
@@ -27,11 +27,9 @@ const log = {
 };
 
 function getHomePos() {
-  const rotatorMac = getRotatorAddress();
-  if (!rotatorMac) return null;
-  const cfg = getDeviceCfg(rotatorMac);
-  if (cfg.fixed_lat == null || cfg.fixed_lon == null) return null;
-  return { lat: cfg.fixed_lat, lon: cfg.fixed_lon };
+  const lat = getConfig('home.lat', null);
+  const lon = getConfig('home.lon', null);
+  return lat != null && lon != null ? { lat, lon } : null;
 }
 
 // Build prioritised visit queue from current filtered radar nodes.

@@ -69,18 +69,35 @@ export const messagesMixin = {
     if (this.msgReplyId) body.reply_id = this.msgReplyId;
 
     const txKey = Date.now();
+    const replyParent = this.msgReplyId ? this.messages.find(m => m.pktId === this.msgReplyId) : null;
+    const threadRootPktId = replyParent ? (replyParent.threadRootPktId ?? replyParent.pktId) : pktIdHint;
     const txEntry = {
       _txKey: txKey,
+      pktId: pktIdHint,
       fromNum, to: to >>> 0,
       fromShortName: this.deviceLabel(fromId) || null,
       fromLongName:  this.availableDevices.find(d => d.node_id === fromId)?.long_name || null,
       broadcast: to === 0xFFFFFFFF, channel, text,
       ts: Math.floor(Date.now() / 1000), time, direction: 'tx',
       src: fromId ? [fromId] : [], replyId: this.msgReplyId || null,
-      threadRootPktId: pktIdHint, replyDepth: 0, isOrphan: false, isReply: false,
+      threadRootPktId, replyDepth: replyParent ? (replyParent.replyDepth ?? 0) + 1 : 0,
+      isOrphan: false, isReply: !!replyParent,
       _localTx: true,
     };
-    this.messages.unshift(txEntry);
+    if (replyParent) {
+      // Insert after the last message in the same thread so reply appears inline.
+      let insertAt = -1;
+      for (let i = 0; i < this.messages.length; i++) {
+        if (this.messages[i].threadRootPktId === threadRootPktId) insertAt = i;
+      }
+      if (insertAt >= 0) {
+        this.messages.splice(insertAt + 1, 0, txEntry);
+      } else {
+        this.messages.unshift(txEntry);
+      }
+    } else {
+      this.messages.unshift(txEntry);
+    }
     if (this.messages.length > 50) this.messages.pop();
 
     this.msgInputHistory = [text, ...this.msgInputHistory.filter(t => t !== text)].slice(0, 50);
@@ -97,7 +114,7 @@ export const messagesMixin = {
       if (res?.error) throw new Error(res.error?.message || String(res.error));
       if (res?.detail) throw new Error(res.detail);
       const m = this.messages.find(x => x._txKey === txKey);
-      if (m && res?.id && !m.pktId) m.pktId = res.id;
+      if (m && res?.id) m.pktId = res.id;
       this.msgSent = true;
       setTimeout(() => (this.msgSent = false), 2000);
     } catch (e) {
