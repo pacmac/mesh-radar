@@ -187,15 +187,13 @@ export const devicesMixin = {
   async saveHomePosCfg() {
     this.homePosSaved = false;
     this.homePosError = '';
-    const nodeId = this.cfgRadioId;
-    if (!nodeId) return;
-    const cfg = this.deviceConfigs[nodeId] || {};
     try {
-      const updated = await fetchJSON(`/device-config/${encodeURIComponent(nodeId)}`, 'PUT', {
-        fixed_lat: cfg.fixed_lat ?? null,
-        fixed_lon: cfg.fixed_lon ?? null,
+      const updated = await fetchJSON('/home_pos', 'PUT', {
+        lat: this.homeLat != null && this.homeLat !== '' ? Number(this.homeLat) : null,
+        lon: this.homeLon != null && this.homeLon !== '' ? Number(this.homeLon) : null,
       });
-      this.deviceConfigs = { ...this.deviceConfigs, [nodeId]: { ...cfg, ...updated } };
+      this.homeLat = updated.lat ?? null;
+      this.homeLon = updated.lon ?? null;
       this.homePosSaved = true;
       setTimeout(() => { this.homePosSaved = false; }, 2000);
     } catch (e) {

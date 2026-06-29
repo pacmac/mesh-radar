@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
-import { setConfig, getMqttNode, stmts } from './db.js';
-import { getRotatorAddress, getAllDeviceCfgs } from './device-config.js';
+import { getConfig, setConfig, getMqttNode, stmts } from './db.js';
+import { getRotatorAddress } from './device-config.js';
 import { passesFilter, ownDeviceNums } from './node-filter.js';
 import { haversine, bearing } from './utils.js';
 
@@ -303,13 +303,9 @@ class NodeList extends EventEmitter {
   }
 
   get homePos() {
-    const all = getAllDeviceCfgs();
-    for (const cfg of Object.values(all)) {
-      if (cfg?.is_primary && cfg.fixed_lat != null && cfg.fixed_lon != null) {
-        return { lat: cfg.fixed_lat, lon: cfg.fixed_lon };
-      }
-    }
-    return null;
+    const lat = getConfig('home.lat', null);
+    const lon = getConfig('home.lon', null);
+    return lat != null && lon != null ? { lat, lon } : null;
   }
 
   get nodes() {

@@ -212,6 +212,8 @@ function dashboard() {
     antennaError: '',
     homePosSaved: false,
     homePosError: '',
+    homeLat: null,
+    homeLon: null,
 
     // -- Live feed ------------------------------------------------------------
     feedVisible: [],   // populated in init() from feedFilterOptions; DOM persist manages it

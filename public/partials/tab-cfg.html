@@ -70,33 +70,6 @@
                     <span class="text-success text-sm" x-show="antennaSaved" x-transition>Saved ✓</span>
                     <span class="text-error text-sm" x-show="antennaError" x-text="antennaError"></span>
                   </div>
-                  <!-- Home position — only relevant for the primary device -->
-                  <template x-if="deviceConfigs[cfgRadioId]?.is_primary">
-                    <div>
-                      <div class="divider my-2 text-xs opacity-50">Home Position</div>
-                      <div class="grid grid-cols-2 gap-3">
-                        <label class="form-control w-full">
-                          <div class="label py-1"><span class="label-text text-xs">Latitude</span></div>
-                          <input type="number" step="0.000001" class="input input-bordered input-sm w-full font-mono"
-                                 placeholder="e.g. 51.5074"
-                                 :value="deviceConfigs[cfgRadioId]?.fixed_lat ?? ''"
-                                 @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], fixed_lat: $event.target.value !== '' ? Number($event.target.value) : null }">
-                        </label>
-                        <label class="form-control w-full">
-                          <div class="label py-1"><span class="label-text text-xs">Longitude</span></div>
-                          <input type="number" step="0.000001" class="input input-bordered input-sm w-full font-mono"
-                                 placeholder="e.g. -0.1278"
-                                 :value="deviceConfigs[cfgRadioId]?.fixed_lon ?? ''"
-                                 @change="deviceConfigs[cfgRadioId] = { ...deviceConfigs[cfgRadioId], fixed_lon: $event.target.value !== '' ? Number($event.target.value) : null }">
-                        </label>
-                      </div>
-                      <div class="flex items-center gap-2 mt-2">
-                        <button class="btn btn-sm btn-primary" @click="saveHomePosCfg()">Save</button>
-                        <span class="text-success text-sm" x-show="homePosSaved" x-transition>Saved ✓</span>
-                        <span class="text-error text-sm" x-show="homePosError" x-text="homePosError"></span>
-                      </div>
-                    </div>
-                  </template>
                   <!-- Tilt calibration (only shown when the selected radio is the tilt-sensor device) -->
                   <template x-if="nodeSelf.tilt && cfgRadioId === activeNodeId">
                     <div>
@@ -384,6 +357,35 @@
 
           <!-- ===================== RADAR ===================== -->
           <div x-show="cfgTab==='radar'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
+
+            <!-- Home Position -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title text-base">Home Position</h2>
+                <p class="text-xs opacity-50 mb-2">Global origin for radar bearing and distance. Not per-radio.</p>
+                <div class="grid grid-cols-2 gap-3 max-w-sm">
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Latitude</span></div>
+                    <input type="number" step="0.000001" class="input input-bordered input-sm w-full font-mono"
+                           placeholder="e.g. 51.5074"
+                           :value="homeLat ?? ''"
+                           @change="homeLat = $event.target.value !== '' ? Number($event.target.value) : null">
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Longitude</span></div>
+                    <input type="number" step="0.000001" class="input input-bordered input-sm w-full font-mono"
+                           placeholder="e.g. -0.1278"
+                           :value="homeLon ?? ''"
+                           @change="homeLon = $event.target.value !== '' ? Number($event.target.value) : null">
+                  </label>
+                </div>
+                <div class="flex items-center gap-2 mt-2">
+                  <button class="btn btn-sm btn-primary" @click="saveHomePosCfg()">Save</button>
+                  <span class="text-success text-sm" x-show="homePosSaved" x-transition>Saved ✓</span>
+                  <span class="text-error text-sm" x-show="homePosError" x-text="homePosError"></span>
+                </div>
+              </div>
+            </div>
 
             <!-- Display -->
             <div class="card bg-base-100 shadow">

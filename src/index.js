@@ -128,6 +128,19 @@ app.get('/nodes', (req, res) => {
 app.use('/config', configRouter);
 app.use('/device-config', deviceConfigRouter);
 
+app.get('/home_pos', (_req, res) => {
+  res.json({ lat: getConfig('home.lat', null), lon: getConfig('home.lon', null) });
+});
+
+app.put('/home_pos', (req, res) => {
+  const lat = req.body.lat != null && req.body.lat !== '' ? Number(req.body.lat) : null;
+  const lon = req.body.lon != null && req.body.lon !== '' ? Number(req.body.lon) : null;
+  setConfig('home.lat', lat);
+  setConfig('home.lon', lon);
+  nodeList.refilter();
+  res.json({ lat, lon });
+});
+
 app.get('/rotator/status', (req, res) => {
   const fwStatus = rotator.status;
   res.json({

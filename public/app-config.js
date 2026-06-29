@@ -30,6 +30,11 @@ export const configMixin = {
     } catch (e) {
       console.warn('Failed to load config', e);
     }
+    try {
+      const hp = await fetchJSON('/home_pos');
+      this.homeLat = hp.lat ?? null;
+      this.homeLon = hp.lon ?? null;
+    } catch (_) {}
   },
 
   switchCfgTab(name) {

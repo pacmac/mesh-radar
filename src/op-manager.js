@@ -71,11 +71,11 @@ const REGISTRY = new Map([
     timeout_s: 5, reboot: false,
   }],
   ['home_position', {
-    class: 'Local', description: 'Rotator home position (lat/lon)',
-    method: 'PUT', endpoint: p => `/device-config/${p.target}`,
-    read_back_path: p => `/device-config/${p.target}`,
-    match_fields: ['fixed_lat', 'fixed_lon'],
-    example_payload: { target: null, values: { fixed_lat: null, fixed_lon: null } },
+    class: 'Local', description: 'Global radar home position (lat/lon)',
+    method: 'PUT', endpoint: () => '/home_pos',
+    read_back_path: () => '/home_pos',
+    match_fields: ['lat', 'lon'],
+    example_payload: { target: null, values: { lat: null, lon: null } },
     timeout_s: 5, reboot: false,
   }],
   ['bridge_config', {
