@@ -75,7 +75,7 @@ export const messagesMixin = {
       fromShortName: this.deviceLabel(fromId) || null,
       fromLongName:  this.availableDevices.find(d => d.node_id === fromId)?.long_name || null,
       broadcast: to === 0xFFFFFFFF, channel, text,
-      ts: Math.floor(Date.now() / 1000), time, direction: 'tx', ackStatus: 'sending',
+      ts: Math.floor(Date.now() / 1000), time, direction: 'tx',
       src: fromId ? [fromId] : [], replyId: this.msgReplyId || null,
       threadRootPktId: pktIdHint, replyDepth: 0, isOrphan: false, isReply: false,
       _localTx: true,
@@ -97,15 +97,13 @@ export const messagesMixin = {
       if (res?.error) throw new Error(res.error?.message || String(res.error));
       if (res?.detail) throw new Error(res.detail);
       const m = this.messages.find(x => x._txKey === txKey);
-      if (m) {
-        m.ackStatus = 'queued';
-        if (res?.id && !m.pktId) m.pktId = res.id;
-      }
+      if (m && res?.id && !m.pktId) m.pktId = res.id;
       this.msgSent = true;
       setTimeout(() => (this.msgSent = false), 2000);
     } catch (e) {
       const m = this.messages.find(x => x._txKey === txKey);
-      if (m) { m.ackStatus = 'failed'; m._sendError = e.message; }
+      if (m) m._sendError = e.message;
+      this.showToast(e.message || 'Send failed — check gateway connection', 'error', 0);
     }
   },
 
