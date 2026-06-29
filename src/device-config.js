@@ -53,27 +53,19 @@ export function getRotatorAddress() {
 }
 
 // Called from ws-relay when a device appears. Migrates any legacy device_cfg.!hexid
-// entry to the canonical MAC key. nodeId (e.g. "!2687afb1") is the live firmware
-// node ID — used for exact-key lookup so RAK devices (where MAC suffix ≠ node_id)
-// migrate correctly. Falls back to MAC-suffix heuristic when nodeId is unavailable.
+// entry to the canonical MAC key using the exact live node ID. If the live node ID
+// is absent or has no legacy entry, migration is deferred and an empty entry is
+// bootstrapped. No identity is ever inferred from MAC-suffix arithmetic.
 export function ensureDeviceCfgMac(addr, nodeId) {
   const mac = addr.toUpperCase();
   const all = getConfigByPrefix(PREFIX);
 
-  // Find a legacy !hexid-keyed entry to migrate.
-  // Exact nodeId match is authoritative; MAC-suffix is a fallback for devices
-  // where the two are identical (most ESP32 hardware).
-  const suffix = mac.replace(/:/g, '').toLowerCase().slice(-8);
-  const oldKey = (nodeId && nodeId in all ? nodeId : null)
-    ?? Object.keys(all).find(k =>
-        !k.includes(':') && k.replace(/[^0-9a-f]/gi, '').toLowerCase().endsWith(suffix)
-      );
-
-  if (oldKey) {
-    // Migrate: overwrite any empty bootstrap at the MAC key, delete legacy entry.
-    setConfig(PREFIX + mac, all[oldKey]);
-    deleteConfig(PREFIX + oldKey);
+  if (nodeId && nodeId in all) {
+    // Exact live pair known: migrate legacy !hexid entry to MAC key.
+    setConfig(PREFIX + mac, all[nodeId]);
+    deleteConfig(PREFIX + nodeId);
   } else if (getConfig(PREFIX + mac, null) === null) {
+    // No exact pair available: defer migration, bootstrap empty entry only.
     setConfig(PREFIX + mac, { ...DEFAULT });
   }
 }
