@@ -1,4 +1,4 @@
-import { stmts, insertEnvHistory } from './db.js';
+import { stmts, insertEnvHistory, syncAlertedAt } from './db.js';
 
 function _validCoord(lat, lon) {
   return lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
@@ -146,6 +146,7 @@ function handlePacket(packet, device, ts, replay) {
       short_name: user?.short_name ?? null,
       long_name:  user?.long_name  ?? null,
     });
+    syncAlertedAt(packet.id ?? null);
     return;
   }
 

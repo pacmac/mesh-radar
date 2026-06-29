@@ -4,17 +4,6 @@ import { getConfig, setConfig, deleteConfig, getConfigByPrefix } from './db.js';
 const router = Router();
 const PREFIX = 'device_cfg.';
 
-// Derive !hexid node_id from BLE MAC address.
-// Last 4 bytes of MAC = Meshtastic node number (verified on ESP32 + nRF52).
-export function macToNodeId(mac) {
-  return '!' + mac.replace(/:/g, '').slice(-8).toLowerCase();
-}
-
-// Inverse: derive the expected MAC suffix from a node_id for matching.
-// Only the last 4 bytes are deterministic — the prefix bytes vary by hardware.
-function nodeIdSuffix(nodeId) {
-  return nodeId.replace(/^!/, '').toLowerCase();
-}
 
 let _onHomePosChange = null;
 export function onHomePosChange(cb) { _onHomePosChange = cb; }
@@ -52,41 +41,12 @@ export function getPrimaryMac() {
   return null;
 }
 
-// Returns node_id (!hexid) of the primary device, derived from its MAC key.
-// NOTE: this is MAC-derived and may not match the live firmware node_id for
-// some radios (e.g. RAK nRF52840). Prefer getPrimaryMac() + getLiveNodeIdByMac().
-export function getPrimaryDeviceId() {
-  for (const [mac, cfg] of Object.entries(getConfigByPrefix(PREFIX))) {
-    if (cfg?.is_primary) return macToNodeId(mac);
-  }
-  return null;
-}
-
-// Returns node_id (!hexid) of the rotator device, derived from its MAC key.
-export function getRotatorDeviceId() {
-  for (const [mac, cfg] of Object.entries(getConfigByPrefix(PREFIX))) {
-    if (cfg?.is_rotator) return macToNodeId(mac);
-  }
-  return null;
-}
-
 // Returns MAC address of the rotator device (for device identity comparisons).
 export function getRotatorAddress() {
   for (const [mac, cfg] of Object.entries(getConfigByPrefix(PREFIX))) {
     if (cfg?.is_rotator) return mac;
   }
   return null;
-}
-
-// Look up device config by node_id (!hexid) — matches by MAC suffix.
-export function getDeviceCfgByNodeId(nodeId) {
-  const suffix = nodeIdSuffix(nodeId);
-  for (const [mac, cfg] of Object.entries(getConfigByPrefix(PREFIX))) {
-    if (mac.replace(/:/g, '').toLowerCase().endsWith(suffix)) {
-      return { ...DEFAULT, ...cfg };
-    }
-  }
-  return { ...DEFAULT };
 }
 
 // Called from ws-relay when a device first appears with a known MAC address.
@@ -116,30 +76,18 @@ router.get('/', (req, res) => {
   res.json(getAllDeviceCfgs());
 });
 
-// GET /device-config/:address  (MAC or !hexid)
+// GET /device-config/:address  (MAC only — !hexid not accepted; use MAC address)
 router.get('/:address', (req, res) => {
   const raw = req.params.address;
-  if (raw.startsWith('!')) {
-    res.json(getDeviceCfgByNodeId(raw));
-  } else {
-    res.json(getDeviceCfg(raw));
-  }
+  if (raw.startsWith('!')) return res.status(400).json({ error: 'Use BLE MAC address, not !hexid' });
+  res.json(getDeviceCfg(raw));
 });
 
-// PUT /device-config/:address  (MAC or !hexid)
+// PUT /device-config/:address  (MAC only — !hexid not accepted; use MAC address)
 router.put('/:address', (req, res) => {
   const raw = req.params.address;
-  // Resolve to MAC key
-  let mac;
-  if (raw.startsWith('!')) {
-    const suffix = nodeIdSuffix(raw);
-    mac = Object.keys(getConfigByPrefix(PREFIX)).find(
-      k => k.replace(/:/g, '').toLowerCase().endsWith(suffix)
-    );
-    if (!mac) return res.status(404).json({ error: `No device config found for ${raw}` });
-  } else {
-    mac = raw.toUpperCase();
-  }
+  if (raw.startsWith('!')) return res.status(400).json({ error: 'Use BLE MAC address, not !hexid' });
+  const mac = raw.toUpperCase();
 
   const existing = getDeviceCfg(mac);
   const updated = { ...existing };
