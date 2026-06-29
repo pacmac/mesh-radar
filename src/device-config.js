@@ -8,6 +8,9 @@ const PREFIX = 'device_cfg.';
 let _onHomePosChange = null;
 export function onHomePosChange(cb) { _onHomePosChange = cb; }
 
+let _nodeIdToMac = null;
+export function registerNodeIdToMacResolver(fn) { _nodeIdToMac = fn; }
+
 const DEFAULT = {
   label:               null,   // display label: OMNI, YAGI, Y, O, etc.
   is_rotator:          false,  // this radio is physically on the rotator
@@ -49,24 +52,28 @@ export function getRotatorAddress() {
   return null;
 }
 
-// Called from ws-relay when a device first appears with a known MAC address.
-// Migrates any legacy device_cfg.!hexid entry to the canonical MAC key.
-export function ensureDeviceCfgMac(addr) {
+// Called from ws-relay when a device appears. Migrates any legacy device_cfg.!hexid
+// entry to the canonical MAC key. nodeId (e.g. "!2687afb1") is the live firmware
+// node ID — used for exact-key lookup so RAK devices (where MAC suffix ≠ node_id)
+// migrate correctly. Falls back to MAC-suffix heuristic when nodeId is unavailable.
+export function ensureDeviceCfgMac(addr, nodeId) {
   const mac = addr.toUpperCase();
-  if (getConfig(PREFIX + mac, null) !== null) return; // already exists
+  const all = getConfigByPrefix(PREFIX);
 
+  // Find a legacy !hexid-keyed entry to migrate.
+  // Exact nodeId match is authoritative; MAC-suffix is a fallback for devices
+  // where the two are identical (most ESP32 hardware).
   const suffix = mac.replace(/:/g, '').toLowerCase().slice(-8);
-  const all    = getConfigByPrefix(PREFIX);
-  const oldKey = Object.keys(all).find(k =>
-    !k.includes(':') && k.replace(/[^0-9a-f]/gi, '').toLowerCase().endsWith(suffix)
-  );
+  const oldKey = (nodeId && nodeId in all ? nodeId : null)
+    ?? Object.keys(all).find(k =>
+        !k.includes(':') && k.replace(/[^0-9a-f]/gi, '').toLowerCase().endsWith(suffix)
+      );
 
   if (oldKey) {
-    // Migrate: copy data to MAC key, delete old !hexid key
+    // Migrate: overwrite any empty bootstrap at the MAC key, delete legacy entry.
     setConfig(PREFIX + mac, all[oldKey]);
     deleteConfig(PREFIX + oldKey);
-  } else {
-    // Bootstrap empty entry
+  } else if (getConfig(PREFIX + mac, null) === null) {
     setConfig(PREFIX + mac, { ...DEFAULT });
   }
 }
@@ -80,11 +87,11 @@ router.get('/', (req, res) => {
 router.get('/:address', (req, res) => {
   const raw = req.params.address;
   if (raw.startsWith('!')) {
-    const suffix = raw.replace(/^!/, '').toLowerCase();
-    const entry = Object.entries(getConfigByPrefix(PREFIX)).find(
-      ([mac]) => mac.replace(/:/g, '').toLowerCase().endsWith(suffix)
-    );
-    return res.json(entry ? { ...DEFAULT, ...entry[1] } : { ...DEFAULT });
+    const mac = _nodeIdToMac?.(raw);
+    if (mac) return res.json(getDeviceCfg(mac));
+    // Device not currently live — read legacy !hexid key directly if present.
+    const stored = getConfig(PREFIX + raw, null);
+    return res.json(stored ? { ...DEFAULT, ...stored } : { ...DEFAULT });
   }
   res.json(getDeviceCfg(raw));
 });
@@ -94,11 +101,14 @@ router.put('/:address', (req, res) => {
   const raw = req.params.address;
   let mac;
   if (raw.startsWith('!')) {
-    const suffix = raw.replace(/^!/, '').toLowerCase();
-    mac = Object.keys(getConfigByPrefix(PREFIX)).find(
-      k => k.replace(/:/g, '').toLowerCase().endsWith(suffix)
-    );
-    if (!mac) return res.status(404).json({ error: `No device config found for ${raw}` });
+    mac = _nodeIdToMac?.(raw);
+    if (!mac) return res.status(404).json({ error: `Device ${raw} is not currently live` });
+    // Migrate any legacy !hexid-keyed entry to MAC on first write.
+    const legacy = getConfig(PREFIX + raw, null);
+    if (legacy !== null) {
+      if (getConfig(PREFIX + mac, null) === null) setConfig(PREFIX + mac, legacy);
+      deleteConfig(PREFIX + raw);
+    }
   } else {
     mac = raw.toUpperCase();
   }

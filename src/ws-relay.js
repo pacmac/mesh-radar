@@ -41,6 +41,14 @@ export function getLiveNodeIdByMac(mac) {
   return mac ? (_liveNodeIds.get(mac.toUpperCase()) ?? null) : null;
 }
 
+export function getLiveMacByNodeId(nodeId) {
+  if (!nodeId) return null;
+  for (const [mac, id] of _liveNodeIds.entries()) {
+    if (id === nodeId) return mac;
+  }
+  return null;
+}
+
 // Session-level seen packet IDs for live TEXT_MESSAGE_APP events.
 // Cleared on bridge reconnect. Prevents duplicate live events reaching the browser
 // when the same packet is heard by multiple gateway radios.
@@ -175,7 +183,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     if (ev.type === 'device_snapshot') {
       for (const d of (ev.devices || [])) {
         if (!d.addr) continue;
-        ensureDeviceCfgMac(d.addr);
+        ensureDeviceCfgMac(d.addr, d.node_id ?? d.data_event?.node_id);
         // Flatten state_event + data_event into top level so browser reads dev.node_id etc. directly
         const flat = { ...d };
         if (d.state_event) Object.assign(flat, d.state_event);
@@ -197,7 +205,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // must update the nested key, not spread flat on top of it.
     const evAddr = ev.addr || ev.device;
     if (evAddr && STATE_EVENT_TYPES.has(ev.type)) {
-      if (ev.type === 'device_state' && ev.addr) ensureDeviceCfgMac(ev.addr);
+      if (ev.type === 'device_state' && ev.addr) ensureDeviceCfgMac(ev.addr, ev.node_id);
       const existing = lastDeviceState[evAddr] || { addr: evAddr };
       const { type: _t, ...fields } = ev;
       if (ev.type === 'device_state') {
