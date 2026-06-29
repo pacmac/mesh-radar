@@ -568,6 +568,14 @@ export function isPacketAlerted(packetId) {
   return !!_isAlerted.get(packetId);
 }
 
+// Write alerted_at on the row if it was already marked in-session (i.e. the alert
+// fired before the message row was inserted). No-op if not in the session Set.
+export function syncAlertedAt(packetId) {
+  if (packetId == null) return;
+  if (!_alertedPacketIds.has(packetId)) return;
+  _markAlerted.run(Math.floor(Date.now() / 1000), packetId);
+}
+
 // -- Tilt calibration ---------------------------------------------------------
 
 export function getTiltCal() {

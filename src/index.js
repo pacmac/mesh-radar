@@ -6,10 +6,10 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryDeviceId, getPrimaryMac, getRotatorAddress, onHomePosChange } from './device-config.js';
+import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange } from './device-config.js';
 import { ownDeviceNums } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule, getTiltCal, saveTiltCal } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule, getTiltCal, saveTiltCal, syncAlertedAt } from './db.js';
 const ALERT_SMTP_KEYS = ['alerts.smtp_host','alerts.smtp_port','alerts.smtp_user','alerts.smtp_pass','alerts.smtp_from','alerts.smtp_to','alerts.imap_host','alerts.imap_port'];
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
@@ -36,7 +36,7 @@ const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
 function resolvePrimaryNodeId() {
   const mac = getPrimaryMac();
   if (!mac) return null;
-  return getLiveNodeIdByMac(mac) || getPrimaryDeviceId();
+  return getLiveNodeIdByMac(mac) || mac;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -454,30 +454,36 @@ app.post('/:nodeId/messages', async (req, res) => {
     const text = await upstream.text();
     res.status(upstream.status).type('application/json').send(text);
     if (!upstream.ok) return;
-    const result = JSON.parse(text);
-    if (!result?.id) return;
-    // Store our own sent message so reply threading survives page reload.
-    const BROADCAST_NUM = 0xffffffff;
-    const toNum = (req.body.to ?? BROADCAST_NUM) >>> 0;
-    const node = nodeList._cache?.get(fromNum);
-    stmts.insertMessage.run({
-      ts:         Math.floor(Date.now() / 1000),
-      from_num:   fromNum,
-      to_num:     toNum,
-      text:       req.body.text ?? '',
-      channel:    req.body.channel ?? 0,
-      is_dm:      toNum !== BROADCAST_NUM ? 1 : 0,
-      hop_limit:  null,
-      snr:        null,
-      rssi:       null,
-      packet_id:  result.id,
-      reply_id:   req.body.reply_id ?? null,
-      device:     nodeId,
-      replay:     0,
-      hops:       0,
-      short_name: node?.user?.short_name ?? null,
-      long_name:  node?.user?.long_name  ?? null,
-    });
+    let result;
+    try {
+      result = JSON.parse(text);
+      if (!result?.id) return;
+      // Store our own sent message so reply threading survives page reload.
+      const BROADCAST_NUM = 0xffffffff;
+      const toNum = (req.body.to ?? BROADCAST_NUM) >>> 0;
+      const node = nodeList._cache?.get(fromNum);
+      stmts.insertMessage.run({
+        ts:         Math.floor(Date.now() / 1000),
+        from_num:   fromNum,
+        to_num:     toNum,
+        text:       req.body.text ?? '',
+        channel:    req.body.channel ?? 0,
+        is_dm:      toNum !== BROADCAST_NUM ? 1 : 0,
+        hop_limit:  null,
+        snr:        null,
+        rssi:       null,
+        packet_id:  result.id,
+        reply_id:   req.body.reply_id ?? null,
+        device:     nodeId,
+        replay:     0,
+        hops:       0,
+        short_name: node?.user?.short_name ?? null,
+        long_name:  node?.user?.long_name  ?? null,
+      });
+      syncAlertedAt(result.id);
+    } catch (persistErr) {
+      console.error('[messages] post-send persistence error, packet_id:', result?.id, persistErr.message);
+    }
   } catch (err) {
     if (!res.headersSent) res.status(502).json({ error: err.message });
   }
