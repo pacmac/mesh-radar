@@ -2,13 +2,19 @@ import { getConfig } from './db.js';
 import { getRotatorAddress, getAllDeviceCfgs } from './device-config.js';
 import { nodeIdToNum } from './utils.js';
 
-// Returns the set of nums for all configured BLE devices.
-// Keys are MAC addresses — derive node num from last 4 bytes.
+let _macToNum = null;
+export function registerMacToNumResolver(fn) { _macToNum = fn; }
+
+// Returns the set of node nums for all configured BLE devices.
+// Requires the live resolver registered by index.js at startup; returns an
+// empty set before registration (safe — no bridge events arrive before then).
+// No identity is ever inferred from MAC-suffix arithmetic.
 export function ownDeviceNums() {
+  if (!_macToNum) return new Set();
   return new Set(
     Object.keys(getAllDeviceCfgs())
-      .map(mac => parseInt(mac.replace(/:/g, '').slice(-8), 16))
-      .filter(n => !isNaN(n))
+      .map(mac => _macToNum(mac))
+      .filter(n => n != null && !isNaN(n))
   );
 }
 

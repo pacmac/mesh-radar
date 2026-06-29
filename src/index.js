@@ -7,7 +7,7 @@ import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver } from './device-config.js';
-import { ownDeviceNums } from './node-filter.js';
+import { ownDeviceNums, registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getAlertRules, updateAlertRule, getTiltCal, saveTiltCal, syncAlertedAt } from './db.js';
 const ALERT_SMTP_KEYS = ['alerts.smtp_host','alerts.smtp_port','alerts.smtp_user','alerts.smtp_pass','alerts.smtp_from','alerts.smtp_to','alerts.imap_host','alerts.imap_port'];
@@ -30,6 +30,12 @@ import { OpManager } from './op-manager.js';
 
 registerNodeIdToMacResolver(getLiveMacByNodeId);
 registerMacResolver(getLiveMacByNodeId);
+registerMacToNumResolver(mac => {
+  const nodeId = getLiveNodeIdByMac(mac);
+  if (!nodeId) return null;
+  const num = parseInt(nodeId.replace('!', ''), 16);
+  return isNaN(num) ? null : num;
+});
 
 const PORT = process.env.PORT || 8000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
