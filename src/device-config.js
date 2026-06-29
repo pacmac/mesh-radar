@@ -76,18 +76,32 @@ router.get('/', (req, res) => {
   res.json(getAllDeviceCfgs());
 });
 
-// GET /device-config/:address  (MAC only — !hexid not accepted; use MAC address)
+// GET /device-config/:address  (MAC or !hexid)
 router.get('/:address', (req, res) => {
   const raw = req.params.address;
-  if (raw.startsWith('!')) return res.status(400).json({ error: 'Use BLE MAC address, not !hexid' });
+  if (raw.startsWith('!')) {
+    const suffix = raw.replace(/^!/, '').toLowerCase();
+    const entry = Object.entries(getConfigByPrefix(PREFIX)).find(
+      ([mac]) => mac.replace(/:/g, '').toLowerCase().endsWith(suffix)
+    );
+    return res.json(entry ? { ...DEFAULT, ...entry[1] } : { ...DEFAULT });
+  }
   res.json(getDeviceCfg(raw));
 });
 
-// PUT /device-config/:address  (MAC only — !hexid not accepted; use MAC address)
+// PUT /device-config/:address  (MAC or !hexid)
 router.put('/:address', (req, res) => {
   const raw = req.params.address;
-  if (raw.startsWith('!')) return res.status(400).json({ error: 'Use BLE MAC address, not !hexid' });
-  const mac = raw.toUpperCase();
+  let mac;
+  if (raw.startsWith('!')) {
+    const suffix = raw.replace(/^!/, '').toLowerCase();
+    mac = Object.keys(getConfigByPrefix(PREFIX)).find(
+      k => k.replace(/:/g, '').toLowerCase().endsWith(suffix)
+    );
+    if (!mac) return res.status(404).json({ error: `No device config found for ${raw}` });
+  } else {
+    mac = raw.toUpperCase();
+  }
 
   const existing = getDeviceCfg(mac);
   const updated = { ...existing };
