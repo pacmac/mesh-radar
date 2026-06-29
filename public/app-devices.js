@@ -228,14 +228,6 @@ export const devicesMixin = {
     return live?.node_id || null;
   },
 
-  async restartMqttProxy() {
-    try {
-      await fetchJSON('/mqtt_proxy/restart', 'POST', {});
-    } catch (e) {
-      console.error('Failed to restart MQTT proxy', e);
-    }
-  },
-
   async loadDeviceConfigs() {
     try {
       const byMac = await fetchJSON('/device-config');

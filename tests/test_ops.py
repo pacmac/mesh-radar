@@ -35,7 +35,6 @@ SKIP_OPS = {
     # Live network / RF side effects
     "send_message",
     "send_traceroute",
-    "restart_mqtt_proxy",
     # Fixed position changes radio state
     "fixed_position_push",
     "fixed_position_clear",
