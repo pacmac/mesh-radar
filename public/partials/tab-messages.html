@@ -143,7 +143,7 @@
                             <span x-show="m.ackStatus==='no_ack'"
                                   class="font-mono text-xs text-error/70"
                                   x-text="m.ackError || 'TIMEOUT'"></span>
-                            <span x-show="m.ackStatus==='sent'"
+                            <span x-show="m.ackStatus==='sent' && !m.broadcast"
                                   class="font-mono text-xs text-base-content/40">awaiting ACK…</span>
                           </span>
                         </template>

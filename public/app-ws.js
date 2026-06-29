@@ -496,6 +496,7 @@ export const wsMixin = {
       const m = this.messages.find(m => m.pktId === ev.packet_id);
       if (m) {
         m.ackStatus = ev.status;
+        if (ev.from_num) m.ackFrom = ev.from_num;
         if (ev.error_name && ev.error_name !== 'NONE') m.ackError = ev.error_name;
       }
     }

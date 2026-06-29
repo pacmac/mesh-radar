@@ -300,6 +300,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     }
 
     if (ev.type === 'message_status' && ev.packet_id != null) {
+      if (ev.status === 'queued' || ev.status === 'sent') _seenLivePktIds.add(ev.packet_id);
       try { stmts.updateMessageStatus.run({ packet_id: ev.packet_id, status: ev.status }); }
       catch (e) { console.error('[message_status] db update failed:', e.message); }
       broadcast(ev);

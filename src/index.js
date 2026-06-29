@@ -484,23 +484,24 @@ app.post('/:nodeId/messages', async (req, res) => {
       const BROADCAST_NUM = 0xffffffff;
       const toNum = (req.body.to ?? BROADCAST_NUM) >>> 0;
       const node = nodeList._cache?.get(fromNum);
-      stmts.insertMessage.run({
-        ts:         Math.floor(Date.now() / 1000),
-        from_num:   fromNum,
-        to_num:     toNum,
-        text:       req.body.text ?? '',
-        channel:    req.body.channel ?? 0,
-        is_dm:      toNum !== BROADCAST_NUM ? 1 : 0,
-        hop_limit:  null,
-        snr:        null,
-        rssi:       null,
-        packet_id:  result.id,
-        reply_id:   req.body.reply_id ?? null,
-        device:     nodeId,
-        replay:     0,
-        hops:       0,
-        short_name: node?.user?.short_name ?? null,
-        long_name:  node?.user?.long_name  ?? null,
+      stmts.insertTxMessage.run({
+        ts:          Math.floor(Date.now() / 1000),
+        from_num:    fromNum,
+        to_num:      toNum,
+        text:        req.body.text ?? '',
+        channel:     req.body.channel ?? 0,
+        is_dm:       toNum !== BROADCAST_NUM ? 1 : 0,
+        hop_limit:   null,
+        snr:         null,
+        rssi:        null,
+        packet_id:   result.id,
+        reply_id:    req.body.reply_id ?? null,
+        device:      nodeId,
+        replay:      0,
+        hops:        0,
+        short_name:  node?.user?.short_name ?? null,
+        long_name:   node?.user?.long_name  ?? null,
+        message_key: 't-' + result.id,
       });
       syncAlertedAt(result.id);
     } catch (persistErr) {

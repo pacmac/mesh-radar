@@ -127,24 +127,27 @@ function handlePacket(packet, device, ts, replay) {
       ? Buffer.from(packet.decoded.payload, 'base64').toString('utf8')
       : '';
     const user = packet.decoded.user;
-    stmts.insertMessage.run({
-      ts:         packet.rx_time || ts,
-      from_num:   packet.from  || 0,
-      to_num:     packet.to    || BROADCAST_NUM,
+    const pktId = packet.id ?? null;
+    const rxStmt = pktId ? stmts.insertRxMessage : stmts.insertMessage;
+    rxStmt.run({
+      ts:          packet.rx_time || ts,
+      from_num:    packet.from  || 0,
+      to_num:      packet.to    || BROADCAST_NUM,
       text,
-      channel:    packet.channel  ?? 0,
-      is_dm:      packet.to !== BROADCAST_NUM ? 1 : 0,
-      hop_limit:  packet.hop_limit ?? null,
-      snr:        packet.rx_snr   ?? null,
-      rssi:       packet.rx_rssi  ?? null,
-      packet_id:  packet.id              ?? null,
-      reply_id:   packet.decoded.reply_id ?? null,
-      device:     device                  ?? null,
-      replay:     replay ? 1 : 0,
-      hops:       (packet.hop_start != null && packet.hop_limit != null)
-                    ? Math.max(0, packet.hop_start - packet.hop_limit) : null,
-      short_name: user?.short_name ?? null,
-      long_name:  user?.long_name  ?? null,
+      channel:     packet.channel  ?? 0,
+      is_dm:       packet.to !== BROADCAST_NUM ? 1 : 0,
+      hop_limit:   packet.hop_limit ?? null,
+      snr:         packet.rx_snr   ?? null,
+      rssi:        packet.rx_rssi  ?? null,
+      packet_id:   pktId,
+      reply_id:    packet.decoded.reply_id ?? null,
+      device:      device                  ?? null,
+      replay:      replay ? 1 : 0,
+      hops:        (packet.hop_start != null && packet.hop_limit != null)
+                     ? Math.max(0, packet.hop_start - packet.hop_limit) : null,
+      short_name:  user?.short_name ?? null,
+      long_name:   user?.long_name  ?? null,
+      message_key: pktId ? 'r-' + pktId : null,
     });
     syncAlertedAt(packet.id ?? null);
     return;

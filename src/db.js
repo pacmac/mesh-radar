@@ -170,7 +170,10 @@ if (!existingCols.includes('hops'))       db.exec(`ALTER TABLE messages ADD COLU
 if (!existingCols.includes('short_name')) db.exec(`ALTER TABLE messages ADD COLUMN short_name TEXT`);
 if (!existingCols.includes('long_name'))  db.exec(`ALTER TABLE messages ADD COLUMN long_name TEXT`);
 if (!existingCols.includes('alerted_at')) db.exec(`ALTER TABLE messages ADD COLUMN alerted_at INTEGER`);
-if (!existingCols.includes('status'))    db.exec(`ALTER TABLE messages ADD COLUMN status TEXT`);
+if (!existingCols.includes('status'))      db.exec(`ALTER TABLE messages ADD COLUMN status TEXT`);
+if (!existingCols.includes('message_key')) db.exec(`ALTER TABLE messages ADD COLUMN message_key TEXT`);
+if (!existingCols.includes('rx_devices'))  db.exec(`ALTER TABLE messages ADD COLUMN rx_devices TEXT`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_key ON messages(message_key) WHERE message_key IS NOT NULL`);
 const tiltCols = db.prepare(`PRAGMA table_info(tilt_history)`).all().map(r => r.name);
 if (!tiltCols.includes('ncal')) {
   db.exec(`ALTER TABLE tilt_history ADD COLUMN ncal INTEGER NOT NULL DEFAULT 0`);
@@ -227,8 +230,37 @@ export const stmts = {
     VALUES (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name)
   `),
 
+  insertRxMessage: db.prepare(`
+    INSERT INTO messages
+      (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi,
+       packet_id, reply_id, device, replay, hops, short_name, long_name, message_key, rx_devices)
+    VALUES
+      (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi,
+       @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name, @message_key, @device)
+    ON CONFLICT(message_key) WHERE message_key IS NOT NULL DO UPDATE SET
+      snr        = CASE WHEN excluded.snr  IS NOT NULL AND (snr  IS NULL OR excluded.snr  > snr)  THEN excluded.snr  ELSE snr  END,
+      rssi       = CASE WHEN excluded.rssi IS NOT NULL AND (rssi IS NULL OR excluded.rssi > rssi) THEN excluded.rssi ELSE rssi END,
+      rx_devices = CASE
+        WHEN rx_devices IS NULL THEN excluded.device
+        WHEN excluded.device IS NULL THEN rx_devices
+        WHEN instr(',' || rx_devices || ',', ',' || excluded.device || ',') > 0 THEN rx_devices
+        ELSE rx_devices || ',' || excluded.device
+      END
+  `),
+
+  insertTxMessage: db.prepare(`
+    INSERT OR IGNORE INTO messages
+      (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi,
+       packet_id, reply_id, device, replay, hops, short_name, long_name, message_key)
+    VALUES
+      (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi,
+       @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name, @message_key)
+  `),
+
   updateMessageStatus: db.prepare(`
-    UPDATE messages SET status = @status WHERE packet_id = @packet_id
+    UPDATE messages SET status = @status
+    WHERE packet_id = @packet_id
+      AND (message_key LIKE 't-%' OR message_key IS NULL)
   `),
 
   upsertNodeinfo: db.prepare(`
