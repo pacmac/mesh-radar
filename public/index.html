@@ -62,6 +62,11 @@
     <!-- Flashing -->
     <span class="loading loading-rings loading-lg text-warning" x-show="opLoading(activeFlashKey)"></span>
     <p class="text-base-content font-semibold" x-show="opLoading(activeFlashKey)">Flashing firmware…</p>
+    <!-- NVS serial wait countdown -->
+    <div x-show="opLoading(activeFlashKey) && otaNvsDeadline" class="text-center space-y-1">
+      <p class="text-warning font-semibold text-sm mt-2">Hold PRG + RST to enter ROM bootloader</p>
+      <p class="font-mono text-3xl font-bold tabular-nums" x-text="otaNvsCountdownSecs !== null ? otaNvsCountdownSecs + 's' : ''"></p>
+    </div>
     <!-- Done -->
     <svg x-show="opOk(activeFlashKey)" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>

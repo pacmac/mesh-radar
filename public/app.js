@@ -87,7 +87,10 @@ function dashboard() {
     otaSelectedFile:   {},   // nodeId -> filename string
     otaFetchOpen:      {},   // nodeId -> bool (GitHub fetch panel expanded)
     otaReleases:       null, // [{tag, name, assets, ...}]
-    otaSelectedRelease: '',
+    otaSelectedRelease:  '',
+    otaNvsDeadline:      null,  // Unix ms; set during OTA_SERIAL_WAIT, cleared otherwise
+    otaNvsCountdownSecs: null,  // live seconds remaining; driven by setInterval in app-ws.js
+    _nvsCountdownTimer:  null,  // internal interval handle
 
     // -- Scan -----------------------------------------------------------------
     scanMode:      false,

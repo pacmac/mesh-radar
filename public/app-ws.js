@@ -118,6 +118,20 @@ export const wsMixin = {
     }
     if (ev.type === 'ota_progress' && (ev.node_id || ev.device)) {
       this.asyncOpProgress('otaFlash_' + (ev.node_id || ev.device), ev.data?.pct ?? 0);
+      const newDeadline = ev.data?.deadline ?? null;
+      if (newDeadline !== this.otaNvsDeadline) {
+        this.otaNvsDeadline = newDeadline;
+        if (this._nvsCountdownTimer) { clearInterval(this._nvsCountdownTimer); this._nvsCountdownTimer = null; }
+        if (newDeadline) {
+          this.otaNvsCountdownSecs = Math.max(0, Math.round((newDeadline - Date.now()) / 1000));
+          this._nvsCountdownTimer = setInterval(() => {
+            this.otaNvsCountdownSecs = Math.max(0, Math.round((this.otaNvsDeadline - Date.now()) / 1000));
+            if (this.otaNvsCountdownSecs <= 0) { clearInterval(this._nvsCountdownTimer); this._nvsCountdownTimer = null; }
+          }, 1000);
+        } else {
+          this.otaNvsCountdownSecs = null;
+        }
+      }
       // Show prominent toast for status events requiring user action (once per status change)
       const st = ev.data?.status;
       if (st && st !== this._lastOtaStatus) {
@@ -134,10 +148,14 @@ export const wsMixin = {
       return;
     }
     if (ev.type === 'ota_complete' && (ev.node_id || ev.device)) {
+      if (this._nvsCountdownTimer) { clearInterval(this._nvsCountdownTimer); this._nvsCountdownTimer = null; }
+      this.otaNvsDeadline = null; this.otaNvsCountdownSecs = null;
       this.asyncOpEnd('otaFlash_' + (ev.node_id || ev.device), true);
       return;
     }
     if (ev.type === 'ota_error' && (ev.node_id || ev.device)) {
+      if (this._nvsCountdownTimer) { clearInterval(this._nvsCountdownTimer); this._nvsCountdownTimer = null; }
+      this.otaNvsDeadline = null; this.otaNvsCountdownSecs = null;
       this.asyncOpEnd('otaFlash_' + (ev.node_id || ev.device), false, ev.data?.error || 'OTA failed');
       return;
     }

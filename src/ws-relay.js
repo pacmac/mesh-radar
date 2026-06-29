@@ -229,7 +229,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
           } else if (s === 'OTA_COMPLETE') {
             broadcast({ type: 'ota_complete', device: otaDev, addr: ev.addr });
           } else if (s === 'OTA_SERIAL_WAIT') {
-            broadcast({ type: 'ota_progress', device: otaDev, addr: ev.addr, data: { pct: 0, status: 'nvs_erase_waiting', message: ev.message || '' } });
+            broadcast({ type: 'ota_progress', device: otaDev, addr: ev.addr, data: { pct: 0, status: 'nvs_erase_waiting', message: ev.message || '', deadline: ev.deadline ?? null } });
           } else if (s === 'OTA_SERIAL_ERASING') {
             broadcast({ type: 'ota_progress', device: otaDev, addr: ev.addr, data: { pct: 0, status: 'nvs_erasing', message: 'NVS erasing…' } });
           } else if (['OTA_ERROR', 'OTA_BOOTLOADER_STUCK', 'OTA_NVS_MISMATCH'].includes(s)) {
