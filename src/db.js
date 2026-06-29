@@ -489,11 +489,15 @@ export function getConfigByPrefix(prefix) {
 }
 
 export function persistNodeMac(nodeId, mac) {
-  setConfig('node_mac.' + nodeId, mac);
+  setConfig('node_mac.' + mac, nodeId);
 }
 
 export function loadNodeMacMap() {
-  return new Map(Object.entries(getConfigByPrefix('node_mac.')));
+  // Returns Map<MAC, nodeId>. Filter to MAC-format keys (contain ':') to skip
+  // any stale !hexid-keyed entries written by a prior scheme.
+  return new Map(
+    Object.entries(getConfigByPrefix('node_mac.')).filter(([k]) => k.includes(':'))
+  );
 }
 
 // -- Alert rules --------------------------------------------------------------

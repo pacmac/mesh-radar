@@ -37,8 +37,8 @@ const STATE_EVENT_TYPES = new Set(['device_state', 'device_data']);
 // need the authoritative node_id rather than a MAC-derived approximation.
 const _liveNodeIds = new Map();
 // Seed from persisted mapping so ownDeviceNums() is correct immediately on cold start.
-for (const [nodeId, mac] of loadNodeMacMap()) {
-  _liveNodeIds.set(mac.toUpperCase(), nodeId);
+for (const [mac, nodeId] of loadNodeMacMap()) {
+  _liveNodeIds.set(mac, nodeId);
 }
 
 export function getLiveNodeIdByMac(mac) {
