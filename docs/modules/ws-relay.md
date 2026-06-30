@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: cf166958556199a3c19939b0d88072c4a982abddd5eb022bfef72737fd44fcc9
+source_hash: 4c38a4447ecaec506a8234aab2fc28e28083dac4436ab007c8164be5913b941c
 updated: 2026-06-30
 ---
 
@@ -121,42 +121,25 @@ Updates `lastDeviceState[evAddr]` with `data_event`. Updates `_liveNodeIds` if `
 
 ### `private_app` (portnum 256)
 
-Tilt sensor data — `TiltMastHealthV1` struct, sent via BLE FromRadio `sendToPhone()` from the RAK4631. NOT transmitted over LoRa; `transport_mechanism` and `hop_start` will be null. Decodes `ev.payload_b64` as a 30-byte packed little-endian binary:
+Tilt sensor data — `TiltSummaryV2` struct, sent via BLE FromRadio `sendToPhone()` from the RAK4631. NOT transmitted over LoRa; `transport_mechanism` and `hop_start` will be null. Decodes `ev.payload_b64` as a 24-byte packed little-endian binary. Values are displacement from boot baseline — stationary readings near 0°.
 
 | Offset | Type | Field | Notes |
 |---|---|---|---|
-| 0 | uint8 | version | Always 1 |
-| 1 | uint16LE | flags | Bitmask — see below |
-| 3 | uint8 | sample_count | Number of samples in window |
-| 4 | uint16LE | window_ms | Sampling window duration (ms) |
-| 6 | int16LE | current_roll_cd | centidegrees → `/100` = `roll` (°) |
-| 8 | int16LE | current_pitch_cd | centidegrees → `/100` = `pitch` (°) |
-| 10 | int16LE | avg_roll_cd | |
-| 12 | int16LE | avg_pitch_cd | |
-| 14 | int16LE | min_roll_cd | |
-| 16 | int16LE | max_roll_cd | |
-| 18 | int16LE | min_pitch_cd | |
-| 20 | int16LE | max_pitch_cd | |
-| 22 | int16LE | p2p_roll_cd | |
-| 24 | int16LE | p2p_pitch_cd | |
-| 26 | uint16LE | max_delta_cd | |
-| 28 | uint16LE | rms_motion_cd | |
+| 0 | uint8 | version | Always 2 |
+| 1 | uint8 | sample_count | Number of samples in window |
+| 2 | uint16LE | window_ms | Sampling window duration (ms) |
+| 4 | int16LE | current_axis_a_cd | centidegrees → `/100` = `roll` (°) |
+| 6 | int16LE | current_axis_b_cd | centidegrees → `/100` = `pitch` (°) |
+| 8 | int16LE | average_axis_a_cd | → `avg_roll` |
+| 10 | int16LE | average_axis_b_cd | → `avg_pitch` |
+| 12 | int16LE | min_axis_a_cd | → `min_roll` |
+| 14 | int16LE | max_axis_a_cd | → `max_roll` |
+| 16 | int16LE | min_axis_b_cd | → `min_pitch` |
+| 18 | int16LE | max_axis_b_cd | → `max_pitch` |
+| 20 | uint16LE | max_delta_cd | → `max_delta` |
+| 22 | uint16LE | rms_motion_cd | → `rms_motion` |
 
-**Flags bitmask:**
-
-| Bit | Value | Meaning |
-|---|---|---|
-| 0 | 0x0001 | stable |
-| 1 | 0x0002 | moving |
-| 2 | 0x0004 | gusting |
-| 3 | 0x0008 | sustained load |
-| 4 | 0x0010 | baseline shift |
-| 5 | 0x0020 | possible looseness |
-| 6 | 0x0040 | sudden motion |
-| 7 | 0x0080 | damage suspected |
-| 8 | 0x0100 | stale data |
-
-All centidegree fields are divided by 100 before storage and broadcast. `roll` = `current_roll_cd / 100`, `pitch` = `current_pitch_cd / 100` (kept at those names for backwards compatibility with `alerts.js` and the browser). `insertTilt` is called to persist all fields. A `tilt_update` event carrying `{ roll, pitch, flags, version, sample_count, window_ms, avg_roll, avg_pitch, p2p_roll, p2p_pitch, max_delta, rms_motion }` is sent to `handleAlertEvent` and broadcast. Packets shorter than 30 bytes are silently ignored.
+All centidegree fields are divided by 100 before storage and broadcast. `roll`/`pitch` names are kept for backwards compatibility with `alerts.js` and the browser. No flags field. `insertTilt` is called to persist all fields. A `tilt_update` event carrying `{ roll, pitch, version, sample_count, window_ms, avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch, max_delta, rms_motion }` is sent to `handleAlertEvent` and broadcast. Packets not exactly 24 bytes are silently ignored.
 
 ### `telemetry`
 
@@ -335,8 +318,8 @@ Object keyed by BLE MAC address. Each entry is the flattened device shape from `
 - **getLiveNodeIdByMac**: MAC in map → returns `!hexid`; unknown → null; falsy → null
 - **device_snapshot**: 2 devices → `lastDeviceState` has 2 entries; `device_list` broadcast; `_liveNodeIds` updated
 - **device_state OTA_FLASHING**: `ev.pct = 42` → `ota_progress` with `pct: 42` broadcast
-- **private_app portnum=256, 30 bytes**: TiltMastHealthV1 decoded; `insertTilt` called; `tilt_update` broadcast + `handleAlertEvent`
-- **private_app portnum=256, 29 bytes**: too short → ignored
+- **private_app portnum=256, 24 bytes**: TiltSummaryV2 decoded; `insertTilt` called; `tilt_update` broadcast + `handleAlertEvent`
+- **private_app portnum=256, 23 bytes**: not 24 → ignored
 - **telemetry environment**: `insertEnvHistory` called; `telemetry_update` variant `environment_metrics`
 - **telemetry device_metrics only**: `insertEnvHistory` NOT called; variant `device_metrics`
 - **TEXT_MESSAGE_APP dedup**: same `packet_id` twice → second dropped; first broadcast

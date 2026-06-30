@@ -404,27 +404,27 @@ export const stmts = {
   getNodeDevices: db.prepare(`SELECT num, device FROM nodes WHERE device IS NOT NULL`),
 
   insertTilt: db.prepare(`
-    INSERT INTO tilt_history (ts, node_id, pitch, roll, version, flags, sample_count, window_ms,
+    INSERT INTO tilt_history (ts, node_id, pitch, roll, version, sample_count, window_ms,
       avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch,
-      p2p_roll, p2p_pitch, max_delta, rms_motion)
-    VALUES (@ts, @node_id, @pitch, @roll, @version, @flags, @sample_count, @window_ms,
+      max_delta, rms_motion)
+    VALUES (@ts, @node_id, @pitch, @roll, @version, @sample_count, @window_ms,
       @avg_roll, @avg_pitch, @min_roll, @max_roll, @min_pitch, @max_pitch,
-      @p2p_roll, @p2p_pitch, @max_delta, @rms_motion)
+      @max_delta, @rms_motion)
   `),
 
   queryTilt: db.prepare(`
-    SELECT ts, pitch, roll, flags, version, sample_count, window_ms,
+    SELECT ts, pitch, roll, version, sample_count, window_ms,
       avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch,
-      p2p_roll, p2p_pitch, max_delta, rms_motion
+      max_delta, rms_motion
     FROM tilt_history
     WHERE node_id = ? AND ts >= ? AND ncal = 0
     ORDER BY ts ASC
   `),
 
   queryAllTilt: db.prepare(`
-    SELECT ts, node_id, pitch, roll, flags, version, sample_count, window_ms,
+    SELECT ts, node_id, pitch, roll, version, sample_count, window_ms,
       avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch,
-      p2p_roll, p2p_pitch, max_delta, rms_motion
+      max_delta, rms_motion
     FROM tilt_history
     WHERE ts >= ? AND ncal = 0
     ORDER BY ts ASC

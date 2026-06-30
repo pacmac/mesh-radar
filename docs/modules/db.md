@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 961ac196c185b96d8ec16427bbd53d8db1fc397eec87535ce2c3ab724eb44e7b
+source_hash: 0dd7b958e71416198775c4b30d6720a6852df1a98df34c140167a9acdf65bc2d
 updated: 2026-06-30
 ---
 
@@ -74,7 +74,7 @@ clearRangeTestLog()                 // → void
 ### Tilt history
 
 ```js
-insertTilt(entry)                   // → void  — { ts, node_id, pitch, roll, version, flags, sample_count, window_ms, avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch, p2p_roll, p2p_pitch, max_delta, rms_motion }
+insertTilt(entry)                   // → void  — { ts, node_id, pitch, roll, version, sample_count, window_ms, avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch, max_delta, rms_motion }
 queryTiltHistory(nodeId, sinceTs)   // → row[]  — ncal=0 only, ASC by ts
 queryAllTiltHistory(sinceTs)        // → row[]  — all node_ids, ncal=0 only
 markTiltNcal(nodeId, tsFrom, tsTo)  // → number — rows changed
