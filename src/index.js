@@ -9,7 +9,7 @@ import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver } from './device-config.js';
 import { ownDeviceNums, registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getTiltCal, saveTiltCal, syncAlertedAt } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getTiltCal, saveTiltCal } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -21,6 +21,7 @@ import { ROTATOR_CONFIG_SCHEMA } from './rotator-config-schema.js';
 import { startAlertPoller } from './alerts.js';
 import alertsRouter from './alerts-api.js';
 import rotatorRouter from './rotator-api.js';
+import messagesRouter from './messages-api.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel, registerMacResolver } from './node-label.js';
@@ -348,58 +349,7 @@ app.post('/purge-nodedb', async (req, res) => {
   }
 });
 
-// -- send text message: forward to bridge, then persist our own TX in the DB --
-
-app.post('/:nodeId/messages', async (req, res) => {
-  const nodeId = req.params.nodeId;
-  // Resolve to live !hexid — nodeId may be a BLE MAC when the live node_id is not yet known.
-  // parseInt on a raw MAC (e.g. "E9:B0:3F:17:27:91") only reads the first byte (0xE9=233).
-  const resolvedId = nodeId.startsWith('!') ? nodeId : (getLiveNodeIdByMac(nodeId) || nodeId);
-  const fromNum = resolvedId.startsWith('!') ? (parseInt(resolvedId.slice(1), 16) || 0) : 0;
-  try {
-    const upstream = await fetch(`${BRIDGE_URL}/${nodeId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body),
-    });
-    const text = await upstream.text();
-    res.status(upstream.status).type('application/json').send(text);
-    if (!upstream.ok) return;
-    let result;
-    try {
-      result = JSON.parse(text);
-      if (!result?.id) return;
-      // Store our own sent message so reply threading survives page reload.
-      const BROADCAST_NUM = 0xffffffff;
-      const toNum = (req.body.to ?? BROADCAST_NUM) >>> 0;
-      const node = nodeList._cache?.get(fromNum);
-      stmts.insertTxMessage.run({
-        ts:          Math.floor(Date.now() / 1000),
-        from_num:    fromNum,
-        to_num:      toNum,
-        text:        req.body.text ?? '',
-        channel:     req.body.channel ?? 0,
-        is_dm:       toNum !== BROADCAST_NUM ? 1 : 0,
-        hop_limit:   null,
-        snr:         null,
-        rssi:        null,
-        packet_id:   result.id,
-        reply_id:    req.body.reply_id ?? null,
-        device:      nodeId,
-        replay:      0,
-        hops:        0,
-        short_name:  node?.user?.short_name ?? null,
-        long_name:   node?.user?.long_name  ?? null,
-        message_key: 't-' + result.id,
-      });
-      syncAlertedAt(result.id);
-    } catch (persistErr) {
-      console.error('[messages] post-send persistence error, packet_id:', result?.id, persistErr.message);
-    }
-  } catch (err) {
-    if (!res.headersSent) res.status(502).json({ error: err.message });
-  }
-});
+app.use(messagesRouter);
 
 // -- real-time enforcement guard --------------------------------------------
 // Sec-Fetch-Dest: empty is set by browsers on every JS fetch() call and cannot

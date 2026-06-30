@@ -1,7 +1,7 @@
 ---
 module: messages-api
 source: src/messages-api.js
-source_hash: 8c523b0c298493c18ec00cbe474cf806ffda75438f7d9fef96c1867d7ae1c2aa
+source_hash: 76649b147b63071177fc0cb7b39557321b75f118cf64a65fd0fdeed9c744d5a4
 updated: 2026-06-30
 ---
 
@@ -26,12 +26,12 @@ so reply threading survives page reload.
 - `db.js` — `stmts.insertTxMessage`, `syncAlertedAt`
 - `node-list.js` — `nodeList._cache` (to look up short/long name for TX record)
 - `ws-relay.js` — `getLiveNodeIdByMac` (resolve MAC → live `!hexid`)
-- `bridge.js` or env — `BRIDGE_URL` for proxy target
+- `process.env.BRIDGE_URL` — `'http://localhost:8001'` default; read at module load
 
 ## Public interface
 
 ```js
-export default router  // Express Router — registered on app by index.js
+export default router  // Express Router — app.use(messagesRouter) in index.js (no prefix; route is POST /:nodeId/messages)
 ```
 
 ## State
