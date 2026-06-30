@@ -25,6 +25,7 @@ import messagesRouter from './messages-api.js';
 import tracerouteRouter from './traceroute-api.js';
 import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
+import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, registerMacResolver } from './node-label.js';
@@ -191,41 +192,7 @@ app.use('/range_test', rangeTestRouter);
 
 app.use(tracerouteRouter);
 
-// -- auto-purge settings + scheduler ----------------------------------------
-
-app.get('/auto-purge', (req, res) => {
-  const nodeId = req.query.device;
-  if (!nodeId) return res.status(400).json({ error: 'device required' });
-  res.json({
-    enabled:     getConfig(`auto_purge_enabled_${nodeId}`, false),
-    purge_time:  getConfig(`auto_purge_time_${nodeId}`, '02:00'),
-    last_run_ts: getConfig(`auto_purge_last_run_ts_${nodeId}`, null),
-  });
-});
-
-app.put('/auto-purge', (req, res) => {
-  const { device: nodeId, enabled, purge_time } = req.body;
-  if (!nodeId) return res.status(400).json({ error: 'device required' });
-  setConfig(`auto_purge_enabled_${nodeId}`, !!enabled);
-  if (purge_time && /^\d{2}:\d{2}$/.test(purge_time)) setConfig(`auto_purge_time_${nodeId}`, purge_time);
-  res.json({ ok: true });
-});
-
-app.post('/purge-nodedb', async (req, res) => {
-  const { device: nodeId } = req.body;
-  if (!nodeId) return res.status(400).json({ error: 'device required' });
-  try {
-    const result = await bridge.post(`/${nodeId}/purge_nodedb`, {});
-    const nodeCount = result?.node_count ?? null;
-    const ts = Math.floor(Date.now() / 1000);
-    setConfig(`auto_purge_last_run_ts_${nodeId}`, ts);
-    broadcastAll({ type: 'auto_purge_complete', device: nodeId, ts, node_count: nodeCount });
-    res.json({ ok: true, node_count: nodeCount });
-  } catch (e) {
-    broadcastAll({ type: 'auto_purge_error', device: nodeId, error: e.message });
-    res.status(500).json({ error: e.message });
-  }
-});
+app.use(autoPurgeRouter);
 
 app.use(messagesRouter);
 
@@ -301,6 +268,7 @@ function broadcastAll(msg) {
   }
 }
 _broadcast = broadcastAll;  // wire forward reference
+startAutoPurgeScheduler(broadcastAll);
 
 server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);
@@ -499,40 +467,6 @@ rotator.on('point_target', (data) => {
   // ─────────────────────────────────────────────────────────────────────────
 });
 
-// -- auto-purge scheduler ---------------------------------------------------
-async function runAutoPurge(nodeId) {
-  console.log(`[auto-purge] wiping nodedb on ${nodeId}`);
-  try {
-    const result = await bridge.post(`/${nodeId}/purge_nodedb`, {});
-    const nodeCount = result?.node_count ?? null;
-    if (nodeCount !== null && nodeCount > 1) {
-      console.warn(`[auto-purge] ${nodeId}: purge complete but node_count=${nodeCount} (expected 1)`);
-    }
-    const ts = Math.floor(Date.now() / 1000);
-    setConfig(`auto_purge_last_run_ts_${nodeId}`, ts);
-    broadcastAll({ type: 'auto_purge_complete', device: nodeId, ts, node_count: nodeCount });
-    console.log(`[auto-purge] done — node_count=${nodeCount}`);
-  } catch (e) {
-    console.error(`[auto-purge] failed on ${nodeId}:`, e.message);
-    broadcastAll({ type: 'auto_purge_error', device: nodeId, error: e.message });
-  }
-}
-
-setInterval(() => {
-  const now = new Date();
-  const hhmm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-  const today = now.toDateString();
-  const enabled = getConfigByPrefix('auto_purge_enabled_');
-  for (const [nodeId, isEnabled] of Object.entries(enabled)) {
-    if (!isEnabled) continue;
-    const purgeTime = getConfig(`auto_purge_time_${nodeId}`, '02:00');
-    if (hhmm !== purgeTime) continue;
-    const lastRun = getConfig(`auto_purge_last_run_ts_${nodeId}`, null);
-    const lastRunDate = lastRun ? new Date(lastRun * 1000).toDateString() : null;
-    if (lastRunDate === today) continue; // already ran today
-    runAutoPurge(nodeId);
-  }
-}, 60 * 1000);
 
 bridge.on('connected', async () => {
   const primaryMac = getPrimaryMac();

@@ -1,7 +1,7 @@
 ---
 module: auto-purge-api
 source: src/auto-purge-api.js
-source_hash: 892fa4c97c9bdb8090d13ebf74c4b0964cc8e669bfce58d338dd615b63c176b9
+source_hash: fc14119b249889b24b12fb15f170fd6a90a95a2e547d54dfd605113022f3d313
 updated: 2026-06-30
 ---
 
@@ -30,12 +30,15 @@ node database on bridge-connected devices and exposes manual purge endpoints.
 ## Public interface
 
 ```js
-export default router                         // Express Router — mounted at /auto-purge by index.js
-export function startAutoPurgeScheduler(broadcastAll)  // call once at server startup
+export default router                         // Express Router — app.use(autoPurgeRouter) in index.js (no prefix; routes are /auto-purge and /purge-nodedb)
+export function startAutoPurgeScheduler(broadcastAll)  // stores broadcastAll in module var; starts 60s interval — call once at server startup
 ```
 
 ## State
 
+```js
+let _broadcastAll = () => {}  // set by startAutoPurgeScheduler; used by router and scheduler
+```
 The 60s `setInterval` handle is internal; no exported state.
 
 ## Events emitted
