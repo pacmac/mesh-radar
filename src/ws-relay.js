@@ -252,17 +252,50 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
 
     if (ev.type === 'private_app' && ev.portnum === 256) {
       const buf = Buffer.from(ev.payload_b64 || '', 'base64');
-      if (buf.length >= 20) {
-        const view  = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-        const roll  = Math.round(view.getFloat32(0,  true) * 100) / 100;
-        const pitch = Math.round(view.getFloat32(4,  true) * 100) / 100;
-        const x_g   = Math.round(view.getFloat32(8,  true) * 1000) / 1000;
-        const y_g   = Math.round(view.getFloat32(12, true) * 1000) / 1000;
-        const z_g   = Math.round(view.getFloat32(16, true) * 1000) / 1000;
+      if (buf.length >= 30) {
+        // TiltMastHealthV1 — 30-byte packed little-endian struct from RAK4631 sendToPhone()
+        const v          = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        const version    = v.getUint8(0);
+        const flags      = v.getUint16(1,  true);
+        const sampleCount = v.getUint8(3);
+        const windowMs   = v.getUint16(4,  true);
+        const roll       = v.getInt16(6,   true) / 100;
+        const pitch      = v.getInt16(8,   true) / 100;
+        const avgRoll    = v.getInt16(10,  true) / 100;
+        const avgPitch   = v.getInt16(12,  true) / 100;
+        const minRoll    = v.getInt16(14,  true) / 100;
+        const maxRoll    = v.getInt16(16,  true) / 100;
+        const minPitch   = v.getInt16(18,  true) / 100;
+        const maxPitch   = v.getInt16(20,  true) / 100;
+        const p2pRoll    = v.getInt16(22,  true) / 100;
+        const p2pPitch   = v.getInt16(24,  true) / 100;
+        const maxDelta   = v.getUint16(26, true) / 100;
+        const rmsMotion  = v.getUint16(28, true) / 100;
         try {
-          insertTilt({ ts: Math.floor(Date.now() / 1000), node_id: ev.addr || ev.device || '?', pitch, roll, x_g, y_g, z_g });
+          insertTilt({
+            ts: Math.floor(Date.now() / 1000),
+            node_id: ev.addr || ev.device || '?',
+            pitch, roll,
+            version, flags,
+            sample_count: sampleCount,
+            window_ms:    windowMs,
+            avg_roll:     avgRoll,   avg_pitch:  avgPitch,
+            min_roll:     minRoll,   max_roll:   maxRoll,
+            min_pitch:    minPitch,  max_pitch:  maxPitch,
+            p2p_roll:     p2pRoll,   p2p_pitch:  p2pPitch,
+            max_delta:    maxDelta,  rms_motion: rmsMotion,
+          });
         } catch (e) { console.error('[tilt] insert failed:', e.message); }
-        const tiltEv = { type: 'tilt_update', device: ev.addr || ev.device, from_num: ev.from_num, data: { roll, pitch, x: x_g, y: y_g, z: z_g } };
+        const tiltEv = {
+          type: 'tilt_update', device: ev.addr || ev.device, from_num: ev.from_num,
+          data: {
+            roll, pitch, flags, version,
+            sample_count: sampleCount, window_ms: windowMs,
+            avg_roll: avgRoll, avg_pitch: avgPitch,
+            p2p_roll: p2pRoll, p2p_pitch: p2pPitch,
+            max_delta: maxDelta, rms_motion: rmsMotion,
+          },
+        };
         handleAlertEvent(tiltEv);
         broadcast(tiltEv);
       }

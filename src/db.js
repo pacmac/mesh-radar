@@ -178,6 +178,17 @@ const tiltCols = db.prepare(`PRAGMA table_info(tilt_history)`).all().map(r => r.
 if (!tiltCols.includes('ncal')) {
   db.exec(`ALTER TABLE tilt_history ADD COLUMN ncal INTEGER NOT NULL DEFAULT 0`);
 }
+for (const [col, def] of [
+  ['version',      'INTEGER'], ['flags',       'INTEGER'],
+  ['sample_count', 'INTEGER'], ['window_ms',   'INTEGER'],
+  ['avg_roll',     'REAL'],    ['avg_pitch',   'REAL'],
+  ['min_roll',     'REAL'],    ['max_roll',    'REAL'],
+  ['min_pitch',    'REAL'],    ['max_pitch',   'REAL'],
+  ['p2p_roll',     'REAL'],    ['p2p_pitch',   'REAL'],
+  ['max_delta',    'REAL'],    ['rms_motion',  'REAL'],
+]) {
+  if (!tiltCols.includes(col)) db.exec(`ALTER TABLE tilt_history ADD COLUMN ${col} ${def}`);
+}
 const nodeinfoCols = db.prepare(`PRAGMA table_info(nodeinfo)`).all().map(r => r.name);
 if (!nodeinfoCols.includes('first_heard')) {
   db.exec(`ALTER TABLE nodeinfo ADD COLUMN first_heard INTEGER`);
@@ -393,18 +404,28 @@ export const stmts = {
   getNodeDevices: db.prepare(`SELECT num, device FROM nodes WHERE device IS NOT NULL`),
 
   insertTilt: db.prepare(`
-    INSERT INTO tilt_history (ts, node_id, pitch, roll, x_g, y_g, z_g)
-    VALUES (@ts, @node_id, @pitch, @roll, @x_g, @y_g, @z_g)
+    INSERT INTO tilt_history (ts, node_id, pitch, roll, version, flags, sample_count, window_ms,
+      avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch,
+      p2p_roll, p2p_pitch, max_delta, rms_motion)
+    VALUES (@ts, @node_id, @pitch, @roll, @version, @flags, @sample_count, @window_ms,
+      @avg_roll, @avg_pitch, @min_roll, @max_roll, @min_pitch, @max_pitch,
+      @p2p_roll, @p2p_pitch, @max_delta, @rms_motion)
   `),
 
   queryTilt: db.prepare(`
-    SELECT ts, pitch, roll, x_g, y_g, z_g FROM tilt_history
+    SELECT ts, pitch, roll, flags, version, sample_count, window_ms,
+      avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch,
+      p2p_roll, p2p_pitch, max_delta, rms_motion
+    FROM tilt_history
     WHERE node_id = ? AND ts >= ? AND ncal = 0
     ORDER BY ts ASC
   `),
 
   queryAllTilt: db.prepare(`
-    SELECT ts, node_id, pitch, roll, x_g, y_g, z_g FROM tilt_history
+    SELECT ts, node_id, pitch, roll, flags, version, sample_count, window_ms,
+      avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch,
+      p2p_roll, p2p_pitch, max_delta, rms_motion
+    FROM tilt_history
     WHERE ts >= ? AND ncal = 0
     ORDER BY ts ASC
   `),
