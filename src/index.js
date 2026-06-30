@@ -6,7 +6,7 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver } from './device-config.js';
+import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
 import { ownDeviceNums, registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getTiltCal, saveTiltCal } from './db.js';
@@ -22,6 +22,7 @@ import { startAlertPoller } from './alerts.js';
 import alertsRouter from './alerts-api.js';
 import rotatorRouter from './rotator-api.js';
 import messagesRouter from './messages-api.js';
+import tracerouteRouter from './traceroute-api.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel, registerMacResolver } from './node-label.js';
@@ -30,6 +31,7 @@ import { traceroute } from './traceroute.js';
 import { OpManager } from './op-manager.js';
 
 registerNodeIdToMacResolver(getLiveMacByNodeId);
+registerMacToNodeIdResolver(getLiveNodeIdByMac);
 registerMacResolver(getLiveMacByNodeId);
 registerMacToNumResolver(mac => {
   const nodeId = getLiveNodeIdByMac(mac);
@@ -41,13 +43,6 @@ registerMacToNumResolver(mac => {
 const PORT = process.env.PORT || 8000;
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
 
-// Returns the live firmware node_id for the primary device, falling back to
-// the MAC-derived ID if the radio has not yet synced.
-function resolvePrimaryNodeId() {
-  const mac = getPrimaryMac();
-  if (!mac) return null;
-  return getLiveNodeIdByMac(mac) || mac;
-}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -273,45 +268,7 @@ app.post('/range_test/stop', async (req, res) => {
   res.json({ stopped: true });
 });
 
-// Traceroute — send from primary device to target node num in URL
-app.post('/:nodeId/traceroute', async (req, res) => {
-  const targetNum = parseInt((req.params.nodeId || '').replace('!', ''), 16);
-  if (!targetNum) return res.status(400).json({ error: 'invalid nodeId' });
-  const sender = resolvePrimaryNodeId();
-  if (!sender) return res.status(503).json({ error: 'no primary device configured' });
-  try {
-    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────
-    if (!FF.SSOT_TRACEROUTE) {
-      const result = await bridge.post(`/${sender}/traceroute`, { to: targetNum });
-      res.json(result);
-    // ── [V2] SSOT — traceroute.js owns dispatch ────────────────────────────
-    } else {
-      const result = await traceroute.dispatch({ to: targetNum, device: sender });
-      res.json(result);
-    }
-    // ───────────────────────────────────────────────────────────────────────
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
-
-app.get('/traceroute_history', (req, res) => {
-  const to_num = req.query.to_num ? parseInt(req.query.to_num) : null;
-  const limit  = Math.min(parseInt(req.query.limit ?? 200), 1000);
-  try {
-    const rows = stmts.queryTracerouteHistory.all({ to_num, limit });
-    res.json(rows.map(r => ({
-      ...r,
-      route:           JSON.parse(r.route           || '[]'),
-      route_back:      JSON.parse(r.route_back      || '[]'),
-      snr_towards:     JSON.parse(r.snr_towards     || '[]'),
-      snr_back:        JSON.parse(r.snr_back        || '[]'),
-      relay_positions: JSON.parse(r.relay_positions || '{}'),
-    })));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+app.use(tracerouteRouter);
 
 // -- auto-purge settings + scheduler ----------------------------------------
 

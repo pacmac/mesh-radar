@@ -11,6 +11,15 @@ export function onHomePosChange(cb) { _onHomePosChange = cb; }
 let _nodeIdToMac = null;
 export function registerNodeIdToMacResolver(fn) { _nodeIdToMac = fn; }
 
+let _macToNodeId = null;
+export function registerMacToNodeIdResolver(fn) { _macToNodeId = fn; }
+
+export function resolvePrimaryNodeId() {
+  const mac = getPrimaryMac();
+  if (!mac) return null;
+  return _macToNodeId?.(mac) || mac;
+}
+
 const DEFAULT = {
   label:               null,   // display label: OMNI, YAGI, Y, O, etc.
   is_rotator:          false,  // this radio is physically on the rotator

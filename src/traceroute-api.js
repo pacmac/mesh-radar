@@ -1,4 +1,49 @@
-// STUB — implementation pending spec-traceroute-api task
 import { Router } from 'express';
+import { bridge } from './bridge.js';
+import { traceroute } from './traceroute.js';
+import { stmts } from './db.js';
+import { resolvePrimaryNodeId } from './device-config.js';
+import { FF } from './feature-flags.js';
+
 const router = Router();
+
+router.post('/:nodeId/traceroute', async (req, res) => {
+  const targetNum = parseInt((req.params.nodeId || '').replace('!', ''), 16);
+  if (!targetNum) return res.status(400).json({ error: 'invalid nodeId' });
+  const sender = resolvePrimaryNodeId();
+  if (!sender) return res.status(503).json({ error: 'no primary device configured' });
+  try {
+    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────
+    if (!FF.SSOT_TRACEROUTE) {
+      const result = await bridge.post(`/${sender}/traceroute`, { to: targetNum });
+      res.json(result);
+    // ── [V2] SSOT — traceroute.js owns dispatch ────────────────────────────
+    } else {
+      const result = await traceroute.dispatch({ to: targetNum, device: sender });
+      res.json(result);
+    }
+    // ───────────────────────────────────────────────────────────────────────
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+router.get('/traceroute_history', (req, res) => {
+  const to_num = req.query.to_num ? parseInt(req.query.to_num) : null;
+  const limit  = Math.min(parseInt(req.query.limit ?? 200), 1000);
+  try {
+    const rows = stmts.queryTracerouteHistory.all({ to_num, limit });
+    res.json(rows.map(r => ({
+      ...r,
+      route:           JSON.parse(r.route           || '[]'),
+      route_back:      JSON.parse(r.route_back      || '[]'),
+      snr_towards:     JSON.parse(r.snr_towards     || '[]'),
+      snr_back:        JSON.parse(r.snr_back        || '[]'),
+      relay_positions: JSON.parse(r.relay_positions || '{}'),
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

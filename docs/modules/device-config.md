@@ -1,7 +1,7 @@
 ---
 module: device-config
 source: src/device-config.js
-source_hash: 281d89e57dd22ada5c1111cee49292a0cd6b3b6bbb80d6cc02143244e175d10b
+source_hash: d9a00ec96d9fac78942bde47ecebb539114234f388e92670ed03e8d83371af48
 updated: 2026-06-30
 ---
 
@@ -34,6 +34,10 @@ for reading and updating device configs.
 // Callback registrations (call once at startup)
 export function onHomePosChange(cb)                 // cb() fired when primary device fixed_lat/lon changes
 export function registerNodeIdToMacResolver(fn)     // fn(!hexid) → MAC|null — live MAC lookup
+export function registerMacToNodeIdResolver(fn)     // fn(MAC) → !hexid|null — live node ID lookup
+
+// Primary device helpers
+export function resolvePrimaryNodeId()              // → !hexid|MAC|null — live node ID of primary device
 
 // Config read helpers
 export function getDeviceCfg(address)               // → {...DEFAULT, ...stored} — by MAC (normalised to uppercase)
@@ -113,7 +117,9 @@ Identity is never inferred from MAC-suffix arithmetic.
 
 | Caller | Imports |
 |---|---|
-| `index.js` | all exports; mounts router; registers `_nodeIdToMac` resolver; calls `onHomePosChange` |
+| `index.js` | all exports; mounts router; registers both resolvers; calls `onHomePosChange` |
+| `traceroute-api.js` | `resolvePrimaryNodeId` |
+| `lifecycle.js` | `resolvePrimaryNodeId` |
 | `active-tracker.js` | `getRotatorAddress` |
 | `scanner.js` | `getRotatorAddress` |
 | `passive-tracer.js` | `getRotatorAddress` |
@@ -128,6 +134,8 @@ Identity is never inferred from MAC-suffix arithmetic.
 - `is_primary` is a singleton: the PUT endpoint enforces at most one primary device. `getPrimaryMac()` returns the first match if multiple are set (should not happen in normal use).
 - `getDeviceCfg(address)` always returns a complete object with all DEFAULT fields. Missing keys from DB are filled with defaults. Callers can destructure safely.
 - `_nodeIdToMac` is null until `registerNodeIdToMacResolver` is called. REST endpoints gracefully handle `null` by treating the !hexid as unresolvable.
+- `_macToNodeId` is null until `registerMacToNodeIdResolver` is called. `resolvePrimaryNodeId()` falls back to returning the raw MAC if the resolver is null or returns null.
+- `resolvePrimaryNodeId()` returns null if no primary device is configured; returns the MAC as fallback if `_macToNodeId` has no mapping (device not yet live).
 - `_onHomePosChange` fires only when `is_primary=true` on the device being updated. Changes to a non-primary device's home position are silently ignored.
 
 ## Test notes
