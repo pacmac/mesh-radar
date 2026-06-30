@@ -1,7 +1,7 @@
 ---
 module: alerts-api
 source: src/alerts-api.js
-source_hash: 167ae330632f0d32f279be7f5509c8b87c4c21e986cbb6ebff4de45a769410ad
+source_hash: 0db449febf848f4efdbcbd0c1210a3c78ac886d613acc1c18492efae062259c7
 updated: 2026-06-30
 ---
 
@@ -20,6 +20,18 @@ and test alert dispatch.
 - Serve `GET /alerts/rules` — read alert rules enriched with ALERT_META labels
 - Serve `PUT /alerts/rules/:type` — update enabled/threshold/cooldown for one rule
 - Serve `POST /alerts/test` — send a test alert email
+
+## Routes
+
+Mounted at `/alerts` by `index.js`. Paths below are router-relative.
+
+| Method | Path | Action |
+|---|---|---|
+| GET | `/config` | Read all 8 SMTP/IMAP keys from DB |
+| PUT | `/config` | Write whitelisted SMTP/IMAP keys (unknown keys silently ignored) |
+| GET | `/rules` | Return alert rules enriched with ALERT_META label/desc/unit |
+| PUT | `/rules/:type` | Update enabled/threshold/cooldown_minutes for one rule type |
+| POST | `/test` | Send test alert email via `sendTestAlert()` |
 
 ## Dependencies
 
