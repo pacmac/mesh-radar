@@ -1,7 +1,7 @@
 ---
 module: range-test-api
 source: src/range-test-api.js
-source_hash: 200cfdb2c9ff84e2c2dae62c70544e481a1a224757c1d659582d9f1270a3aaff
+source_hash: 338789eefdb1433dbb39ebbcb52f5d53e0538c8ec05b71eb4496673eb2f1ee1c
 updated: 2026-06-30
 ---
 
@@ -28,7 +28,7 @@ exposes the timer state to the browser, and serves the persistent range test log
 
 - `db.js` — `queryRangeTestLog`, `clearRangeTestLog`
 - `node-label.js` — `resolveNodeLabel`, `resolveDeviceLabel`
-- `bridge.js` or env — `BRIDGE_URL` for `_bridgePutRangeTest` fetch
+- `process.env.BRIDGE_URL` — `'http://localhost:8001'` default; read at module load
 
 ## Public interface
 
@@ -53,7 +53,7 @@ _N/A_
 - `POST /range_test/start`: `duration` clamped to `Math.max(1, durationMin)`. Previous timer is cleared before starting a new one.
 - Auto-disable fires after `duration * 60 * 1000` ms: calls `_bridgePutRangeTest(nodeId, false)`. Failure is logged but does not crash.
 - `POST /range_test/stop`: uses `_rangeTimer.nodeId` if available, else `req.body.nodeId`. Timer cleared regardless of bridge call result.
-- `GET /range_test/log`: `limit` clamped to `Math.min(limit, 500)` default.
+- `GET /range_test/log`: `limit` defaults to 500 (`parseInt(req.query.limit) || 500`); no hard cap.
 - `getRangeTimer()` always returns `remaining` as a non-negative integer or null.
 
 ## Test notes

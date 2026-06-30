@@ -9,7 +9,7 @@ import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
 import { ownDeviceNums, registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, clearNodeCache, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, clearNodeCache, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -24,9 +24,10 @@ import rotatorRouter from './rotator-api.js';
 import messagesRouter from './messages-api.js';
 import tracerouteRouter from './traceroute-api.js';
 import { createPerformanceRouter } from './performance-api.js';
+import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { passiveTracer } from './passive-tracer.js';
-import { resolveNodeLabel, resolveDeviceLabel, registerMacResolver } from './node-label.js';
+import { resolveNodeLabel, registerMacResolver } from './node-label.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 import { OpManager } from './op-manager.js';
@@ -186,68 +187,7 @@ app.get('/geocode', async (req, res) => {
   res.json({ address });
 });
 
-app.get('/range_test/log', (req, res) => {
-  const limit = parseInt(req.query.limit) || 500;
-  const rows = queryRangeTestLog(limit).map(r => ({
-    ...r,
-    from_name: resolveNodeLabel(r.from_num),
-    rx_name:   resolveDeviceLabel(r.rx_device),
-  }));
-  res.json({ log: rows, count: rows.length });
-});
-
-app.delete('/range_test/log', (req, res) => {
-  clearRangeTestLog();
-  res.json({ cleared: true });
-});
-
-// -- range test timer ---------------------------------------------------------
-let _rangeTimer = { active: false, endsAt: null, nodeId: null };
-let _rangeTimerHandle = null;
-
-async function _bridgePutRangeTest(nodeId, enabled) {
-  const body = enabled ? { enabled: true, sender: 60 } : { enabled: false, sender: 0 };
-  await fetch(`${BRIDGE_URL}/${nodeId}/config/range_test`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
-app.get('/range_test/timer', (req, res) => {
-  const remaining = _rangeTimer.endsAt ? Math.max(0, Math.round((_rangeTimer.endsAt - Date.now()) / 1000)) : null;
-  res.json({ ..._rangeTimer, remaining });
-});
-
-app.post('/range_test/start', async (req, res) => {
-  const { nodeId, durationMin } = req.body;
-  if (!nodeId) return res.status(400).json({ error: 'nodeId required' });
-  const duration = Math.max(1, parseInt(durationMin) || 10);
-  if (_rangeTimerHandle) { clearTimeout(_rangeTimerHandle); _rangeTimerHandle = null; }
-  try {
-    await _bridgePutRangeTest(nodeId, true);
-  } catch (err) {
-    return res.status(502).json({ error: 'bridge: ' + err.message });
-  }
-  const endsAt = Date.now() + duration * 60 * 1000;
-  _rangeTimer = { active: true, endsAt, nodeId };
-  _rangeTimerHandle = setTimeout(async () => {
-    try { await _bridgePutRangeTest(nodeId, false); } catch (e) { console.error('[range_test] auto-disable failed:', e.message); }
-    _rangeTimer = { active: false, endsAt: null, nodeId: null };
-    _rangeTimerHandle = null;
-  }, duration * 60 * 1000);
-  res.json({ started: true, endsAt, nodeId, durationMin: duration });
-});
-
-app.post('/range_test/stop', async (req, res) => {
-  const nodeId = _rangeTimer.nodeId || req.body?.nodeId;
-  if (_rangeTimerHandle) { clearTimeout(_rangeTimerHandle); _rangeTimerHandle = null; }
-  _rangeTimer = { active: false, endsAt: null, nodeId: null };
-  if (nodeId) {
-    try { await _bridgePutRangeTest(nodeId, false); } catch (err) { return res.status(502).json({ error: 'bridge: ' + err.message }); }
-  }
-  res.json({ stopped: true });
-});
+app.use('/range_test', rangeTestRouter);
 
 app.use(tracerouteRouter);
 
@@ -352,10 +292,6 @@ app.use((req, res) => serveIndex(req, res));
 
 // -- server + WS relay -------------------------------------------------------
 const server = http.createServer(app);
-const getRangeTimer = () => {
-  const remaining = _rangeTimer.endsAt ? Math.max(0, Math.round((_rangeTimer.endsAt - Date.now()) / 1000)) : null;
-  return { ..._rangeTimer, remaining };
-};
 const wss = attachWsRelay(server, getRangeTimer);
 
 function broadcastAll(msg) {
