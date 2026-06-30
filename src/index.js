@@ -7,9 +7,9 @@ import { bridge } from './bridge.js';
 import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
-import { ownDeviceNums, registerMacToNumResolver } from './node-filter.js';
+import { registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, clearNodeCache, insertEnvHistory, getConfigByPrefix } from './db.js';
+import { getConfig, setConfig, stmts, clearNodeCache, getConfigByPrefix } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -27,6 +27,7 @@ import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
 import geocodeRouter from './geocode.js';
+import { registerBridgeEvents } from './bridge-events.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, registerMacResolver } from './node-label.js';
@@ -291,118 +292,8 @@ dashMode.on('change', ({ _mode }) => {
 // Resume active mode if it was persisted before restart
 if (dashMode.value === 1) activeTracker.start();
 
-// -- event handlers ----------------------------------------------------------
-const _lastEnvTs = new Map(); // num → last inserted ts (dedup node_update vs packet)
-
-bridge.on('event', (ev) => {
-  handleEvent(ev);
-  if (ev.type === 'node_update') {
-    nodeList.handleNodeUpdate(ev);
-    const node = ev.data;
-    const em = node?.environment_metrics;
-    if (em && node?.num && ownDeviceNums().has(node.num) && (em.temperature != null || em.relative_humidity != null)) {
-      const now = Math.floor(Date.now() / 1000);
-      const last = _lastEnvTs.get(node.num) ?? 0;
-      if (now - last > 60) {
-        _lastEnvTs.set(node.num, now);
-        insertEnvHistory({
-          ts: now,
-          num: node.num,
-          temperature:         em.temperature         ?? null,
-          relative_humidity:   em.relative_humidity   ?? null,
-          barometric_pressure: em.barometric_pressure ?? null,
-        });
-        nodeList.setEnvironmentMetrics(node.num, em);
-      }
-    }
-  }
-  if (ev.type === 'packet') {
-    activeTracker.handlePacket(ev);
-    scanner.handlePacket(ev);
-    const pkt = ev.data?.packet;
-    const rxDevice = ev.addr || ev.device || null;
-    const rotatorId = getRotatorAddress();
-    const yagiOnly = scanner.active && rotatorId && rxDevice !== rotatorId;
-    if (pkt?.from && !yagiOnly) nodeList.touchLastHeard(pkt.from, pkt.rx_time, rxDevice);
-    // environment_metrics are now handled via the typed `telemetry` event from AppRouter
-    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
-    if (!FF.SSOT_TRACEROUTE) {
-      if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery && pkt?.from) {
-        const rd = pkt.decoded.route_discovery;
-        const relay_positions = {};
-        for (const num of rd.route ?? []) {
-          const info = stmts.getNodeinfoByNum.get(num);
-          if (info?.lat != null && info?.lon != null) {
-            relay_positions[num] = { latitude_i: Math.round(info.lat * 1e7), longitude_i: Math.round(info.lon * 1e7) };
-          }
-        }
-        nodeList.setTraceroute(pkt.from, {
-          route:       rd.route       ?? [],
-          route_back:  rd.route_back  ?? [],
-          snr_towards: rd.snr_towards ?? [],
-          snr_back:    rd.snr_back    ?? [],
-          relay_positions,
-          ts: Date.now(),
-        }, pkt.to ?? null, rxDevice);
-      }
-    // ── [V2] SSOT — traceroute.js owns decode, relay_positions, storage ──────
-    } else {
-      traceroute.handlePacket(pkt, rxDevice);
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-  }
-  // traceroute: AppRouter typed event — ev.data IS the RouteDiscovery (route/snr_towards/etc).
-  // Raw packet arrives separately but lacks decoded route_discovery; this bridge fills that gap.
-  if (ev.type === 'traceroute' && ev.from_num) {
-    const rd = ev.data ?? {};
-    if (FF.SSOT_TRACEROUTE) {
-      // V2: traceroute.js owns decode, relay_positions, storage, result emit
-      const syntheticPkt = {
-        from: ev.from_num, to: ev.to_num,
-        decoded: { portnum: 'TRACEROUTE_APP', route_discovery: rd },
-      };
-      traceroute.handlePacket(syntheticPkt, ev.addr || ev.device || null);
-    } else {
-      // V1: inline storage (parallel to the raw packet path, now also covering typed event)
-      if (Object.keys(rd).length) {
-        const relay_positions = {};
-        for (const num of rd.route ?? []) {
-          const info = stmts.getNodeinfoByNum.get(num);
-          if (info?.lat != null && info?.lon != null) {
-            relay_positions[num] = { latitude_i: Math.round(info.lat * 1e7), longitude_i: Math.round(info.lon * 1e7) };
-          }
-        }
-        nodeList.setTraceroute(ev.from_num, {
-          route: rd.route ?? [], route_back: rd.route_back ?? [],
-          snr_towards: rd.snr_towards ?? [], snr_back: rd.snr_back ?? [],
-          relay_positions, ts: Date.now(),
-        }, ev.to_num ?? null, ev.addr || ev.device || null);
-      }
-    }
-  }
-  // rangetest: AppRouter typed event for RANGE_TEST_APP (portnum 66)
-  if (ev.type === 'rangetest') {
-    try {
-      const seq = parseInt((ev.data?.text || '').replace(/[^0-9]/g, '')) || null;
-      insertRangeTestEntry({
-        ts:        Math.floor(Date.now() / 1000),
-        from_num:  ev.from_num   ?? null,
-        rssi:      ev.rx_rssi    ?? null,
-        snr:       ev.rx_snr     ?? null,
-        hops:      ev.hops       ?? null,
-        seq,
-        rx_device: ev.addr || ev.device || null,
-        via_mqtt:  ev.via_mqtt ? 1 : 0,
-      });
-    } catch (err) {
-      console.error(`[range_test] DB insert failed: ${err.message}`);
-    }
-  }
-});
-
-// Passive tracer — must init after main bridge.on('event') so TRACEROUTE_APP
-// storage (nodeList.setTraceroute) runs before the 'traced' emit is broadcast.
-passiveTracer.init();
+// Bridge event dispatch — node_update, packet, traceroute, rangetest
+registerBridgeEvents(bridge);
 
 rotator.on('connected', () => {
 });
