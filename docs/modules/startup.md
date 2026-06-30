@@ -1,7 +1,7 @@
 ---
 module: startup
 source: src/startup.js
-source_hash: 41d00b8fc4c62642e97436e3de81b57c85580e644c4239440c8e69bbfd82ff70
+source_hash: 40a41c2c040060095d69d9012cae6ab060cd34edc218e1b976cea397dd861b4b
 updated: 2026-06-30
 ---
 

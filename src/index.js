@@ -4,12 +4,11 @@ import { fileURLToPath } from 'url';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { bridge } from './bridge.js';
-import { handleEvent } from './persist.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
+import deviceConfigRouter, { getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
 import { registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, clearNodeCache, getConfigByPrefix } from './db.js';
+import { getConfig, setConfig, clearNodeCache, getConfigByPrefix } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -28,6 +27,7 @@ import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
 import geocodeRouter from './geocode.js';
 import { registerBridgeEvents } from './bridge-events.js';
+import { registerStartupHandlers } from './startup.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, registerMacResolver } from './node-label.js';
@@ -325,42 +325,4 @@ rotator.on('point_target', (data) => {
 });
 
 
-bridge.on('connected', async () => {
-  const primaryMac = getPrimaryMac();
-  const cfg = primaryMac ? getDeviceCfg(primaryMac) : {};
-
-  // Seed NodeList from merged node list, then restore device attribution from SQLite.
-  // nodes.device persists which device last received each node's packet across restarts.
-  try {
-    const allResp = await bridge.get('/nodes');
-    const allNodes = Object.values(allResp?.nodes ?? {});
-    nodeList.seed(allNodes, null);
-    nodeList.restoreDeviceAttribution(stmts.getNodeDevices.all());
-    const allDeviceCfgs = getAllDeviceCfgs();
-    for (const deviceId of Object.keys(allDeviceCfgs)) {
-      if (!deviceId.startsWith('!')) continue;
-      const devNum = parseInt(deviceId.slice(1), 16);
-      const devNode = allNodes.find(n => n.num === devNum);
-      if (devNode) nodeList.seedOwnDevice(devNode, deviceId);
-    }
-    console.log(`[node-list] seeded ${allNodes.length} nodes`);
-  } catch (err) {
-    console.error(`[node-list] seed failed: ${err.message}`);
-  }
-
-  if (!cfg.load_nodes_on_boot) {
-    console.log('[node-dash] load_nodes_on_boot=false — skipping persist seed');
-    return;
-  }
-  try {
-    const resp = await bridge.get('/nodes?named_only=true');
-    const nodeMap = resp?.nodes ?? {};
-    const entries = Object.values(nodeMap);
-    for (const n of entries) {
-      handleEvent({ type: 'node_update', data: n, device: null });
-    }
-    console.log(`[node-dash] seeded ${entries.length} named nodes into persist`);
-  } catch (err) {
-    console.error(`[node-dash] persist seed failed: ${err.message}`);
-  }
-});
+registerStartupHandlers(bridge);
