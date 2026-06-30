@@ -8,7 +8,7 @@ import configRouter from './config-api.js';
 import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver } from './device-config.js';
 import { registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, clearNodeCache, getConfigByPrefix } from './db.js';
+import { getConfig, setConfig, clearNodeCache } from './db.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
