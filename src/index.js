@@ -9,7 +9,7 @@ import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
 import { ownDeviceNums, registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, queryTiltHistory, markTiltNcal, clearNodeCache, queryEnvHistory, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix, getTiltCal, saveTiltCal } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, queryRangeTestLog, clearRangeTestLog, clearNodeCache, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -23,6 +23,7 @@ import alertsRouter from './alerts-api.js';
 import rotatorRouter from './rotator-api.js';
 import messagesRouter from './messages-api.js';
 import tracerouteRouter from './traceroute-api.js';
+import { createPerformanceRouter } from './performance-api.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel, registerMacResolver } from './node-label.js';
@@ -146,27 +147,7 @@ app.get('/schema/bridge_config', (req, res) => res.json(BRIDGE_CONFIG_SCHEMA));
 
 // -- range test log (SQLite-persisted, survives restarts) --------------------
 
-app.get('/tilt_history', (req, res) => {
-  const nodeId = req.query.node_id || '';
-  const hours  = parseFloat(req.query.hours) || 4;
-  const since  = Math.floor(Date.now() / 1000) - hours * 3600;
-  res.json(queryTiltHistory(nodeId, since));
-});
-
-// Mark records around a calibration event as NCAL (excluded from history/peak)
-app.post('/tilt_history/ncal', (req, res) => {
-  const { node_id, ts, window_sec = 90 } = req.body;
-  if (!node_id || ts == null) return res.status(400).json({ error: 'node_id and ts required' });
-  const changed = markTiltNcal(node_id, ts - window_sec, ts + window_sec);
-  res.json({ marked: changed });
-});
-
-app.get('/env_history', (req, res) => {
-  const num   = parseInt(req.query.num) || 0;
-  const hours = parseFloat(req.query.hours) || 24;
-  const since = Math.floor(Date.now() / 1000) - hours * 3600;
-  res.json(queryEnvHistory(num, since));
-});
+app.use(createPerformanceRouter(broadcastAll));
 
 // Nominatim reverse-geocode — results cached in nodeinfo.address
 // Server-side queue enforces 1.1s between requests to respect usage policy
@@ -353,22 +334,6 @@ app.use(/^\/![0-9a-f]+/i, proxyToBridge);
 
 app.use('/alerts', alertsRouter);
 
-// -- tilt calibration --------------------------------------------------------
-
-app.get('/tilt_cal', (_req, res) => {
-  res.json(getTiltCal());
-});
-
-app.put('/tilt_cal', (req, res) => {
-  const body = req.body;
-  saveTiltCal({
-    zero:        'zero'        in body ? (body.zero        ?? null) : undefined,
-    north_angle: 'north_angle' in body ? (body.north_angle ?? null) : undefined,
-  });
-  const cal = getTiltCal();
-  broadcastAll({ type: 'tilt_cal', zero: cal.zero, north_angle: cal.north_angle });
-  res.json({ ok: true });
-});
 
 // -- OpManager (must register before static middleware to avoid catch-all) ---
 // broadcastAll is defined after wss; forward-reference via closure.
