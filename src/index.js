@@ -9,7 +9,7 @@ import configRouter from './config-api.js';
 import deviceConfigRouter, { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress, onHomePosChange, registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
 import { ownDeviceNums, registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, stmts, insertRangeTestEntry, clearNodeCache, insertEnvHistory, getCachedGeocode, setCachedGeocode, getConfigByPrefix } from './db.js';
+import { getConfig, setConfig, stmts, insertRangeTestEntry, clearNodeCache, insertEnvHistory, getConfigByPrefix } from './db.js';
 import { rotator } from './rotator.js';
 import { dashMode } from './dash-mode.js';
 import { activeTracker } from './active-tracker.js';
@@ -26,6 +26,7 @@ import tracerouteRouter from './traceroute-api.js';
 import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
+import geocodeRouter from './geocode.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, registerMacResolver } from './node-label.js';
@@ -151,42 +152,7 @@ app.get('/schema/bridge_config', (req, res) => res.json(BRIDGE_CONFIG_SCHEMA));
 
 app.use(createPerformanceRouter(broadcastAll));
 
-// Nominatim reverse-geocode — results cached in nodeinfo.address
-// Server-side queue enforces 1.1s between requests to respect usage policy
-let _geocodeQueue = Promise.resolve();
-app.get('/geocode', async (req, res) => {
-  const num = parseInt(req.query.num) || 0;
-  if (!num) return res.json({ address: null });
-
-  const cached = getCachedGeocode(num);
-  if (cached) return res.json({ address: cached });
-
-  const pos = stmts.getNodePos.get(num, num);
-  if (!pos?.lat || !pos?.lon) return res.json({ address: null });
-
-  const address = await (_geocodeQueue = _geocodeQueue.then(() =>
-    new Promise(resolve => setTimeout(async () => {
-      try {
-        const url = `https://nominatim.openstreetmap.org/reverse?lat=${pos.lat}&lon=${pos.lon}&format=jsonv2&zoom=18&addressdetails=1`;
-        const r = await fetch(url, { headers: { 'User-Agent': 'node-dash/1.0', 'Accept-Language': 'en' } });
-        const data = await r.json();
-        const a = data.address || {};
-        const road     = [a.house_number, a.road].filter(Boolean).join(' ');
-        const place    = a.city || a.town || a.village || a.hamlet || a.suburb || a.municipality || a.locality || '';
-        const county   = a.county || a.state_district || a.state || '';
-        const seen     = new Set();
-        const parts    = [road, place, a.postcode, county, a.country]
-          .filter(p => p && !seen.has(p) && seen.add(p));
-        resolve(parts.join(', ') || (data.display_name || '').split(',').slice(0, 3).join(', ') || `${pos.lat.toFixed(4)},${pos.lon.toFixed(4)}`);
-      } catch (_) {
-        resolve(`${pos.lat.toFixed(4)},${pos.lon.toFixed(4)}`);
-      }
-    }, 1100))
-  ));
-
-  setCachedGeocode(num, address);
-  res.json({ address });
-});
+app.use('/geocode', geocodeRouter);
 
 app.use('/range_test', rangeTestRouter);
 

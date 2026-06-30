@@ -1,7 +1,7 @@
 ---
 module: geocode
 source: src/geocode.js
-source_hash: 8694c813f005cee28d46d6384c669bb2ce62165f195725ad89e423df0588cc2e
+source_hash: cd3161f53121a154cb46b27619b3e275a5a1ae34f93fa42831c0562732ea4d09
 updated: 2026-06-30
 ---
 
