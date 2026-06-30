@@ -1,7 +1,7 @@
 ---
 module: rotator-api
 source: src/rotator-api.js
-source_hash: 1874e101fcde8511f13748679abca710bcd89c7adf786bd7d482ee33b1f03fd7
+source_hash: d388e54645a8299f7e952e967f9885bb102621b594b804eda1498bda7beac757
 updated: 2026-06-30
 ---
 
@@ -25,6 +25,30 @@ targeting, scan control, calibration, and firmware config read/write.
 - Serve `POST /rotator/offset` — set azimuth north offset (normalised to 0–360)
 - Serve `GET /rotator/firmware_config` — read motor/scan/actv config composite
 - Serve `POST /rotator/firmware_config` — write motor/scan/actv config
+
+## Routes
+
+Mounted at `/rotator` by `index.js`. Paths below are router-relative.
+
+| Method | Path | Action |
+|---|---|---|
+| GET | `/status` | `{ connected, mode, dash_mode, scan_active, scan_az, scan_dwell_az, scan_contacts, ...fwStatus }` |
+| POST | `/move` | `{ az }` → `rotator.move(az)` |
+| POST | `/mode` | `{ mode }` → `dashMode.set(mode)`; refused if mode=1 and scan active |
+| POST | `/target` | `{ num }` → `activeTracker.targetNum(num)`; requires dashMode=1 |
+| POST | `/scan/start` | `scanner.start()` |
+| POST | `/scan/abort` | `scanner.abort()` |
+| POST | `/calibrate` | `{ procedure }` → `rotator.sendAction(procedure)`; whitelist enforced |
+| POST | `/setvar` | `{ action, val }` → `rotator.sendAction(action, [String(val)])`; whitelist enforced |
+| POST | `/offset` | `{ offset }` → normalised, `rotator.sendAction('setOffset', [String(offset)])` |
+| GET | `/firmware_config` | `{ motor: {pwm_min,pwm_run,pulses_per_deg}, scan: {step_deg,dwell_sec}, actv: {dwell_sec} }` |
+| POST | `/firmware_config` | Write motor (via sendAction) and scan/actv (via setConfig) |
+
+**Calibration procedure whitelist:** `['calMotor', 'qmcCali', 'calPwmMin', 'qmcOsStart', 'qmcOsEnd']`
+
+**Setvar action whitelist:** `['setPwmRunPct', 'setPwmFreq', 'setNorthOffset']`
+
+**Firmware config defaults:** `scan.step_deg=5`, `scan.dwell_sec=60`, `actv.dwell_sec=90`
 
 ## Dependencies
 
