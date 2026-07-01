@@ -12,10 +12,16 @@ class BridgeClient extends EventEmitter {
     this._ws = null;
     this._reconnectTimer = null;
     this._connected = false;
+    this._helloReceived = false;
+    this._apiVersion = null;
   }
 
   get connected() {
     return this._connected;
+  }
+
+  get apiVersion() {
+    return this._apiVersion;
   }
 
   start() {
@@ -36,9 +42,9 @@ class BridgeClient extends EventEmitter {
     this._ws = ws;
 
     ws.on('open', () => {
-      console.log('[bridge] WS connected');
-      this._connected = true;
-      this.emit('connected');
+      console.log('[bridge] WS connected — awaiting hello');
+      this._helloReceived = false;
+      this._apiVersion = null;
     });
 
     ws.on('message', (data) => {
@@ -46,6 +52,24 @@ class BridgeClient extends EventEmitter {
       try {
         event = JSON.parse(data.toString());
       } catch {
+        return;
+      }
+      if (!this._helloReceived) {
+        if (event.type !== 'hello') {
+          console.error('[bridge] protocol error: expected hello, got:', event.type);
+          return;
+        }
+        this._apiVersion = event.api_version ?? null;
+        const major = String(this._apiVersion ?? '').split('.')[0];
+        if (major !== '2') {
+          console.error(`[bridge] unsupported api_version: ${this._apiVersion}`);
+          this.emit('version_error', { api_version: this._apiVersion });
+          return;
+        }
+        this._helloReceived = true;
+        this._connected = true;
+        console.log(`[bridge] hello validated (api_version=${this._apiVersion})`);
+        this.emit('connected');
         return;
       }
       const BLE_LOG_TYPES = ['connecting','syncing','reconnecting','error','ready','idle'];
@@ -60,6 +84,7 @@ class BridgeClient extends EventEmitter {
 
     ws.on('close', () => {
       console.log(`[bridge] WS disconnected — retry in ${RECONNECT_DELAY_MS}ms`);
+      this._helloReceived = false;
       this._connected = false;
       this.emit('disconnected');
       this._reconnectTimer = setTimeout(() => this._connect(), RECONNECT_DELAY_MS);
