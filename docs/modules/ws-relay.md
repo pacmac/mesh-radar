@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 4c38a4447ecaec506a8234aab2fc28e28083dac4436ab007c8164be5913b941c
+source_hash: e2f18e2aff1954b5fe2e93e931a7040772abad4b28066ddcf1ee59b0705b36b0
 updated: 2026-06-30
 ---
 
@@ -277,7 +277,11 @@ If any history query throws (steps 13–18), the error is logged and remaining h
 
 Scoped to one gateway radio. Replays: device state, dash mode, rotator status, `lastPointTarget`, `lastSignalUpdate`, `radar_context`, scan state (if active), and `node_list`. Message history, tilt/env history, range test log, and traceroute history are NOT replayed.
 
-Live event filter: events where `ev.addr === addr` OR `ev.node_id === nodeId` OR `ev.type?.startsWith('ota_')` pass through. OTA events always pass regardless of target.
+Live event filter: `evAddr = ev.addr || ev.__ble_addr || ev.device`. An event passes if `evAddr === addr` OR `ev.node_id === nodeId` OR `ev.type?.startsWith('ota_')`.
+
+`__ble_addr` is included in the fallback chain because V2 gw `ota_download_*` events carry only `__ble_addr` — no `addr`, no `device`. Without this fallback `evAddr` is null and `!evAddr` is true, causing all OTA download events to be sent to every device WS client. With the fallback, `evAddr === addr` routes each event to the correct device only.
+
+The `startsWith('ota_')` catch-all is retained for `ota_start`/`ota_progress`/`ota_complete`/`ota_error` events synthesised by ws-relay.js from `device_state` FSM transitions (those always carry `addr`).
 
 All event listeners are attached per connection and removed on `close` — no leaks.
 
@@ -331,6 +335,7 @@ Object keyed by BLE MAC address. Each entry is the flattened device shape from `
 - **_enrichMessages is_orphan**: `reply_id` not in row set → `is_orphan: true`
 - **radar_context PASV**: `passiveTracer.tracing` → `active_card.mode = 'pasv'`; `traceroute.result` → card null
 - **per-device filter**: event for device B not sent to per-device WS for device A; `ota_start` sent to both
+- **per-device filter V2 OTA download**: `ota_download_start` with only `__ble_addr` set → `evAddr = __ble_addr` → routed to matching device only, not broadcast to all
 
 ## Out of scope
 

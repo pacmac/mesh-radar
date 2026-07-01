@@ -586,7 +586,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
 
     function onEvent(ev) {
       if (ws.readyState !== 1) return;
-      const evAddr = ev.addr || ev.device;
+      const evAddr = ev.addr || ev.__ble_addr || ev.device;
       if (!evAddr || evAddr === addr || ev.node_id === nodeId || ev.type?.startsWith('ota_')) sendEnriched(ws, ev);
     }
 
