@@ -17,13 +17,13 @@
           <!-- ── Per-device accordion cards ───────────────────────── -->
           <template x-for="dev in availableDevices" :key="dev.addr">
             <div x-data="{
-                   open: false,
-                   s: { status: false, config: false, ota: false, radio: false, range: false, maint: false }
+                   open: true,
+                   s: { config: false, ota: false, radio: false, range: false, maint: false }
                  }"
                  class="card bg-base-100 shadow"
                  :class="dev.node_id === activeNodeId ? 'ring-1 ring-success/50' : ''">
 
-              <!-- Card header — click to expand/collapse -->
+              <!-- Card header — click to expand/collapse config sections -->
               <div class="card-body py-3 cursor-pointer select-none flex flex-row items-center gap-2 flex-wrap"
                    @click="open = !open">
                 <svg class="w-4 h-4 shrink-0 opacity-40 transition-transform" :class="open && 'rotate-90'"
@@ -49,89 +49,79 @@
                 </span>
               </div>
 
-              <!-- Card body -->
-              <div x-show="open" class="border-t border-base-300 divide-y divide-base-300">
-
-                <!-- ── Status & Telemetry ── -->
-                <div>
-                  <button class="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold opacity-60 hover:opacity-100 hover:bg-base-200/60 text-left transition-colors"
-                          @click.stop="s.status = !s.status">
-                    <svg class="w-3 h-3 shrink-0 transition-transform" :class="s.status && 'rotate-90'"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Status &amp; Telemetry
-                  </button>
-                  <div x-show="s.status" class="px-4 pb-4 flex flex-col gap-3">
-                    <!-- BLE / network stats -->
-                    <div class="flex gap-4 text-xs opacity-60 flex-wrap">
-                      <span x-show="deviceBleStates[dev.node_id]?.ble_rssi != null"
-                            class="inline-flex items-center gap-1">
-                        <span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span>
-                        <span x-text="deviceBleStates[dev.node_id]?.ble_rssi + ' dBm'"></span>
-                      </span>
-                      <span x-show="deviceBleStates[dev.node_id]?.node_count != null"
-                            x-text="deviceBleStates[dev.node_id]?.node_count + ' nodes'"></span>
-                      <span x-show="deviceBleStates[dev.node_id]?.ready_secs != null"
-                            x-text="'sync ' + deviceBleStates[dev.node_id]?.ready_secs + 's'"></span>
-                      <span x-show="dev.ble_address" x-text="dev.ble_address"></span>
-                      <span x-show="dev.tcp_port"
-                            x-text="'TCP :' + dev.tcp_port + ' (' + dev.tcp_clients + ' clients)'"></span>
-                    </div>
-                    <!-- Telemetry grid -->
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                      <div>
-                        <div class="opacity-50 mb-0.5">Hardware</div>
-                        <div x-text="nodeById(dev.node_id)?.user?.hw_model || '–'"></div>
-                        <div class="opacity-50 text-xs" x-text="dev.firmware_version || ''"></div>
-                      </div>
-                      <div>
-                        <div class="opacity-50 mb-0.5">Uptime</div>
-                        <div x-text="nodeById(dev.node_id)?.device_metrics?.uptime_seconds != null ? fmtUptime(nodeById(dev.node_id).device_metrics.uptime_seconds) : '–'"></div>
-                      </div>
-                      <div>
-                        <div class="opacity-50 mb-0.5">Battery</div>
-                        <div x-text="nodeById(dev.node_id)?.device_metrics?.battery_level != null ? nodeById(dev.node_id).device_metrics.battery_level + '% / ' + (nodeById(dev.node_id).device_metrics.voltage?.toFixed(2) ?? '–') + ' V' : '–'"></div>
-                      </div>
-                      <div>
-                        <div class="opacity-50 mb-0.5">Ch util / Air TX</div>
-                        <div x-text="nodeById(dev.node_id)?.device_metrics?.channel_utilization != null ? nodeById(dev.node_id).device_metrics.channel_utilization.toFixed(1) + '% / ' + (nodeById(dev.node_id).device_metrics.air_util_tx?.toFixed(2) ?? '–') + '%' : '–'"></div>
-                      </div>
-                      <div x-show="nodeById(dev.node_id)?.local_stats">
-                        <div class="opacity-50 mb-0.5">Nodes seen</div>
-                        <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_online_nodes + ' online / ' + nodeById(dev.node_id).local_stats.num_total_nodes + ' total' : '–'"></div>
-                      </div>
-                      <div x-show="nodeById(dev.node_id)?.local_stats">
-                        <div class="opacity-50 mb-0.5">Packets RX / TX</div>
-                        <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_packets_rx + ' / ' + nodeById(dev.node_id).local_stats.num_packets_tx : '–'"></div>
-                      </div>
-                      <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null"
-                           x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
-                        <div class="opacity-50 mb-0.5">Temperature</div>
-                        <div x-text="_em?.temperature?.toFixed(1) + ' °C'"></div>
-                      </div>
-                      <div x-show="nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
-                           x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
-                        <div class="opacity-50 mb-0.5">Humidity</div>
-                        <div x-text="_em?.relative_humidity?.toFixed(1) + ' %'"></div>
-                      </div>
-                      <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null && nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
-                           x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
-                        <div class="opacity-50 mb-0.5">Dew point</div>
-                        <div class="flex items-center gap-1">
-                          <span x-text="dewPoint(_em?.temperature, _em?.relative_humidity)?.toFixed(1) + ' °C'"></span>
-                          <span x-show="dewPoint(_em?.temperature, _em?.relative_humidity) >= _em?.temperature - 3"
-                                class="badge badge-xs badge-warning">condensation risk</span>
-                        </div>
-                      </div>
-                      <div x-show="nodeById(dev.node_id)?.environment_metrics?.barometric_pressure != null"
-                           x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
-                        <div class="opacity-50 mb-0.5">Pressure</div>
-                        <div x-text="_em?.barometric_pressure?.toFixed(1) + ' hPa'"></div>
-                      </div>
+              <!-- Status & Telemetry — always visible -->
+              <div class="border-t border-base-300 px-4 py-3 flex flex-col gap-3">
+                <!-- BLE / network stats -->
+                <div class="flex gap-4 text-xs opacity-60 flex-wrap">
+                  <span x-show="deviceBleStates[dev.node_id]?.ble_rssi != null"
+                        class="inline-flex items-center gap-1">
+                    <span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span>
+                    <span x-text="deviceBleStates[dev.node_id]?.ble_rssi + ' dBm'"></span>
+                  </span>
+                  <span x-show="deviceBleStates[dev.node_id]?.node_count != null"
+                        x-text="deviceBleStates[dev.node_id]?.node_count + ' nodes'"></span>
+                  <span x-show="deviceBleStates[dev.node_id]?.ready_secs != null"
+                        x-text="'sync ' + deviceBleStates[dev.node_id]?.ready_secs + 's'"></span>
+                  <span x-show="dev.ble_address" x-text="dev.ble_address"></span>
+                  <span x-show="dev.tcp_port"
+                        x-text="'TCP :' + dev.tcp_port + ' (' + dev.tcp_clients + ' clients)'"></span>
+                </div>
+                <!-- Telemetry grid -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <div class="opacity-50 mb-0.5">Hardware</div>
+                    <div x-text="nodeById(dev.node_id)?.user?.hw_model || '–'"></div>
+                    <div class="opacity-50 text-xs" x-text="dev.firmware_version || ''"></div>
+                  </div>
+                  <div>
+                    <div class="opacity-50 mb-0.5">Uptime</div>
+                    <div x-text="nodeById(dev.node_id)?.device_metrics?.uptime_seconds != null ? fmtUptime(nodeById(dev.node_id).device_metrics.uptime_seconds) : '–'"></div>
+                  </div>
+                  <div>
+                    <div class="opacity-50 mb-0.5">Battery</div>
+                    <div x-text="nodeById(dev.node_id)?.device_metrics?.battery_level != null ? nodeById(dev.node_id).device_metrics.battery_level + '% / ' + (nodeById(dev.node_id).device_metrics.voltage?.toFixed(2) ?? '–') + ' V' : '–'"></div>
+                  </div>
+                  <div>
+                    <div class="opacity-50 mb-0.5">Ch util / Air TX</div>
+                    <div x-text="nodeById(dev.node_id)?.device_metrics?.channel_utilization != null ? nodeById(dev.node_id).device_metrics.channel_utilization.toFixed(1) + '% / ' + (nodeById(dev.node_id).device_metrics.air_util_tx?.toFixed(2) ?? '–') + '%' : '–'"></div>
+                  </div>
+                  <div x-show="nodeById(dev.node_id)?.local_stats">
+                    <div class="opacity-50 mb-0.5">Nodes seen</div>
+                    <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_online_nodes + ' online / ' + nodeById(dev.node_id).local_stats.num_total_nodes + ' total' : '–'"></div>
+                  </div>
+                  <div x-show="nodeById(dev.node_id)?.local_stats">
+                    <div class="opacity-50 mb-0.5">Packets RX / TX</div>
+                    <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_packets_rx + ' / ' + nodeById(dev.node_id).local_stats.num_packets_tx : '–'"></div>
+                  </div>
+                  <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null"
+                       x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                    <div class="opacity-50 mb-0.5">Temperature</div>
+                    <div x-text="_em?.temperature?.toFixed(1) + ' °C'"></div>
+                  </div>
+                  <div x-show="nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
+                       x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                    <div class="opacity-50 mb-0.5">Humidity</div>
+                    <div x-text="_em?.relative_humidity?.toFixed(1) + ' %'"></div>
+                  </div>
+                  <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null && nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
+                       x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                    <div class="opacity-50 mb-0.5">Dew point</div>
+                    <div class="flex items-center gap-1">
+                      <span x-text="dewPoint(_em?.temperature, _em?.relative_humidity)?.toFixed(1) + ' °C'"></span>
+                      <span x-show="dewPoint(_em?.temperature, _em?.relative_humidity) >= _em?.temperature - 3"
+                            class="badge badge-xs badge-warning">condensation risk</span>
                     </div>
                   </div>
+                  <div x-show="nodeById(dev.node_id)?.environment_metrics?.barometric_pressure != null"
+                       x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
+                    <div class="opacity-50 mb-0.5">Pressure</div>
+                    <div x-text="_em?.barometric_pressure?.toFixed(1) + ' hPa'"></div>
+                  </div>
                 </div>
+              </div>
+
+              <!-- Card body — config sections, collapsible -->
+              <div x-show="open" class="border-t border-base-300 divide-y divide-base-300">
 
                 <!-- ── Device Config ── -->
                 <div>
