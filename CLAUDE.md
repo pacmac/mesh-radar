@@ -32,6 +32,7 @@ Every spec, every test, every task belongs to exactly one domain.
 - Owns: rendering and user interaction only. Presentation layer.
 - Consumes: node-dash backend API only.
 - Does not know: that mesh-gw exists. Zero gw API knowledge.
+- **Makes zero decisions.** See `docs/BROWSER_CONTRACT.md` — mandatory reading for every browser task.
 
 Mixing these domains in a single spec, task, or test is forbidden.
 
