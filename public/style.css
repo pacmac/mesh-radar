@@ -24,6 +24,7 @@ html { font-size: 17px; }
   --phos-dim:     rgba(0, 255, 80, 0.75);
   --phos-faint:   rgba(0, 255, 80, 0.35);
   --trace-amber:  #ffc828;
+  --trace-red:    #ff4646;
 
   --sig:          #00d4c8;
   --sig-dim:      #00968d;
@@ -461,23 +462,6 @@ body {
   color: var(--amber);
 }
 
-/* ── Live event feed ─────────────────────────────────────── */
-/* LEGACY(utility-selector, STYLE_GUIDE §7): breaks the moment the
-   feed's max-height changes. Remove in the overview refactor task. */
-.overflow-y-auto.max-h-\[480px\] {
-  scrollbar-gutter: stable;
-}
-
-.overflow-y-auto.max-h-\[480px\] .flex.gap-2 {
-  padding: 4px 2px;
-  border-radius: 4px;
-  transition: background var(--t-fast);
-}
-
-.overflow-y-auto.max-h-\[480px\] .flex.gap-2:hover {
-  background: var(--overlay-3);
-}
-
 /* ── Divider ─────────────────────────────────────────────── */
 .divider {
   opacity: 0.35;
@@ -586,15 +570,6 @@ footer {
 .badge-ghost {
   border: 1px solid var(--border-hi);
   font-size: 0.6rem;
-}
-
-/* ── Scrollable feed timestamp ───────────────────────────── */
-/* LEGACY(utility-selector, STYLE_GUIDE §7): hijacks EVERY element
-   using text-base-content/40 into 0.68rem mono — the single worst
-   selector in this file. Remove in the overview refactor task. */
-.text-base-content\/40 {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.68rem;
 }
 
 /* ── Loading spinner accent ───────────────────────────────── */
@@ -750,7 +725,56 @@ footer {
   color: var(--phos);
 }
 .instrument-value--amber { color: var(--trace-amber); }
+.instrument-value--red { color: var(--trace-red); }
 .instrument-faint { color: var(--phos-faint); }
+
+/* chrome strip above the screen face */
+.instrument-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  background: #0a1a0a;
+  border-bottom: 1px solid rgba(0, 255, 80, 0.12);
+}
+
+/* screen face — CRT radial glow */
+.instrument-screen {
+  background: radial-gradient(ellipse at 35% 40%, #0c1a0c 0%, #050e05 55%, #020802 100%);
+}
+
+/* bordered chip buttons on instrument chrome (window toggles, cal actions) */
+.instrument-btn {
+  font-family: 'Oxanium', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  border: 1px solid var(--phos-faint);
+  color: rgba(0, 255, 80, 0.45);
+  padding: 1px 8px;
+  cursor: pointer;
+  background: transparent;
+  transition: all 0.15s;
+}
+.instrument-btn:hover { color: var(--phos-dim); border-color: var(--phos-dim); }
+.instrument-btn--active {
+  color: rgba(0, 255, 80, 0.95);
+  border-color: rgba(0, 255, 80, 0.45);
+  background: rgba(0, 255, 80, 0.08);
+}
+.instrument-btn--amber {
+  color: rgba(255, 200, 40, 0.75);
+  border-color: rgba(255, 200, 40, 0.35);
+}
+.instrument-btn--amber:hover { color: var(--trace-amber); border-color: var(--trace-amber); }
+.instrument-btn--red {
+  color: rgba(255, 80, 80, 0.75);
+  border-color: rgba(255, 80, 80, 0.35);
+}
+.instrument-btn--red:hover { color: var(--trace-red); border-color: var(--trace-red); }
+
+/* faint rule between readout groups on the screen face */
+.instrument-divider { border-top: 1px solid rgba(0, 255, 80, 0.10); }
 
 /* ── Utility classes ─────────────────────────────────────────────────── */
 

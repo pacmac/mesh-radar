@@ -1,7 +1,7 @@
 ---
 module: style-css
 source: public/style.css
-source_hash: 44a5605732240d16ebfb40299abf9a433f07db02f5bf537094b99ffc55e655e9
+source_hash: 2daa9bfa045eaab993413f6486e4a35efab39f6561bfa560247c2e7cd0a13493
 updated: 2026-07-02
 ---
 
@@ -21,7 +21,7 @@ must comply with the guide and update this spec's hash.
    font size in the app (STYLE_GUIDE §2)
 3. **Dark tokens** — `:root` block: signal teal (`--sig*`), amber, red, grid,
    borders, overlays, skeletons, transitions; plus theme-invariant instrument
-   screen tokens (`--screen`, `--phos*`, `--trace-amber`)
+   screen tokens (`--screen`, `--phos*`, `--trace-amber`, `--trace-red`)
 4. **Typography base** — body font, display-face and mono-face assignments
 5. **Component styling** — navbar, badges, sidebar menu, tabs, cards, stats,
    collapse, tables, scrollbars, form controls, buttons, alerts, dividers,
@@ -29,8 +29,9 @@ must comply with the guide and update this spec's hash.
 6. **Light theme** — `[data-theme="corporate"]` token block plus per-component
    light adjustments, all scoped to the theme attribute (not the media query)
 7. **Instrument panels** — `.instrument`, `.instrument-label`,
-   `.instrument-value`, `.instrument-value--amber`, `.instrument-faint`
-   (STYLE_GUIDE §6)
+   `.instrument-value` (+ `--amber`, `--red`), `.instrument-faint`,
+   `.instrument-header`, `.instrument-screen`, `.instrument-btn`
+   (+ `--active`, `--amber`, `--red`), `.instrument-divider` (STYLE_GUIDE §6)
 8. **Utility classes** — `.font-oxanium`, `.hop-circle`, `.radar-stat-grid`,
    `.sig-bars`, `.perf-*` chart classes
 
@@ -39,9 +40,11 @@ must comply with the guide and update this spec's hash.
 Rules tagged `/* LEGACY(utility-selector, STYLE_GUIDE §7) */` style through
 Tailwind utility-class selectors and are scheduled for removal by the page
 refactor task named in each tag: `.navbar .text-lg`, `.navbar .text-xs`,
-`.text-base-content\/40`, `.overflow-y-auto.max-h-\[480px\]` (×3),
 `.overflow-x-auto.max-h-\[70vh\]`, `.badge-primary.badge[x-text*="live"]`.
 No new utility-selector rules may be added.
+
+Removed by `overview-refactor`: `.text-base-content\/40` (the global mono
+hijack) and the dead `.overflow-y-auto.max-h-\[480px\]` rules.
 
 ## Invariants
 
