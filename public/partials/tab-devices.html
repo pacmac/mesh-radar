@@ -4,141 +4,130 @@
           <!-- Empty state -->
           <div x-show="!availableDevices.length" class="card bg-base-100 shadow">
             <div class="card-body py-4">
-              <p class="text-sm opacity-50 italic">No radios connected.</p>
+              <p class="text-sm text-base-content/50 italic">No radios connected.</p>
             </div>
           </div>
 
           <!-- Section header -->
-          <div class="flex items-center justify-between px-1" x-show="availableDevices.length">
-            <h2 class="text-base font-semibold opacity-70">Connected Radios</h2>
-            <button class="btn btn-sm btn-ghost opacity-50" @click="loadDevices()">Refresh</button>
+          <div class="flex items-center" x-show="availableDevices.length">
+            <h2 class="text-sm font-semibold text-base-content/50 uppercase tracking-wide">Connected Radios</h2>
           </div>
 
-          <!-- ── Per-device accordion cards ───────────────────────── -->
+          <!-- ── Per-device accordion cards ──────────────────────── -->
           <template x-for="dev in availableDevices" :key="dev.addr">
-            <div x-data="{
-                   open: true,
-                   s: { config: false, ota: false, radio: false, range: false, maint: false }
-                 }"
-                 class="card bg-base-100 shadow"
-                 :class="dev.node_id === activeNodeId ? 'ring-1 ring-success/50' : ''">
+            <div x-data="{ open: true }"
+                 class="card bg-base-100 shadow-sm border border-base-300"
+                 :class="dev.node_id === activeNodeId ? 'border-success/40' : ''">
 
-              <!-- Card header — click to expand/collapse config sections -->
-              <div class="card-body py-3 cursor-pointer select-none flex flex-row items-center gap-2 flex-wrap"
+              <!-- ── Header — click to toggle panel ─────────────── -->
+              <div class="px-4 py-3 flex items-center gap-2 flex-wrap cursor-pointer select-none hover:bg-base-200/40 transition-colors rounded-t-2xl"
+                   :class="!open && 'rounded-b-2xl'"
                    @click="open = !open">
-                <svg class="w-4 h-4 shrink-0 opacity-40 transition-transform" :class="open && 'rotate-90'"
+                <svg class="w-3.5 h-3.5 shrink-0 text-base-content/30 transition-transform duration-150"
+                     :class="open && 'rotate-90'"
                      fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                 </svg>
+
+                <!-- Label badge -->
                 <span class="contents" x-show="deviceConfigs[dev.node_id]?.label"
                       x-html="labelBadge(deviceConfigs[dev.node_id]?.label, deviceConfigs[dev.node_id]?.color)"></span>
-                <span class="font-semibold" x-text="dev.long_name || dev.short_name || dev.node_id"></span>
-                <span class="font-mono text-xs opacity-40" x-text="dev.node_id"></span>
+
+                <!-- Name -->
+                <span class="font-semibold text-sm" x-text="dev.long_name || dev.short_name || dev.node_id"></span>
+                <span class="font-mono text-xs text-base-content/30" x-text="dev.node_id"></span>
+
+                <!-- Role badges -->
                 <span class="contents" x-show="deviceConfigs[dev.node_id]?.is_primary"
                       x-html="roleBadge('PRIMARY')"></span>
                 <span class="contents" x-show="deviceConfigs[dev.node_id]?.is_rotator"
                       x-html="roleBadge('ROTATOR')"></span>
-                <span class="ml-auto flex items-center gap-2 flex-wrap justify-end">
+
+                <!-- Right: RSSI + state + active -->
+                <div class="ml-auto flex items-center gap-2">
                   <span x-show="deviceBleStates[dev.node_id]?.ble_rssi != null"
-                        class="inline-flex items-center gap-1 text-xs opacity-60">
+                        class="inline-flex items-center gap-1 text-xs text-base-content/50">
                     <span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span>
-                    <span x-text="deviceBleStates[dev.node_id]?.ble_rssi + ' dBm'"></span>
+                    <span class="font-mono" x-text="deviceBleStates[dev.node_id]?.ble_rssi + ' dBm'"></span>
                   </span>
                   <span x-html="devStateBadge(dev.node_id)"></span>
                   <span x-show="dev.node_id === activeNodeId" class="badge badge-xs badge-success">Active</span>
-                </span>
+                </div>
               </div>
 
-              <!-- Status & Telemetry — always visible -->
-              <div class="border-t border-base-300 px-4 py-3 flex flex-col gap-3">
-                <!-- BLE / network stats -->
-                <div class="flex gap-4 text-xs opacity-60 flex-wrap">
-                  <span x-show="deviceBleStates[dev.node_id]?.ble_rssi != null"
-                        class="inline-flex items-center gap-1">
-                    <span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span>
-                    <span x-text="deviceBleStates[dev.node_id]?.ble_rssi + ' dBm'"></span>
-                  </span>
+              <!-- ── Status & Telemetry — always visible ─────────── -->
+              <div class="border-t border-base-300 px-4 py-3 flex flex-col gap-2.5">
+                <!-- Live stats row -->
+                <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono text-base-content/50">
                   <span x-show="deviceBleStates[dev.node_id]?.node_count != null"
                         x-text="deviceBleStates[dev.node_id]?.node_count + ' nodes'"></span>
-                  <span x-show="deviceBleStates[dev.node_id]?.ready_secs != null"
-                        x-text="'sync ' + deviceBleStates[dev.node_id]?.ready_secs + 's'"></span>
                   <span x-show="dev.ble_address" x-text="dev.ble_address"></span>
                   <span x-show="dev.tcp_port"
                         x-text="'TCP :' + dev.tcp_port + ' (' + dev.tcp_clients + ' clients)'"></span>
+                  <span x-show="deviceBleStates[dev.node_id]?.ready_secs != null"
+                        x-text="'sync ' + deviceBleStates[dev.node_id]?.ready_secs + 's'"></span>
                 </div>
                 <!-- Telemetry grid -->
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-xs">
                   <div>
-                    <div class="opacity-50 mb-0.5">Hardware</div>
-                    <div x-text="nodeById(dev.node_id)?.user?.hw_model || '–'"></div>
-                    <div class="opacity-50 text-xs" x-text="dev.firmware_version || ''"></div>
+                    <div class="text-base-content/40 mb-0.5">Hardware</div>
+                    <div class="font-mono" x-text="nodeById(dev.node_id)?.user?.hw_model || '–'"></div>
+                    <div class="text-base-content/30 text-xs font-mono" x-text="dev.firmware_version || ''"></div>
                   </div>
                   <div>
-                    <div class="opacity-50 mb-0.5">Uptime</div>
-                    <div x-text="nodeById(dev.node_id)?.device_metrics?.uptime_seconds != null ? fmtUptime(nodeById(dev.node_id).device_metrics.uptime_seconds) : '–'"></div>
+                    <div class="text-base-content/40 mb-0.5">Uptime</div>
+                    <div class="font-mono" x-text="nodeById(dev.node_id)?.device_metrics?.uptime_seconds != null ? fmtUptime(nodeById(dev.node_id).device_metrics.uptime_seconds) : '–'"></div>
                   </div>
                   <div>
-                    <div class="opacity-50 mb-0.5">Battery</div>
-                    <div x-text="nodeById(dev.node_id)?.device_metrics?.battery_level != null ? nodeById(dev.node_id).device_metrics.battery_level + '% / ' + (nodeById(dev.node_id).device_metrics.voltage?.toFixed(2) ?? '–') + ' V' : '–'"></div>
+                    <div class="text-base-content/40 mb-0.5">Battery</div>
+                    <div class="font-mono" x-text="nodeById(dev.node_id)?.device_metrics?.battery_level != null ? nodeById(dev.node_id).device_metrics.battery_level + '% / ' + (nodeById(dev.node_id).device_metrics.voltage?.toFixed(2) ?? '–') + 'V' : '–'"></div>
                   </div>
                   <div>
-                    <div class="opacity-50 mb-0.5">Ch util / Air TX</div>
-                    <div x-text="nodeById(dev.node_id)?.device_metrics?.channel_utilization != null ? nodeById(dev.node_id).device_metrics.channel_utilization.toFixed(1) + '% / ' + (nodeById(dev.node_id).device_metrics.air_util_tx?.toFixed(2) ?? '–') + '%' : '–'"></div>
+                    <div class="text-base-content/40 mb-0.5">Ch util / Air TX</div>
+                    <div class="font-mono" x-text="nodeById(dev.node_id)?.device_metrics?.channel_utilization != null ? nodeById(dev.node_id).device_metrics.channel_utilization.toFixed(1) + '% / ' + (nodeById(dev.node_id).device_metrics.air_util_tx?.toFixed(2) ?? '–') + '%' : '–'"></div>
                   </div>
                   <div x-show="nodeById(dev.node_id)?.local_stats">
-                    <div class="opacity-50 mb-0.5">Nodes seen</div>
-                    <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_online_nodes + ' online / ' + nodeById(dev.node_id).local_stats.num_total_nodes + ' total' : '–'"></div>
+                    <div class="text-base-content/40 mb-0.5">Nodes seen</div>
+                    <div class="font-mono" x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_online_nodes + ' online / ' + nodeById(dev.node_id).local_stats.num_total_nodes + ' total' : '–'"></div>
                   </div>
                   <div x-show="nodeById(dev.node_id)?.local_stats">
-                    <div class="opacity-50 mb-0.5">Packets RX / TX</div>
-                    <div x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_packets_rx + ' / ' + nodeById(dev.node_id).local_stats.num_packets_tx : '–'"></div>
+                    <div class="text-base-content/40 mb-0.5">Packets RX / TX</div>
+                    <div class="font-mono" x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_packets_rx + ' / ' + nodeById(dev.node_id).local_stats.num_packets_tx : '–'"></div>
                   </div>
                   <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null"
                        x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
-                    <div class="opacity-50 mb-0.5">Temperature</div>
-                    <div x-text="_em?.temperature?.toFixed(1) + ' °C'"></div>
-                  </div>
-                  <div x-show="nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
-                       x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
-                    <div class="opacity-50 mb-0.5">Humidity</div>
-                    <div x-text="_em?.relative_humidity?.toFixed(1) + ' %'"></div>
-                  </div>
-                  <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null && nodeById(dev.node_id)?.environment_metrics?.relative_humidity != null"
-                       x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
-                    <div class="opacity-50 mb-0.5">Dew point</div>
-                    <div class="flex items-center gap-1">
-                      <span x-text="dewPoint(_em?.temperature, _em?.relative_humidity)?.toFixed(1) + ' °C'"></span>
-                      <span x-show="dewPoint(_em?.temperature, _em?.relative_humidity) >= _em?.temperature - 3"
-                            class="badge badge-xs badge-warning">condensation risk</span>
-                    </div>
+                    <div class="text-base-content/40 mb-0.5">Temp / Humidity</div>
+                    <div class="font-mono" x-text="(_em?.temperature?.toFixed(1) ?? '–') + ' °C / ' + (_em?.relative_humidity?.toFixed(0) ?? '–') + '%'"></div>
                   </div>
                   <div x-show="nodeById(dev.node_id)?.environment_metrics?.barometric_pressure != null"
                        x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
-                    <div class="opacity-50 mb-0.5">Pressure</div>
-                    <div x-text="_em?.barometric_pressure?.toFixed(1) + ' hPa'"></div>
+                    <div class="text-base-content/40 mb-0.5">Pressure / Dew pt</div>
+                    <div class="font-mono flex items-center gap-1.5">
+                      <span x-text="(_em?.barometric_pressure?.toFixed(1) ?? '–') + ' hPa / ' + (dewPoint(_em?.temperature, _em?.relative_humidity)?.toFixed(1) ?? '–') + '°C'"></span>
+                      <span x-show="dewPoint(_em?.temperature, _em?.relative_humidity) >= _em?.temperature - 3"
+                            class="badge badge-xs badge-warning">cond.</span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <!-- Card body — config sections, collapsible -->
-              <div x-show="open" class="border-t border-base-300 divide-y divide-base-300">
+              <!-- ── Expandable panel ────────────────────────────── -->
+              <div x-show="open"
+                   x-transition:enter="transition-opacity duration-150"
+                   x-transition:enter-start="opacity-0"
+                   x-transition:enter-end="opacity-100"
+                   class="border-t border-base-300 p-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
-                <!-- ── Device Config ── -->
-                <div>
-                  <button class="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold opacity-60 hover:opacity-100 hover:bg-base-200/60 text-left transition-colors"
-                          @click.stop="s.config = !s.config">
-                    <svg class="w-3 h-3 shrink-0 transition-transform" :class="s.config && 'rotate-90'"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Device Config
-                  </button>
-                  <div x-show="s.config" class="px-4 pb-4 flex flex-col gap-3"
+                  <!-- Device Config -->
+                  <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-3"
                        x-data="{ _labelVal: deviceConfigs[dev.node_id]?.label || '', _tcpVal: dev.tcp_port || '' }">
+                    <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide">Device Config</p>
+
                     <!-- Alias + colour -->
                     <div class="flex items-center gap-2 flex-wrap">
-                      <span class="text-xs opacity-50 shrink-0">Alias</span>
-                      <input type="text" maxlength="8" class="input input-xs input-bordered font-mono w-20"
+                      <input type="text" maxlength="8"
+                             class="input input-xs input-bordered font-mono w-20"
                              x-model="_labelVal" placeholder="Alias"
                              @keydown.enter.prevent="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">
                       <select class="select select-xs select-bordered w-24"
@@ -155,36 +144,39 @@
                       <button class="btn btn-xs btn-primary"
                               @click="saveDeviceCfg(dev.node_id, 'label', _labelVal.trim() || null)">Save</button>
                     </div>
+
                     <!-- TCP port -->
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <span class="text-xs opacity-50 shrink-0">TCP port</span>
-                      <input type="number" min="1024" max="65535" class="input input-xs input-bordered font-mono w-20"
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-base-content/40 shrink-0">TCP port</span>
+                      <input type="number" min="1024" max="65535"
+                             class="input input-xs input-bordered font-mono w-20"
                              x-model="_tcpVal" placeholder="4403"
                              @keydown.enter.prevent="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">
                       <button class="btn btn-xs btn-primary"
                               @click="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">Save</button>
                     </div>
+
                     <!-- Flags -->
-                    <div class="flex items-center gap-4 flex-wrap">
-                      <label class="flex items-center gap-1.5 cursor-pointer">
+                    <div class="flex flex-col gap-1.5">
+                      <label class="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
                                :checked="deviceConfigs[dev.node_id]?.is_primary || false"
                                @change="saveDeviceCfg(dev.node_id, 'is_primary', $event.target.checked)">
                         <span class="text-xs">Primary</span>
                       </label>
-                      <label class="flex items-center gap-1.5 cursor-pointer">
+                      <label class="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
                                :checked="deviceConfigs[dev.node_id]?.is_rotator || false"
                                @change="saveDeviceCfg(dev.node_id, 'is_rotator', $event.target.checked)">
                         <span class="text-xs">Rotator</span>
                       </label>
-                      <label class="flex items-center gap-1.5 cursor-pointer">
+                      <label class="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
                                :checked="dev.auto_connect !== false"
                                @change="saveBleCfg(dev.ble_address, 'auto_connect', $event.target.checked)">
                         <span class="text-xs">Auto-connect</span>
                       </label>
-                      <label class="flex items-center gap-1.5 cursor-pointer">
+                      <label class="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
                                :checked="deviceConfigs[dev.node_id]?.load_nodes_on_boot || false"
                                @change="saveDeviceCfg(dev.node_id, 'load_nodes_on_boot', $event.target.checked)">
@@ -192,56 +184,51 @@
                       </label>
                     </div>
                   </div>
-                </div>
 
-                <!-- ── Firmware OTA ── -->
-                <div>
-                  <button class="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold opacity-60 hover:opacity-100 hover:bg-base-200/60 text-left transition-colors"
-                          @click.stop="s.ota = !s.ota">
-                    <svg class="w-3 h-3 shrink-0 transition-transform" :class="s.ota && 'rotate-90'"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    <span x-text="'Firmware OTA' + (otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model ? ' — ' + (otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model) : '')"></span>
-                    <span x-show="dev.firmware_version" class="font-mono opacity-40 font-normal"
-                          x-text="'running ' + dev.firmware_version"></span>
-                    <span x-show="opLoading('otaFlash_' + dev.node_id)"
-                          class="badge badge-sm badge-warning animate-pulse"
-                          x-text="'Flashing ' + (opPct('otaFlash_' + dev.node_id) ?? 0) + '%'"></span>
-                    <span x-show="opOk('otaFlash_' + dev.node_id)" class="badge badge-sm badge-success">Done</span>
-                    <span x-show="opErr('otaFlash_' + dev.node_id)" class="badge badge-sm badge-error"
-                          x-text="opErr('otaFlash_' + dev.node_id)"></span>
-                    <button class="btn btn-xs btn-ghost opacity-50 ml-auto"
-                            :class="{'loading loading-spinner': opLoading('otaFiles_' + dev.node_id)}"
-                            :disabled="opLoading('otaFiles_' + dev.node_id)"
-                            @click.stop="loadOtaFiles(dev.node_id)" title="Refresh firmware file list">
-                      <svg x-show="!opLoading('otaFiles_' + dev.node_id)" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                      </svg>
-                    </button>
-                  </button>
-                  <div x-show="s.ota" class="px-4 pb-4 space-y-2">
+                  <!-- OTA Firmware — right column, spans 3 rows -->
+                  <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-2 sm:row-span-3">
+                    <!-- Section header -->
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide"
+                         x-text="'OTA Firmware' + (otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model ? ' — ' + (otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model) : '')"></p>
+                      <span x-show="dev.firmware_version" class="font-mono text-xs text-base-content/30"
+                            x-text="'v' + dev.firmware_version"></span>
+                      <span x-show="opLoading('otaFlash_' + dev.node_id)"
+                            class="badge badge-xs badge-warning animate-pulse"
+                            x-text="'Flashing ' + (opPct('otaFlash_' + dev.node_id) ?? 0) + '%'"></span>
+                      <span x-show="opOk('otaFlash_' + dev.node_id)" class="badge badge-xs badge-success">Done</span>
+                      <span x-show="opErr('otaFlash_' + dev.node_id)" class="badge badge-xs badge-error"
+                            x-text="opErr('otaFlash_' + dev.node_id)"></span>
+                      <button class="btn btn-xs btn-ghost opacity-40 hover:opacity-80 ml-auto"
+                              :class="{'loading loading-spinner': opLoading('otaFiles_' + dev.node_id)}"
+                              :disabled="opLoading('otaFiles_' + dev.node_id)"
+                              @click.stop="loadOtaFiles(dev.node_id)" title="Refresh file list">
+                        <svg x-show="!opLoading('otaFiles_' + dev.node_id)" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                      </button>
+                    </div>
+
                     <!-- File list -->
                     <div class="space-y-1">
-                      <p x-show="!otaFiles[dev.node_id]" class="text-xs opacity-40 italic">Click ↺ to load firmware files.</p>
-                      <p x-show="otaFiles[dev.node_id] && !otaFiles[dev.node_id].files?.length" class="text-xs opacity-40 italic">No firmware files in directory.</p>
+                      <p x-show="!otaFiles[dev.node_id]" class="text-xs text-base-content/30 italic">Click ↺ to load files.</p>
+                      <p x-show="otaFiles[dev.node_id] && !otaFiles[dev.node_id].files?.length" class="text-xs text-base-content/30 italic">No firmware files.</p>
                       <template x-for="f in (otaFiles[dev.node_id]?.files || [])" :key="f.name">
-                        <div class="flex items-center gap-1.5 p-1.5 rounded"
-                             :class="otaSelectedFile[dev.node_id] === f.name ? 'bg-base-200' : 'hover:bg-base-200/50'">
-                          <span class="shrink-0 w-2 h-2 rounded-full"
+                        <div class="flex items-center gap-1.5 px-1.5 py-1 rounded-lg"
+                             :class="otaSelectedFile[dev.node_id] === f.name ? 'bg-base-300' : 'hover:bg-base-300/50'">
+                          <span class="shrink-0 w-1.5 h-1.5 rounded-full"
                                 :class="f.ota_ready ? 'bg-success' : 'bg-warning'"
-                                :title="f.ota_ready ? 'OTA-ready' : 'Not OTA-ready (bundle or wrong type)'"></span>
+                                :title="f.ota_ready ? 'OTA-ready' : 'Not OTA-ready'"></span>
                           <span class="font-mono text-xs flex-1 truncate cursor-pointer"
-                                :class="otaSelectedFile[dev.node_id] === f.name ? 'text-base-content' : 'opacity-60'"
-                                :title="f.name + (f.ota_ready ? '' : ' — not suitable for BLE OTA')"
+                                :class="otaSelectedFile[dev.node_id] === f.name ? 'text-base-content' : 'text-base-content/50'"
                                 @click="otaSelectedFile = { ...otaSelectedFile, [dev.node_id]: f.name }"
                                 x-text="f.name"></span>
-                          <span class="text-xs opacity-30 shrink-0" x-text="(f.size/1048576).toFixed(1)+'M'"></span>
+                          <span class="text-xs text-base-content/30 shrink-0 font-mono" x-text="(f.size/1048576).toFixed(1)+'M'"></span>
                           <template x-if="f.version && f.ota_ready">
-                            <button class="btn btn-xs shrink-0"
-                                    :class="f.prepared ? 'btn-ghost opacity-30 hover:opacity-60' : 'btn-ghost text-info opacity-60 hover:opacity-100'"
-                                    :title="f.prepared ? 'NVS prepared (v' + f.version + ')' : 'Prepare NVS hash for v' + f.version"
+                            <button class="btn btn-xs btn-ghost shrink-0"
+                                    :class="f.prepared ? 'opacity-30' : 'text-info opacity-60 hover:opacity-100'"
+                                    :title="f.prepared ? 'NVS prepared' : 'Prepare NVS'"
                                     :disabled="opLoading('otaPrepare_' + dev.node_id + '_' + f.name)"
                                     @click.stop="prepareOtaVersion(dev.node_id, f.name)">
                               <template x-if="!opLoading('otaPrepare_' + dev.node_id + '_' + f.name)">
@@ -249,73 +236,70 @@
                               </template>
                             </button>
                           </template>
-                          <button class="btn btn-xs btn-ghost text-error opacity-40 hover:opacity-100 shrink-0"
-                                  title="Delete file"
+                          <button class="btn btn-xs btn-ghost text-error opacity-30 hover:opacity-80 shrink-0"
                                   @click.stop="deleteOtaFile(dev.node_id, f.name)">✕</button>
                         </div>
                       </template>
                     </div>
+
                     <!-- Upload + flash -->
-                    <div class="flex gap-2 items-center">
-                      <label class="btn btn-sm btn-outline shrink-0"
+                    <div class="flex gap-2 items-center pt-1">
+                      <label class="btn btn-xs btn-outline shrink-0"
                              :class="{'loading loading-spinner': opLoading('otaUpload_' + dev.node_id)}"
-                             :title="opLoading('otaUpload_' + dev.node_id) ? 'Uploading…' : 'Upload firmware file from this machine'">
-                        <svg x-show="!opLoading('otaUpload_' + dev.node_id)" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             title="Upload from this machine">
+                        <svg x-show="!opLoading('otaUpload_' + dev.node_id)" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
                         </svg>
                         <input type="file" class="hidden"
                                :accept="(otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model || '').match(/RAK|NRF|TECHO|PPR/) ? '.zip' : '.bin,.zip'"
                                @change="if ($event.target.files[0]) uploadOtaFile(dev.node_id, $event.target.files[0]); $event.target.value=''">
                       </label>
-                      <span class="text-xs opacity-40 flex-1 truncate font-mono"
+                      <span class="text-xs text-base-content/40 flex-1 truncate font-mono"
                             x-show="otaSelectedFile[dev.node_id]"
-                            x-text="'→ ' + otaSelectedFile[dev.node_id]"></span>
-                      <span class="text-xs opacity-30 flex-1" x-show="!otaSelectedFile[dev.node_id]">Select a file above</span>
-                      <button class="btn btn-sm btn-warning shrink-0"
+                            x-text="otaSelectedFile[dev.node_id]"></span>
+                      <span class="text-xs text-base-content/30 flex-1 italic"
+                            x-show="!otaSelectedFile[dev.node_id]">Select a file</span>
+                      <button class="btn btn-xs btn-warning shrink-0"
                               :disabled="opLoading('otaFlash_' + dev.node_id)
                                          || !otaSelectedFile[dev.node_id]
                                          || !(otaFiles[dev.node_id]?.files || []).find(f => f.name === otaSelectedFile[dev.node_id])?.ota_ready
                                          || devBleState(dev.node_id) !== 'ready'"
-                              :title="!(otaFiles[dev.node_id]?.files || []).find(f => f.name === otaSelectedFile[dev.node_id])?.ota_ready
-                                      ? 'File is not OTA-ready (bundle zip or wrong type)'
-                                      : devBleState(dev.node_id) !== 'ready' ? 'Device must be ready (connected)'
-                                      : 'Flash selected file via BLE OTA'"
                               :class="{'loading loading-spinner': opLoading('otaFlash_' + dev.node_id)}"
                               @click="flashOta(dev.node_id, dev.ble_address, otaSelectedFile[dev.node_id])">
                         <span x-show="!opLoading('otaFlash_' + dev.node_id)">Flash</span>
                       </button>
                     </div>
-                    <!-- Upload error -->
+
+                    <!-- Upload error + dir hint -->
                     <p x-show="opErr('otaUpload_' + dev.node_id)" class="text-xs text-error"
                        x-text="opErr('otaUpload_' + dev.node_id)"></p>
-                    <!-- Dir hint -->
-                    <p class="text-xs opacity-30 font-mono leading-tight"
-                       x-show="otaFiles[dev.node_id]?.dir"
-                       x-text="'dir: ' + (otaFiles[dev.node_id]?.dir || '')"></p>
-                    <!-- GitHub fetch expander -->
-                    <div class="border border-base-300 rounded-lg overflow-hidden">
-                      <button class="flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold opacity-60 hover:opacity-90 hover:bg-base-200 transition-colors"
+                    <p class="text-xs text-base-content/25 font-mono" x-show="otaFiles[dev.node_id]?.dir"
+                       x-text="otaFiles[dev.node_id]?.dir"></p>
+
+                    <!-- GitHub fetch -->
+                    <div class="border border-base-300 rounded-lg overflow-hidden mt-1">
+                      <button class="flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold text-base-content/40 hover:text-base-content/70 hover:bg-base-300/40 transition-colors text-left"
                               @click.stop="otaFetchOpen[dev.node_id] = !otaFetchOpen[dev.node_id]; if (otaFetchOpen[dev.node_id] && !otaReleases) loadOtaReleases()">
-                        <svg class="w-3 h-3 transition-transform" :class="{'rotate-90': otaFetchOpen[dev.node_id]}"
+                        <svg class="w-3 h-3 transition-transform shrink-0" :class="{'rotate-90': otaFetchOpen[dev.node_id]}"
                              fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                         </svg>
-                        Fetch stock firmware from Meshtastic GitHub
+                        Fetch from Meshtastic GitHub
                       </button>
                       <div x-show="otaFetchOpen[dev.node_id]" class="px-3 pb-3 pt-2 space-y-2 border-t border-base-300">
-                        <div class="flex items-center gap-1.5 text-xs text-warning">
+                        <p class="text-xs text-warning flex items-center gap-1.5">
                           <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                           </svg>
-                          <span>Official stock builds only — will overwrite any custom firmware.</span>
-                        </div>
-                        <div x-show="opLoading('otaReleases')" class="flex items-center gap-2 text-xs opacity-50">
-                          <span class="loading loading-spinner loading-xs"></span> Loading releases…
+                          Stock builds only — overwrites custom firmware.
+                        </p>
+                        <div x-show="opLoading('otaReleases')" class="flex items-center gap-2 text-xs text-base-content/40">
+                          <span class="loading loading-spinner loading-xs"></span> Loading…
                         </div>
                         <p x-show="opErr('otaReleases')" class="text-xs text-error" x-text="opErr('otaReleases')"></p>
                         <div x-show="!opLoading('otaReleases') && otaReleases" class="space-y-2">
-                          <select class="select select-xs select-bordered w-full font-mono text-xs" x-model="otaSelectedRelease">
+                          <select class="select select-xs select-bordered w-full font-mono" x-model="otaSelectedRelease">
                             <template x-for="rel in (otaReleases || [])" :key="rel.tag">
                               <option :value="rel.tag" x-text="rel.tag + (rel.prerelease ? ' (pre)' : '')"></option>
                             </template>
@@ -323,8 +307,8 @@
                           <div x-show="otaAssetsForDevice(dev.node_id).length" class="space-y-1">
                             <template x-for="asset in otaAssetsForDevice(dev.node_id)" :key="asset.name">
                               <div class="flex items-center gap-2 text-xs">
-                                <span class="font-mono flex-1 truncate opacity-70" x-text="asset.name"></span>
-                                <span class="opacity-40 shrink-0" x-text="(asset.size / 1048576).toFixed(1) + ' MB'"></span>
+                                <span class="font-mono flex-1 truncate text-base-content/60" x-text="asset.name"></span>
+                                <span class="text-base-content/30 font-mono shrink-0" x-text="(asset.size/1048576).toFixed(1)+'M'"></span>
                                 <span x-show="opLoading('otaDownload_' + dev.node_id)"
                                       class="font-mono text-warning shrink-0"
                                       x-text="(opPct('otaDownload_' + dev.node_id) ?? 0) + '%'"></span>
@@ -333,49 +317,41 @@
                                         :class="{'loading loading-spinner': opLoading('otaDownload_' + dev.node_id)}"
                                         :disabled="opLoading('otaDownload_' + dev.node_id)"
                                         @click="downloadOtaAsset(dev.node_id, asset.url, asset.name)">
-                                  <span x-show="!opLoading('otaDownload_' + dev.node_id)">↓ Download</span>
+                                  <span x-show="!opLoading('otaDownload_' + dev.node_id)">↓</span>
                                 </button>
                               </div>
                             </template>
                             <p x-show="opErr('otaDownload_' + dev.node_id)" class="text-xs text-error"
                                x-text="opErr('otaDownload_' + dev.node_id)"></p>
-                            <p class="text-xs opacity-30">Downloaded files appear in the selector above.</p>
                           </div>
-                          <p x-show="!otaAssetsForDevice(dev.node_id).length" class="text-xs opacity-40 italic"
-                             x-text="'No assets match ' + (otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model || 'this device') + ' in this release'"></p>
+                          <p x-show="!otaAssetsForDevice(dev.node_id).length" class="text-xs text-base-content/30 italic"
+                             x-text="'No assets match ' + (otaFiles[dev.node_id]?.hw_model || nodeById(dev.node_id)?.user?.hw_model || 'this device')"></p>
                         </div>
                         <button x-show="!opLoading('otaReleases') && !otaReleases"
                                 class="btn btn-xs btn-outline w-full" @click="loadOtaReleases()">Load releases</button>
                       </div>
                     </div>
-                    <p class="text-xs opacity-30">Device disconnects, reboots into bootloader, flashes over BLE, reconnects automatically.</p>
+                    <p class="text-xs text-base-content/25 leading-snug">Device reboots into bootloader, flashes over BLE, reconnects.</p>
                   </div>
-                </div>
 
-                <!-- ── Radio Config ── -->
-                <div>
-                  <button class="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold opacity-60 hover:opacity-100 hover:bg-base-200/60 text-left transition-colors"
-                          @click.stop="s.radio = !s.radio">
-                    <svg class="w-3 h-3 shrink-0 transition-transform" :class="s.radio && 'rotate-90'"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Radio Config
-                    <span x-show="opLoading('restore_' + dev.node_id)"
-                          class="badge badge-sm badge-warning animate-pulse">Restoring…</span>
-                  </button>
-                  <div x-show="s.radio" class="px-4 pb-4 flex flex-col gap-3">
-                    <div class="flex gap-2 items-center flex-wrap">
+                  <!-- Radio Config -->
+                  <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-3">
+                    <div class="flex items-center gap-2">
+                      <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide">Radio Config</p>
+                      <span x-show="opLoading('restore_' + dev.node_id)"
+                            class="badge badge-xs badge-warning animate-pulse">Restoring…</span>
+                    </div>
+                    <div class="flex gap-2 flex-wrap">
                       <button class="btn btn-xs btn-outline"
                               :disabled="devBleState(dev.node_id) !== 'ready' || opLoading('backup_' + dev.node_id)"
-                              title="Download all config sections and channels as JSON"
+                              title="Download all config and channels as JSON"
                               @click="asyncOp('backup_' + dev.node_id, () => backupRadioConfig(dev.node_id))">
                         <span x-show="opLoading('backup_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Backup
                       </button>
                       <label class="btn btn-xs btn-outline"
                              :class="(devBleState(dev.node_id) !== 'ready' || opLoading('restore_' + dev.node_id)) ? 'btn-disabled pointer-events-none' : ''"
-                             title="Restore config from a backup JSON file — device will reboot">
+                             title="Restore from JSON — device will reboot">
                         <span x-show="opLoading('restore_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Restore
                         <input type="file" accept=".json" class="hidden"
@@ -399,31 +375,24 @@
                               :disabled="devBleState(dev.node_id) !== 'ready' || !deviceConfigs[dev.node_id]?.fixed_lat || opLoading('pushPos_' + dev.node_id)"
                               :title="deviceConfigs[dev.node_id]?.fixed_lat != null
                                 ? 'Push ' + Number(deviceConfigs[dev.node_id].fixed_lat).toFixed(5) + ', ' + Number(deviceConfigs[dev.node_id].fixed_lon).toFixed(5) + ' to radio'
-                                : 'No fixed position configured — set it in Config → Radio → Device'"
+                                : 'No fixed position set'"
                               @click="asyncOp('pushPos_' + dev.node_id, () => pushFixedPosition(dev.node_id), { successMsg: 'Fixed position set & verified' })">
                         <span x-show="opLoading('pushPos_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Push Position
                       </button>
                     </div>
-                    <p class="text-xs opacity-40">Backup/restore all config and channels. Push Position sends the locally saved lat/lon to this radio.</p>
+                    <p class="text-xs text-base-content/30">Backup/restore all config and channels. Push Position sends the saved lat/lon to this radio.</p>
                   </div>
-                </div>
 
-                <!-- ── Range Test ── -->
-                <div>
-                  <button class="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold opacity-60 hover:opacity-100 hover:bg-base-200/60 text-left transition-colors"
-                          @click.stop="s.range = !s.range">
-                    <svg class="w-3 h-3 shrink-0 transition-transform" :class="s.range && 'rotate-90'"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Range Test TX
-                    <template x-if="rangeTimer.active && rangeTimer.nodeId === dev.node_id">
-                      <span class="badge badge-sm badge-warning animate-pulse">Sending</span>
-                    </template>
-                  </button>
-                  <div x-show="s.range" class="px-4 pb-4">
-                    <div class="flex items-center gap-2 flex-wrap">
+                  <!-- Range Test -->
+                  <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-2">
+                    <div class="flex items-center gap-2">
+                      <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide">Range Test</p>
+                      <template x-if="rangeTimer.active && rangeTimer.nodeId === dev.node_id">
+                        <span class="badge badge-xs badge-warning animate-pulse">Sending</span>
+                      </template>
+                    </div>
+                    <div class="flex items-center gap-2">
                       <template x-if="!(rangeTimer.active && rangeTimer.nodeId === dev.node_id)">
                         <div class="flex items-center gap-2">
                           <select class="select select-bordered select-xs w-24" x-model.number="rangeDuration">
@@ -446,23 +415,13 @@
                       </template>
                     </div>
                   </div>
-                </div>
 
-                <!-- ── Maintenance ── -->
-                <div>
-                  <button class="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold opacity-60 hover:opacity-100 hover:bg-base-200/60 text-left transition-colors"
-                          @click.stop="s.maint = !s.maint">
-                    <svg class="w-3 h-3 shrink-0 transition-transform" :class="s.maint && 'rotate-90'"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    Maintenance
-                  </button>
-                  <div x-show="s.maint" class="px-4 pb-4 flex flex-col gap-3">
-                    <!-- Action buttons -->
+                  <!-- Maintenance — full width -->
+                  <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-3 sm:col-span-2">
+                    <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide">Maintenance</p>
                     <div class="flex gap-2 flex-wrap">
                       <button class="btn btn-xs btn-outline"
-                              :class="dev.node_id===activeNodeId && 'btn-success'"
+                              :class="dev.node_id===activeNodeId ? 'btn-success' : ''"
                               :disabled="dev.node_id===activeNodeId"
                               @click="selectDevice(dev.node_id)">
                         <span x-text="dev.node_id===activeNodeId ? 'Active' : 'Set Active'"></span>
@@ -490,13 +449,12 @@
                               x-show="dev.ble_address"
                               :disabled="opLoading('remove_' + dev.node_id)"
                               @click="asyncOp('remove_' + dev.node_id, () => bleRemove(dev.ble_address), { successMsg: 'Device removed' })"
-                              title="Remove: disconnect bridge, remove from config, remove BlueZ bond">
+                              title="Remove from config and BlueZ bond">
                         <span x-show="opLoading('remove_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         <span x-show="!opLoading('remove_' + dev.node_id)">Remove</span>
                       </button>
                     </div>
-                    <!-- Auto-purge -->
-                    <div class="flex items-center gap-2 text-xs text-base-content/70">
+                    <div class="flex items-center gap-2 text-xs text-base-content/50">
                       <input type="checkbox" class="checkbox checkbox-xs"
                              :checked="autoPurgeSetting(dev.node_id).enabled"
                              @change="autoPurge[dev.node_id] = {...autoPurgeSetting(dev.node_id), enabled: $event.target.checked}; saveAutoPurge(dev.node_id)">
@@ -505,20 +463,20 @@
                              :value="autoPurgeSetting(dev.node_id).purge_time"
                              :disabled="!autoPurgeSetting(dev.node_id).enabled"
                              @change="autoPurge[dev.node_id] = {...autoPurgeSetting(dev.node_id), purge_time: $event.target.value}; saveAutoPurge(dev.node_id)">
-                      <span class="opacity-50" x-text="'· Last: ' + autoPurgeLastStr(dev.node_id)"></span>
+                      <span class="text-base-content/30" x-text="'· Last: ' + autoPurgeLastStr(dev.node_id)"></span>
                     </div>
                   </div>
-                </div>
 
-              </div><!-- end card body -->
-            </div><!-- end accordion card -->
+                </div><!-- end grid -->
+              </div><!-- end panel -->
+            </div><!-- end card -->
           </template>
 
           <!-- ── Packet Sources ──────────────────────────────────── -->
-          <div class="card bg-base-100 shadow" x-show="availableDevices.length > 1">
+          <div class="card bg-base-100 shadow-sm border border-base-300" x-show="availableDevices.length > 1">
             <div class="card-body py-4 gap-3">
-              <h2 class="card-title text-base">Packet Sources</h2>
-              <p class="text-sm opacity-60">Which radios feed the node list and overview. None selected = all radios.</p>
+              <h2 class="text-sm font-semibold text-base-content/50 uppercase tracking-wide">Packet Sources</h2>
+              <p class="text-sm text-base-content/50">Which radios feed the node list and overview. None selected = all radios.</p>
               <div class="flex flex-col gap-2">
                 <template x-for="dev in availableDevices" :key="dev.addr">
                   <label class="flex items-center gap-3 cursor-pointer">
@@ -526,50 +484,67 @@
                            :checked="!packetSources.length || packetSources.includes(dev.node_id)"
                            @change="togglePacketSource(dev.node_id, $event.target.checked)">
                     <span class="badge badge-sm badge-outline font-mono" x-text="deviceLabel(dev.node_id)"></span>
-                    <span class="text-sm opacity-70" x-text="dev.long_name || dev.short_name || ''"></span>
+                    <span class="text-sm text-base-content/60" x-text="dev.long_name || dev.short_name || ''"></span>
                   </label>
                 </template>
               </div>
-              <div class="text-xs" :class="packetSources.length ? 'text-warning' : 'text-success'"
-                   x-text="packetSources.length ? 'Active: ' + packetSources.map(id => deviceLabel(id)).join(', ') : 'All radios active'"></div>
+              <p class="text-xs" :class="packetSources.length ? 'text-warning' : 'text-success'"
+                 x-text="packetSources.length ? 'Active: ' + packetSources.map(id => deviceLabel(id)).join(', ') : 'All radios active'"></p>
             </div>
           </div>
 
           <!-- ── Connect Device ──────────────────────────────────── -->
-          <div class="card bg-base-100 shadow">
-            <div class="card-body py-4">
-              <h2 class="card-title">Connect Device</h2>
+          <div class="card bg-base-100 shadow-sm border border-base-300">
+            <div class="card-body py-4 gap-4">
+              <h2 class="text-sm font-semibold text-base-content/50 uppercase tracking-wide">Connect Device</h2>
 
-              <div class="flex flex-wrap gap-2 items-center mb-3">
+              <div class="flex flex-wrap gap-2 items-center">
                 <button class="btn btn-sm btn-outline gap-2" @click="bleScan()" :disabled="bleScanning">
                   <span x-show="bleScanning" class="loading loading-spinner loading-xs"></span>
                   <span x-text="bleScanning ? 'Scanning…' : 'Scan for devices'"></span>
                 </button>
-                <span class="text-xs opacity-40" x-show="bleDevices.length > 0" x-text="bleDevices.length + ' Meshtastic device' + (bleDevices.length!==1?'s':'') + ' found'"></span>
+                <span class="text-xs text-base-content/40" x-show="bleDevices.length > 0"
+                      x-text="bleDevices.length + ' Meshtastic device' + (bleDevices.length!==1?'s':'') + ' found'"></span>
               </div>
 
-              <div x-show="bleDevices.length > 0" class="overflow-x-auto mb-4">
+              <div x-show="bleDevices.length > 0" class="overflow-x-auto">
                 <table class="table table-sm w-full max-w-3xl">
-                  <thead><tr><th>Name</th><th>Address</th><th>RSSI</th><th class="text-center">Paired</th><th class="text-center">Trusted</th><th>PIN</th><th></th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Name</th><th>Address</th><th>RSSI</th>
+                      <th class="text-center">Paired</th><th class="text-center">Trusted</th>
+                      <th>PIN</th><th></th>
+                    </tr>
+                  </thead>
                   <tbody>
                     <template x-for="d in bleDevices" :key="d.address">
                       <tr>
                         <td class="font-semibold" x-text="d.name"></td>
                         <td class="font-mono text-xs" x-text="d.address"></td>
-                        <td class="inline-flex items-center gap-1"><span x-html="sigBars(d.rssi, null)"></span><span x-text="d.rssi + ' dBm'"></span></td>
+                        <td class="inline-flex items-center gap-1">
+                          <span x-html="sigBars(d.rssi, null)"></span>
+                          <span class="font-mono" x-text="d.rssi + ' dBm'"></span>
+                        </td>
                         <td class="text-center"><input type="checkbox" class="checkbox checkbox-xs" :checked="d.paired" disabled></td>
                         <td class="text-center"><input type="checkbox" class="checkbox checkbox-xs" :checked="d.trusted" disabled></td>
-                        <td><input class="input input-bordered input-xs font-mono w-24"
-                                   :value="blePins[d.address] ?? ''"
-                                   @input="blePins = { ...blePins, [d.address]: $event.target.value }"
-                                   placeholder="123456" type="text" inputmode="numeric" maxlength="6"
-                                   :disabled="bleConnecting"></td>
+                        <td>
+                          <input class="input input-bordered input-xs font-mono w-24"
+                                 :value="blePins[d.address] ?? ''"
+                                 @input="blePins = { ...blePins, [d.address]: $event.target.value }"
+                                 placeholder="123456" type="text" inputmode="numeric" maxlength="6"
+                                 :disabled="bleConnecting">
+                        </td>
                         <td class="flex gap-1">
-                          <button class="btn btn-xs btn-primary gap-1" @click="bleConnect(d.address, blePins[d.address])" :disabled="bleConnecting || bleScanning">
+                          <button class="btn btn-xs btn-primary gap-1"
+                                  @click="bleConnect(d.address, blePins[d.address])"
+                                  :disabled="bleConnecting || bleScanning">
                             <span x-show="bleConnecting && bleAddress === d.address" class="loading loading-spinner loading-xs" x-cloak></span>
                             Connect
                           </button>
-                          <button class="btn btn-xs btn-error btn-outline" @click="bleRemove(d.address)" :disabled="bleConnecting || bleScanning" title="Remove device">✕</button>
+                          <button class="btn btn-xs btn-error btn-outline"
+                                  @click="bleRemove(d.address)"
+                                  :disabled="bleConnecting || bleScanning"
+                                  title="Remove">✕</button>
                         </td>
                       </tr>
                     </template>
@@ -578,27 +553,36 @@
               </div>
 
               <details class="text-sm" :open="bleDevices.length === 0">
-                <summary class="cursor-pointer opacity-50 hover:opacity-80 select-none text-xs mb-2">Enter address manually</summary>
+                <summary class="cursor-pointer text-xs text-base-content/40 hover:text-base-content/70 select-none mb-2">Enter address manually</summary>
                 <div class="flex flex-wrap gap-3 items-end mt-2">
                   <div class="form-control">
                     <label class="label py-0.5"><span class="label-text text-xs">BLE Address</span></label>
-                    <input class="input input-bordered input-sm font-mono w-52" x-model="bleAddress" placeholder="AA:BB:CC:DD:EE:FF" :disabled="bleConnecting">
+                    <input class="input input-bordered input-sm font-mono w-52"
+                           x-model="bleAddress" placeholder="AA:BB:CC:DD:EE:FF" :disabled="bleConnecting">
                   </div>
                   <div class="form-control">
                     <label class="label py-0.5"><span class="label-text text-xs">PIN</span></label>
-                    <input class="input input-bordered input-sm w-28" x-model="blePin" placeholder="123456" type="text" inputmode="numeric" maxlength="6" :disabled="bleConnecting">
+                    <input class="input input-bordered input-sm w-28"
+                           x-model="blePin" placeholder="123456" type="text" inputmode="numeric" maxlength="6"
+                           :disabled="bleConnecting">
                   </div>
-                  <button class="btn btn-sm btn-primary gap-2 self-end" @click="bleConnect()" :disabled="!bleAddress || bleConnecting || bleScanning">
+                  <button class="btn btn-sm btn-primary gap-2 self-end"
+                          @click="bleConnect()"
+                          :disabled="!bleAddress || bleConnecting || bleScanning">
                     <span x-show="bleConnecting" class="loading loading-spinner loading-xs"></span>
                     <span x-text="bleConnecting ? 'Connecting…' : 'Connect'"></span>
                   </button>
                 </div>
               </details>
 
-              <div x-show="bleError" class="alert alert-error mt-3 py-2 text-sm flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3C7.03 3 3 7.03 3 12s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9z"/></svg>
+              <div x-show="bleError" class="alert alert-error py-2 text-sm flex items-center gap-2">
+                <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 9v2m0 4h.01M12 3C7.03 3 3 7.03 3 12s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9z"/>
+                </svg>
                 <span x-text="bleError"></span>
               </div>
             </div>
           </div>
+
         </div>
