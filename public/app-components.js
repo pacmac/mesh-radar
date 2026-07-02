@@ -68,10 +68,21 @@ export const componentsMixin = {
     return `<span class="inline-flex items-center gap-1">${bars}<span class="font-mono text-xs">${rssiStr}${snrStr}</span></span>`;
   },
 
-  // Navbar BLE bars (consolidated from app-nodes.js)
+  // BLE link-quality bars from the gw V2 signal_pct field (0–100; raw BLE
+  // dBm is not exposed in V2). Same markup/classes as sigBars.
+  pctBars(pct, scale = 1) {
+    if (pct == null) return '';
+    const cls = pct >= 50 ? 'text-success' : pct >= 25 ? 'text-warning' : 'text-error';
+    const bars = [3, 6, 9, 12].map((h, i) =>
+      `<i style="height:${Math.round(h * scale)}px;opacity:${pct > i * 25 ? 1 : 0.15}"></i>`
+    ).join('');
+    return `<span class="sig-bars ${cls}" title="BLE link ${pct}%">${bars}</span>`;
+  },
+
+  // Navbar BLE bars — driven by V2 signal_pct
   signalBarFill(bar) {
-    const snr  = this.primaryDevBleState?.last_rx_snr;
-    const bars = snr == null ? 1 : snr > 0 ? 4 : snr > -7 ? 3 : snr > -14 ? 2 : 1;
+    const pct  = this.primaryDevBleState?.signal_pct;
+    const bars = pct == null ? 1 : pct > 75 ? 4 : pct > 50 ? 3 : pct > 25 ? 2 : 1;
     if (bar > bars) return 'oklch(var(--bc)/0.12)';
     if (bars >= 3)  return 'oklch(var(--su))';
     if (bars >= 2)  return 'oklch(var(--wa))';

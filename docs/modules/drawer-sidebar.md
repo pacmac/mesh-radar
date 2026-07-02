@@ -1,7 +1,7 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: a0e35eaf773963c2e3d570e9fe0d74b0560a0dd94b62737741010d95e4a42509
+source_hash: 2d0fc5f34d999a08cfba9fd12f0d1293e72aa27f75b83dca072d5dddfab77d41
 updated: 2026-07-02
 ---
 
@@ -67,3 +67,9 @@ Files in scope:
 Playwright both themes (guide §8): sidebar wordmark, fw line shows real
 firmware, nav works, navbar chips render, no console errors; every page
 smoke-checked after the `info` removal.
+
+## V2 metrics alignment (task `v2-browser-metrics`)
+
+Footer per-device signal bars use `pctBars(deviceBleStates[id]?.signal_pct)`
+(V2 removed raw BLE dBm). Navbar BLE chip (index.html) likewise: bars and
+tooltip driven by `signal_pct` via `signalBarFill`.

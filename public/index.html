@@ -198,7 +198,7 @@
               x-show="rotatorStatus.az != null"
               x-text="Number(rotatorStatus.az).toFixed(1) + '°'"></span>
         <!-- BLE signal -->
-        <div class="tooltip tooltip-bottom" :data-tip="signalQuality(primaryDevBleState.last_rx_rssi, primaryDevBleState.last_rx_snr).label + ' · SNR ' + (primaryDevBleState.last_rx_snr != null ? primaryDevBleState.last_rx_snr.toFixed(1) + ' dB' : 'n/a') + (primaryDevBleState.ble_rssi != null ? ' · BLE ' + primaryDevBleState.ble_rssi + ' dBm' : '')">
+        <div class="tooltip tooltip-bottom" :data-tip="'BLE link ' + (primaryDevBleState.signal_pct != null ? primaryDevBleState.signal_pct + '%' : 'n/a') + ' · ' + (primaryDevBleState.ble_state || 'offline')">
           <div class="flex items-center gap-1.5 px-2 py-1 rounded border" :class="primaryDevBleState.ble_state === 'ready' ? 'border-success/40' : 'border-error/40'">
             <svg width="16" height="13" viewBox="0 0 16 13" class="shrink-0">
               <rect x="0"  y="9"  width="3" height="4"  rx="0.8" :fill="signalBarFill(1)"/>

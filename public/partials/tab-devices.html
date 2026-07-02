@@ -45,10 +45,11 @@
 
                 <!-- Right: RSSI + state + active -->
                 <div class="ml-auto flex items-center gap-2">
-                  <span x-show="deviceBleStates[dev.node_id]?.ble_rssi != null"
-                        class="inline-flex items-center gap-1 text-xs text-base-content/50">
-                    <span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span>
-                    <span class="font-mono" x-text="deviceBleStates[dev.node_id]?.ble_rssi + ' dBm'"></span>
+                  <span x-show="deviceBleStates[dev.node_id]?.signal_pct != null"
+                        class="inline-flex items-center gap-1 text-xs text-base-content/50"
+                        title="BLE link quality">
+                    <span x-html="pctBars(deviceBleStates[dev.node_id]?.signal_pct)"></span>
+                    <span class="font-mono" x-text="deviceBleStates[dev.node_id]?.signal_pct + '%'"></span>
                   </span>
                   <span x-html="devStateBadge(dev.node_id)"></span>
                   <span x-show="dev.node_id === activeNodeId" class="badge badge-xs badge-success">Active</span>
@@ -64,8 +65,8 @@
                   <span x-show="dev.ble_address" x-text="dev.ble_address"></span>
                   <span x-show="dev.tcp_port"
                         x-text="'TCP :' + dev.tcp_port + ' (' + dev.tcp_clients + ' clients)'"></span>
-                  <span x-show="deviceBleStates[dev.node_id]?.ready_secs != null"
-                        x-text="'sync ' + deviceBleStates[dev.node_id]?.ready_secs + 's'"></span>
+                  <span x-show="deviceBleStates[dev.node_id]?.sync_duration_s != null"
+                        x-text="'sync ' + deviceBleStates[dev.node_id]?.sync_duration_s + 's'"></span>
                 </div>
                 <!-- Telemetry grid -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-sm">
@@ -85,14 +86,6 @@
                   <div>
                     <div class="text-xs text-base-content/40 mb-0.5">Ch util / Air TX</div>
                     <div class="font-mono" x-text="deviceBleStates[dev.node_id]?.channel_utilization != null ? Number(deviceBleStates[dev.node_id].channel_utilization).toFixed(1) + '% / ' + (deviceBleStates[dev.node_id].air_util_tx != null ? Number(deviceBleStates[dev.node_id].air_util_tx).toFixed(2) : '–') + '%' : '–'"></div>
-                  </div>
-                  <div x-show="nodeById(dev.node_id)?.local_stats">
-                    <div class="text-xs text-base-content/40 mb-0.5">Nodes seen</div>
-                    <div class="font-mono" x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_online_nodes + ' online / ' + nodeById(dev.node_id).local_stats.num_total_nodes + ' total' : '–'"></div>
-                  </div>
-                  <div x-show="nodeById(dev.node_id)?.local_stats">
-                    <div class="text-xs text-base-content/40 mb-0.5">Packets RX / TX</div>
-                    <div class="font-mono" x-text="nodeById(dev.node_id)?.local_stats ? nodeById(dev.node_id).local_stats.num_packets_rx + ' / ' + nodeById(dev.node_id).local_stats.num_packets_tx : '–'"></div>
                   </div>
                   <div x-show="nodeById(dev.node_id)?.environment_metrics?.temperature != null"
                        x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">

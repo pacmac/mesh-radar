@@ -97,7 +97,7 @@
           <div class="flex items-center justify-between gap-2">
             <span class="font-mono opacity-50 shrink-0" x-text="deviceLabel(dev.node_id)"></span>
             <span class="inline-flex items-center gap-1 min-w-0">
-              <span x-html="sigBars(deviceBleStates[dev.node_id]?.ble_rssi, null)"></span>
+              <span x-html="pctBars(deviceBleStates[dev.node_id]?.signal_pct)"></span>
               <span :class="devBleState(dev.node_id)==='ready'?'text-success opacity-70':devBleState(dev.node_id)==='error'?'text-error':'text-warning'"
                     x-text="devBleState(dev.node_id) || '–'"></span>
             </span>

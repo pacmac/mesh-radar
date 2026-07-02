@@ -1,7 +1,7 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: ded198f987a27178e751e76af55930127ec82006a1e5317432f37c2f3c48af28
+source_hash: 1b616c8a791fa2f513251c8015863558ed55ed289760dfd0db1151868cff9990
 updated: 2026-07-02
 ---
 
@@ -186,3 +186,11 @@ Manual/Playwright verification:
   when not ready)
 - Packet Sources and Connect Device cards unchanged and functional
 - No Alpine console errors
+
+## V2 metrics alignment (task `v2-browser-metrics`)
+
+- Card-header BLE signal: `pctBars(signal_pct)` + `signal_pct %` — V2 replaced
+  raw BLE dBm (`ble_rssi`, removed) with `signal_pct` 0–100.
+- Stats row sync time reads `sync_duration_s` (V2 name; `ready_secs` never existed).
+- "Nodes seen" / "Packets RX/TX" cells removed — `local_stats` is not in the V2
+  `node_info` contract; the cells could never render.
