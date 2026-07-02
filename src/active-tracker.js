@@ -108,7 +108,7 @@ export const activeTracker = {
 
   handlePacket(ev) {
     const rotatorId = getRotatorAddress();
-    if (!rotatorId || ev.device !== rotatorId) return;
+    if (!rotatorId || ev.addr !== rotatorId) return;   // V2: rotator id is the BLE MAC = ev.addr
 
     if (ev.type === 'packet') {
       const pkt = ev.data?.packet;

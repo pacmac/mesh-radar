@@ -66,15 +66,15 @@ class NodeList extends EventEmitter {
     // This covers both self-reports and cross-device reports (e.g. YAGI reporting about OMNI).
     // _filter() excludes own nums from the public node list regardless of how they enter.
     if (this._ownNums().has(node.num)) {
-      this._ownDevices.set(node.num, { ...(this._ownDevices.get(node.num) ?? {}), ...node, _device: ev.device ?? null });
+      this._ownDevices.set(node.num, { ...(this._ownDevices.get(node.num) ?? {}), ...node, _device: ev.node_id ?? ev.addr ?? null });
       this._scheduleEmit();
       return;
     }
 
     const rotatorId = getRotatorAddress();
     // During scan, ignore updates from non-rotator devices
-    if (this._scanActive && rotatorId && ev.device && ev.device !== rotatorId) return;
-    const newDev = ev.device ?? null;
+    if (this._scanActive && rotatorId && ev.addr && ev.addr !== rotatorId) return;
+    const newDev = ev.node_id ?? ev.addr ?? null;
 
     if (this._scanActive) {
       if (this._cache.has(node.num)) {

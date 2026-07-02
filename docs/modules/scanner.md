@@ -1,7 +1,7 @@
 ---
 module: scanner
 source: src/scanner.js
-source_hash: 12c9873efc328ef1b75ea83cb0eafe5bdc9a7cd367baf5ab4456218159ab7924
+source_hash: 69a829af6431bf1105d2f7b8f1553036c22ccfe7aa520fb617648be225444a73
 updated: 2026-06-30
 ---
 
@@ -157,3 +157,7 @@ Best-SNR wins per azimuth: replaces `_contacts[az]` only if new `snr > existing.
 - Scan contact confirmation into node-list — `index.js` calls `nodeList.confirmScanContact` in `scanner.on('contact')`
 - Broadcasting to browser — `ws-relay.js` listens to all 4 events and relays them
 - Rotator hardware comms — `rotator.js` owns that
+
+## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
+
+Rotator packet matching compares `ev.addr` (BLE MAC) — V2 removed the `device` field from packet events; the old comparison discarded every packet, so SCAN never recorded contacts.

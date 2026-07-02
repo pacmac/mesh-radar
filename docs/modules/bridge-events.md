@@ -1,7 +1,7 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: 0d92201f3539fdc9f599c3e9405bb09665a03080ba6fab6f771b8a410d99664d
+source_hash: 7522efe5a339e7f0b80220e67aa33213584fb631a34973756d710e165947dbf8
 updated: 2026-06-30
 ---
 
@@ -71,3 +71,7 @@ _N/A_ (consumes events from bridge; other modules emit downstream)
 - `bridge.on('connected')` — `startup.js` owns that.
 - Scanner/dashMode/rotator event wiring — `lifecycle.js` owns that.
 - WS broadcast to browser — `ws-relay.js` owns that (it has its own `bridge.on('event')` listener).
+
+## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
+
+Range-test DB persistence listens for the V2 `range_test` event name (was `rangetest`).

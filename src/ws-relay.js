@@ -152,9 +152,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     if ((ev.type === 'range_test_entry') && ev.data) {
       return { ...ev, from_name: resolveNodeLabel(ev.data.from_num), rx_name: resolveDeviceLabel(ev.device) };
     }
-    if ((ev.type === 'text_message') && ev.data?.from_num != null) {
-      return { ...ev, from_name: resolveNodeLabel(ev.data.from_num) };
-    }
     return ev;
   }
 
@@ -312,7 +309,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       return;
     }
 
-    if (ev.type === 'rangetest') {
+    if (ev.type === 'range_test') {
       const seq = parseInt((ev.data?.text || '').replace(/[^0-9]/g, '')) || null;
       broadcast({
         type: 'range_test_entry',

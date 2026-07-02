@@ -152,7 +152,7 @@ function _dispatchAlertEvent(ev) {
       touchAlertLastSent('dm_received');
       markPacketAlerted(pktId);
       const token = randomUUID();
-      createReplyToken(token, ev.device, pkt.from >>> 0, pktId, pkt.channel ?? 0);
+      createReplyToken(token, ev.node_id ?? ev.addr, pkt.from >>> 0, pktId, pkt.channel ?? 0);
       sendAlert('dm_received',
         `[mesh] DM from ${fromShort} [reply:${token}]`,
         `Direct message from ${fromShort}:\n\n  "${text}"\n\nReply by replying to this email (keep the subject line intact).`,
@@ -168,7 +168,7 @@ function _dispatchAlertEvent(ev) {
       touchAlertLastSent('broadcast_direct');
       markPacketAlerted(pktId);
       const token = randomUUID();
-      createReplyToken(token, ev.device, pkt.from >>> 0, pktId, pkt.channel ?? 0);
+      createReplyToken(token, ev.node_id ?? ev.addr, pkt.from >>> 0, pktId, pkt.channel ?? 0);
       sendAlert('broadcast_direct',
         `[mesh] Direct broadcast from ${fromShort} [reply:${token}]`,
         `0-hop broadcast from ${fromShort}:\n\n  "${text}"\n\nReply by replying to this email (keep the subject line intact).`,

@@ -64,7 +64,7 @@ class Scanner extends EventEmitter {
   handlePacket(ev) {
     if (!this._active || this._dwellAz == null) return;
     const rotatorId = getRotatorAddress();
-    if (rotatorId && ev.device !== rotatorId) return;
+    if (rotatorId && ev.addr !== rotatorId) return;   // V2: rotator id is the BLE MAC = ev.addr
     const pkt = ev.data?.packet;
     if (!pkt?.from) return;
     const snr  = pkt.rx_snr  ?? null;

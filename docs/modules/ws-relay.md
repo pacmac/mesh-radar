@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: e2f18e2aff1954b5fe2e93e931a7040772abad4b28066ddcf1ee59b0705b36b0
+source_hash: fc6add069b7614a8bc6f69b96fd837510d2201fc882a9f8c00b4d9486307e06f
 updated: 2026-06-30
 ---
 
@@ -344,3 +344,7 @@ Object keyed by BLE MAC address. Each entry is the flattened device shape from `
 - Node cache management — `node-list.js` owns the in-memory node set
 - Alert delivery — `alerts.js` owns that; `ws-relay.js` only feeds it events
 - REST endpoints — `index.js` owns all HTTP routes
+
+## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
+
+Consumes the V2 `range_test` event name (was `rangetest` — dead pipeline). Dead `text_message` enrichment branch removed (texts ride `packet` events).

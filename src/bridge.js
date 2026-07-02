@@ -74,7 +74,7 @@ class BridgeClient extends EventEmitter {
       }
       const BLE_LOG_TYPES = ['connecting','syncing','reconnecting','error','ready','idle'];
       if (BLE_LOG_TYPES.includes(event.type)) {
-        const dev = event.device || '?';
+        const dev = event.node_id || event.addr || '?';
         const msg = event.message ? `: ${event.message}` : '';
         console.log(`[ble] ${dev} → ${event.type}${msg}`);
       }

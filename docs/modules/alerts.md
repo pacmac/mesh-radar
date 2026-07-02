@@ -1,7 +1,7 @@
 ---
 module: alerts
 source: src/alerts.js
-source_hash: 3e9d16368be859f64a172fc3e13f8bc5c2900b567f768fb9c62821c9a600d573
+source_hash: cca04f4cf186d098588f7a05618c1606b39b529031194e20564aed346bc0a14c
 updated: 2026-06-30
 ---
 
@@ -137,3 +137,7 @@ Returns false if:
 - Reply email parsing and mesh message sending — `imap-receiver.js` owns that
 - Alert rule CRUD — `index.js` REST endpoints + `db.js` storage own that
 - UI display of alert types — `index.js` serves `ALERT_META` via `GET /alerts/rules`
+
+## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
+
+Email reply tokens store `ev.node_id ?? ev.addr` as from_node_id (V2 removed `device` — tokens previously stored undefined, breaking email→mesh replies).

@@ -1,7 +1,7 @@
 ---
 module: active-tracker
 source: src/active-tracker.js
-source_hash: 5723749a456a038c2c9daa0e7d713e396843ebacf05a89150f9f7711a0d0c4a2
+source_hash: 979d78dcf0e6cb1af77da8ab1453ed9bc1d06714ce6c03e3917e18f17da790f4
 updated: 2026-06-30
 ---
 
@@ -125,3 +125,7 @@ On match: updates `_lastRssi`/`_lastSnr`, emits `rotator.signal_update`, calls `
 - Scanner sweep — `scanner.js` owns the SCAN mode BLE sweep; active-tracker.js owns only ACTV targeting
 - Mode transitions — index.js starts/stops `activeTracker` in the `dashMode.on('change', …)` handler
 - Rotator hardware control — `rotator.js` owns serial/network communication
+
+## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
+
+Rotator packet matching compares `ev.addr` (BLE MAC) — V2 removed the `device` field; the old comparison made ACTV signal confirmation impossible.

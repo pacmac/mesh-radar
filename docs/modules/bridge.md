@@ -1,7 +1,7 @@
 ---
 module: bridge
 source: src/bridge.js
-source_hash: df757c32a40d05c3393ec1d3c362415cc680b6e954641aa76871e78dcd72be04
+source_hash: b52c0d8748e50aa53624dc2bd4be791a7de0201335ef9f13f2de59650a3c0b8d
 updated: 2026-06-30
 ---
 
@@ -127,3 +127,7 @@ a mock WS server is sufficient.
 - Browser concerns — no knowledge of `ws-relay.js` or the browser WS
 - The `_liveNodeIds` map in `ws-relay.js` — this is a stale v1 artifact that duplicates `known_devices`; it will be removed in the ws-relay refactor task once `bridge.knownDevices` is authoritative
 - Routing gw events to specific consumers — that belongs in `event-handler.js` (to be extracted from `index.js`)
+
+## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
+
+BLE state log line labels devices by `node_id`/`addr` (V2 removed `device`).

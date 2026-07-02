@@ -92,7 +92,7 @@ export function registerBridgeEvents(bridge) {
         }
       }
     }
-    if (ev.type === 'rangetest') {
+    if (ev.type === 'range_test') {
       try {
         const seq = parseInt((ev.data?.text || '').replace(/[^0-9]/g, '')) || null;
         insertRangeTestEntry({

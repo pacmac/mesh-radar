@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 5b964b104e80618140c434e19dc7126211978316ffa08fbb15b159168260cb41
+source_hash: 5464cd57beb218c867094be80842e0365cef19227c6816eebaf6e618b6d5c57b
 updated: 2026-06-30
 ---
 
@@ -180,3 +180,7 @@ restoreScanNodes(nodes)  — called on restart when scan was in progress
 - Broadcasting to browser WebSocket — `ws-relay.js` listens to `'change'`
 - Scan rotation control — `scanner.js` owns the scan sequence; it calls `confirmScanContact`
 - Traceroute lifecycle management — `traceroute.js` owns the request/response cycle; it calls `setTraceroute`
+
+## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
+
+Device attribution uses `ev.node_id ?? ev.addr` (V2 removed `device`); the scan-time source filter compares `ev.addr` against the rotator MAC.
