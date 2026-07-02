@@ -30,7 +30,9 @@ label arms all leave at the same fixed 45° angle with only length varied.
   radius fractions `[0, 0.28, 0.52, 0.76, 0.95]`; interpolate linearly
   between control points. Screen space follows the actual distance
   distribution — the cluster band gets ~half the radius wherever it sits.
-- Control distances are snapped to the NICE_RING values and cached in
+- Control distances are rounded (whole km ≥10, half-km below — never
+  snapped to preset values: snapping collapsed in-band quartiles to one
+  ring and destroyed the adaptivity) and cached in
   `this._radarScalePts`; recomputed only when a control point drifts >15%
   (hysteresis) so the plot does not jitter as nodes come and go. Fewer than
   4 distinct node distances → fall back to the fixed `pow(x, 0.4)` curve.
@@ -40,7 +42,7 @@ label arms all leave at the same fixed 45° angle with only length varied.
 ### 2. Rings follow the scale
 
 With the adaptive scale on, rings are drawn AT the control distances
-(q25/q50/q75/max, NICE-snapped, deduplicated) instead of `maxKm·i/4` —
+(q25/q50/q75/max, rounded, deduplicated) instead of `maxKm·i/4` —
 approximately equal screen spacing whose km labels reveal the distribution
 (rings crowd in km where nodes crowd, exactly "more space where the cluster
 is"). Linear mode keeps the current equi-spaced rings.
@@ -59,7 +61,7 @@ extension at fixed 45°):
   cap). Candidate angles sweep from the preferred angle: 45°, then
   ±alternating steps of 30° through the full circle (12 candidates). The
   horizontal cap and text anchor follow the arm's x-direction.
-- **Collision test:** label text bbox (est. 6 px/char at 10 px mono) +
+- **Collision test:** label text bbox (est. 6.5 px/char at 10 px mono) +
   elbow/cap segments tested against all previously placed label bboxes and
   every node dot (r+3). First collision-free candidate wins.
 - **Last resort:** if all 12 angles collide, extend the diagonal by one
