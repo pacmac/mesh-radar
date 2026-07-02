@@ -369,7 +369,7 @@ body {
 
 .label-text {
   font-family: 'Oxanium', sans-serif;
-  font-size: 0.68rem;
+  font-size: 0.75rem;   /* caption floor — STYLE_GUIDE §3 */
   letter-spacing: 0.1em;
   text-transform: uppercase;
   font-weight: 600;

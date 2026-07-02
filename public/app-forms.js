@@ -34,7 +34,7 @@ export function buildField(field, value, path, opts = {}) {
     const box = document.createElement('div');
     box.className = 'col-span-1 sm:col-span-2 border border-base-300 rounded-lg p-3';
     const title = document.createElement('div');
-    title.className = 'text-xs font-semibold uppercase text-base-content/50 mb-2';
+    title.className = 'text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2';
     title.textContent = field.name.replace(/_/g, ' ');
     box.appendChild(title);
     box.appendChild(buildForm(field.fields, value || {}, path, opts));

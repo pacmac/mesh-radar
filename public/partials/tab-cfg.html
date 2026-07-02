@@ -1,5 +1,5 @@
         <!-- ===================== CONFIG ===================== -->
-        <div x-show="tab==='cfg'" class="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+        <div x-show="tab==='cfg'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
           <div class="tabs tabs-bordered w-fit shrink-0">
             <a class="tab" :class="cfgTab==='radio'   && 'tab-active font-semibold'" @click="switchCfgTab('radio')">Radio</a>
             <a class="tab" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
@@ -9,7 +9,7 @@
           </div>
 
           <!-- ======== RADIO tab — single selector, inner sub-tabs ======== -->
-          <div x-show="cfgTab==='radio'" class="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto">
+          <div x-show="cfgTab==='radio'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto">
 
             <!-- Radio selector (always visible) -->
             <div class="flex items-center gap-3">
@@ -37,7 +37,7 @@
               <!-- Antenna config (node-dash local, per radio) -->
               <div class="card bg-base-100 shadow" x-show="cfgRadioId">
                 <div class="card-body py-3">
-                  <h2 class="card-title text-base">Antenna</h2>
+                  <h2 class="card-title">Antenna</h2>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
                     <label class="form-control w-full sm:col-span-2">
                       <div class="label py-1"><span class="label-text text-xs">Type</span></div>
@@ -74,22 +74,21 @@
                   <template x-if="nodeSelf.tilt && cfgRadioId === activeNodeId">
                     <div>
                       <div class="divider my-2 text-xs opacity-50">Tilt Calibration</div>
-                      <div class="grid gap-x-3 gap-y-2 items-center text-sm"
-                           style="grid-template-columns:auto 1fr auto auto">
+                      <div class="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 gap-y-2 items-center text-sm">
                         <span class="text-base-content/60">Zero</span>
                         <span :class="tiltZero ? 'text-success' : 'text-base-content/40'"
                               x-text="tiltZero ? 'Set ✓' : 'Not set'"></span>
-                        <button @click="tiltSetZero()" class="btn btn-xs btn-outline"
+                        <button @click="tiltSetZero()" class="btn btn-sm btn-outline"
                                 title="Mast plumb vertical — press to capture zero">Set</button>
-                        <button @click="tiltClearCal()" class="btn btn-xs btn-outline btn-error"
+                        <button @click="tiltClearCal()" class="btn btn-sm btn-outline btn-error"
                                 :disabled="!tiltZero">Clear</button>
                         <span class="text-base-content/60">North</span>
                         <span :class="tiltNorthAngle != null ? 'text-success' : 'text-base-content/40'"
                               x-text="tiltNorthAngle != null ? (tiltNorthAngle * 180 / Math.PI).toFixed(1) + '°' : 'Not calibrated'"></span>
-                        <button @click="tiltSetNorth()" class="btn btn-xs btn-outline btn-warning"
+                        <button @click="tiltSetNorth()" class="btn btn-sm btn-outline btn-warning"
                                 :disabled="!tiltZero"
                                 title="Antenna pointing north — press to capture direction">Set</button>
-                        <button @click="tiltClearNorth()" class="btn btn-xs btn-outline btn-error"
+                        <button @click="tiltClearNorth()" class="btn btn-sm btn-outline btn-error"
                                 :disabled="tiltNorthAngle == null">Clear</button>
                       </div>
                     </div>
@@ -102,7 +101,7 @@
               <template x-for="sec in allSections" :key="sec.name">
                 <div class="collapse collapse-arrow bg-base-100 shadow">
                   <input type="checkbox" @change="onSectionToggle(sec)" />
-                  <div class="collapse-title text-md font-semibold capitalize flex items-center gap-2">
+                  <div class="collapse-title font-semibold capitalize flex items-center gap-2">
                     <span x-text="sec.name.replace(/_/g,' ')"></span>
                     <span class="badge badge-ghost badge-sm" x-text="sec.kind"></span>
                     <span class="badge badge-warning badge-sm" x-show="sec.rebootRequired">reboot</span>
@@ -110,7 +109,7 @@
                   </div>
                   <div class="collapse-content">
                     <template x-if="sec.notes && sec.notes.length">
-                      <div class="alert alert-info py-2 px-3 mb-3 text-xs">
+                      <div class="alert alert-info py-2 px-3 mb-3 text-sm">
                         <template x-for="note in sec.notes" :key="note">
                           <span x-text="note"></span>
                         </template>
@@ -128,10 +127,10 @@
                       </button>
                       <span class="text-success text-sm" x-show="opOk('cfg_' + sec.name + '_' + cfgRadioId)" x-transition>Saved ✓</span>
                       <span class="text-warning text-sm animate-pulse" x-show="devIsSaving(cfgRadioId)" x-transition>Reconnecting…</span>
-                      <span class="text-warning/70 text-xs" x-show="sec.rebootRequired && !devIsSaving(cfgRadioId)">⚠ Save will reboot device</span>
+                      <span class="text-warning/70 text-sm" x-show="sec.rebootRequired && !devIsSaving(cfgRadioId)">⚠ Save will reboot device</span>
                     </div>
                     <div x-show="sec.name === 'position' && sec.loaded" class="col-span-1 sm:col-span-2 border border-base-300 rounded-lg p-3 mt-3">
-                      <div class="text-xs font-semibold uppercase text-base-content/50 mb-2">Fixed Position (lat / lon / alt)</div>
+                      <div class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2">Fixed Position (lat / lon / alt)</div>
                       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <label class="form-control w-full">
                           <div class="label py-1"><span class="label-text text-xs">Latitude</span></div>
@@ -175,7 +174,7 @@
               <template x-for="ch in channels" :key="ch.index">
                 <div class="collapse collapse-arrow bg-base-100 shadow">
                   <input type="checkbox" @change="onChannelToggle(ch)" />
-                  <div class="collapse-title text-md font-semibold flex items-center gap-2">
+                  <div class="collapse-title font-semibold flex items-center gap-2">
                     <span x-text="'Channel ' + ch.index"></span>
                     <span class="contents" x-html="channelRoleBadge(ch.data.role)"></span>
                     <span class="text-sm text-base-content/50" x-text="ch.data.settings?.name || ''"></span>
@@ -214,7 +213,7 @@
                       Save
                     </button>
                     <span class="text-success text-sm" x-show="opOk('owner_' + cfgRadioId)" x-transition>Saved ✓</span>
-                    <span class="text-warning/70 text-xs" x-show="ownerData?.__reboot && !devIsSaving(cfgRadioId)">⚠ Role change will reboot device</span>
+                    <span class="text-warning/70 text-sm" x-show="ownerData?.__reboot && !devIsSaving(cfgRadioId)">⚠ Role change will reboot device</span>
                   </div>
                 </div>
               </div>
@@ -247,7 +246,7 @@
             <!-- Status -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">Status</h2>
+                <h2 class="card-title">Status</h2>
                 <div class="text-sm grid grid-cols-2 gap-x-6 gap-y-1 mt-1">
                   <div class="flex justify-between">
                     <span class="opacity-60">Connection</span>
@@ -284,27 +283,27 @@
             <!-- Motor & Scan config (schema-driven) -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">Motor &amp; Scan</h2>
+                <h2 class="card-title">Motor &amp; Scan</h2>
                 <div class="flex items-center justify-between gap-2 mb-2" x-show="rotatorStatus.pwmRunPct != null">
                   <label class="text-sm">Motor speed %
                     <span class="text-xs font-mono opacity-60" x-text="rotatorStatus.pwmRun != null ? '(pwmRun ' + rotatorStatus.pwmRun + ')' : ''"></span>
                   </label>
                   <div class="flex items-center gap-1">
-                    <input type="number" class="input input-xs w-16 text-right font-mono" min="1" max="100"
+                    <input type="number" class="input input-sm w-20 text-right font-mono" min="1" max="100"
                            x-model.number="pwmRunPctInput"
                            :placeholder="rotatorStatus.pwmRunPct != null ? Math.round(rotatorStatus.pwmRunPct * 100) : 25">
                     <span class="text-xs opacity-50">%</span>
-                    <button class="btn btn-xs btn-primary" :disabled="pwmRunPctInput == null" @click="applyPwmRunPct()">Set</button>
+                    <button class="btn btn-sm btn-primary" :disabled="pwmRunPctInput == null" @click="applyPwmRunPct()">Set</button>
                   </div>
                 </div>
                 <div class="flex items-center justify-between gap-2 mb-3" x-show="rotatorStatus.pwmFreq != null">
                   <label class="text-sm">PWM frequency</label>
                   <div class="flex items-center gap-1">
-                    <input type="number" class="input input-xs w-20 text-right font-mono" min="10" max="20000"
+                    <input type="number" class="input input-sm w-24 text-right font-mono" min="10" max="20000"
                            x-model.number="pwmFreqInput"
                            :placeholder="rotatorStatus.pwmFreq ?? 1000">
                     <span class="text-xs opacity-50">Hz</span>
-                    <button class="btn btn-xs btn-primary" :disabled="pwmFreqInput == null" @click="applyPwmFreq()">Set</button>
+                    <button class="btn btn-sm btn-primary" :disabled="pwmFreqInput == null" @click="applyPwmFreq()">Set</button>
                   </div>
                 </div>
                 <div id="rotator_cfg_form" class="mt-2"></div>
@@ -319,10 +318,10 @@
             <!-- Calibration -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">Calibration</h2>
+                <h2 class="card-title">Calibration</h2>
                 <div class="flex flex-col gap-4">
                   <div>
-                    <p class="text-xs font-semibold uppercase text-base-content/50 mb-2">Yagi offset</p>
+                    <p class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2">Yagi offset</p>
                     <div class="flex items-end gap-2 flex-wrap">
                       <div class="form-control">
                         <label class="label py-0.5"><span class="label-text text-xs">Direct (0–359°)</span></label>
@@ -332,14 +331,14 @@
                       </div>
                       <button class="btn btn-sm btn-primary mb-0.5" @click="setRotatorOffset(rotatorOffsetInput)">Set</button>
                     </div>
-                    <p class="text-xs text-base-content/40 mt-1">Or use compass-guided: point YAGI to North, then:</p>
+                    <p class="text-sm text-base-content/60 mt-1">Or use compass-guided: point YAGI to North, then:</p>
                     <div class="flex gap-2 flex-wrap mt-1">
-                      <button class="btn btn-sm btn-outline btn-xs" @click="rotatorCalibrate('qmcOsStart')">1. Move to North</button>
-                      <button class="btn btn-sm btn-outline btn-xs" @click="rotatorCalibrate('qmcOsEnd')">2. Set North Here</button>
+                      <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsStart')">1. Move to North</button>
+                      <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsEnd')">2. Set North Here</button>
                     </div>
                   </div>
                   <div>
-                    <p class="text-xs font-semibold uppercase text-base-content/50 mb-2">Calibration routines (~20 s each)</p>
+                    <p class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2">Calibration routines (~20 s each)</p>
                     <div class="flex gap-2 flex-wrap">
                       <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('calMotor')">Motor</button>
                       <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('qmcCali')">Compass</button>
@@ -361,8 +360,8 @@
             <!-- Home Position -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">Home Position</h2>
-                <p class="text-xs opacity-50 mb-2">Global origin for radar bearing and distance. Not per-radio.</p>
+                <h2 class="card-title">Home Position</h2>
+                <p class="text-sm text-base-content/60 mb-2">Global origin for radar bearing and distance. Not per-radio.</p>
                 <div class="grid grid-cols-2 gap-3 max-w-sm">
                   <label class="form-control w-full">
                     <div class="label py-1"><span class="label-text text-xs">Latitude</span></div>
@@ -390,8 +389,8 @@
             <!-- Display -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">Display</h2>
-                <p class="text-xs opacity-50 mb-2">Affects all modes.</p>
+                <h2 class="card-title">Display</h2>
+                <p class="text-sm text-base-content/60 mb-2">Affects all modes.</p>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
                   <label class="form-control w-full">
                     <div class="label py-1"><span class="label-text text-xs">Max range km</span><span class="label-text-alt text-xs opacity-50">0 = auto</span></div>
@@ -413,8 +412,8 @@
             <!-- PASV mode -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">PASV — Passive traceroute</h2>
-                <p class="text-xs opacity-50 mb-2">When a node is heard, automatically traceroute it if its route data is stale.</p>
+                <h2 class="card-title">PASV — Passive traceroute</h2>
+                <p class="text-sm text-base-content/60 mb-2">When a node is heard, automatically traceroute it if its route data is stale.</p>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
                   <label class="form-control w-full">
                     <div class="label py-1"><span class="label-text text-xs">Stale after (success)</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
@@ -440,8 +439,8 @@
             <!-- ACTV mode -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">ACTV — Active targeting</h2>
-                <p class="text-xs opacity-50 mb-2">Rotator steps through nodes automatically, dwelling at each before moving on.</p>
+                <h2 class="card-title">ACTV — Active targeting</h2>
+                <p class="text-sm text-base-content/60 mb-2">Rotator steps through nodes automatically, dwelling at each before moving on.</p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
                   <label class="form-control w-full">
                     <div class="label py-1"><span class="label-text text-xs">Dwell per node</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
@@ -460,8 +459,8 @@
             <!-- SCAN mode -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">SCAN — Polar scan</h2>
-                <p class="text-xs opacity-50 mb-2">Systematic 360° sweep, recording the best SNR contact at each bearing.</p>
+                <h2 class="card-title">SCAN — Polar scan</h2>
+                <p class="text-sm text-base-content/60 mb-2">Systematic 360° sweep, recording the best SNR contact at each bearing.</p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
                   <label class="form-control w-full">
                     <div class="label py-1"><span class="label-text text-xs">Step</span><span class="label-text-alt text-xs opacity-50">°</span></div>
@@ -474,7 +473,7 @@
                            x-model.number="radarCfg.scan.dwell_sec">
                   </label>
                 </div>
-                <div class="mt-2 text-xs opacity-60 font-mono"
+                <div class="mt-2 text-sm opacity-60 font-mono"
                      x-text="'Full 360° scan: ~' + Math.ceil(360 / (radarCfg.scan?.step_deg || 5)) * (radarCfg.scan?.dwell_sec || 60) / 60 + ' min'">
                 </div>
               </div>
@@ -499,7 +498,7 @@
             <!-- SMTP config -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">Email (SMTP)</h2>
+                <h2 class="card-title">Email (SMTP)</h2>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
                   <label class="form-control">
                     <div class="label py-0"><span class="label-text text-xs">SMTP host</span></div>
@@ -564,7 +563,7 @@
             <!-- Alert rules table -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title text-base">Alert Rules</h2>
+                <h2 class="card-title">Alert Rules</h2>
                 <div class="overflow-x-auto mt-1">
                   <table class="table table-sm">
                     <thead>
@@ -604,7 +603,7 @@
                                    :value="r.cooldown_minutes"
                                    @change="updateAlertRule(r.type, { cooldown_minutes: Number($event.target.value) })">
                           </td>
-                          <td class="text-xs opacity-60 font-mono"
+                          <td class="opacity-60 font-mono"
                               x-text="r.last_sent ? new Date(r.last_sent * 1000).toLocaleString() : 'never'"></td>
                         </tr>
                       </template>
