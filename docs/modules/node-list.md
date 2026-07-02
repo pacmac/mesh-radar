@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 5464cd57beb218c867094be80842e0365cef19227c6816eebaf6e618b6d5c57b
+source_hash: 966af0535393ae9c28acdc626cd76abc5b6503c40e1d0a60b62a59ac60ef79aa
 updated: 2026-06-30
 ---
 
@@ -184,3 +184,15 @@ restoreScanNodes(nodes)  — called on restart when scan was in progress
 ## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
 
 Device attribution uses `ev.node_id ?? ev.addr` (V2 removed `device`); the scan-time source filter compares `ev.addr` against the rotator MAC.
+
+## Phantom-node guard (task `phantom-nodes-regression`)
+
+`handleNodeUpdate` (non-scan path) updates EXISTING cache entries only —
+`node_info` replays the radio's whole nodedb on every BLE sync, and creating
+entries from it put never-heard nodes on the radar and in the ACTV rotator
+queue (the recurring phantom-target bug; regressed 2026-07-02 by the
+node_info routing fix, caught same day: ACTV targeted GZG/OMT while absent
+from the node list). Cache-entry creation is reserved for heard packets
+(`touchLastHeard`), the opt-in per-device boot seed, and confirmed scan
+contacts. Live `node_info` still enriches heard nodes with
+rssi/snr/hops/via_mqtt/device_metrics — the node-filter fields keep flowing.

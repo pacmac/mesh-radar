@@ -96,7 +96,12 @@ class NodeList extends EventEmitter {
       return;
     }
 
-    // PASV/ACTV: tag _devices from ev.device — the radio that received this event
+    // PASV/ACTV: enrich EXISTING entries only. node_info replays the radio's
+    // whole nodedb on BLE sync — creating entries here puts never-heard nodes
+    // on the radar and the ACTV rotator queue (the recurring phantom-target
+    // bug). Liveness (entry creation) is reserved for heard packets
+    // (touchLastHeard), the opt-in boot seed, and confirmed scan contacts.
+    if (!this._cache.has(node.num)) return;
     const existing = this._cache.get(node.num) ?? {};
     const prevDevs = existing._devices ?? (existing._device ? [existing._device] : []);
     const devices = newDev && !prevDevs.includes(newDev) ? [...prevDevs, newDev] : prevDevs;
