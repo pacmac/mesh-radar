@@ -197,19 +197,6 @@
         <span class="font-mono text-xs tabular-nums hidden sm:inline text-info"
               x-show="rotatorStatus.az != null"
               x-text="Number(rotatorStatus.az).toFixed(1) + '°'"></span>
-        <!-- BLE signal -->
-        <div class="tooltip tooltip-bottom" :data-tip="'BLE link ' + (primaryDevBleState.signal_pct != null ? primaryDevBleState.signal_pct + '%' : 'n/a') + ' · ' + (primaryDevBleState.ble_state || 'offline')">
-          <div class="flex items-center gap-1.5 px-2 py-1 rounded border" :class="primaryDevBleState.ble_state === 'ready' ? 'border-success/40' : 'border-error/40'">
-            <svg width="16" height="13" viewBox="0 0 16 13" class="shrink-0">
-              <rect x="0"  y="9"  width="3" height="4"  rx="0.8" :fill="signalBarFill(1)"/>
-              <rect x="4"  y="6"  width="3" height="7"  rx="0.8" :fill="signalBarFill(2)"/>
-              <rect x="8"  y="3"  width="3" height="10" rx="0.8" :fill="signalBarFill(3)"/>
-              <rect x="12" y="0"  width="3" height="13" rx="0.8" :fill="signalBarFill(4)"/>
-            </svg>
-            <span class="text-xs font-display font-bold tracking-widest" :class="primaryDevBleState.ble_state === 'ready' ? 'text-success' : 'text-error'">BLE</span>
-            <span class="inline-block w-1.5 h-1.5 rounded-full" :class="primaryDevBleState.ble_state === 'ready' ? 'bg-success animate-pulse' : 'bg-error'"></span>
-          </div>
-        </div>
         <!-- Per-device not-ready indicator — all devices shown in header -->
         <template x-for="dev in availableDevices.filter(d => { const k = d.node_id ?? d.addr; const s = devBleState(k); return s && s !== 'ready' && s !== 'offline'; })" :key="dev.addr">
           <div class="tooltip tooltip-bottom" :data-tip="(dev.node_id ?? dev.addr) + ' — ' + devBleLabel(dev.node_id ?? dev.addr)"

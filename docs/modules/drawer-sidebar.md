@@ -73,3 +73,12 @@ smoke-checked after the `info` removal.
 Footer per-device signal bars use `pctBars(deviceBleStates[id]?.signal_pct)`
 (V2 removed raw BLE dBm). Navbar BLE chip (index.html) likewise: bars and
 tooltip driven by `signal_pct` via `signalBarFill`.
+
+## Navbar BLE chip removed (task `navbar-ble-declutter`)
+
+The navbar BLE signal chip is removed: it displayed only the PRIMARY radio's
+link while reading as overall BLE health — redundant and misleading with N
+radios. BLE health surfaces: per-device bars + state in the drawer footer,
+per-device amber warning badges in the navbar whenever any radio is not
+ready, and per-card bars on the Devices page. `signalBarFill` deleted with
+its sole consumer.

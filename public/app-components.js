@@ -79,16 +79,6 @@ export const componentsMixin = {
     return `<span class="sig-bars ${cls}" title="BLE link ${pct}%">${bars}</span>`;
   },
 
-  // Navbar BLE bars — driven by V2 signal_pct
-  signalBarFill(bar) {
-    const pct  = this.primaryDevBleState?.signal_pct;
-    const bars = pct == null ? 1 : pct > 75 ? 4 : pct > 50 ? 3 : pct > 25 ? 2 : 1;
-    if (bar > bars) return 'oklch(var(--bc)/0.12)';
-    if (bars >= 3)  return 'oklch(var(--su))';
-    if (bars >= 2)  return 'oklch(var(--wa))';
-    return 'oklch(var(--er))';
-  },
-
   // ── Status badges ────────────────────────────────────────────────────────
   devStateBadge(nodeId) {
     const dev    = this.deviceBleStates[nodeId];
