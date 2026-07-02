@@ -186,6 +186,7 @@
                           <th>Time</th>
                           <th>Node</th>
                           <th>Type</th>
+                          <th title="First relay — the hop the Headroom column actually measures">Via</th>
                           <th class="text-right">Target</th>
                           <th class="text-right" x-show="deviceConfigs[perfDev()]?.is_rotator">Az</th>
                           <th class="text-right">Health</th>
@@ -206,6 +207,9 @@
                                     :class="row.direct ? 'badge-success' : 'badge-info'"
                                     x-text="row.direct ? 'direct' : '1st hop'"></span>
                             </td>
+                            <td class="font-mono text-xs text-base-content/70"
+                                :title="row.direct ? 'Direct — Headroom is measured at the target itself' : 'First relay — the Headroom column measures THIS hop, not the target'"
+                                x-text="row.direct ? '—' : ((row.firstHopName || (row.firstHopNum != null ? '!' + (row.firstHopNum >>> 0).toString(16).slice(-4) : '?')) + (row.firstHopDistKm != null ? ' · ' + row.firstHopDistKm.toFixed(1) + 'km' : ''))"></td>
                             <td class="font-mono text-right text-base-content/60"
                                 :title="row.direct
                                   ? 'target distance'
@@ -227,7 +231,7 @@
                           </tr>
                         </template>
                         <tr x-show="!perfLoading && perfHistory.length === 0">
-                          <td colspan="9" class="text-center text-base-content/30 italic py-8">No history yet</td>
+                          <td colspan="10" class="text-center text-base-content/30 italic py-8">No history yet</td>
                         </tr>
                       </tbody>
                     </table>

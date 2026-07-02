@@ -1,7 +1,7 @@
 ---
 module: tab-perf
 source: public/partials/tab-perf.html
-source_hash: ffd481c47a85ca894a3e5b9140de35c93df5c1c44febdcd8a2c3eb224ccc7424
+source_hash: a4b980b25625c82f7ae58a4ff16669cc3d7235887b4c2a011826a15590be91bb
 updated: 2026-07-02
 ---
 
@@ -45,3 +45,10 @@ no inline styles remain.
 
 Playwright both themes (guide §8): stat grid, charts render, history table
 populated; data check — table rows match perfHistory state; 0 errors.
+
+## Via column (task perf-honesty, step 1)
+
+History table shows the first-hop node (short name or !id fallback) and its
+distance — the hop the Headroom column actually measures. Direct rows show
+an em-dash. Added after the distance-laundering finding: first-hop rows
+displayed the far target distance while measuring the nearby relay.
