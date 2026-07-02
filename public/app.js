@@ -42,7 +42,6 @@ function dashboard() {
     _readbackQueues:  {},
 
     // -- Info -----------------------------------------------------------------
-    info:          { my_info: {}, metadata: {} },
     nodeSelf:      {},
     loraCfg:       {},
     packetSources: [],

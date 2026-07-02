@@ -188,14 +188,13 @@
 
       <!-- Mobile title + permanent spacer -->
       <div class="flex-1 flex items-center justify-center gap-3">
-        <span class="text-base font-bold tracking-wide lg:hidden">mesh radar</span>
+        <span class="text-base font-display font-bold tracking-wide uppercase lg:hidden">mesh radar</span>
       </div>
 
       <!-- RIGHT: az readout + status badges -->
       <div class="flex-none flex items-center gap-2">
         <!-- Az readout -->
-        <span class="font-mono text-xs tabular-nums hidden sm:inline"
-              style="color:rgba(80,200,255,0.85)"
+        <span class="font-mono text-xs tabular-nums hidden sm:inline text-info"
               x-show="rotatorStatus.az != null"
               x-text="Number(rotatorStatus.az).toFixed(1) + '°'"></span>
         <!-- BLE signal -->
@@ -207,14 +206,14 @@
               <rect x="8"  y="3"  width="3" height="10" rx="0.8" :fill="signalBarFill(3)"/>
               <rect x="12" y="0"  width="3" height="13" rx="0.8" :fill="signalBarFill(4)"/>
             </svg>
-            <span class="text-xs font-bold tracking-widest" :class="primaryDevBleState.ble_state === 'ready' ? 'text-success' : 'text-error'" style="font-family:'Oxanium',sans-serif;font-size:0.62rem">BLE</span>
+            <span class="text-xs font-display font-bold tracking-widest" :class="primaryDevBleState.ble_state === 'ready' ? 'text-success' : 'text-error'">BLE</span>
             <span class="inline-block w-1.5 h-1.5 rounded-full" :class="primaryDevBleState.ble_state === 'ready' ? 'bg-success animate-pulse' : 'bg-error'"></span>
           </div>
         </div>
         <!-- Per-device not-ready indicator — all devices shown in header -->
         <template x-for="dev in availableDevices.filter(d => { const k = d.node_id ?? d.addr; const s = devBleState(k); return s && s !== 'ready' && s !== 'offline'; })" :key="dev.addr">
           <div class="tooltip tooltip-bottom" :data-tip="(dev.node_id ?? dev.addr) + ' — ' + devBleLabel(dev.node_id ?? dev.addr)"
-               @click="setNav('devices')" style="cursor:pointer">
+               @click="setNav('devices')" class="cursor-pointer">
             <div class="badge badge-warning gap-1 text-xs animate-pulse">
               <span class="font-mono" x-text="deviceLabel(dev.node_id ?? dev.addr)"></span>
               <span x-text="devBleLabel(dev.node_id ?? dev.addr)"></span>

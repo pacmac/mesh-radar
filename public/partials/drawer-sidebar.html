@@ -8,8 +8,8 @@
         <div class="flex items-center gap-2">
           <span class="text-xl">📡</span>
           <div class="flex flex-col leading-tight flex-1">
-            <span class="text-sm font-bold tracking-widest uppercase" style="font-family:'Oxanium',sans-serif">mesh radar</span>
-            <span class="text-xs text-base-content/50" x-text="info.metadata.firmware_version ? ('fw ' + info.metadata.firmware_version) : 'dashboard'"></span>
+            <span class="text-sm font-display font-bold tracking-widest uppercase">mesh radar</span>
+            <span class="text-xs text-base-content/50" x-text="primaryDevBleState.firmware_version ? ('fw ' + primaryDevBleState.firmware_version) : 'dashboard'"></span>
           </div>
           <!-- Desktop collapse button -->
           <button class="btn btn-ghost btn-xs hidden lg:flex" @click="sidebarPinned = false; persistSet('sidebarPinned', false)" title="Collapse sidebar">
@@ -23,7 +23,7 @@
         </div>
         <!-- Device selector (shown when multiple devices) -->
         <div class="mt-2" x-show="availableDevices.length > 1">
-          <select class="select select-xs select-bordered w-full font-mono" x-model="activeNodeId" @change="selectDevice(activeNodeId)">
+          <select class="select select-sm select-bordered w-full font-mono" x-model="activeNodeId" @change="selectDevice(activeNodeId)">
             <template x-for="d in availableDevices" :key="d.node_id">
               <option :value="d.node_id" x-text="deviceLabel(d.node_id)"></option>
             </template>
@@ -113,7 +113,7 @@
     </aside>
 
     <!-- Toast notifications — must be inside x-data scope -->
-    <div class="toast toast-top toast-end z-[9999] pointer-events-none" style="top:4rem">
+    <div class="toast toast-top toast-end z-[9999] pointer-events-none top-16">
       <template x-for="t in toasts" :key="t.id">
         <div class="alert shadow-lg text-sm py-2 px-3 pointer-events-auto flex items-start gap-2 max-w-xs"
              :class="t.type === 'error' ? 'alert-error' : 'alert-success'"

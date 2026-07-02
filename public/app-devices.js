@@ -33,7 +33,6 @@ export const devicesMixin = {
   },
 
   _clearDeviceState() {
-    this.info = { my_info: {}, metadata: {} };
     this.nodes = [];
     this.nodeSelf = {};
     this.nodeTotal = 0;

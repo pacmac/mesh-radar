@@ -87,21 +87,6 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-/* LEGACY(utility-selector, STYLE_GUIDE §7): replace with semantic
-   classes in the navbar refactor task */
-.navbar .text-lg {
-  font-family: 'Oxanium', sans-serif;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-/* LEGACY(utility-selector, STYLE_GUIDE §7) */
-.navbar .text-xs {
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 /* ── Status badges ───────────────────────────────────────── */
 .badge {
   font-family: 'Oxanium', sans-serif;
@@ -301,11 +286,6 @@ body {
 
 .table-zebra tbody tr:nth-child(even) {
   background: var(--overlay-1);
-}
-
-/* LEGACY(utility-selector, STYLE_GUIDE §7) */
-.overflow-x-auto.max-h-\[70vh\] {
-  overflow-y: auto;
 }
 
 /* sticky table header */
@@ -556,15 +536,6 @@ footer {
 }
 
 .navbar { position: relative; }
-
-/* ── Live WS badge glow ───────────────────────────────────── */
-/* LEGACY(utility-selector, STYLE_GUIDE §7): selecting on x-text
-   content is fragile. Remove in the navbar refactor task. */
-.badge-primary.badge[x-text*="live"] {
-  color: var(--sig);
-  border-color: var(--sig);
-  box-shadow: 0 0 10px var(--sig-glow);
-}
 
 /* ── Section kind badge ──────────────────────────────────── */
 .badge-ghost {

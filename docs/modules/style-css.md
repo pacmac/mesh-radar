@@ -1,7 +1,7 @@
 ---
 module: style-css
 source: public/style.css
-source_hash: 1fd14040b8ede8ec490b51648e350babfe92cf1230c32eb28e18defa0225d8b6
+source_hash: b7d9181027567a30a30de4e336c2d93dc7e38d22e92f481f48292b6bbe0382bc
 updated: 2026-07-02
 ---
 
@@ -37,14 +37,11 @@ must comply with the guide and update this spec's hash.
 
 ## Known debt — marked in-file
 
-Rules tagged `/* LEGACY(utility-selector, STYLE_GUIDE §7) */` style through
-Tailwind utility-class selectors and are scheduled for removal by the page
-refactor task named in each tag: `.navbar .text-lg`, `.navbar .text-xs`,
-`.overflow-x-auto.max-h-\[70vh\]`, `.badge-primary.badge[x-text*="live"]`.
+All LEGACY utility-class-selector rules have been removed (`overview-refactor`
+removed the `.text-base-content\/40` mono hijack and dead feed rules;
+`navbar-drawer-refactor` removed `.navbar .text-lg`, `.navbar .text-xs`,
+`.badge-primary.badge[x-text*="live"]`, `.overflow-x-auto.max-h-\[70vh\]`).
 No new utility-selector rules may be added.
-
-Removed by `overview-refactor`: `.text-base-content\/40` (the global mono
-hijack) and the dead `.overflow-y-auto.max-h-\[480px\]` rules.
 
 ## Invariants
 
