@@ -1,7 +1,7 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: 2888ca8b614958487b323eec3c4485c3b4a0b98e973bdc5782e2e71cb5bdc79f
+source_hash: ded198f987a27178e751e76af55930127ec82006a1e5317432f37c2f3c48af28
 updated: 2026-07-02
 ---
 
@@ -121,7 +121,28 @@ Section cards are `bg-base-200 rounded-xl p-3` with an uppercase
    (conditional), Disconnect, Remove (conditional); auto-purge checkbox +
    time + last-run.
 
-## Bug fix in this revision
+## Consistency pass (task `devices-consistency`)
+
+**Telemetry rebind (F1 pattern):** the four main telemetry cells (Hardware,
+Uptime, Battery, Ch util/Air TX) and the OTA hw_model fallbacks previously
+read `nodeById(dev.node_id)` — the *filtered* node list — so they emptied
+whenever node filters excluded the radios. They now bind to
+`deviceBleStates[dev.node_id]` pushed fields (`hw_model`, `uptime_s`,
+`battery_level`, `voltage`, `channel_utilization`, `air_util_tx`).
+Nodes-seen / packets (local_stats) and temp/pressure (environment_metrics)
+cells keep `nodeById` — no per-device pushed source exists — and hide
+gracefully when absent.
+
+**Control sizes (guide §5):** section-card controls move from `-xs` to `-sm`
+(Device Config inputs/select/saves/checkboxes, Radio Config buttons, Range
+Test select + Start/Stop, Maintenance buttons + auto-purge controls, OTA
+upload + Flash). Dense repeating contexts keep `-xs`: OTA file-list rows
+(select/prepare/delete), GitHub-fetch panel internals, header refresh icon.
+
+**Text roles:** stats row and telemetry values to `text-sm` (data role);
+cell keys stay caption (`text-xs text-base-content/40`).
+
+## Bug fix in the grid-panel revision
 
 The step-7 draft added a "Refresh" button calling `loadDevices()` — **that
 function does not exist** (device list is WS-pushed). The button is removed;
