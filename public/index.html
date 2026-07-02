@@ -221,12 +221,6 @@
             </div>
           </div>
         </template>
-        <div class="tooltip tooltip-bottom" data-tip="MQTT proxy to broker">
-          <div class="badge badge-sm gap-1" :class="mqttProxy ? 'badge-success' : 'badge-ghost'">
-            <span class="inline-block w-2 h-2 rounded-full" :class="mqttProxy ? 'bg-success-content animate-pulse' : ''"></span>
-            MQTT
-          </div>
-        </div>
         <div class="badge badge-sm badge-info" x-text="nodeCount + ' nodes'"></div>
         <template x-if="perfScore() != null">
           <div class="badge badge-sm font-mono cursor-pointer"

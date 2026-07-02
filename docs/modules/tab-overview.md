@@ -1,7 +1,7 @@
 ---
 module: tab-overview
 source: public/partials/tab-overview.html
-source_hash: 5238e21e1492aea8e75d856a1be0560d9b96a3ce5f7201f3f0900f4540b7d25c
+source_hash: 59eff889e3d126e0e2af908fe3d77085dad190f99145d69970d2ff2020e72735
 updated: 2026-07-02
 ---
 
@@ -14,22 +14,48 @@ Environment instrument, Live Event Feed, MQTT Proxy card. Presentation only.
 
 ## Scope
 
-**STYLE_GUIDE.md compliance refactor (task `overview-refactor`).** Zero logic
-changes — every Alpine expression, handler, and data binding is preserved
-verbatim. Presentation classes only.
+Two completed tasks govern this file:
 
-Files in scope:
-- `public/partials/tab-overview.html` — rewrite of all presentation markup
-- `public/style.css` — add `.instrument-header`, `.instrument-screen`,
-  `.instrument-btn` (+ `--active`, `--amber`, `--red` variants), `--trace-red`
-  token (both themes not required — instrument tokens are theme-invariant per
-  STYLE_GUIDE §6); delete two LEGACY rules (see below)
-- `docs/modules/style-css.md` — updated contents list + hash
+**1. `overview-refactor`** — STYLE_GUIDE compliance (instrument components,
+type roles). Presentation classes only.
+
+**2. `overview-data-fix`** — audit findings F1+F2:
+- Stats bar rebound from the dead `nodeSelf` derivation to
+  `primaryDevBleState` (backend-pushed `device_list`/`device_state` fields:
+  `long_name`, `hw_model`, `firmware_version`, `battery_level`, `voltage`,
+  `uptime_s`, `channel_utilization`, `air_util_tx`, `node_count`) and to
+  `nodeCount`/`nodeTotal` (backend-pushed `node_list`)
+- MQTT Proxy card removed entirely (Peter's decision, 2026-07-02); the Live
+  Event Feed row becomes single full-width column
+- `mqttProxy`/`mqttCfg` state removed (`app.js` declarations,
+  `app-devices.js` `_clearDeviceState` resets) — the card was the only reader
+- `app-ws.js` node_list handler: when `my_node_num` is known but the self
+  node is absent from the (filtered) lists, still seed `nodeSelf.num` so
+  `tilt_update`/`telemetry_update` matching works regardless of node filters
+
+Files in scope (data-fix): `public/partials/tab-overview.html`,
+`public/app.js`, `public/app-devices.js`, `public/app-ws.js`,
+`public/index.html` (navbar MQTT chip removed — fed by the same dead
+`mqttProxy` state; discovered in Phase 4 when its binding threw after the
+state removal).
 
 Files explicitly NOT changed:
-- `public/app-telemetry.js`, `public/app.js` — all chart math, tilt math, and
-  JS-generated SVG label functions untouched
+- `public/app-telemetry.js` — chart/tilt math untouched
+- `public/partials/drawer-sidebar.html` — its `info.metadata.firmware_version`
+  read stays; `info` remains declared until the navbar/drawer task
+- `public/style.css` (this task)
 - All other partials
+
+### Stats bar bindings (after data-fix)
+
+| Stat | Value | Desc |
+|---|---|---|
+| Device | `primaryDevBleState.long_name \|\| '–'` | `hw_model` + `firmware_version` |
+| Battery | `battery_level` % | `voltage` V |
+| Uptime | `fmtUptime(uptime_s)` | since last boot |
+| Channel Util | `channel_utilization` % | air tx `air_util_tx` % |
+| Mesh Nodes | `nodeCount + ' shown'` | `nodeTotal + ' total'` |
+| Config | `ble_state === 'ready' ? 'complete' : 'syncing…'` (unchanged) | `node_count + ' in radio nodedb'` (label clarified) |
 
 ## Changes by section
 

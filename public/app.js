@@ -44,8 +44,6 @@ function dashboard() {
     // -- Info -----------------------------------------------------------------
     info:          { my_info: {}, metadata: {} },
     nodeSelf:      {},
-    mqttProxy:     false,
-    mqttCfg:       {},
     loraCfg:       {},
     packetSources: [],
 

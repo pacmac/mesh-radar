@@ -4,33 +4,33 @@
           <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-100 shrink-0">
             <div class="stat">
               <div class="stat-title">Device</div>
-              <div class="stat-value" x-text="(nodeSelf.user && nodeSelf.user.long_name) || '–'"></div>
-              <div class="stat-desc" x-text="info.metadata.hw_model || ''"></div>
+              <div class="stat-value" x-text="primaryDevBleState.long_name || '–'"></div>
+              <div class="stat-desc" x-text="[primaryDevBleState.hw_model, primaryDevBleState.firmware_version].filter(Boolean).join(' · ')"></div>
             </div>
             <div class="stat">
               <div class="stat-title">Battery</div>
-              <div class="stat-value" x-text="(nodeSelf.device_metrics?.battery_level ?? '–') + '%'"></div>
-              <div class="stat-desc" x-text="nodeSelf.device_metrics ? (nodeSelf.device_metrics.voltage.toFixed(2) + ' V') : ''"></div>
+              <div class="stat-value" x-text="(primaryDevBleState.battery_level ?? '–') + '%'"></div>
+              <div class="stat-desc" x-text="primaryDevBleState.voltage != null ? (Number(primaryDevBleState.voltage).toFixed(2) + ' V') : ''"></div>
             </div>
             <div class="stat">
               <div class="stat-title">Uptime</div>
-              <div class="stat-value" x-text="fmtUptime(nodeSelf.device_metrics?.uptime_seconds)"></div>
+              <div class="stat-value" x-text="fmtUptime(primaryDevBleState.uptime_s)"></div>
               <div class="stat-desc">since last boot</div>
             </div>
             <div class="stat">
               <div class="stat-title">Channel Util</div>
-              <div class="stat-value" x-text="(nodeSelf.device_metrics?.channel_utilization?.toFixed(1) ?? '–') + '%'"></div>
-              <div class="stat-desc" x-text="'air tx ' + (nodeSelf.device_metrics?.air_util_tx?.toFixed(2) ?? '–') + '%'"></div>
+              <div class="stat-value" x-text="(primaryDevBleState.channel_utilization != null ? Number(primaryDevBleState.channel_utilization).toFixed(1) : '–') + '%'"></div>
+              <div class="stat-desc" x-text="'air tx ' + (primaryDevBleState.air_util_tx != null ? Number(primaryDevBleState.air_util_tx).toFixed(2) : '–') + '%'"></div>
             </div>
             <div class="stat">
               <div class="stat-title">Mesh Nodes</div>
-              <div class="stat-value" x-text="(nodeSelf.local_stats?.num_online_nodes ?? '–') + ' online'"></div>
-              <div class="stat-desc" x-text="(nodeSelf.local_stats?.num_total_nodes != null ? nodeSelf.local_stats.num_total_nodes + ' total' : '–')"></div>
+              <div class="stat-value" x-text="(nodeCount ?? '–') + ' shown'"></div>
+              <div class="stat-desc" x-text="(nodeTotal != null ? nodeTotal + ' total' : '–')"></div>
             </div>
             <div class="stat">
               <div class="stat-title">Config</div>
               <div class="stat-value" :class="primaryDevBleState.ble_state === 'ready' ? 'text-success' : 'text-warning'" x-text="primaryDevBleState.ble_state === 'ready' ? 'complete' : 'syncing…'"></div>
-              <div class="stat-desc" x-text="(primaryDevBleState.node_count ?? nodeCount ?? 0) + ' nodes in db'"></div>
+              <div class="stat-desc" x-text="(primaryDevBleState.node_count ?? 0) + ' in radio nodedb'"></div>
             </div>
           </div>
 
@@ -222,10 +222,10 @@
 
           </div><!-- end row 1: tilt + env -->
 
-          <!-- Row 2: Live Feed + MQTT Proxy -->
-          <div class="flex-1 min-h-0 grid lg:grid-cols-2 gap-4">
+          <!-- Row 2: Live Feed (full width) -->
+          <div class="flex-1 min-h-0 flex flex-col gap-4">
 
-          <!-- Live Event Feed (half width) -->
+          <!-- Live Event Feed -->
           <div class="card bg-base-100 shadow flex flex-col h-full overflow-hidden">
             <div class="card-body flex flex-col flex-1 min-h-0 py-3">
               <div class="flex items-center justify-between mb-1">
@@ -264,30 +264,6 @@
             </div>
           </div>
 
-          <!-- MQTT Proxy (half width) -->
-          <div class="card bg-base-100 shadow h-full overflow-y-auto">
-            <div class="card-body">
-              <h2 class="card-title">MQTT Proxy</h2>
-              <div class="text-sm flex flex-col gap-2">
-                <div class="flex justify-between"><span class="text-base-content/60">Status</span>
-                  <span class="badge badge-sm" :class="mqttProxy ? 'badge-success' : 'badge-ghost'" x-text="mqttProxy ? 'connected' : 'inactive'"></span>
-                </div>
-                <div class="flex justify-between"><span class="text-base-content/60">Broker</span><span class="font-mono" x-text="mqttCfg.address || '–'"></span></div>
-                <div class="flex justify-between"><span class="text-base-content/60">Root topic</span><span class="font-mono" x-text="mqttCfg.root || '–'"></span></div>
-                <div class="flex justify-between"><span class="text-base-content/60">Encryption</span><span x-text="mqttCfg.encryption_enabled ? 'on' : 'off'"></span></div>
-                <div class="flex justify-between"><span class="text-base-content/60">JSON output</span><span x-text="mqttCfg.json_enabled ? 'on' : 'off'"></span></div>
-              </div>
-              <div class="divider my-1"></div>
-              <h3 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-1">Node identity</h3>
-              <div class="text-sm flex flex-col gap-2">
-                <div class="flex justify-between"><span class="text-base-content/60">Node ID</span><span class="font-mono" x-text="(nodeSelf.user && nodeSelf.user.id) || '–'"></span></div>
-                <div class="flex justify-between"><span class="text-base-content/60">Num</span><span class="font-mono" x-text="info.my_info.my_node_num ?? '–'"></span></div>
-                <div class="flex justify-between"><span class="text-base-content/60">Region</span><span x-text="loraCfg.region || '–'"></span></div>
-                <div class="flex justify-between"><span class="text-base-content/60">Modem preset</span><span x-text="loraCfg.modem_preset || '–'"></span></div>
-              </div>
-            </div>
-          </div>
-
-          </div><!-- end row 2: live feed + mqtt -->
+          </div><!-- end row 2: live feed -->
 
         </div>

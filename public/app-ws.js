@@ -251,6 +251,10 @@ export const wsMixin = {
             tilt:                found.tilt                ?? this.nodeSelf?.tilt,
             environment_metrics: found.environment_metrics ?? this.nodeSelf?.environment_metrics,
           };
+        } else if (this.nodeSelf?.num !== myNum) {
+          // Self node can be excluded by node filters — keep num seeded so
+          // tilt_update/telemetry_update from_num matching still works.
+          this.nodeSelf = { ...this.nodeSelf, num: myNum };
         }
       }
       this.sortNodes(this.nodeSort.key, true);
