@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 2ad792a1d1c793a68d022581996fdd101e89d26af0df753c7821f4c444d03ee9
+source_hash: 54d045479c1e03f26e6c95ff2e3267b1909024828ecb10c54aac967590323678
 updated: 2026-06-30
 ---
 
@@ -145,3 +145,9 @@ Body: `{ [key]: value, ... }`. Updates multiple keys at once.
 - Device-specific config — `device-config.js` router owns that
 - Alert rules and SMTP config — `index.js` directly manages those endpoints
 - Bridge (mesh-gw) config — proxied by `index.js` to the bridge REST API
+
+## Note (task `radar-display`)
+
+`radar.log_scale` defaults to `true` — selects the adaptive quantile radial
+scale (see docs/modules/app-radar.md); `false` is the linear opt-out. The
+Config → Radar toggle is labelled "Adaptive scale".

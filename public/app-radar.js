@@ -214,12 +214,51 @@ export const radarMixin = {
     }
   },
 
+  // Piecewise-linear quantile scale: control points at the node-distance
+  // quartiles so screen space follows the actual distribution (the cluster
+  // band gets ~half the radius wherever it sits). NICE-snapped + hysteresis
+  // so the plot doesn't jitter as nodes come and go. Display arithmetic
+  // derived from the pushed node list — no state decisions.
+  _radarScaleCtrl(maxKm) {
+    const kms = this.radarNodes
+      .map(n => n._km).filter(k => k != null && k > 0 && k <= maxKm)
+      .sort((a, b) => a - b);
+    if (new Set(kms.map(k => k.toFixed(1))).size < 4) return null; // too few — caller falls back
+    const q = f => kms[Math.min(kms.length - 1, Math.floor(f * kms.length))];
+    // Round for readable ring labels, but never snap so hard that quartiles
+    // inside the cluster band collapse together (that destroys adaptivity).
+    const snap = km => km >= 10 ? Math.round(km) : Math.round(km * 2) / 2;
+    let pts = [q(0.25), q(0.5), q(0.75)].map(snap).filter(k => k < maxKm);
+    pts = [...new Set(pts)];
+    if (!pts.length) return null;
+    const prev = this._radarScalePts;
+    // Hysteresis: keep the previous control points unless one drifts >15%
+    if (prev && prev.maxKm === maxKm && prev.kms.length === pts.length &&
+        prev.kms.every((k, i) => Math.abs(k - pts[i]) / k <= 0.15)) {
+      return prev;
+    }
+    // Radius fractions spread evenly up to 0.95, one segment per control point
+    const fr = pts.map((_, i) => 0.28 + (0.76 - 0.28) * (i / Math.max(1, pts.length - 1)));
+    const next = { maxKm, kms: pts, fracs: pts.length === 1 ? [0.52] : fr };
+    this._radarScalePts = next;
+    return next;
+  },
+
   _radarNorm(km, maxKm) {
     if (!km || !maxKm) return 0;
-    const f = this.radarLogScale
-      ? Math.pow(km / maxKm, 0.4)
-      : km / maxKm;
-    return Math.min(f, 1.0);
+    if (!this.radarLogScale) return Math.min(km / maxKm, 1.0);
+    const ctrl = this._radarScaleCtrl(maxKm);
+    if (!ctrl) return Math.min(Math.pow(km / maxKm, 0.4), 1.0); // sparse fallback
+    // Piecewise-linear through (0,0) … (kms[i], fracs[i]) … (maxKm, 0.95)
+    const xs = [0, ...ctrl.kms, maxKm];
+    const ys = [0, ...ctrl.fracs, 0.95];
+    for (let i = 1; i < xs.length; i++) {
+      if (km <= xs[i]) {
+        const t = (km - xs[i - 1]) / (xs[i] - xs[i - 1] || 1);
+        return Math.min(ys[i - 1] + t * (ys[i] - ys[i - 1]), 1.0);
+      }
+    }
+    return 1.0;
   },
 
   _drawRadarBg(maxKm) {
@@ -237,6 +276,11 @@ export const radarMixin = {
     const NICE_RING = [0.5, 1, 2, 5, 10, 20, 25, 50, 75, 100, 150, 200, 250, 500, 750, 1000, 2000];
     const ringKms = this.radarLogScale
       ? (() => {
+          // Rings AT the adaptive-scale control distances: ~equal screen
+          // spacing whose km labels reveal the distribution (rings crowd in
+          // km where nodes crowd — space follows the cluster).
+          const ctrl = this._radarScaleCtrl(maxKm);
+          if (ctrl) return [...ctrl.kms, maxKm];
           return [0.25, 0.5, 0.75, 1.0].map(f => {
             const rawKm = maxKm * Math.pow(f, 2.5);
             return NICE_RING.find(n => n >= rawKm * 0.7) ?? Math.round(rawKm);
@@ -299,7 +343,7 @@ export const radarMixin = {
     const nodes = this.radarNodes;
     const CX = 300, CY = 300, R = 256;
     const G4 = 'rgba(0,255,80,0.95)', AMBER = 'rgba(255,200,40,0.90)', LABEL = 'rgba(255,140,0,0.55)';
-    const CLUSTER_R = 22, BASE_DIAG = 12, STEP_DIAG = 14, HOR_LEN = 16;
+    const BASE_DIAG = 12, STEP_DIAG = 14, HOR_LEN = 16;
     const selectedNum   = this.radarSelected?.num;
     const lastHeardNum  = this.lastHeardNum;
     // ── [V1] LEGACY ──────────────────────────────────────────────────────────
@@ -314,24 +358,63 @@ export const radarMixin = {
       if (node._az == null) return null;
       const az = node._az * Math.PI / 180;
       const normKm = node._km != null ? this._radarNorm(node._km, maxKm) : 0.92;
-      return { x: CX + Math.sin(az) * normKm * R, y: CY - Math.cos(az) * normKm * R, diagLen: BASE_DIAG, isRight: null };
+      return { x: CX + Math.sin(az) * normKm * R, y: CY - Math.cos(az) * normKm * R, diagLen: BASE_DIAG, armAngle: 45 };
     });
-    const clusterOf = new Array(npos.length).fill(-1);
-    for (let i = 0; i < npos.length; i++) {
-      if (!npos[i] || clusterOf[i] >= 0) continue;
-      const members = [i]; clusterOf[i] = i;
-      for (let j = i + 1; j < npos.length; j++) {
-        if (!npos[j] || clusterOf[j] >= 0) continue;
-        const dx = npos[i].x - npos[j].x, dy = npos[i].y - npos[j].y;
-        if (dx * dx + dy * dy < CLUSTER_R * CLUSTER_R) { members.push(j); clusterOf[j] = i; }
+
+    // ── Iterative label placement: constant arm length, rotating angle ──────
+    // Deterministic order (distance then num); per-node angle memory so a
+    // settled label only re-solves when a NEW plot conflicts with it.
+    if (!this._radarLabelAngles) this._radarLabelAngles = new Map();
+    const placedBoxes = [];
+    const CHAR_W = 6.5, TXT_H = 12;
+    const labelBox = (p, angleDeg, len, text) => {
+      // Arm: diagonal at angleDeg (0=up, clockwise) then horizontal cap away
+      // from the plot; text hangs off the cap end.
+      const rad = angleDeg * Math.PI / 180;
+      const ex = p.x + Math.sin(rad) * len, ey = p.y - Math.cos(rad) * len;
+      const right = Math.sin(rad) >= 0;
+      const capX = ex + (right ? HOR_LEN : -HOR_LEN);
+      const w = Math.max(1, text.length) * CHAR_W;
+      const x0 = right ? capX + 3 : capX - 3 - w;
+      return { x: x0, y: ey - TXT_H / 2, w, h: TXT_H, ex, ey, capX, right };
+    };
+    const hits = (b) => placedBoxes.some(o =>
+      b.x < o.x + o.w && o.x < b.x + b.w && b.y < o.y + o.h && o.y < b.y + b.h)
+      || npos.some(p => p && p.x > b.x - 4 && p.x < b.x + b.w + 4 && p.y > b.y - 4 && p.y < b.y + b.h + 4);
+    // Candidate sweep: preferred first, then alternating ±30° steps
+    const sweep = (base) => [base, ...[30, -30, 60, -60, 90, -90, 120, -120, 150, -150, 180]
+      .map(d => ((base + d) % 360 + 360) % 360)];
+
+    const order = nodes.map((n, i) => ({ n, i }))
+      .filter(({ i }) => npos[i])
+      .sort((a, b) => (a.n._km ?? 999) - (b.n._km ?? 999) || a.n.num - b.n.num);
+    for (const { n, i } of order) {
+      const p = npos[i];
+      const text = n.display_name || n.user?.short_name || '';
+      const preferred = this._radarLabelAngles.get(n.num) ?? 45;
+      let chosen = null;
+      for (const len of [BASE_DIAG, BASE_DIAG + STEP_DIAG]) {   // length extension = last resort
+        for (const a of sweep(preferred)) {
+          const b = labelBox(p, a, len, text);
+          if (!hits(b)) { chosen = { a, len, b }; break; }
+        }
+        if (chosen) break;
       }
-      if (members.length > 1) members.forEach((idx, rank) => { npos[idx].diagLen = BASE_DIAG + rank * STEP_DIAG; npos[idx].isRight = rank % 2 === 0; });
+      if (!chosen) { const a = preferred; chosen = { a, len: BASE_DIAG, b: labelBox(p, a, BASE_DIAG, text) }; }
+      this._radarLabelAngles.set(n.num, chosen.a);
+      p.armAngle = chosen.a;
+      p.diagLen  = chosen.len;
+      p.box      = chosen.b;
+      placedBoxes.push(chosen.b);
     }
+    // Drop memory for nodes no longer plotted
+    const liveNums = new Set(nodes.map(n => n.num));
+    for (const k of this._radarLabelAngles.keys()) if (!liveNums.has(k)) this._radarLabelAngles.delete(k);
 
     nodes.forEach((node, ni) => {
       if (!npos[ni]) return;
-      const { x, y, diagLen } = npos[ni];
-      const isRight = npos[ni].isRight !== null ? npos[ni].isRight : x >= CX;
+      const { x, y, box } = npos[ni];
+      const isRight = box ? box.right : x >= CX;
       const devColor = this.deviceConfigs[node._device]?.color;
       const dotColor = devColor ? (themeColor(devColor) ?? ageColor(node.last_heard, this.heatmapMaxAge)) : ageColor(node.last_heard, this.heatmapMaxAge);
       const devices = node._devices || (node._device ? [node._device] : []);
@@ -410,9 +493,12 @@ export const radarMixin = {
       title.textContent = node.user?.long_name || node.display_name || '';
       g.appendChild(title);
       const label = node.display_name || node.user?.short_name || '';
+      // Arm at the collision-solved angle: diagonal to the elbow, horizontal
+      // cap toward the text side (constant length; angle is the variable).
+      const elbowX = box ? box.ex : x + (isRight ? 1 : -1) * BASE_DIAG;
+      const elbowY = box ? box.ey : y - BASE_DIAG;
+      const capX   = box ? box.capX : elbowX + (isRight ? 1 : -1) * HOR_LEN;
       const diagSign = isRight ? 1 : -1;
-      const elbowX = x + diagSign * diagLen, elbowY = y - diagLen;
-      const capX   = elbowX + diagSign * HOR_LEN;
       g.appendChild(svgElem('line', { x1: x + diagSign * 3, y1: y - 2, x2: elbowX, y2: elbowY, style: `stroke:${LABEL};stroke-width:1;pointer-events:none;filter:url(#rimGlow)` }));
       g.appendChild(svgElem('line', { x1: elbowX, y1: elbowY + 0.5, x2: capX, y2: elbowY + 0.5, style: `stroke:${LABEL};stroke-width:1.5;pointer-events:none` }));
       const txt = svgElem('text', { class: 'radar-node-label', x: capX + diagSign * 3, y: elbowY + 4, style: `fill:${LABEL};font-size:10px;font-weight:400;font-family:'Oxanium',monospace;pointer-events:none;text-anchor:${isRight ? 'start' : 'end'};filter:url(#rimGlow)` });

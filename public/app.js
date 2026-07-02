@@ -112,6 +112,8 @@ function dashboard() {
     traceroutePending: false,
     passiveTraceNum:   null,
     radarCtx:          null,   // [V2] SSOT_ROUTE_RENDER — backend-derived radar display state
+    _radarScalePts:    null,   // adaptive-scale control points (display cache, hysteresis)
+    _radarLabelAngles: null,   // Map num→arm angle — per-node label placement memory
     lastHeardNum:   null,
 
     // -- Messages -------------------------------------------------------------

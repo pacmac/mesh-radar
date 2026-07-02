@@ -17,7 +17,7 @@ const DEFAULTS = {
   'node_sort.field':          'last_heard',
   'node_sort.dir':            -1,
   'radar.max_range_km':       50,
-  'radar.log_scale':          false,
+  'radar.log_scale':          true,   // adaptive quantile scale (linear = opt-out)
   'radar.crosshair':          false,
   'message_filter.channels':  [],
   'message_filter.hide_mqtt': false,
