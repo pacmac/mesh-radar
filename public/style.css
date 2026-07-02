@@ -1,13 +1,30 @@
 /* ============================================================
-   mesh-rest-bridge dashboard  —  Radio Control Dark aesthetic
-   Oxanium headings · DM Sans body · JetBrains Mono data
-   Electric teal signal accent on daisyUI "business" dark
+   node-dash dashboard — radio console design system
+   Governed by docs/STYLE_GUIDE.md — read it before editing.
+   Oxanium display · DM Sans body · JetBrains Mono data
+   Signal teal accent · themes: business (dark) / corporate (light)
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── CSS tokens ─────────────────────────────────────────── */
+/* ── THE global size knob (STYLE_GUIDE §2) ─────────────────
+   The only absolute font size in the application. All Tailwind
+   and DaisyUI sizing is rem-based and scales from here. */
+html { font-size: 17px; }
+
+/* ── CSS tokens — dark ("business") defaults ──────────────
+   Light values live in the [data-theme="corporate"] block below.
+   Every token MUST have a definition in both (STYLE_GUIDE §4),
+   except the .instrument screen tokens, which are sanctioned
+   theme-invariant (§6: hardware screens are dark in a lit room). */
 :root {
+  /* instrument screen (theme-invariant by design) */
+  --screen:       #050e08;
+  --phos:         #00ff50;
+  --phos-dim:     rgba(0, 255, 80, 0.75);
+  --phos-faint:   rgba(0, 255, 80, 0.35);
+  --trace-amber:  #ffc828;
+
   --sig:          #00d4c8;
   --sig-dim:      #00968d;
   --sig-glow:     rgba(0, 212, 200, 0.22);
@@ -69,6 +86,8 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+/* LEGACY(utility-selector, STYLE_GUIDE §7): replace with semantic
+   classes in the navbar refactor task */
 .navbar .text-lg {
   font-family: 'Oxanium', sans-serif;
   font-weight: 700;
@@ -76,6 +95,7 @@ body {
   text-transform: uppercase;
 }
 
+/* LEGACY(utility-selector, STYLE_GUIDE §7) */
 .navbar .text-xs {
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -282,6 +302,7 @@ body {
   background: var(--overlay-1);
 }
 
+/* LEGACY(utility-selector, STYLE_GUIDE §7) */
 .overflow-x-auto.max-h-\[70vh\] {
   overflow-y: auto;
 }
@@ -441,6 +462,8 @@ body {
 }
 
 /* ── Live event feed ─────────────────────────────────────── */
+/* LEGACY(utility-selector, STYLE_GUIDE §7): breaks the moment the
+   feed's max-height changes. Remove in the overview refactor task. */
 .overflow-y-auto.max-h-\[480px\] {
   scrollbar-gutter: stable;
 }
@@ -551,6 +574,8 @@ footer {
 .navbar { position: relative; }
 
 /* ── Live WS badge glow ───────────────────────────────────── */
+/* LEGACY(utility-selector, STYLE_GUIDE §7): selecting on x-text
+   content is fragile. Remove in the navbar refactor task. */
 .badge-primary.badge[x-text*="live"] {
   color: var(--sig);
   border-color: var(--sig);
@@ -564,6 +589,9 @@ footer {
 }
 
 /* ── Scrollable feed timestamp ───────────────────────────── */
+/* LEGACY(utility-selector, STYLE_GUIDE §7): hijacks EVERY element
+   using text-base-content/40 into 0.68rem mono — the single worst
+   selector in this file. Remove in the overview refactor task. */
 .text-base-content\/40 {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.68rem;
@@ -613,112 +641,116 @@ footer {
   }
 }
 
-/* ── Light mode (prefers-color-scheme: light / daisyUI "corporate") ─────── */
-@media (prefers-color-scheme: light) {
-  :root {
-    /* slightly darker teal so it reads on white backgrounds */
-    --sig:          #0097a7;
-    --sig-dim:      #00838f;
-    --sig-glow:     rgba(0, 151, 167, 0.18);
-    --sig-glow-xs:  rgba(0, 151, 167, 0.07);
-    --amber:        #b45309;
-    --amber-glow:   rgba(180, 83, 9, 0.15);
-    --red:          #dc2626;
-    /* invert the grid and borders for a light canvas */
-    --grid:         rgba(0, 0, 0, 0.045);
-    --border:       rgba(0, 0, 0, 0.09);
-    --border-hi:    rgba(0, 0, 0, 0.18);
-    --border-hover: rgba(0, 0, 0, 0.2);
-    /* invert hover/zebra/skeleton overlays for a light canvas */
-    --overlay-1:    rgba(0, 0, 0, 0.02);
-    --overlay-2:    rgba(0, 0, 0, 0.03);
-    --overlay-3:    rgba(0, 0, 0, 0.04);
-    --toggle-off:   rgba(0, 0, 0, 0.08);
-    --skeleton-1:   rgba(0, 0, 0, 0.04);
-    --skeleton-2:   rgba(0, 0, 0, 0.08);
-  }
-
-  /* PCB grid on light background */
-  body {
-    background-image:
-      linear-gradient(var(--grid) 1px, transparent 1px),
-      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-    background-size: 32px 32px;
-  }
-
-  /* Teal signal line on navbar lighter for light bg */
-  .navbar::after { opacity: 0.25; }
-
-  /* Form inputs on light bg */
-  .input, .select, .textarea {
-    background: rgba(0, 0, 0, 0.025) !important;
-  }
-  .input:focus, .select:focus, .textarea:focus {
-    background: rgba(0, 151, 167, 0.04) !important;
-  }
-
-  /* Stat values — keep teal but readable on white */
-  .stat-value { color: var(--sig); }
-
-  /* Card titles */
-  .card-title { color: var(--sig); }
-
-  /* Active tab indicator */
-  .tabs-lift .tab-active { color: var(--sig) !important; border-top-color: var(--sig) !important; }
-
-  /* btn-primary — dark text stays legible on teal */
-  .btn-primary {
-    background: var(--sig) !important;
-    border-color: var(--sig) !important;
-    color: #fff !important;
-  }
-  .btn-primary:hover {
-    background: var(--sig-dim) !important;
-    border-color: var(--sig-dim) !important;
-  }
-
-  /* Alert info on light */
-  .alert-info {
-    border-color: rgba(0, 151, 167, 0.3);
-    background: rgba(0, 151, 167, 0.06);
-    color: var(--sig);
-  }
-
-  /* Scrollbar thumb on light */
-  ::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.18);
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--sig-dim);
-  }
-  * { scrollbar-color: rgba(0,0,0,0.18) transparent; }
-
-  /* Collapse open glow on light */
-  .collapse:has(input:checked) {
-    box-shadow: 0 0 0 1px rgba(0,151,167,0.12), 0 4px 20px rgba(0,0,0,0.08);
-  }
-
-  /* table header on light — sticky backdrop */
-  .overflow-x-auto thead th {
-    background: rgba(255,255,255,0.85);
-  }
-
-  /* card hover shadow lighter on light */
-  .card:hover {
-    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  }
-
-  /* nested object fieldset on light */
-  .collapse-content .border.border-base-300 {
-    background: rgba(0,0,0,0.018);
-  }
-
-  /* chat bubbles on light */
-  .chat-bubble-neutral {
-    background: rgba(0,0,0,0.05) !important;
-    border-color: var(--border) !important;
-  }
+/* ── Light theme tokens — [data-theme="corporate"] ─────────
+   Scoped to the theme attribute (the SSOT set in index.html),
+   not the media query, so a future manual theme toggle works. */
+[data-theme="corporate"] {
+  /* slightly darker teal so it reads on white backgrounds */
+  --sig:          #0097a7;
+  --sig-dim:      #00838f;
+  --sig-glow:     rgba(0, 151, 167, 0.18);
+  --sig-glow-xs:  rgba(0, 151, 167, 0.07);
+  --amber:        #b45309;
+  --amber-glow:   rgba(180, 83, 9, 0.15);
+  --red:          #dc2626;
+  /* invert the grid and borders for a light canvas */
+  --grid:         rgba(0, 0, 0, 0.045);
+  --border:       rgba(0, 0, 0, 0.09);
+  --border-hi:    rgba(0, 0, 0, 0.18);
+  --border-hover: rgba(0, 0, 0, 0.2);
+  /* invert hover/zebra/skeleton overlays for a light canvas */
+  --overlay-1:    rgba(0, 0, 0, 0.02);
+  --overlay-2:    rgba(0, 0, 0, 0.03);
+  --overlay-3:    rgba(0, 0, 0, 0.04);
+  --toggle-off:   rgba(0, 0, 0, 0.08);
+  --skeleton-1:   rgba(0, 0, 0, 0.04);
+  --skeleton-2:   rgba(0, 0, 0, 0.08);
 }
+
+/* Light-theme component adjustments */
+[data-theme="corporate"] .navbar::after { opacity: 0.25; }
+
+[data-theme="corporate"] .input,
+[data-theme="corporate"] .select,
+[data-theme="corporate"] .textarea {
+  background: rgba(0, 0, 0, 0.025) !important;
+}
+[data-theme="corporate"] .input:focus,
+[data-theme="corporate"] .select:focus,
+[data-theme="corporate"] .textarea:focus {
+  background: rgba(0, 151, 167, 0.04) !important;
+}
+
+[data-theme="corporate"] .btn-primary {
+  background: var(--sig) !important;
+  border-color: var(--sig) !important;
+  color: #fff !important;
+}
+[data-theme="corporate"] .btn-primary:hover {
+  background: var(--sig-dim) !important;
+  border-color: var(--sig-dim) !important;
+}
+
+[data-theme="corporate"] .alert-info {
+  border-color: rgba(0, 151, 167, 0.3);
+  background: rgba(0, 151, 167, 0.06);
+  color: var(--sig);
+}
+
+[data-theme="corporate"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+}
+[data-theme="corporate"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--sig-dim);
+}
+[data-theme="corporate"] * { scrollbar-color: rgba(0,0,0,0.18) transparent; }
+
+[data-theme="corporate"] .collapse:has(input:checked) {
+  box-shadow: 0 0 0 1px rgba(0,151,167,0.12), 0 4px 20px rgba(0,0,0,0.08);
+}
+
+[data-theme="corporate"] .overflow-x-auto thead th {
+  background: rgba(255,255,255,0.85);
+}
+
+[data-theme="corporate"] .card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+
+[data-theme="corporate"] .collapse-content .border.border-base-300 {
+  background: rgba(0,0,0,0.018);
+}
+
+[data-theme="corporate"] .chat-bubble-neutral {
+  background: rgba(0,0,0,0.05) !important;
+  border-color: var(--border) !important;
+}
+
+/* ── Instrument panels (STYLE_GUIDE §6) ────────────────────
+   The sanctioned CRT look. Screen face is dark in BOTH themes.
+   Phosphor/trace colors are permitted ONLY inside .instrument.
+   All text inside uses the §3 type roles — no px sizes. */
+.instrument {
+  background: var(--screen);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+.instrument-label {
+  font-family: 'Oxanium', sans-serif;
+  font-size: 0.75rem;              /* caption-tier minimum, never smaller */
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--phos-dim);
+}
+.instrument-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--phos);
+}
+.instrument-value--amber { color: var(--trace-amber); }
+.instrument-faint { color: var(--phos-faint); }
 
 /* ── Utility classes ─────────────────────────────────────────────────── */
 
