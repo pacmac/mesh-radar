@@ -7,10 +7,10 @@
 
                 <!-- From device (hidden when only 1) -->
                 <div x-show="availableDevices.length > 1" class="flex items-center gap-2">
-                  <span class="text-xs text-base-content/60 w-12 shrink-0">From</span>
+                  <span class="text-sm text-base-content/60 w-12 shrink-0">From</span>
                   <div class="join">
                     <template x-for="dev in availableDevices" :key="dev.addr">
-                      <button class="join-item btn btn-xs"
+                      <button class="join-item btn btn-sm"
                               :class="msgFrom === dev.node_id ? 'btn-primary' : 'btn-outline'"
                               @click="msgFrom = dev.node_id; persistSet('msgFrom', dev.node_id)"
                               x-text="deviceLabel(dev.node_id)"></button>
@@ -20,12 +20,12 @@
 
                 <!-- Broadcast / Direct toggle -->
                 <div class="flex items-center gap-2">
-                  <span class="text-xs text-base-content/60 w-12 shrink-0">To</span>
+                  <span class="text-sm text-base-content/60 w-12 shrink-0">To</span>
                   <div class="join">
-                    <button class="join-item btn btn-xs" :class="!msgIsDirect ? 'btn-primary' : 'btn-outline'" @click="msgIsDirect = false">Broadcast</button>
-                    <button class="join-item btn btn-xs" :class="msgIsDirect ? 'btn-primary' : 'btn-outline'" @click="msgIsDirect = true">Direct</button>
+                    <button class="join-item btn btn-sm" :class="!msgIsDirect ? 'btn-primary' : 'btn-outline'" @click="msgIsDirect = false">Broadcast</button>
+                    <button class="join-item btn btn-sm" :class="msgIsDirect ? 'btn-primary' : 'btn-outline'" @click="msgIsDirect = true">Direct</button>
                   </div>
-                  <select x-show="msgIsDirect" class="select select-bordered select-xs flex-1" x-model="msgDirectTo">
+                  <select x-show="msgIsDirect" class="select select-bordered select-sm flex-1" x-model="msgDirectTo">
                     <option value="" disabled>Select node…</option>
                     <template x-for="n in allMsgNodes()" :key="n.num">
                       <option :value="n.num" x-text="(n.user?.short_name || n.num) + ' — ' + (n.user?.long_name || '')"></option>
@@ -38,7 +38,7 @@
 
                 <!-- Channel -->
                 <div class="flex items-center gap-2">
-                  <span class="text-xs text-base-content/60 w-12 shrink-0">Ch</span>
+                  <span class="text-sm text-base-content/60 w-12 shrink-0">Ch</span>
                   <select class="select select-bordered select-sm" x-model="msgChannel">
                     <option value="0">0 — Primary</option>
                     <option value="1">1</option><option value="2">2</option><option value="3">3</option>
@@ -47,7 +47,7 @@
                 </div>
 
                 <!-- Reply indicator -->
-                <div x-show="msgReplyId" class="flex items-center gap-1 text-xs text-base-content/60 bg-base-200 rounded px-2 py-1">
+                <div x-show="msgReplyId" class="flex items-center gap-1 text-sm text-base-content/60 bg-base-200 rounded px-2 py-1">
                   <span class="opacity-70">↩ Replying to</span>
                   <span class="font-semibold" x-text="nodeShortName(msgReplyFrom) || '?'"></span>
                   <button class="ml-auto btn btn-xs btn-ghost py-0 h-auto min-h-0 opacity-50" @click="msgReplyId = null; msgReplyFrom = null">✕</button>
@@ -107,7 +107,7 @@
                           :title="'Reply to ' + (m.fromShortName || nodeShortName(m.fromNum))"
                           @click="replyTo(m)">
                       <span class="contents" x-html="nodeAvatar(m.fromNum, m.fromShortName || nodeShortName(m.fromNum))"></span>
-                      <span class="absolute top-0 right-0 -translate-y-1 translate-x-1 w-3.5 h-3.5 rounded-full flex items-center justify-center text-white text-[9px] font-bold leading-none pointer-events-none"
+                      <span class="absolute top-0 right-0 -translate-y-1 translate-x-1 w-4 h-4 rounded-full flex items-center justify-center text-white text-xs font-bold leading-none pointer-events-none"
                             :class="m.direction === 'tx' ? 'bg-success text-white' : 'bg-info text-white'"
                             x-text="m.direction === 'tx' ? '↑' : '↓'">
                       </span>
