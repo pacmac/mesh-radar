@@ -1,6 +1,6 @@
 // WebSocket connection and event dispatch mixin.
 import { b64ToUtf8, summarizeEvent, FEED_FILTER_OPTIONS } from './app-helpers.js';
-import { persistSet } from './app-persist.js';
+import { persistSet, persistGet } from './app-persist.js';
 import { FF } from './feature-flags.js';
 import { handleConfigOp } from './op-client.js';
 window.feedFilterOptions = FEED_FILTER_OPTIONS;
@@ -82,13 +82,24 @@ export const wsMixin = {
         this.needPairAddr = null;
       }
 
-      if (devices.length > 0 && (!this.activeNodeId || !devices.find(d => d.node_id === this.activeNodeId))) {
-        this.activeNodeId = devices[0].node_id;
-        persistSet('activeNodeId', this.activeNodeId);
+      // Active-device adoption (see docs/modules/app-ws.md):
+      // the persisted preference is written ONLY by explicit user actions.
+      // Re-adopt it when its device reappears; outage fallback is display-only.
+      if (devices.length > 0) {
+        const preferred = persistGet('activeNodeId', '');
+        if (preferred && devices.find(d => d.node_id === preferred)) {
+          if (this.activeNodeId !== preferred) this.activeNodeId = preferred;
+        } else if (!this.activeNodeId || !devices.find(d => d.node_id === this.activeNodeId)) {
+          this.activeNodeId = devices[0].node_id;
+        }
       }
-      if (!this.msgFrom || !devices.find(d => d.node_id === this.msgFrom)) {
-        this.msgFrom = this.activeNodeId;
-        persistSet('msgFrom', this.msgFrom);
+      {
+        const preferredFrom = persistGet('msgFrom', '');
+        if (preferredFrom && devices.find(d => d.node_id === preferredFrom)) {
+          if (this.msgFrom !== preferredFrom) this.msgFrom = preferredFrom;
+        } else if (!this.msgFrom || !devices.find(d => d.node_id === this.msgFrom)) {
+          this.msgFrom = this.activeNodeId;
+        }
       }
       if (!this.cfgRadioId || !devices.find(d => d.node_id === this.cfgRadioId)) {
         this.cfgRadioId = this.activeNodeId;

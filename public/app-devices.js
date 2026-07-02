@@ -235,10 +235,11 @@ export const devicesMixin = {
         const liveDevice = this.availableDevices.find(
           d => d.addr.toUpperCase() === primaryMac.toUpperCase()
         );
-        if (liveDevice?.node_id) {
+        // Seed primary as active only when the user has no saved choice —
+        // an explicit Set Active always wins (docs/modules/app-ws.md).
+        if (liveDevice?.node_id && !this.activeNodeId) {
           this.activeNodeId = liveDevice.node_id;
-          persistSet('activeNodeId', liveDevice.node_id);
-          if (!this.msgFrom) { this.msgFrom = liveDevice.node_id; persistSet('msgFrom', liveDevice.node_id); }
+          if (!this.msgFrom) this.msgFrom = liveDevice.node_id;
         }
       }
     } catch (e) {
