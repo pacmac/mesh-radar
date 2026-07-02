@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 966af0535393ae9c28acdc626cd76abc5b6503c40e1d0a60b62a59ac60ef79aa
+source_hash: 55282af275daa02faa9303ec4a98de6c9a37f37ec24dbeadfff5c291f8f665d6
 updated: 2026-06-30
 ---
 
@@ -196,3 +196,8 @@ from the node list). Cache-entry creation is reserved for heard packets
 (`touchLastHeard`), the opt-in per-device boot seed, and confirmed scan
 contacts. Live `node_info` still enriches heard nodes with
 rssi/snr/hops/via_mqtt/device_metrics — the node-filter fields keep flowing.
+
+## setTraceroute (task `perf-per-device`)
+
+Persists `tx_device` and `rotator_az` from the result into
+traceroute_history.

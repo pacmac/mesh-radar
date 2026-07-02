@@ -1,7 +1,7 @@
 ---
 module: traceroute-api
 source: src/traceroute-api.js
-source_hash: 67bbd9996be3b946384c435774fe82faa88d7a98f43a9f09a57eab6ed45dc1dd
+source_hash: f100994533be2777ee858040921b5a2c1bedaf17ebd1e6f866a75762af71dbce
 updated: 2026-06-30
 ---
 
@@ -62,3 +62,9 @@ _N/A_
 
 - Traceroute decode and storage — `traceroute.js` and `persist.js` own that.
 - Auto-traceroute on ACTV/SCAN contact — `lifecycle.js` and `scanner.js` own that.
+
+## Per-device dispatch + scoped history (task `perf-per-device`)
+
+`POST /:nodeId/traceroute` accepts optional `{ via: '!hex' }` — dispatch
+through a specific radio so its RF chain is measured (default: primary).
+`GET /traceroute_history?device=!hex` returns rows scoped by `tx_device`.

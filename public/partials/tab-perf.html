@@ -1,11 +1,25 @@
         <!-- ===================== PERFORMANCE ===================== -->
         <div x-show="tab==='perf'" class="flex-1 min-h-0 flex flex-col gap-4">
 
-          <div class="flex items-center gap-3 shrink-0">
+          <div class="flex items-center gap-3 shrink-0 flex-wrap">
             <div class="min-w-0 flex-1">
               <h1 class="text-lg font-display font-bold tracking-wide leading-tight">Performance</h1>
-              <p class="text-sm text-base-content/70">Plain-English setup health first; ham radio numbers when Expert is enabled.</p>
+              <p class="text-sm text-base-content/70">One RF chain at a time — measurements and theory for the selected radio only.</p>
             </div>
+            <!-- Device scope: headroom is a property of one radio+coax+antenna chain -->
+            <div class="join">
+              <template x-for="dev in availableDevices" :key="dev.addr">
+                <button class="join-item btn btn-sm font-mono"
+                        :class="perfDev() === dev.node_id ? 'btn-primary' : 'btn-outline btn-neutral'"
+                        @click="perfSetDevice(dev.node_id)"
+                        x-text="deviceLabel(dev.node_id)"></button>
+              </template>
+            </div>
+            <span x-show="deviceConfigs[perfDev()]?.is_rotator"
+                  class="badge badge-sm badge-warning gap-1"
+                  title="Directional antenna on a rotator — every sample is azimuth-qualified; compare only samples taken at similar bearings">
+              directional — azimuth-qualified
+            </span>
             <div class="join">
               <button class="btn btn-sm join-item"
                       :class="!perfExpert ? 'btn-primary' : 'btn-outline btn-neutral'"
@@ -66,7 +80,7 @@
               <div class="stat-value"
                    x-text="perfEirpDbm().toFixed(1) + ' dBm'"></div>
               <div class="stat-desc font-mono"
-                   x-text="(loraCfg?.tx_power??'–') + ' + ' + (deviceConfigs[activeNodeId]?.gain_dbi??0) + ' - ' + (deviceConfigs[activeNodeId]?.cable_loss_db??0) + ' dB'"></div>
+                   x-text="(loraCfg?.tx_power??'–') + ' + ' + (deviceConfigs[perfDev()]?.gain_dbi??0) + ' - ' + (deviceConfigs[perfDev()]?.cable_loss_db??0) + ' dB'"></div>
             </div>
             <div class="stat bg-base-100 shadow" x-show="perfExpert">
               <div class="stat-title">Sensitivity</div>
@@ -173,6 +187,7 @@
                           <th>Node</th>
                           <th>Type</th>
                           <th class="text-right">Target</th>
+                          <th class="text-right" x-show="deviceConfigs[perfDev()]?.is_rotator">Az</th>
                           <th class="text-right">Health</th>
                           <th class="text-right">Headroom</th>
                           <th class="text-right" x-show="perfExpert">SNR -></th>
@@ -196,6 +211,8 @@
                                   ? 'target distance'
                                   : 'target distance; first hop is ' + (row.firstHopDistKm != null ? row.firstHopDistKm.toFixed(1) + ' km away' : 'unknown distance')"
                                 x-text="row.targetDistKm != null ? row.targetDistKm.toFixed(1)+' km' : (row.metricDistKm != null ? row.metricDistKm.toFixed(1)+' km' : '–')"></td>
+                            <td class="font-mono text-right text-base-content/60" x-show="deviceConfigs[perfDev()]?.is_rotator"
+                                x-text="row.rotator_az != null ? Math.round(row.rotator_az) + '°' : '–'"></td>
                             <td class="text-right">
                               <span x-html="perfHealthBars(row.marginTx, 1.1)"></span>
                             </td>
@@ -210,7 +227,7 @@
                           </tr>
                         </template>
                         <tr x-show="!perfLoading && perfHistory.length === 0">
-                          <td colspan="8" class="text-center text-base-content/30 italic py-8">No history yet</td>
+                          <td colspan="9" class="text-center text-base-content/30 italic py-8">No history yet</td>
                         </tr>
                       </tbody>
                     </table>

@@ -153,7 +153,9 @@ db.exec(`
     route_back       TEXT,
     snr_towards      TEXT,
     snr_back         TEXT,
-    relay_positions  TEXT
+    relay_positions  TEXT,
+    tx_device        TEXT,
+    rotator_az       REAL
   );
 
   CREATE INDEX IF NOT EXISTS idx_traceroute_ts     ON traceroute_history(ts DESC);
@@ -161,6 +163,11 @@ db.exec(`
 `);
 
 // Migrations for columns added after initial schema
+{
+  const thCols = db.prepare(`PRAGMA table_info(traceroute_history)`).all().map(r => r.name);
+  if (!thCols.includes('tx_device'))  db.exec(`ALTER TABLE traceroute_history ADD COLUMN tx_device TEXT`);
+  if (!thCols.includes('rotator_az')) db.exec(`ALTER TABLE traceroute_history ADD COLUMN rotator_az REAL`);
+}
 const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);
 if (!existingCols.includes('reply_id')) {
   db.exec(`ALTER TABLE messages ADD COLUMN reply_id INTEGER`);
@@ -342,9 +349,9 @@ export const stmts = {
 
   insertTracerouteHistory: db.prepare(`
     INSERT INTO traceroute_history
-      (ts, from_num, to_num, rx_device, route, route_back, snr_towards, snr_back, relay_positions)
+      (ts, from_num, to_num, rx_device, route, route_back, snr_towards, snr_back, relay_positions, tx_device, rotator_az)
     VALUES
-      (@ts, @from_num, @to_num, @rx_device, @route, @route_back, @snr_towards, @snr_back, @relay_positions)
+      (@ts, @from_num, @to_num, @rx_device, @route, @route_back, @snr_towards, @snr_back, @relay_positions, @tx_device, @rotator_az)
   `),
 
   queryTracerouteHistory: db.prepare(`
@@ -356,6 +363,21 @@ export const stmts = {
     LEFT JOIN nodes n ON n.num = th.to_num
     WHERE (@to_num IS NULL OR th.to_num = @to_num)
     ORDER BY th.ts DESC LIMIT @limit
+  `),
+
+  queryTracerouteHistoryByDevice: db.prepare(`
+    SELECT th.*,
+           n.lat    AS to_lat,
+           n.lon    AS to_lon,
+           n.short_name AS to_short_name
+    FROM traceroute_history th
+    LEFT JOIN nodes n ON n.num = th.to_num
+    WHERE th.tx_device = @device
+    ORDER BY th.ts DESC LIMIT @limit
+  `),
+
+  backfillTracerouteTxDevice: db.prepare(`
+    UPDATE traceroute_history SET tx_device = @device WHERE tx_device IS NULL
   `),
 
   upsertNodeEnvMetrics: db.prepare(`

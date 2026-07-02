@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 0dd7b958e71416198775c4b30d6720a6852df1a98df34c140167a9acdf65bc2d
+source_hash: 0d5c09d2f1ba82749473f4f6c31bb03319b123c41264c43b6c749d4193984891
 updated: 2026-06-30
 ---
 
@@ -282,3 +282,10 @@ snr_back (JSON), relay_positions (JSON).
 - Network I/O — no bridge or HTTP calls
 - Event routing — callers decide which events map to which storage calls
 - `filters.js` message query logic — that module owns its own query; it imports `db` directly (code smell, not db.js's problem to fix)
+
+## traceroute_history additions (task `perf-per-device`)
+
+Columns `tx_device TEXT`, `rotator_az REAL` (+ ALTER migration). One-shot
+startup backfill attributes pre-migration rows to the primary radio (the
+only historical dispatcher), guarded by config flag
+`migrations.traceroute_tx_device` so later unattributed rows stay null.

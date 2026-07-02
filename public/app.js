@@ -221,6 +221,7 @@ function dashboard() {
     perfHistory:          [],
     perfLoading:          false,
     perfAutoNodes:        JSON.parse(persistGet('perfAutoNodes', '[]')),
+    perfDevice: persistGet('perfDevice', ''),
     perfAutoIntervalMin:  parseInt(persistGet('perfAutoIntervalMin', '5'), 10) || 5,
     perfTrendWindowHours: parseInt(persistGet('perfTrendWindowHours', '72'), 10) || 72,
     perfExpert:           persistGet('perfExpert', 'false') === 'true',

@@ -5,10 +5,10 @@ import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { bridge } from './bridge.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver } from './device-config.js';
+import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
 import { registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, clearNodeCache } from './db.js';
+import { getConfig, setConfig, clearNodeCache, stmts } from './db.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
@@ -232,6 +232,18 @@ function broadcastAll(msg) {
 }
 _broadcast = broadcastAll;  // wire forward reference
 startAutoPurgeScheduler(broadcastAll);
+
+// One-shot: attribute historic traceroutes to the primary radio — it was the
+// only dispatcher before tx_device existed. Guarded so post-migration NULLs
+// (overheard, unattributable results) are never backfilled.
+if (!getConfig('migrations.traceroute_tx_device', false)) {
+  const primary = resolvePrimaryNodeId();
+  if (primary) {
+    const n = stmts.backfillTracerouteTxDevice.run({ device: primary }).changes;
+    setConfig('migrations.traceroute_tx_device', true);
+    console.log(`[migrate] traceroute_history tx_device backfilled: ${n} rows → ${primary}`);
+  }
+}
 
 server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);

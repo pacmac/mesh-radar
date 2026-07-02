@@ -337,7 +337,8 @@ export const wsMixin = {
     }
 
     if (ev.type === 'traceroute_history') {
-      this.perfHistory = ev.rows || [];
+      // Perf page loads device-scoped history via REST (per-device contract,
+      // docs/modules/app-perf.md); the global WS replay is ignored.
       return;
     }
 
@@ -434,8 +435,10 @@ export const wsMixin = {
           ts:              ev.ts              ?? Date.now(),
         }};
       }
-      // Prepend to perfHistory so the perf tab stays live without polling
-      if (ev.from != null) {
+      // Prepend to perfHistory so the perf tab stays live without polling —
+      // only when the result belongs to the page's selected device (scope
+      // match on the subscribed device, not business filtering).
+      if (ev.from != null && ev.tx_device && ev.tx_device === this.perfDev()) {
         const entry = {
           from_num: ev.from, to_num: ev.to ?? null,
           route: ev.route ?? [], route_back: ev.route_back ?? [],
@@ -443,6 +446,7 @@ export const wsMixin = {
           relay_positions: ev.relay_positions ?? {},
           ts: ev.ts ?? Math.floor(Date.now() / 1000),
           rx_device: ev.rx_device ?? null,
+          tx_device: ev.tx_device, rotator_az: ev.rotator_az ?? null,
         };
         this.perfHistory = [entry, ...(this.perfHistory || [])].slice(0, 200);
       }

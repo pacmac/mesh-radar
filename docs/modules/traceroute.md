@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: f0ae3f4dc24920081d4160ef17c03cd04dedf59be48d4745811c1bed8c729a8f
+source_hash: e51b9117f84fb781b1f452a12d8dd8a186f2f8fd064b1f57e25c076dfb063702
 updated: 2026-06-30
 ---
 
@@ -116,3 +116,10 @@ traceroute.handlePacket(pkt, rxDevice)
 - Scan contact confirmation — scanner.js / index.js own that
 - Broadcasting to browser — ws-relay.js listens to `'result'`/`'start'`/`'cancel'` and broadcasts
 - The V1 legacy traceroute path — that is the `if (!FF.SSOT_TRACEROUTE)` blocks in index.js and passive-tracer.js, to be deleted once V2 is proven
+
+## Per-device attribution (task `perf-per-device`)
+
+Results are stamped with `tx_device` (the dispatching radio, from the
+pending entry — marginTx/snrRx measure ITS TX/RX chain) and `rotator_az`
+(live azimuth when the dispatcher is the rotator). Overheard results with
+no pending dispatch stay unattributed (null).

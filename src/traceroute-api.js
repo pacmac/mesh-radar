@@ -10,7 +10,11 @@ const router = Router();
 router.post('/:nodeId/traceroute', async (req, res) => {
   const targetNum = parseInt((req.params.nodeId || '').replace('!', ''), 16);
   if (!targetNum) return res.status(400).json({ error: 'invalid nodeId' });
-  const sender = resolvePrimaryNodeId();
+  // Optional { via: '!hex' } — dispatch through a specific radio so its RF
+  // chain gets measured (per-device performance). Default: primary.
+  const via = typeof req.body?.via === 'string' && /^![0-9a-f]{8}$/i.test(req.body.via)
+    ? req.body.via : null;
+  const sender = via ?? resolvePrimaryNodeId();
   if (!sender) return res.status(503).json({ error: 'no primary device configured' });
   try {
     // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────
@@ -31,8 +35,11 @@ router.post('/:nodeId/traceroute', async (req, res) => {
 router.get('/traceroute_history', (req, res) => {
   const to_num = req.query.to_num ? parseInt(req.query.to_num) : null;
   const limit  = Math.min(parseInt(req.query.limit ?? 200), 1000);
+  const device = typeof req.query.device === 'string' && req.query.device ? req.query.device : null;
   try {
-    const rows = stmts.queryTracerouteHistory.all({ to_num, limit });
+    const rows = device
+      ? stmts.queryTracerouteHistoryByDevice.all({ device, limit })
+      : stmts.queryTracerouteHistory.all({ to_num, limit });
     res.json(rows.map(r => ({
       ...r,
       route:           JSON.parse(r.route           || '[]'),

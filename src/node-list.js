@@ -186,6 +186,8 @@ class NodeList extends EventEmitter {
       snr_towards:     JSON.stringify(data.snr_towards ?? []),
       snr_back:        JSON.stringify(data.snr_back ?? []),
       relay_positions: JSON.stringify(data.relay_positions ?? {}),
+      tx_device:       data.tx_device ?? null,
+      rotator_az:      data.rotator_az ?? null,
     });
     const existing = this._cache.get(num) ?? this._pending.get(num);
     if (existing) {

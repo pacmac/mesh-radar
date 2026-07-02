@@ -41,7 +41,7 @@ export const perfMixin = {
   },
 
   perfEirpDbm() {
-    const cfg   = this.deviceConfigs?.[this.activeNodeId] ?? {};
+    const cfg   = this.deviceConfigs?.[this.perfDev()] ?? {};
     const txPwr = this.loraCfg?.tx_power ?? 0;
     const gain  = cfg.gain_dbi      ?? 0;
     const loss  = cfg.cable_loss_db ?? 0;
@@ -111,9 +111,10 @@ export const perfMixin = {
   // ── Traceroute history ────────────────────────────────────────────────────
 
   async loadPerfLoraCfg() {
-    if (this.loraCfg?.tx_power != null || !this.activeNodeId) return;
+    const dev = this.perfDev();
+    if (this.loraCfg?.tx_power != null || !dev) return;
     try {
-      const r = await fetchJSON(this.d('/config/lora'));
+      const r = await fetchJSON(`/${dev}/config/lora`);
       if (r?.lora) this.loraCfg = r.lora;
     } catch (e) {
       console.warn('[perf] loadPerfLoraCfg failed', e);
@@ -125,10 +126,12 @@ export const perfMixin = {
 
   _perfAutoTick() {
     if (!this.perfAutoNodes?.length) return;
+    const via = this.perfDev();
     for (const num of this.perfAutoNodes) {
-      const nodeId = this.activeNodeId;
-      if (!nodeId) continue;
-      fetchJSON(`/${nodeId}/traceroute`, 'POST', { to: num, hop_limit: 0 })
+      // Target in the URL (the API's contract); dispatch via the page's
+      // selected radio so ITS RF chain is what gets measured.
+      const target = '!' + (num >>> 0).toString(16).padStart(8, '0');
+      fetchJSON(`/${target}/traceroute`, 'POST', via ? { via } : {})
         .catch(e => console.warn('[perf] auto-traceroute failed', num, e));
     }
   },
@@ -153,7 +156,34 @@ export const perfMixin = {
     else            this.perfAutoNodes = this.perfAutoNodes.filter(n => n !== num);
   },
 
-  loadPerfHistory() { /* no-op — traceroute_history arrives via WS on connect */ },
+  // Effective perf device: explicit selection, else the primary radio.
+  perfDev() {
+    const sel = this.perfDevice;
+    if (sel && this.availableDevices.some(d => d.node_id === sel)) return sel;
+    return this.primaryDeviceId || this.availableDevices[0]?.node_id || '';
+  },
+
+  async perfSetDevice(nodeId) {
+    this.perfDevice = nodeId;
+    persistSet('perfDevice', nodeId);
+    this.loraCfg = {};              // force per-device reload of theory constants
+    this.perfHistory = [];
+    await Promise.all([this.loadPerfLoraCfg(), this.loadPerfHistory()]);
+    this.$nextTick(() => this.initPerfCharts());
+  },
+
+  // Device-scoped history from REST (per-device contract; the global WS
+  // replay is ignored — docs/modules/app-perf.md).
+  async loadPerfHistory() {
+    const dev = this.perfDev();
+    if (!dev) return;
+    try {
+      const rows = await fetchJSON(`/traceroute_history?device=${encodeURIComponent(dev)}&limit=200`);
+      if (Array.isArray(rows)) this.perfHistory = rows;
+    } catch (e) {
+      console.warn('[perf] loadPerfHistory failed', e);
+    }
+  },
 
   // Distance (km) from home to a lat/lon pair using Haversine
   _haversineKm(lat, lon) {

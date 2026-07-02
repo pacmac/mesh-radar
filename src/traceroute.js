@@ -19,6 +19,9 @@ import { EventEmitter } from 'events';
 import { bridge }       from './bridge.js';
 import { nodeList }     from './node-list.js';
 import { stmts, getConfig } from './db.js';
+import { getRotatorAddress } from './device-config.js';
+import { getLiveNodeIdByMac } from './ws-relay.js';
+import { rotator } from './rotator.js';
 
 const log = {
   info: (...a) => console.log('[traceroute]',      ...a),
@@ -79,7 +82,7 @@ class TracerouteManager extends EventEmitter {
         return;
       }
 
-      const entry = { callbacks: [{ resolve, reject }], timer: null };
+      const entry = { callbacks: [{ resolve, reject }], timer: null, device };
 
       entry.timer = setTimeout(() => {
         if (this._pending.get(to) === entry) {
@@ -117,6 +120,21 @@ class TracerouteManager extends EventEmitter {
     const rd             = pkt.decoded.route_discovery;
     const relay_positions = extractRelayPositions(rd.route);
 
+    // Attribution: marginTx/snrRx measure the DISPATCHING radio's TX/RX
+    // chain — stamp it from the pending dispatch. Overheard results (no
+    // pending entry) stay unattributed. Rotator dispatches also carry the
+    // live azimuth so directional samples are azimuth-qualified.
+    const pendingEntry = this._pending.get(pkt.from);
+    const txDevice = pendingEntry?.device ?? null;
+    let rotatorAz = null;
+    if (txDevice) {
+      const rotMac = getRotatorAddress();
+      const rotId  = rotMac ? getLiveNodeIdByMac(rotMac) : null;
+      if (rotId && rotId === txDevice && rotator.status?.az != null) {
+        rotatorAz = Number(rotator.status.az);
+      }
+    }
+
     const result = {
       from:            pkt.from,
       route:           rd.route       ?? [],
@@ -125,6 +143,8 @@ class TracerouteManager extends EventEmitter {
       snr_back:        rd.snr_back    ?? [],
       relay_positions,
       ts:              Date.now(),
+      tx_device:       txDevice,
+      rotator_az:      rotatorAz,
     };
 
     log.info(`result from !${pkt.from.toString(16)} route=${JSON.stringify(result.route)}`);
