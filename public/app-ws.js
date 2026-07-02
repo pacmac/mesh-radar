@@ -101,6 +101,12 @@ export const wsMixin = {
           this.msgFrom = this.activeNodeId;
         }
       }
+      // Perf page cold-load race: loadPerfHistory no-ops until the device
+      // list exists — retry once devices arrive.
+      if (this.tab === 'perf' && !this.perfHistory.length && devices.length) {
+        this.loadPerfHistory();
+        this.loadPerfLoraCfg();
+      }
       if (!this.cfgRadioId || !devices.find(d => d.node_id === this.cfgRadioId)) {
         this.cfgRadioId = this.activeNodeId;
       }
