@@ -482,6 +482,16 @@ export const wsMixin = {
           if (fromName || longName) {
             this.msgNodeCache[fromNum] = { num: fromNum, display_name: fromName, user: { short_name: fromName, long_name: longName } };
           }
+          // Dedupe: with multiple radios the same mesh packet arrives once per
+          // radio. Merge the later copy's source/signal into the existing entry —
+          // a second entry would duplicate the x-for key and freeze the feed.
+          const dupe = this.messages.find(m => m.pktId === pktId);
+          if (dupe) {
+            const srcId = ev.node_id || ev.addr || ev.device;
+            if (srcId && !dupe.src.includes(srcId)) dupe.src = [...dupe.src, srcId];
+            if (dupe.rssi == null && pkt.rx_rssi != null) dupe.rssi = pkt.rx_rssi;
+            if (dupe.snr  == null && pkt.rx_snr  != null) dupe.snr  = pkt.rx_snr;
+          } else {
           // Thread structure for live events: treat as root; corrected on next message_history replay.
           this.messages.unshift({
             pktId, fromNum, to: toNum,
@@ -496,8 +506,8 @@ export const wsMixin = {
             src: (ev.node_id || ev.addr || ev.device) ? [ev.node_id || ev.addr || ev.device] : [],
           });
           if (this.messages.length > 50) this.messages.pop();
-          try { localStorage.setItem('msgHistory', JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
           if (this.tab !== 'messages') { this.unreadMessages++; this.playMsgSound(); }
+          }
         } catch (_) {}
       }
       if (pkt?.from != null) {

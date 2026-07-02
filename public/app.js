@@ -261,11 +261,6 @@ function dashboard() {
         localStorage.removeItem('tiltNorthAngle');
       }
 
-      try {
-        const saved = JSON.parse(localStorage.getItem('msgHistory') || '[]');
-        if (Array.isArray(saved) && saved.length) this.messages = saved;
-      } catch (_) {}
-
       await this.loadConfig();
       await this.loadDeviceConfigs();
       await this.loadBridgeConfig();

@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: b78a4c92cf784c4c2f40d0f1a04bf4b486ebacdc0d30dbc9eb41e30c46e251f3
+source_hash: 0e3c1a7d7b641f0db847df45685e2862a5fb6580a2d8349f8d45f7cb1d7e966a
 updated: 2026-07-02
 ---
 
@@ -44,6 +44,12 @@ task): the preference lives in per-browser localStorage. Server-side
 ownership (`device_list.active_device`) will supersede this mechanism.
 
 ## Other fixed contracts
+
+- `packet` (TEXT_MESSAGE_APP) handler dedupes by `pktId`: second radio's copy
+  merges `src`/rssi/snr into the existing entry instead of appending a
+  duplicate (duplicate x-for keys froze the feed) — task `message-flow-audit`.
+  `message_status` events with V2 vocabulary patch `ackStatus`/`ackFrom`/
+  `ackError` as before.
 
 - `node_list` handler seeds `nodeSelf.num` from `my_node_num` even when node
   filters exclude the self node (keeps `tilt_update`/`telemetry_update`

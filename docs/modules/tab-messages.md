@@ -1,7 +1,7 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: 54bbc5d01e2e7e708085a575f8c04f2769eb9e57cec7c052db67e3effc4e55f1
+source_hash: de7b8cd7fe6cb5c4b813ed20f0bb3e8769709ebf6aab100361e2430368342911
 updated: 2026-07-02
 ---
 
@@ -17,8 +17,13 @@ autocomplete, quick emoji) and message feed card. Presentation only.
 **STYLE_GUIDE.md compliance refactor (task `messages-refactor`).** Zero logic
 changes.
 
-Files in scope: `public/partials/tab-messages.html` only.
-NOT changed: `public/app-messages.js`, all other files.
+Files in scope (style task): `public/partials/tab-messages.html`.
+Files in scope (message-flow-audit): `public/partials/tab-messages.html`,
+`public/app-ws.js` (packet dedupe — see docs/modules/app-ws.md),
+`public/app.js` (msgHistory seed removed),
+`public/app-messages.js` (msgHistory localStorage write removed).
+NOT changed: `src/messages-api.js`, `src/ws-relay.js` (backend verified
+correct against the gw V2 contract).
 
 ## Changes
 
@@ -36,6 +41,30 @@ Kept as-is (sanctioned):
 - Ack status / device badges `text-xs`/`badge-xs` — feed metadata captions
 - Message body `text-base` — user content, not UI chrome; deliberate emphasis
 - "→ node" hint `text-xs` — caption
+
+## Message-flow fixes (task `message-flow-audit`)
+
+**Live RX dedupe (fixes frozen feed):** with multiple radios the same mesh
+packet arrives as one `packet` event per radio. The handler now dedupes by
+`pktId`: the first arrival appends; later arrivals merge their source device
+into `src` and fill missing rssi/snr — never a second entry. Duplicate feed
+entries previously produced duplicate `x-for` keys, crashing Alpine's keyed
+renderer and freezing the feed until reload.
+
+**Feed keys:** `:key` composes `_txKey || pktId + '_' + direction` so a key
+collision is structurally impossible.
+
+**V2 status vocabulary:** the ACK indicator maps the gw V2 `message_status`
+states (API_SSE §message_status): `sent`/`queued` → ✓ (dim), `relayed` → ↻
+(warning), `delivered` → ✓✓ (success, with ack node), `failed`/`no_ack`/
+`queue_failed` → ✕ (error), `no_ack_needed` → ✓ (broadcast terminal — no
+receipt possible). "awaiting ACK…" shows for DMs in non-terminal states.
+Legacy V1 names (acked/confirmed/sending/retrying) removed.
+
+**localStorage msgHistory seed removed** (BROWSER_ARCH messages[] writer
+consolidation): `messages[]` is written only by `message_history` (replace),
+the live `packet` append, and the optimistic TX entry (sanctioned deviation:
+reconciled via the `pkt_id` hint sent to the gw, so status events match).
 
 ## Invariants
 

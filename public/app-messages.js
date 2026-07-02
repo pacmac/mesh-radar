@@ -35,7 +35,6 @@ export const messagesMixin = {
         src:                r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
       };
     });
-    try { localStorage.setItem('msgHistory', JSON.stringify(this.messages.slice(0, 20))); } catch (_) {}
   },
 
   loadMessages() { /* no-op — history arrives via WS message_history on connect */ },

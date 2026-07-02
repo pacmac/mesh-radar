@@ -98,7 +98,7 @@
             <div class="card-body flex flex-col min-h-0">
               <h2 class="card-title shrink-0">Message Feed</h2>
               <div class="overflow-y-auto flex-1 min-h-0">
-                <template x-for="m in displayMessages()" :key="'msg_' + (m._txKey || m.pktId || m.fromNum + '_' + m.ts)">
+                <template x-for="m in displayMessages()" :key="'msg_' + (m._txKey || (m.pktId != null ? m.pktId + '_' + (m.direction || 'rx') : m.fromNum + '_' + m.ts))">
                   <div class="flex items-start gap-3 py-2"
                        :style="m.replyDepth > 0 ? `margin-left:${m.replyDepth * 2}rem` : ''"
                        :class="m.isReply ? 'pl-2' : 'border-t border-base-200'"
@@ -124,26 +124,30 @@
                         <span x-show="m.rssi != null || m.snr != null" x-html="sigBars(m.rssi, m.snr)"></span>
                         <span class="ml-auto text-base-content/50 shrink-0" x-text="m.time"></span>
                         <template x-if="m.direction==='tx'">
-                          <span class="shrink-0 flex items-center gap-1">
+                          <span class="shrink-0 flex items-center gap-1"
+                                :title="m.ackStatus==='no_ack_needed' ? 'Broadcast sent — mesh suppresses broadcast ACKs' : (m.ackStatus || 'sending…')">
+                            <!-- gw V2 message_status vocabulary — see docs/gw/API_SSE.md §message_status -->
                             <span class="font-bold text-sm"
                                   :class="{
-                                    'text-success':    m.ackStatus==='acked' || m.ackStatus==='confirmed',
-                                    'text-success/60': m.ackStatus==='sent',
-                                    'text-error':      m.ackStatus==='failed' || m.ackStatus==='no_ack',
-                                    'text-warning':    m.ackStatus==='sending' || m.ackStatus==='retrying',
+                                    'text-success':    m.ackStatus==='delivered',
+                                    'text-success/60': m.ackStatus==='sent' || m.ackStatus==='queued' || m.ackStatus==='no_ack_needed',
+                                    'text-error':      m.ackStatus==='failed' || m.ackStatus==='no_ack' || m.ackStatus==='queue_failed',
+                                    'text-warning':    m.ackStatus==='relayed',
                                   }"
-                                  x-text="m.ackStatus==='acked'                              ? '✓✓'
-                                        : m.ackStatus==='failed' || m.ackStatus==='no_ack'  ? '✕'
-                                        : m.ackStatus==='retrying'                           ? '↻'
-                                        : m.ackStatus==='confirmed' || m.ackStatus==='sent'  ? '✓'
+                                  x-text="m.ackStatus==='delivered'                          ? '✓✓'
+                                        : m.ackStatus==='failed' || m.ackStatus==='no_ack'
+                                          || m.ackStatus==='queue_failed'                    ? '✕'
+                                        : m.ackStatus==='relayed'                            ? '↻'
+                                        : m.ackStatus==='sent' || m.ackStatus==='queued'
+                                          || m.ackStatus==='no_ack_needed'                   ? '✓'
                                         : '…'"></span>
-                            <span x-show="m.ackStatus==='acked' && m.ackFrom"
+                            <span x-show="m.ackStatus==='delivered' && m.ackFrom"
                                   class="font-mono text-xs text-success/70"
                                   x-text="nodeLabel(m.ackFrom)"></span>
-                            <span x-show="m.ackStatus==='no_ack'"
+                            <span x-show="m.ackStatus==='no_ack' || m.ackStatus==='failed' || m.ackStatus==='queue_failed'"
                                   class="font-mono text-xs text-error/70"
-                                  x-text="m.ackError || 'TIMEOUT'"></span>
-                            <span x-show="m.ackStatus==='sent' && !m.broadcast"
+                                  x-text="m.ackError || (m.ackStatus==='no_ack' ? 'TIMEOUT' : m.ackStatus)"></span>
+                            <span x-show="!m.broadcast && (m.ackStatus==='sent' || m.ackStatus==='queued' || m.ackStatus==='relayed')"
                                   class="font-mono text-xs text-base-content/40">awaiting ACK…</span>
                           </span>
                         </template>
