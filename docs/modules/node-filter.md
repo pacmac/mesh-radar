@@ -1,7 +1,7 @@
 ---
 module: node-filter
 source: src/node-filter.js
-source_hash: 4327fea5b6e36decd5c899b90e72f373a917ae6c1dabff6073e8d3fb4066a48b
+source_hash: 55a5d066a78b12c52b6acc8adf06932acc07c2866f657a2c737397a356a41f45
 updated: 2026-06-30
 ---
 
@@ -122,3 +122,9 @@ All keys are read from the `config` table on every call via `getConfig`.
 - Node list state — `node-list.js` calls `passesFilter` inside `_filter()`
 - Broadcasting results — `ws-relay.js` receives the filtered list from `node-list`'s `'change'` event
 - Config persistence — `db.js` / `config-api.js` own reading and writing filter settings
+
+## V2 field paths (task `node-filter-fix`)
+
+The role filter reads `node.user?.role ?? node.role` — node records carry
+role inside `user` (DB-enriched) rather than top-level. Nodes with unknown
+role pass any roles filter by design.

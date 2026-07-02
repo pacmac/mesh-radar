@@ -13,7 +13,7 @@ const _lastEnvTs = new Map(); // num → last inserted ts (env metrics dedup)
 export function registerBridgeEvents(bridge) {
   bridge.on('event', (ev) => {
     handleEvent(ev);
-    if (ev.type === 'node_update') {
+    if (ev.type === 'node_update' || ev.type === 'node_info') {   // V2 emits node_info
       nodeList.handleNodeUpdate(ev);
       const node = ev.data;
       const em = node?.environment_metrics;

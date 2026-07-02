@@ -51,7 +51,8 @@ export function passesFilter(node, { scanActive = false, ownNums = null } = {}) 
   if (hasTelem  && !node.device_metrics) return false;
   if (msgOnly   && node.user?.is_unmessagable) return false;
 
-  if (roles.length > 0 && node.role != null && !roles.includes(node.role)) return false;
+  const role = node.user?.role ?? node.role;
+  if (roles.length > 0 && role != null && !roles.includes(role)) return false;
 
   if (rotatorId && source !== 'both') {
     const devs = node._devices ?? (node._device ? [node._device] : []);

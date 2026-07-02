@@ -1,7 +1,7 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: 7522efe5a339e7f0b80220e67aa33213584fb631a34973756d710e165947dbf8
+source_hash: 6507617798357d01a7bdd033f557e6671c537da249c8efe9f501e2a8bb9e9906
 updated: 2026-06-30
 ---
 
@@ -75,3 +75,11 @@ _N/A_ (consumes events from bridge; other modules emit downstream)
 ## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
 
 Range-test DB persistence listens for the V2 `range_test` event name (was `rangetest`).
+
+## V2 node_info routing (task `node-filter-fix`)
+
+Live node updates route to `nodeList.handleNodeUpdate` on the V2 event name
+`node_info` (plus legacy `node_update`). Previously only `node_update` was
+wired, so live rssi/snr/hops/via_mqtt/device_metrics never reached the node
+cache — six of nine node filters matched no field and the node-card signal
+bars were blank.
