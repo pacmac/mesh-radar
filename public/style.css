@@ -809,6 +809,15 @@ footer {
   font-size: 12px;
 }
 
+/* RSSI colour-scale legend (range test charts) — mirrors the hsl scale
+   used by the chart point renderer in app-range.js */
+.rssi-scale {
+  background: linear-gradient(to right, hsl(0,80%,50%), hsl(60,80%,50%), hsl(120,80%,50%));
+  width: 100px;
+  height: 7px;
+  border-radius: 3px;
+}
+
 /* Signal quality bars widget */
 .sig-bars {
   display: inline-flex;

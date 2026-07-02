@@ -6,10 +6,10 @@
               <div class="flex flex-wrap items-center gap-3">
                 <!-- RX device filter pills -->
                 <div class="join">
-                  <button class="join-item btn btn-xs" :class="!rangeRxFilter ? 'btn-active' : 'btn-outline'"
+                  <button class="join-item btn btn-sm" :class="!rangeRxFilter ? 'btn-active' : 'btn-outline'"
                           @click="rangeRxFilter = ''">All</button>
                   <template x-for="dev in availableDevices" :key="dev.addr">
-                    <button class="join-item btn btn-xs"
+                    <button class="join-item btn btn-sm"
                             :class="rangeRxFilter === dev.node_id ? 'btn-active' : 'btn-outline'"
                             @click="rangeRxFilter = dev.node_id"
                             x-text="deviceLabel(dev.node_id)"></button>
@@ -17,7 +17,7 @@
                 </div>
                 <!-- Sender node filter -->
                 <template x-if="rangeLogNodes().length > 1">
-                  <select class="select select-bordered select-xs" x-model.number="rangeNodeFilter">
+                  <select class="select select-bordered select-sm" x-model.number="rangeNodeFilter">
                     <option value="">All nodes</option>
                     <template x-for="n in rangeLogNodes()" :key="n.num">
                       <option :value="n.num" x-text="n.name"></option>
@@ -26,9 +26,9 @@
                 </template>
                 <div class="flex-1"></div>
                 <span class="loading loading-spinner loading-xs" x-show="rangeLoading"></span>
-                <button class="btn btn-xs btn-outline" @click="loadRangeTest()">Refresh</button>
-                <button class="btn btn-xs btn-outline btn-info" @click="exportRangeCsv()" :disabled="!filteredRangeLog().length">CSV</button>
-                <button class="btn btn-xs btn-outline btn-error" @click="clearRangeTest()" :disabled="!rangeLog.length">Clear</button>
+                <button class="btn btn-sm btn-outline" @click="loadRangeTest()">Refresh</button>
+                <button class="btn btn-sm btn-outline btn-info" @click="exportRangeCsv()" :disabled="!filteredRangeLog().length">CSV</button>
+                <button class="btn btn-sm btn-outline btn-error" @click="clearRangeTest()" :disabled="!rangeLog.length">Clear</button>
               </div>
               <!-- TX active strip — only when a sender test is running -->
               <template x-if="rangeTimer.active">
@@ -38,7 +38,7 @@
                   <span class="font-semibold" x-text="deviceLabel(rangeTimer.nodeId) || rangeTimer.nodeId"></span>
                   <span class="opacity-50">sending · auto-off in</span>
                   <span class="font-mono text-warning" x-text="rangeFmtCountdown(rangeTimer.remaining)"></span>
-                  <button class="btn btn-xs btn-error ml-auto" @click="stopRangeTest()">Stop TX</button>
+                  <button class="btn btn-sm btn-error ml-auto" @click="stopRangeTest()">Stop TX</button>
                 </div>
               </template>
             </div>
@@ -57,11 +57,11 @@
                 </div>
               </template>
               <div class="stats stats-horizontal shadow bg-base-100 w-full overflow-x-auto">
-                <div class="stat"><div class="stat-title">Packets</div><div class="stat-value text-lg" x-text="rangeStats().count"></div><div class="stat-desc">range test rx</div></div>
-                <div class="stat"><div class="stat-title">Best RSSI</div><div class="stat-value text-lg text-success" x-text="rangeStats().bestRssi + ' dBm'"></div><div class="stat-desc" x-text="'median ' + rangeStats().medianRssi + ' dBm'"></div></div>
-                <div class="stat"><div class="stat-title">Best SNR</div><div class="stat-value text-lg text-info" x-text="rangeStats().bestSnr != null ? rangeStats().bestSnr + ' dB' : '–'"></div><div class="stat-desc" x-text="rangeStats().medianSnr != null ? 'median ' + rangeStats().medianSnr + ' dB' : 'no SNR data'"></div></div>
-                <div class="stat"><div class="stat-title">Max range</div><div class="stat-value text-lg" x-text="rangeStats().maxDistKm != null ? rangeStats().maxDistKm + ' km' : '–'"></div><div class="stat-desc">of heard packets with position</div></div>
-                <div class="stat"><div class="stat-title">Median excess loss</div><div class="stat-value text-lg" :class="rangeStats().medianExcessLoss != null && rangeStats().medianExcessLoss < 0 ? 'text-success' : 'text-warning'" x-text="rangeStats().medianExcessLoss != null ? rangeStats().medianExcessLoss + ' dB' : '–'"></div><div class="stat-desc">vs FSPL (−=better than theory)</div></div>
+                <div class="stat"><div class="stat-title">Packets</div><div class="stat-value" x-text="rangeStats().count"></div><div class="stat-desc">range test rx</div></div>
+                <div class="stat"><div class="stat-title">Best RSSI</div><div class="stat-value text-success" x-text="rangeStats().bestRssi + ' dBm'"></div><div class="stat-desc" x-text="'median ' + rangeStats().medianRssi + ' dBm'"></div></div>
+                <div class="stat"><div class="stat-title">Best SNR</div><div class="stat-value text-info" x-text="rangeStats().bestSnr != null ? rangeStats().bestSnr + ' dB' : '–'"></div><div class="stat-desc" x-text="rangeStats().medianSnr != null ? 'median ' + rangeStats().medianSnr + ' dB' : 'no SNR data'"></div></div>
+                <div class="stat"><div class="stat-title">Max range</div><div class="stat-value" x-text="rangeStats().maxDistKm != null ? rangeStats().maxDistKm + ' km' : '–'"></div><div class="stat-desc">of heard packets with position</div></div>
+                <div class="stat"><div class="stat-title">Median excess loss</div><div class="stat-value" :class="rangeStats().medianExcessLoss != null && rangeStats().medianExcessLoss < 0 ? 'text-success' : 'text-warning'" x-text="rangeStats().medianExcessLoss != null ? rangeStats().medianExcessLoss + ' dB' : '–'"></div><div class="stat-desc">vs FSPL (−=better than theory)</div></div>
               </div>
             </div>
           </template>
@@ -72,7 +72,7 @@
 
                 <!-- Polar range-bearing scatter -->
                 <div class="flex flex-col items-center gap-1">
-                  <span class="text-xs font-semibold opacity-50 uppercase tracking-wide">Range · Bearing</span>
+                  <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Range · Bearing</span>
                   <svg width="300" height="300" viewBox="0 0 300 300" class="overflow-visible">
                     <!-- Distance rings -->
                     <g x-html="rangeRingsSvg()"></g>
@@ -97,7 +97,7 @@
 
                 <!-- Azimuth RSSI ring -->
                 <div class="flex flex-col items-center gap-1">
-                  <span class="text-xs font-semibold opacity-50 uppercase tracking-wide">Signal by Bearing</span>
+                  <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Signal by Bearing</span>
                   <svg width="300" height="300" viewBox="0 0 300 300">
                     <!-- Background ring -->
                     <circle cx="150" cy="150" r="128" fill="none" stroke="currentColor" stroke-opacity="0.08" stroke-width="57"/>
@@ -120,7 +120,7 @@
               <!-- RSSI colour scale -->
               <div class="flex items-center gap-2 justify-center text-xs opacity-50">
                 <span>−130 dBm</span>
-                <div style="background:linear-gradient(to right,hsl(0,80%,50%),hsl(60,80%,50%),hsl(120,80%,50%));width:100px;height:7px;border-radius:3px"></div>
+                <div class="rssi-scale"></div>
                 <span>−40 dBm</span>
                 <span class="ml-3 opacity-60">weak → strong</span>
               </div>
@@ -131,7 +131,7 @@
           <div class="card bg-base-100 shadow">
             <div class="card-body py-3">
               <div class="flex items-center gap-2 flex-wrap">
-                <h2 class="card-title text-base">Range Test Log</h2>
+                <h2 class="card-title">Range Test Log</h2>
                 <span class="badge badge-neutral" x-text="filteredRangeLog().length"></span>
               </div>
               <div class="overflow-x-auto max-h-[60vh]">
