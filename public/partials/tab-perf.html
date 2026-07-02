@@ -3,14 +3,14 @@
 
           <div class="flex items-center gap-3 shrink-0">
             <div class="min-w-0 flex-1">
-              <h1 class="text-base font-semibold leading-tight">Performance</h1>
-              <p class="text-xs text-base-content/70">Plain-English setup health first; ham radio numbers when Expert is enabled.</p>
+              <h1 class="text-lg font-display font-bold tracking-wide leading-tight">Performance</h1>
+              <p class="text-sm text-base-content/70">Plain-English setup health first; ham radio numbers when Expert is enabled.</p>
             </div>
             <div class="join">
-              <button class="btn btn-xs join-item"
+              <button class="btn btn-sm join-item"
                       :class="!perfExpert ? 'btn-primary' : 'btn-outline btn-neutral'"
                       @click="perfSetExpert(false)">Simple</button>
-              <button class="btn btn-xs join-item"
+              <button class="btn btn-sm join-item"
                       :class="perfExpert ? 'btn-primary' : 'btn-outline btn-neutral'"
                       @click="perfSetExpert(true)">Expert</button>
             </div>
@@ -36,7 +36,7 @@
             </div>
             <div class="stat bg-base-100 shadow">
               <div class="stat-title">Direct Links</div>
-              <div class="stat-value text-lg"
+              <div class="stat-value"
                    :class="perfHealthClass(perfSummary('direct').medianMargin)"
                    x-html="perfHealthBars(perfSummary('direct').medianMargin)"></div>
               <div class="stat-desc"
@@ -44,7 +44,7 @@
             </div>
             <div class="stat bg-base-100 shadow">
               <div class="stat-title">First Hop</div>
-              <div class="stat-value text-lg"
+              <div class="stat-value"
                    :class="perfHealthClass(perfSummary('first-hop').medianMargin)"
                    x-html="perfHealthBars(perfSummary('first-hop').medianMargin)"></div>
               <div class="stat-desc"
@@ -52,7 +52,7 @@
             </div>
             <div class="stat bg-base-100 shadow">
               <div class="stat-title">Recent Change</div>
-              <div class="stat-value text-lg"
+              <div class="stat-value"
                    :class="perfTrendChange() == null ? 'text-base-content/40' : perfTrendChange() >= 0 ? 'text-success' : 'text-error'"
                    x-text="perfTrendChange() == null ? '–' : perfSignedDb(perfTrendChange())"></div>
               <div class="stat-desc inline-flex items-center gap-1.5">
@@ -84,7 +84,7 @@
             </div>
             <div class="stat bg-base-100 shadow" x-show="perfExpert">
               <div class="stat-title">Median SNR</div>
-              <div class="stat-value text-lg"
+              <div class="stat-value"
                    x-text="perfSummary('all').medianSnr != null ? perfSummary('all').medianSnr.toFixed(1) + ' dB' : '–'"></div>
               <div class="stat-desc font-mono"
                    x-text="'excess loss ' + (perfSummary('all').medianGap != null ? '+' + perfSummary('all').medianGap.toFixed(0) + ' dB' : '–')"></div>
@@ -118,8 +118,7 @@
               <div class="relative flex-1 min-h-0 p-1">
                 <canvas x-ref="perfTrendChart" class="perf-chart w-full h-full min-h-64"></canvas>
                 <div x-show="!perfLoading && perfTrendBuckets().length===0"
-                     class="absolute inset-0 flex items-center justify-center pointer-events-none"
-                     style="font-family:monospace;font-size:0.75rem">
+                     class="absolute inset-0 flex items-center justify-center pointer-events-none font-mono text-sm text-base-content/40">
                   no valid samples in selected window
                 </div>
               </div>
@@ -145,8 +144,7 @@
               <div class="relative flex-1 min-h-0 p-1">
                 <canvas x-ref="perfScatterChart" class="perf-chart w-full h-full min-h-64"></canvas>
                 <div x-show="!perfLoading && perfValidRows('all').length===0"
-                     class="absolute inset-0 flex items-center justify-center pointer-events-none"
-                     style="font-family:monospace;font-size:0.75rem">
+                     class="absolute inset-0 flex items-center justify-center pointer-events-none font-mono text-sm text-base-content/40">
                   no traceroute data — run a traceroute to populate
                 </div>
               </div>
@@ -164,11 +162,11 @@
                   <div class="flex items-center gap-2 shrink-0 mb-2">
                     <h2 class="card-title flex-1">Traceroute History</h2>
                     <span x-show="perfLoading" class="loading loading-spinner loading-xs"></span>
-                    <button class="btn btn-xs btn-ghost"
+                    <button class="btn btn-sm btn-ghost"
                             @click="loadPerfHistory()" :disabled="perfLoading">↺ Refresh</button>
                   </div>
                   <div class="flex-1 min-h-0 overflow-y-auto">
-                    <table class="table table-xs" style="white-space:nowrap">
+                    <table class="table table-xs whitespace-nowrap">
                       <thead class="sticky top-0 bg-base-100 z-10 backdrop-blur-sm">
                         <tr>
                           <th>Time</th>
@@ -225,7 +223,7 @@
                 <div class="card-body py-3 px-4">
                   <div class="flex items-center gap-2 mb-3">
                     <h2 class="card-title flex-1">Auto Traceroute</h2>
-                    <select class="select select-xs select-bordered font-mono w-20"
+                    <select class="select select-sm select-bordered font-mono w-24"
                             x-model.number="perfAutoIntervalMin"
                             @change="if (_perfAutoTimer) perfAutoStart()">
                       <option value="1">1 min</option>
@@ -235,7 +233,7 @@
                       <option value="15">15 min</option>
                       <option value="30">30 min</option>
                     </select>
-                    <button class="btn btn-xs"
+                    <button class="btn btn-sm"
                             :class="_perfAutoTimer ? 'btn-error' : 'btn-success'"
                             :disabled="!perfAutoNodes.length && !_perfAutoTimer"
                             @click="_perfAutoTimer ? perfAutoStop() : perfAutoStart()"
