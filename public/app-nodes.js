@@ -199,8 +199,11 @@ export const nodesMixin = {
   },
 
   nodeHops(n) {
-    const tr = n?.last_traceroute;
-    if (tr?.route != null) return tr.route.length;
+    // Live packet hops — the SAME source the backend max_hops filter uses
+    // (node-filter.js). The last traceroute's route length is a routed-path
+    // property, often longer and stale; it belongs in traceroute contexts
+    // (radar overlay, perf Via column), never on the node's hop badge —
+    // preferring it here made cards show 5-6 hops inside a ≤2 filter.
     return n?.hops_away ?? n?.hops ?? null;
   },
 
