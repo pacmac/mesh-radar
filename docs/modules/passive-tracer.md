@@ -1,8 +1,8 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: dfde13d24ae7970078b9c6314ab8e9e575bc08525518ca189988fe02f3a61971
-updated: 2026-06-30
+source_hash: 66cd898bcbdf000c998597afef3d7772de747ee91be2fcf1880b706dc9f08c0d
+updated: 2026-07-03
 ---
 
 # Module: passive-tracer
@@ -106,6 +106,9 @@ Returns `true` otherwise.
 
 ```
 _trace(from_num, device)
+// device arrives as ev.addr (MAC); the V2 dispatch normalizes it to the
+// node_id via the live registry so tx_device attribution stays in one
+// vocabulary (identity-phase-a; Phase B migrates the column to MAC)
   → this._busy = true
   → emit 'tracing'
   → traceroute.dispatch({ to: from_num, device })

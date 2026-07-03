@@ -4,6 +4,9 @@ import { getAllDeviceCfgs } from './device-config.js';
 let _nodeIdToMac = null;
 export function registerMacResolver(fn) { _nodeIdToMac = fn; }
 
+let _macToNodeId = null;
+export function registerNodeIdResolver(fn) { _macToNodeId = fn; }
+
 // Resolve the display label for a node num using the 3-step rule:
 //   1. label (user alias) from device_configs — resolved via live MAC lookup
 //   2. short_name from the mesh node cache
@@ -25,9 +28,19 @@ export function resolveNodeLabel(num) {
   return '?' + hex.slice(-3).toUpperCase();
 }
 
-// Convenience: takes a node_id string like "!fa39f7b4".
-export function resolveDeviceLabel(nodeId) {
-  if (!nodeId) return null;
+// Convenience: takes a node_id ('!fa39f7b4') OR a BLE MAC. A MAC is never
+// parseInt'd — parseInt('E9:…',16) = 233 produced garbage labels for every
+// range-test rx_name (identity-phase-a B5).
+export function resolveDeviceLabel(key) {
+  if (!key) return null;
+  let nodeId = String(key);
+  if (nodeId.includes(':')) {
+    const mac = nodeId.toUpperCase();
+    const cfg = getAllDeviceCfgs()[mac];
+    if (cfg?.label) return cfg.label;          // device alias directly by MAC
+    nodeId = _macToNodeId?.(mac) ?? null;
+    if (!nodeId) return mac;                   // honest fallback: the MAC itself
+  }
   const num = parseInt(nodeId.replace('!', ''), 16);
   return isNaN(num) ? nodeId : resolveNodeLabel(num);
 }

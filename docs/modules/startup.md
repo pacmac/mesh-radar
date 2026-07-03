@@ -1,8 +1,8 @@
 ---
 module: startup
 source: src/startup.js
-source_hash: 40a41c2c040060095d69d9012cae6ab060cd34edc218e1b976cea397dd861b4b
-updated: 2026-06-30
+source_hash: 2b80e2ab0ffd872bef842d7e1b4aa3efedfdc1658fda27cda78908922f1593a6
+updated: 2026-07-03
 ---
 
 # Module: startup
@@ -48,7 +48,7 @@ _N/A_
 - `bridge.on('connected')` fires on every reconnect — seed is re-run each time.
 - `nodeList.seed(allNodes, null)` is always called even if `load_nodes_on_boot = false`.
 - Device attribution (`stmts.getNodeDevices`) is restored after every seed to preserve which device last heard each node.
-- Only devices with IDs starting with `!` are processed in the `seedOwnDevice` loop.
+- The `seedOwnDevice` loop iterates MAC-keyed device configs (`key.includes(':')`), resolves each MAC to its node_id via the live registry (seeded from persisted `node_mac.*` at module load), and derives the node num from that. The old `startsWith('!')` guard matched nothing once configs became MAC-keyed — the loop was dead (identity-phase-a B10). `_device` is stamped with the MAC.
 - Named-node persist uses `handleEvent({ type: 'node_update', data: n, device: null })` — same path as live events.
 - Errors in either seed step are caught and logged; they do not prevent the other step from running.
 

@@ -1,8 +1,8 @@
 ---
 module: node-label
 source: src/node-label.js
-source_hash: cd4ed7b6cf169a1915512398154d602800b24a53a8ead7021ae3145b503df9bd
-updated: 2026-06-30
+source_hash: ff14e8ea4623a039855fea993457886cf06e2219d5eda1fee7e8872a58c05b52
+updated: 2026-07-03
 ---
 
 # Module: node-label
@@ -17,7 +17,7 @@ aliases to mesh short names to a hex suffix.
 
 - Register a live MAC lookup resolver (injected at startup via `registerMacResolver`)
 - Resolve a node num to its best available display label (`resolveNodeLabel`)
-- Provide a convenience wrapper that accepts a `!hexid` string (`resolveDeviceLabel`)
+- Provide a convenience wrapper that accepts a `!hexid` string OR a BLE MAC (`resolveDeviceLabel`) — MACs are resolved to the node_id via a late-registered resolver (index.js registers `getLiveNodeIdByMac`); a MAC is NEVER parseInt'd (parseInt('E9:…',16)=233 produced garbage range-test labels — identity-phase-a B5)
 
 ## Dependencies
 

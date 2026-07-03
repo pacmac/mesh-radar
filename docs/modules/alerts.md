@@ -1,8 +1,8 @@
 ---
 module: alerts
 source: src/alerts.js
-source_hash: cca04f4cf186d098588f7a05618c1606b39b529031194e20564aed346bc0a14c
-updated: 2026-06-30
+source_hash: 8fc05f80f867c3541fd7dd4ed98253f4aa8f25b0965f32e4060bd99434754e38
+updated: 2026-07-03
 ---
 
 # Module: alerts
@@ -90,7 +90,7 @@ Decodes `pkt.decoded.payload` from base64 UTF-8. Determines `isDm = (pkt.to >>> 
 
 **dm_received** (isDm=true):
 - Checks `dm_received` rule, cooldown, and `isPacketAlerted(pktId)` dedup
-- Creates a reply token (`createReplyToken(token, ev.device, pkt.from, pktId, channel)`)
+- Creates a reply token (`createReplyToken(token, ev.__ble_addr ?? ev.addr, pkt.from, pktId, channel)`) — the device key is the BLE MAC (durable across factory resets; valid in gw paths at any sync state). The column name `from_node_id` is historical (identity-phase-a B6; rename deferred)
 - Sends alert with `[reply:<token>]` in subject line
 - Marks packet as alerted (`markPacketAlerted(pktId)`)
 

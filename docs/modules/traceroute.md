@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 5035b0864c1735b61098d99c9e2d607fbac0ecfcb03ce072464369b099dfbdcf
+source_hash: 15aae5c6891f3a79a9dac6aa23edf8e278aeb22308ae0feae1168f9e2f2dd09a
 updated: 2026-07-03
 ---
 
@@ -132,3 +132,18 @@ Results are stamped with `tx_device` (the dispatching radio, from the
 pending entry — marginTx/snrRx measure ITS TX/RX chain) and `rotator_az`
 (live azimuth when the dispatcher is the rotator). Overheard results with
 no pending dispatch stay unattributed (null).
+
+## Identity rules (task `identity-phase-a`, per docs/IDENTITY.md)
+
+- **gw addressing by MAC**: the dispatch URL path resolves
+  `getLiveMacByNodeId(device) ?? device` — MAC is always valid; a bare
+  node_id 404s pre-sync (`Unknown device`). The `device` PARAM keeps
+  node-id vocabulary: it is the `tx_device` attribution key the perf page
+  queries by, until Phase B migrates that column.
+- **Rotator comparison in MAC space**: `getLiveMacByNodeId(device) ??
+  device` compared against `getRotatorAddress()` (MAC) — the old
+  node_id-side compare could never match a MAC-vocabulary device, so
+  `rotator_az` was never stamped on PASV dispatches.
+- **Failure `from_num`**: derived only from a `!hex` id (resolving a MAC
+  through the registry first); never `parseInt` a MAC (yields 233). If
+  unresolvable, 0 — honest unknown, not garbage.

@@ -1,7 +1,7 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: 2d846ea5f1cb796d49102fa6a38927b389557509866a365dc56a2a1cd7cf0c52
+source_hash: d0c79bd2e8ec51346e6bc2abf2d784c7a3c5218b8ef00155d8b2382a1a101457
 updated: 2026-07-03
 ---
 
@@ -96,9 +96,10 @@ _N/A_ — persist.js does not emit events.
 - A node identity write to `nodeinfo` is skipped if `short_name` and `long_name` are both absent (`_upsertCache` guard).
 - Coordinates are integer millidegrees divided by `1e7`. Coordinates outside `[-90,90]` lat or `[-180,180]` lon are stored as null (`_validCoord` guard).
 - **Device key vocabulary (task `node-source-attribution`):**
-  `rxDevice = __ble_addr ?? addr ?? node_id ?? device` — BLE MAC first per
-  the V2 contract; `node_id`/`device` remain only as legacy-replay
-  fallbacks. `rxDevice` is what every db write stores as `device`. Before
+  `rxDevice = __ble_addr ?? addr ?? device` — BLE MAC only: `device` is the
+  V1 legacy field (also a MAC); `node_id` was removed from the chain
+  (identity-phase-a B9) — it is not a device key and a fallback to it could
+  reintroduce mixed vocabulary into `nodes.device`. `rxDevice` is what every db write stores as `device`. Before
   this fix `rxDevice = node_id || device` wrote unstable `!hex` values into
   `nodes.device`, giving the table a mixed MAC/`!hex` vocabulary that could
   never match the rotator MAC in the `node_source` filter.

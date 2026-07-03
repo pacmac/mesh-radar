@@ -28,12 +28,13 @@ import { registerBridgeEvents } from './bridge-events.js';
 import { registerStartupHandlers } from './startup.js';
 import { initLifecycle } from './lifecycle.js';
 import { startImapReceiver } from './imap-receiver.js';
-import { resolveNodeLabel, registerMacResolver } from './node-label.js';
+import { resolveNodeLabel, registerMacResolver, registerNodeIdResolver } from './node-label.js';
 import { OpManager } from './op-manager.js';
 
 registerNodeIdToMacResolver(getLiveMacByNodeId);
 registerMacToNodeIdResolver(getLiveNodeIdByMac);
 registerMacResolver(getLiveMacByNodeId);
+registerNodeIdResolver(getLiveNodeIdByMac);
 registerMacToNumResolver(mac => {
   const nodeId = getLiveNodeIdByMac(mac);
   if (!nodeId) return null;

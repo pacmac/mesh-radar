@@ -28,10 +28,10 @@ const BROADCAST_NUM = 0xffffffff;
 
 export function handleEvent(event) {
   const { type, data, _replay } = event;
-  // V2: __ble_addr (BLE MAC) is the device key on every event; node_id and
-  // device are legacy-replay fallbacks only (IDENTITY.md: node_id is not a
-  // stable key). This is what every db write stores as `device`.
-  const rxDevice = event.__ble_addr ?? event.addr ?? event.node_id ?? event.device ?? null;
+  // V2: __ble_addr (BLE MAC) is the device key on every event; `device` is
+  // the V1 legacy field (also a MAC). node_id is NOT in this chain — it is
+  // not a device key and would reintroduce mixed vocabulary (IDENTITY.md).
+  const rxDevice = event.__ble_addr ?? event.addr ?? event.device ?? null;
   const ts = Math.floor(Date.now() / 1000);
 
   if (type === 'packet') {

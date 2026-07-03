@@ -5,6 +5,7 @@ import { dashMode } from './dash-mode.js';
 import { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
 import { getRotatorAddress } from './device-config.js';
+import { getLiveNodeIdByMac } from './ws-relay.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 
@@ -129,7 +130,11 @@ class PassiveTracer extends EventEmitter {
       }, timeout_ms);
     // ── [V2] SSOT — traceroute.js owns dispatch, timeout, decode ─────────────
     } else {
-      traceroute.dispatch({ to: from_num, device })
+      // device arrived as ev.addr (MAC); dispatch takes the node_id so
+      // tx_device attribution stays single-vocabulary (perf page queries
+      // by !hex). URL addressing resolves back to MAC inside dispatch.
+      const devId = getLiveNodeIdByMac(device) ?? device;
+      traceroute.dispatch({ to: from_num, device: devId })
         .then(result => {
           _attempted.set(from_num, Date.now());
           this.emit('traced', result);

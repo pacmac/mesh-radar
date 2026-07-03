@@ -1,6 +1,7 @@
 import { nodeList } from './node-list.js';
 import { handleEvent } from './persist.js';
 import { getPrimaryMac, getDeviceCfg, getAllDeviceCfgs } from './device-config.js';
+import { getLiveNodeIdByMac } from './ws-relay.js';
 import { stmts } from './db.js';
 
 export function registerStartupHandlers(bridge) {
@@ -13,12 +14,18 @@ export function registerStartupHandlers(bridge) {
       const allNodes = Object.values(allResp?.nodes ?? {});
       nodeList.seed(allNodes, null);
       nodeList.restoreDeviceAttribution(stmts.getNodeDevices.all());
+      // Device configs are MAC-keyed; resolve each MAC to its node num via
+      // the live registry (seeded from persisted node_mac.* at module load).
+      // The old startsWith('!') guard matched nothing once configs became
+      // MAC-keyed — this loop was dead (identity-phase-a B10).
       const allDeviceCfgs = getAllDeviceCfgs();
-      for (const deviceId of Object.keys(allDeviceCfgs)) {
-        if (!deviceId.startsWith('!')) continue;
-        const devNum = parseInt(deviceId.slice(1), 16);
+      for (const mac of Object.keys(allDeviceCfgs)) {
+        if (!mac.includes(':')) continue;      // skip stale legacy !hex keys
+        const nodeId = getLiveNodeIdByMac(mac);
+        if (!nodeId) continue;
+        const devNum = parseInt(nodeId.slice(1), 16);
         const devNode = allNodes.find(n => n.num === devNum);
-        if (devNode) nodeList.seedOwnDevice(devNode, deviceId);
+        if (devNode) nodeList.seedOwnDevice(devNode, mac);
       }
       console.log(`[node-list] seeded ${allNodes.length} nodes`);
     } catch (err) {

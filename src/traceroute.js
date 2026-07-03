@@ -20,7 +20,7 @@ import { bridge }       from './bridge.js';
 import { nodeList }     from './node-list.js';
 import { stmts, getConfig } from './db.js';
 import { getRotatorAddress } from './device-config.js';
-import { getLiveNodeIdByMac } from './ws-relay.js';
+import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 import { rotator } from './rotator.js';
 
 const log = {
@@ -98,7 +98,11 @@ class TracerouteManager extends EventEmitter {
       this.emit('start', { to, device });
       log.info(`dispatch to !${to.toString(16)} via ${device}`);
 
-      bridge.post(`/${device}/traceroute`, { to }).catch(err => {
+      // gw device paths are addressed by BLE MAC — always valid, whereas a
+      // node_id 404s before first sync (IDENTITY.md §2). `device` itself
+      // stays node-id vocabulary: it is the tx_device attribution key.
+      const pathKey = getLiveMacByNodeId(device) ?? device;
+      bridge.post(`/${pathKey}/traceroute`, { to }).catch(err => {
         if (this._pending.get(to) === entry) {
           clearTimeout(entry.timer);
           this._pending.delete(to);
@@ -117,14 +121,18 @@ class TracerouteManager extends EventEmitter {
   _recordFailure(to, device, reason) {
     let rotatorAz = null;
     const rotMac = getRotatorAddress();
-    const rotId  = rotMac ? getLiveNodeIdByMac(rotMac) : null;
-    if (rotId && rotId === device && rotator.status?.az != null) {
+    // Compare in MAC space (IDENTITY.md): a node_id-side compare can never
+    // match a MAC-vocabulary device, which silently skipped the az stamp.
+    const devMac = String(device).includes(':') ? device : getLiveMacByNodeId(device);
+    if (rotMac && devMac === rotMac && rotator.status?.az != null) {
       rotatorAz = Number(rotator.status.az);
     }
+    // from_num derives only from a !hex id — never parseInt a MAC (=233).
+    const devId = String(device).includes(':') ? getLiveNodeIdByMac(device) : device;
     try {
       stmts.insertTracerouteFailure.run({
         ts:         Math.floor(Date.now() / 1000),
-        from_num:   parseInt(String(device).replace('!', ''), 16) || 0,
+        from_num:   devId ? (parseInt(String(devId).replace('!', ''), 16) >>> 0) : 0,
         to_num:     to,
         tx_device:  device,
         rotator_az: rotatorAz,
@@ -155,8 +163,9 @@ class TracerouteManager extends EventEmitter {
     let rotatorAz = null;
     if (txDevice) {
       const rotMac = getRotatorAddress();
-      const rotId  = rotMac ? getLiveNodeIdByMac(rotMac) : null;
-      if (rotId && rotId === txDevice && rotator.status?.az != null) {
+      // MAC-space compare — see _recordFailure
+      const devMac = String(txDevice).includes(':') ? txDevice : getLiveMacByNodeId(txDevice);
+      if (rotMac && devMac === rotMac && rotator.status?.az != null) {
         rotatorAz = Number(rotator.status.az);
       }
     }
