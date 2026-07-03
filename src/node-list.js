@@ -74,24 +74,23 @@ class NodeList extends EventEmitter {
     const rotatorId = getRotatorAddress();
     // During scan, ignore updates from non-rotator devices
     if (this._scanActive && rotatorId && ev.addr && ev.addr !== rotatorId) return;
-    const newDev = ev.node_id ?? ev.addr ?? null;
 
+    // node_info is a nodedb REPLAY on every BLE sync — both radios replay the
+    // same nodedb, so it is never evidence that this radio HEARD the node.
+    // _device/_devices are written only by heard-evidence paths
+    // (touchLastHeard, confirmScanContact, restoreDeviceAttribution);
+    // attributing here tagged every node with every radio and made the
+    // node_source filter a no-op.
     if (this._scanActive) {
       if (this._cache.has(node.num)) {
         // Already promoted by scan_contact — update in place
         const existing = this._cache.get(node.num);
-        const prevDevs = existing._devices ?? (existing._device ? [existing._device] : []);
-        const devices = newDev && !prevDevs.includes(newDev) ? [...prevDevs, newDev] : prevDevs;
-        const merged = enrichFromCache({ ...existing, ...node });
-        this._cache.set(node.num, { ...merged, _device: newDev ?? existing._device ?? null, _devices: devices });
+        this._cache.set(node.num, enrichFromCache({ ...existing, ...node }));
         this._scheduleEmit();
       } else {
         // Buffer — only promote when scan_contact confirms this node was actually heard
         const existing = this._pending.get(node.num) ?? {};
-        const prevDevs = existing._devices ?? (existing._device ? [existing._device] : []);
-        const devices = newDev && !prevDevs.includes(newDev) ? [...prevDevs, newDev] : prevDevs;
-        const merged = enrichFromCache({ ...existing, ...node });
-        this._pending.set(node.num, { ...merged, _device: newDev ?? existing._device ?? null, _devices: devices });
+        this._pending.set(node.num, enrichFromCache({ ...existing, ...node }));
       }
       return;
     }
@@ -103,14 +102,7 @@ class NodeList extends EventEmitter {
     // (touchLastHeard), the opt-in boot seed, and confirmed scan contacts.
     if (!this._cache.has(node.num)) return;
     const existing = this._cache.get(node.num) ?? {};
-    const prevDevs = existing._devices ?? (existing._device ? [existing._device] : []);
-    const devices = newDev && !prevDevs.includes(newDev) ? [...prevDevs, newDev] : prevDevs;
-    const merged = enrichFromCache({ ...existing, ...node });
-    this._cache.set(node.num, {
-      ...merged,
-      _device:  newDev ?? existing._device ?? null,
-      _devices: devices,
-    });
+    this._cache.set(node.num, enrichFromCache({ ...existing, ...node }));
     this._scheduleEmit();
   }
 
@@ -201,14 +193,23 @@ class NodeList extends EventEmitter {
   // Called when scanner emits a scan_contact — promotes pending node data into the live cache
   confirmScanContact(num, device, az, rssi, snr) {
     const scanFields = { _scanAz: az ?? null, _scanRssi: rssi ?? null, _scanSnr: snr ?? null };
+    // A scan contact IS heard evidence — stamp the scanning device
+    const tag = (entry) => {
+      const prevDevs = entry._devices ?? (entry._device ? [entry._device] : []);
+      return {
+        _device:  entry._device ?? device ?? null,
+        _devices: device && !prevDevs.includes(device) ? [...prevDevs, device] : prevDevs,
+      };
+    };
     if (this._pending.has(num)) {
-      this._cache.set(num, { ...this._pending.get(num), ...scanFields });
+      const pending = this._pending.get(num);
+      this._cache.set(num, { ...pending, ...scanFields, ...tag(pending) });
       this._pending.delete(num);
     } else if (this._cache.has(num)) {
       // Repeat contact — update scan fields if signal is better
       const existing = this._cache.get(num);
       if (snr == null || existing._scanSnr == null || snr > existing._scanSnr) {
-        this._cache.set(num, { ...existing, ...scanFields });
+        this._cache.set(num, { ...existing, ...scanFields, ...tag(existing) });
       }
     } else {
       // scan_contact arrived before node_update — minimal entry; node_update will enrich it

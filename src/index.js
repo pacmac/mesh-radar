@@ -8,7 +8,7 @@ import configRouter from './config-api.js';
 import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
 import { registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, clearNodeCache, stmts } from './db.js';
+import { getConfig, setConfig, clearNodeCache, stmts, migrateNodeDeviceMac, loadNodeMacMap } from './db.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
@@ -242,6 +242,18 @@ if (!getConfig('migrations.traceroute_tx_device', false)) {
     const n = stmts.backfillTracerouteTxDevice.run({ device: primary }).changes;
     setConfig('migrations.traceroute_tx_device', true);
     console.log(`[migrate] traceroute_history tx_device backfilled: ${n} rows → ${primary}`);
+  }
+}
+
+// One-shot: rewrite legacy nodes.device values stored as node_id (!hex) to BLE
+// MAC, using the persisted node_mac registry. nodes.device must share the MAC
+// vocabulary the node_source filter compares against (__ble_addr contract).
+if (!getConfig('migrations.node_device_mac', false)) {
+  const pairs = Array.from(loadNodeMacMap(), ([mac, nodeId]) => ({ mac, nodeId }));
+  if (pairs.length) {
+    const n = migrateNodeDeviceMac(pairs);
+    setConfig('migrations.node_device_mac', true);
+    console.log(`[migrate] nodes.device !hex→MAC: ${n} rows across ${pairs.length} devices`);
   }
 }
 

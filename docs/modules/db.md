@@ -1,8 +1,8 @@
 ---
 module: db
 source: src/db.js
-source_hash: 0d5c09d2f1ba82749473f4f6c31bb03319b123c41264c43b6c749d4193984891
-updated: 2026-06-30
+source_hash: 7e84a35a8f5250cea745f148b8c8df2bc6ceeeb49ac78ddb72163622e47e5054
+updated: 2026-07-03
 ---
 
 # Module: db
@@ -289,3 +289,14 @@ Columns `tx_device TEXT`, `rotator_az REAL` (+ ALTER migration). One-shot
 startup backfill attributes pre-migration rows to the primary radio (the
 only historical dispatcher), guarded by config flag
 `migrations.traceroute_tx_device` so later unattributed rows stay null.
+
+## nodes.device vocabulary migration (task `node-source-attribution`)
+
+`migrateNodeDeviceMac(pairs)` — `pairs: [{ nodeId: '!hex', mac: 'AA:BB:…' }]`.
+Rewrites legacy `nodes.device` values stored as `node_id` (`!hex`) to the
+device's BLE MAC (`UPDATE nodes SET device = @mac WHERE device = @nodeId`
+per pair) and returns total rows changed. Called once from `index.js` at
+startup guarded by config flag `migrations.node_device_mac`, with pairs
+resolved from the live MAC↔node_id registry (never MAC-suffix arithmetic).
+Rationale: `nodes.device` feeds `restoreDeviceAttribution` and must use the
+same MAC vocabulary the `node_source` filter compares against.

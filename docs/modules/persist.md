@@ -1,8 +1,8 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: 6c664c4773fac0cfce4fd8f909e6e63044ccf666d5e38d16aa9ba7852253acf2
-updated: 2026-06-30
+source_hash: 2d846ea5f1cb796d49102fa6a38927b389557509866a365dc56a2a1cd7cf0c52
+updated: 2026-07-03
 ---
 
 # Module: persist
@@ -42,9 +42,10 @@ export function handleEvent(event)  // → void
 {
   type:       string,        // gw event type
   data:       object|null,   // event payload
-  device:     string|null,   // v1: BLE MAC of receiving radio — DEPRECATED, use __ble_addr
-  __ble_addr: string|null,   // v2: authoritative device key (not yet used — see Invariants)
-  node_id:    string|null,   // present on some event types
+  __ble_addr: string|null,   // v2: authoritative device key (BLE MAC) — on every event
+  addr:       string|null,   // v2: equals __ble_addr, kept for compatibility
+  device:     string|null,   // v1 legacy fallback only
+  node_id:    string|null,   // present on some event types — NOT a stable key (IDENTITY.md)
   from_num:   number|null,   // sender node_num (AppRouter-decoded events)
   rx_snr:     number|null,
   rx_rssi:    number|null,
@@ -66,9 +67,9 @@ _N/A_ — persist.js does not emit events.
 | `event.type` | Action |
 |---|---|
 | `packet` | `handlePacket(data.packet, rxDevice, ts, _replay)` — routes by `portnum` |
-| `node_info` | `handleNodeInfo(data, device)` |
-| `nodeinfo` | `handleNodeInfo(data, device)` — alias |
-| `node_update` | `handleNodeInfo(data, device)` — merged cache update from AppRouter |
+| `node_info` | `handleNodeInfo(data, null)` — nodedb replay: never writes `nodes.device` |
+| `nodeinfo` | `handleNodeInfo(data, null)` — alias |
+| `node_update` | `handleNodeInfo(data, null)` — merged cache update from AppRouter |
 | `telemetry` | `handleTelemetryEvent(event)` — AppRouter-decoded telemetry |
 | `user` | `stmts.upsertNode` + `_upsertCache` — AppRouter-decoded NODEINFO_APP |
 | `position` | `stmts.upsertNode` — AppRouter-decoded POSITION_APP |
@@ -94,7 +95,18 @@ _N/A_ — persist.js does not emit events.
 - `_upsertCache` writes to `nodeinfo` (permanent). `stmts.upsertNode` writes to `nodes` (ephemeral). Both are called together whenever node identity is known.
 - A node identity write to `nodeinfo` is skipped if `short_name` and `long_name` are both absent (`_upsertCache` guard).
 - Coordinates are integer millidegrees divided by `1e7`. Coordinates outside `[-90,90]` lat or `[-180,180]` lon are stored as null (`_validCoord` guard).
-- **v1 defect (line 31):** `rxDevice = node_id || device` uses the v1 `device` field as the device key. After `bridge.js` v2 alignment, this must become `event.__ble_addr` exclusively. Until then, `device` is the only reliable device identifier passed to all db writes.
+- **Device key vocabulary (task `node-source-attribution`):**
+  `rxDevice = __ble_addr ?? addr ?? node_id ?? device` — BLE MAC first per
+  the V2 contract; `node_id`/`device` remain only as legacy-replay
+  fallbacks. `rxDevice` is what every db write stores as `device`. Before
+  this fix `rxDevice = node_id || device` wrote unstable `!hex` values into
+  `nodes.device`, giving the table a mixed MAC/`!hex` vocabulary that could
+  never match the rotator MAC in the `node_source` filter.
+- **`nodes.device` means "heard by":** `handleNodeInfo` passes
+  `device: null` — `node_info`/`node_update` are nodedb replays, not
+  reception evidence; `upsertNode`'s COALESCE keeps the last packet-derived
+  value. Only real received packets (`packet`, `user`, `position`,
+  `telemetry` branches) stamp `rxDevice`.
 - `traceroute`, `range_test`, `text` (plain), `device_snapshot`, `device_data`, `device_state`, and `hello` event types are **not** handled here. They belong to other modules.
 
 ## Test notes

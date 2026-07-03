@@ -1,8 +1,8 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 55282af275daa02faa9303ec4a98de6c9a37f37ec24dbeadfff5c291f8f665d6
-updated: 2026-06-30
+source_hash: 57d7921eca860a30979738111b0f8cf01c7b190070c3afe2c43b747e81e59716
+updated: 2026-07-03
 ---
 
 # Module: node-list
@@ -58,7 +58,9 @@ nodeList.homePos          // → {lat,lon}|null  — from config 'home.lat'/'hom
 ```js
 // Bridge event ingest
 nodeList.handleNodeUpdate(ev)
-// ev: { data: nodeData, device: string|null, __ble_addr: string|null (v2, not yet used) }
+// ev: { data: nodeData, addr/__ble_addr: BLE MAC of the reporting radio }
+// Enriches node DATA only — never contributes _device/_devices (see
+// "Device attribution invariant")
 
 // Packet receipt — update last_heard and device tag
 nodeList.touchLastHeard(num, ts, device = null)
@@ -108,8 +110,8 @@ nodeList.refilter()
 
 | Field | Set by | Meaning |
 |---|---|---|
-| `_device` | all mutation methods | Last BLE MAC that received data for this node |
-| `_devices` | all mutation methods | All BLE MACs that have received data for this node |
+| `_device` | heard-evidence paths only | Last BLE MAC that actually HEARD this node |
+| `_devices` | heard-evidence paths only | All BLE MACs that have actually HEARD this node |
 | `_from_cache` | `enrichFromCache` | Identity/position backfilled from `nodeinfo` |
 | `_new` | `enrichFromCache` | `first_heard` within last 24 h |
 | `_scanAz` | `confirmScanContact` | Rotator azimuth at scan contact |
@@ -155,12 +157,23 @@ restoreScanNodes(nodes)  — called on restart when scan was in progress
 - `confirmScanContact` persists the live `_cache` to config `'scan_nodes'` on every call so progress survives a restart.
 - `enrichFromCache` is idempotent: running it twice on the same node produces the same result.
 - `_scheduleEmit` coalesces all changes within a 150 ms window into a single `'change'` emission.
-- **v1 defect**: `ev.device` is used as the device key throughout (`handleNodeUpdate`, `seed`, etc.). After `bridge.js` v2 alignment, `ev.__ble_addr` must be used exclusively.
+- **Device attribution invariant** (task `node-source-attribution`):
+  `_device`/`_devices` mean "radios that actually heard this node over RF"
+  and are written ONLY by heard-evidence paths — `touchLastHeard` (received
+  packet), `confirmScanContact` (scan hit), and `restoreDeviceAttribution`
+  (packet-derived `nodes.device` from SQLite). `handleNodeUpdate` must NOT
+  write them: `node_info` is a nodedb replay on every BLE sync — both radios
+  replay the same nodedb, so attributing from it tags every node with every
+  radio and turns the `node_source` filter into a no-op (the 2026-07-03
+  "source set to YAGI but all sources shown" bug). `seed` only tags when
+  given an explicit device (boot seed passes `null`). Vocabulary is BLE MAC
+  (`__ble_addr`) exclusively.
 - `setTraceroute` writes directly to `db.stmts` — a mixed concern. Traceroute DB writes are coupled to the node cache because the in-memory patch and the DB write must stay in sync.
 
 ## Test notes
 
-- **`handleNodeUpdate` PASV/ACTV**: event arrives → node in `_cache` with correct `_device` and `_devices`; `'change'` fires after 150 ms
+- **`handleNodeUpdate` PASV/ACTV**: event arrives for a cached node → data enriched, `_device`/`_devices` UNCHANGED; `'change'` fires after 150 ms
+- **attribution stays clean**: node heard only by OMNI, then `node_info` replay arrives via YAGI → `_devices` still `[OMNI MAC]`
 - **`handleNodeUpdate` scan buffering**: `setScanActive(true)` → event from rotator → node in `_pending`, not `_cache`; event from non-rotator → dropped
 - **`confirmScanContact` promotion**: pending node → promoted to `_cache` with `_scanAz`/`_scanRssi`/`_scanSnr` set
 - **`confirmScanContact` SNR update**: repeated contact with better SNR → fields updated; worse SNR → ignored
@@ -181,9 +194,13 @@ restoreScanNodes(nodes)  — called on restart when scan was in progress
 - Scan rotation control — `scanner.js` owns the scan sequence; it calls `confirmScanContact`
 - Traceroute lifecycle management — `traceroute.js` owns the request/response cycle; it calls `setTraceroute`
 
-## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
+## V2 field alignment (2026-07-02, task `v2-backend-alignment`; revised 2026-07-03, task `node-source-attribution`)
 
-Device attribution uses `ev.node_id ?? ev.addr` (V2 removed `device`); the scan-time source filter compares `ev.addr` against the rotator MAC.
+The scan-time source gate compares `ev.addr` against the rotator MAC.
+`handleNodeUpdate` no longer derives a device key at all — attribution
+comes exclusively from the heard-evidence paths listed in the Device
+attribution invariant, keyed by `__ble_addr` MAC (never `node_id`, which
+V2 IDENTITY.md marks as unstable).
 
 ## Phantom-node guard (task `phantom-nodes-regression`)
 

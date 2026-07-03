@@ -575,6 +575,20 @@ export function loadNodeMacMap() {
   );
 }
 
+const _migrateNodeDevice = db.prepare(`UPDATE nodes SET device = @mac WHERE device = @nodeId`);
+
+// Rewrite legacy nodes.device values stored as node_id (!hex) to the device's
+// BLE MAC. nodes.device feeds restoreDeviceAttribution and must use the same
+// MAC vocabulary the node_source filter compares against. Returns rows changed.
+export function migrateNodeDeviceMac(pairs) {
+  let changed = 0;
+  for (const { nodeId, mac } of pairs) {
+    if (!nodeId || !mac) continue;
+    changed += _migrateNodeDevice.run({ nodeId, mac }).changes;
+  }
+  return changed;
+}
+
 // -- Alert rules --------------------------------------------------------------
 
 const _getAllAlertRules  = db.prepare(`SELECT * FROM alert_rules ORDER BY type`);

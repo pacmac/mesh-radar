@@ -51,8 +51,9 @@ export function passesFilter(node, { scanActive = false, ownNums = null } = {}) 
   if (hasTelem  && !node.device_metrics) return false;
   if (msgOnly   && node.user?.is_unmessagable) return false;
 
-  const role = node.user?.role ?? node.role;
-  if (roles.length > 0 && role != null && !roles.includes(role)) return false;
+  // Protobuf omits default enum values on the wire: a missing role IS 'CLIENT'
+  const role = node.user?.role ?? node.role ?? 'CLIENT';
+  if (roles.length > 0 && !roles.includes(role)) return false;
 
   if (rotatorId && source !== 'both') {
     const devs = node._devices ?? (node._device ? [node._device] : []);

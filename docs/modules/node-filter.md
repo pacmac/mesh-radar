@@ -1,8 +1,8 @@
 ---
 module: node-filter
 source: src/node-filter.js
-source_hash: 55a5d066a78b12c52b6acc8adf06932acc07c2866f657a2c737397a356a41f45
-updated: 2026-06-30
+source_hash: a4f33a189a3f804cced8218d05d89571841e05f25f7e0955123adfeca7ca5e78
+updated: 2026-07-03
 ---
 
 # Module: node-filter
@@ -84,7 +84,7 @@ All keys are read from the `config` table on every call via `getConfig`.
 7. **has_signal** — both `snr` and `rssi` are null
 8. **has_telem** — no `device_metrics`
 9. **msg_only** — `user.is_unmessagable` is truthy
-10. **roles** — `node.role` not in whitelist (skipped if roles is empty or node.role is null)
+10. **roles** — `(node.user?.role ?? node.role ?? 'CLIENT')` not in whitelist (skipped if roles is empty). A null role means protobuf-default `CLIENT` — the firmware omits default enum values on the wire, so unknown-role nodes are CLIENTs and are filtered as such.
 11. **node_source** — when rotatorId is known and source ≠ 'both':
     - `'yagi'`: node must have rotator MAC in `_devices`
     - `'omni'`: node must have at least one non-rotator MAC in `_devices`
@@ -109,6 +109,7 @@ All keys are read from the `config` table on every call via `getConfig`.
 - **hide_mqtt**: `via_mqtt = true` → `false`
 - **has_signal**: both `snr` and `rssi` null → `false`; either present → passes
 - **roles whitelist**: roles = `['ROUTER']`, node.role = `'CLIENT'` → `false`; roles = [] → passes
+- **roles null = CLIENT**: roles = `['ROUTER']`, role absent → `false`; roles = `['CLIENT']`, role absent → passes
 - **node_source yagi**: rotatorId set, source = `'yagi'`, `_devices` does not include rotatorId → `false`
 - **node_source omni**: all `_devices` entries are rotatorId → `false`
 - **scan active gate**: `scanActive = true`, `_scanAz = null`, `_scanSnr = null` → `false`
@@ -123,8 +124,14 @@ All keys are read from the `config` table on every call via `getConfig`.
 - Broadcasting results — `ws-relay.js` receives the filtered list from `node-list`'s `'change'` event
 - Config persistence — `db.js` / `config-api.js` own reading and writing filter settings
 
-## V2 field paths (task `node-filter-fix`)
+## V2 field paths (tasks `node-filter-fix`, `node-source-attribution`)
 
-The role filter reads `node.user?.role ?? node.role` — node records carry
-role inside `user` (DB-enriched) rather than top-level. Nodes with unknown
-role pass any roles filter by design.
+The role filter reads `node.user?.role ?? node.role ?? 'CLIENT'` — node
+records carry role inside `user` (DB-enriched) rather than top-level, and a
+missing role is the protobuf default `CLIENT`, not "unknown". Nodes with no
+role field are therefore included/excluded exactly as CLIENTs.
+
+The `node_source` filter compares rotator identity by **BLE MAC only**
+(`getRotatorAddress()` returns a MAC; `_devices` entries are MACs stamped
+from `__ble_addr`). `_devices` must contain only radios that actually HEARD
+the node — see node-list.md "Device attribution invariant".

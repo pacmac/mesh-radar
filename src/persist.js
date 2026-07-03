@@ -27,16 +27,20 @@ function _upsertCache(num, nodeId, u, pos) {
 const BROADCAST_NUM = 0xffffffff;
 
 export function handleEvent(event) {
-  const { type, data, device, node_id, _replay } = event;
-  const rxDevice = node_id || device;
+  const { type, data, _replay } = event;
+  // V2: __ble_addr (BLE MAC) is the device key on every event; node_id and
+  // device are legacy-replay fallbacks only (IDENTITY.md: node_id is not a
+  // stable key). This is what every db write stores as `device`.
+  const rxDevice = event.__ble_addr ?? event.addr ?? event.node_id ?? event.device ?? null;
   const ts = Math.floor(Date.now() / 1000);
 
   if (type === 'packet') {
     handlePacket(data?.packet, rxDevice, ts, !!_replay);
   } else if (type === 'node_info' || type === 'nodeinfo') {
-    handleNodeInfo(data, device);
+    // nodedb replay, not reception evidence — never writes nodes.device
+    handleNodeInfo(data, null);
   } else if (type === 'telemetry') {
-    handleTelemetryEvent(event);
+    handleTelemetryEvent(event, rxDevice);
   } else if (type === 'user') {
     // AppRouter decoded NODEINFO_APP
     if (event.from_num && data) {
@@ -47,7 +51,7 @@ export function handleEvent(event) {
         last_heard: ts, snr: event.rx_snr ?? null, rssi: event.rx_rssi ?? null,
         hops: event.hops ?? null, lat: null, lon: null, alt: null,
         battery: null, voltage: null, channel_util: null, air_util_tx: null, uptime_seconds: null,
-        device,
+        device: rxDevice,
       });
       _upsertCache(event.from_num, data.id, data, null);
     }
@@ -62,16 +66,16 @@ export function handleEvent(event) {
         snr: event.rx_snr ?? null, rssi: event.rx_rssi ?? null, hops: event.hops ?? null,
         lat, lon, alt: data.altitude ?? null,
         battery: null, voltage: null, channel_util: null, air_util_tx: null, uptime_seconds: null,
-        device,
+        device: rxDevice,
       });
     }
   } else if (type === 'node_update') {
-    // AppRouter node cache update — has merged user/position/metrics data
-    handleNodeInfo(data, device);
+    // AppRouter node cache update — nodedb replay, never writes nodes.device
+    handleNodeInfo(data, null);
   }
 }
 
-function handleTelemetryEvent(event) {
+function handleTelemetryEvent(event, rxDevice) {
   const { data, from_num, rx_snr, rx_rssi } = event;
   if (!from_num || !data) return;
   const ts = Math.floor(Date.now() / 1000);
@@ -96,7 +100,7 @@ function handleTelemetryEvent(event) {
       channel_util:   m.channel_utilization ?? null,
       air_util_tx:    m.air_util_tx         ?? null,
       uptime_seconds: m.uptime_seconds      ?? null,
-      device:         event.device ?? null,
+      device:         rxDevice ?? null,
     });
   } else if (data.environment_metrics) {
     const m = data.environment_metrics;
