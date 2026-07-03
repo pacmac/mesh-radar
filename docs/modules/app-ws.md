@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: ba8b125de1aadd5ba3e4529121579c90d1cb88a701131e8fa7d150c21cdf102d
+source_hash: 69421f339550920afc8ff40fd40fbc1b3d240bfbf7bc51eb3afde8a773931df1
 updated: 2026-07-03
 ---
 
@@ -77,3 +77,14 @@ The handler builds `_deviceConfigsByMac` from `dev.cfg` on every
 device_list (replacing GET /device-config), seeds primary-as-active when
 no persisted choice exists (moved from the deleted `loadDeviceConfigs`),
 and adopts `dev.lora` into `loraCfg` for the perf page's selected radio.
+
+## Phase C3a — device selection keyed by MAC
+
+The selection SSOT is `activeDevice` (BLE MAC, persisted as
+`activeDevice`); `activeNodeId` is a derived getter (its setter maps
+legacy node_id writes to the MAC). The adoption block re-adopts the
+persisted MAC; a one-time shim converts a legacy persisted `!hex`
+selection via the device list. Consequence of MAC keying: a radio keeps
+its selection across factory resets that change its node_id. The
+never-persist-on-adoption invariant is unchanged — only selectDevice and
+set-primary persist.

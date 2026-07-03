@@ -61,12 +61,19 @@ export const wsMixin = {
       }
       if (Object.keys(byMac).length) this._deviceConfigsByMac = byMac;
       this._rebuildDeviceConfigs?.();
+      // One-time shim: a legacy persisted !hex selection converts to the
+      // MAC key once the device list can map it (C3a).
+      if (!persistGet('activeDevice', '')) {
+        const legacy = persistGet('activeNodeId', '');
+        const mapped = legacy && devices.find(d => d.node_id === legacy)?.addr;
+        if (mapped) persistSet('activeDevice', mapped);
+      }
       // Seed primary as active only when the user has no saved choice —
       // an explicit Set Active always wins (moved from loadDeviceConfigs).
-      if (!this.activeNodeId && !persistGet('activeNodeId', '')) {
-        const primary = devices.find(d => d.cfg?.is_primary && d.node_id);
+      if (!this.activeDevice && !persistGet('activeDevice', '')) {
+        const primary = devices.find(d => d.cfg?.is_primary && d.addr);
         if (primary) {
-          this.activeNodeId = primary.node_id;
+          this.activeDevice = primary.addr;
           if (!this.msgFrom) this.msgFrom = primary.node_id;
         }
       }
@@ -104,12 +111,14 @@ export const wsMixin = {
       // Active-device adoption (see docs/modules/app-ws.md):
       // the persisted preference is written ONLY by explicit user actions.
       // Re-adopt it when its device reappears; outage fallback is display-only.
+      // Keyed by MAC (C3a) — a device keeps its selection across firmware
+      // resets that change its node_id.
       if (devices.length > 0) {
-        const preferred = persistGet('activeNodeId', '');
-        if (preferred && devices.find(d => d.node_id === preferred)) {
-          if (this.activeNodeId !== preferred) this.activeNodeId = preferred;
-        } else if (!this.activeNodeId || !devices.find(d => d.node_id === this.activeNodeId)) {
-          this.activeNodeId = devices[0].node_id;
+        const preferred = persistGet('activeDevice', '');
+        if (preferred && devices.find(d => d.addr === preferred)) {
+          if (this.activeDevice !== preferred) this.activeDevice = preferred;
+        } else if (!this.activeDevice || !devices.find(d => d.addr === this.activeDevice)) {
+          this.activeDevice = devices[0].addr;
         }
       }
       {

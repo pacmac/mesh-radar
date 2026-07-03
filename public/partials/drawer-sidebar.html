@@ -23,9 +23,9 @@
         </div>
         <!-- Device selector (shown when multiple devices) -->
         <div class="mt-2" x-show="availableDevices.length > 1">
-          <select class="select select-sm select-bordered w-full font-mono" x-model="activeNodeId" @change="selectDevice(activeNodeId)">
-            <template x-for="d in availableDevices" :key="d.node_id">
-              <option :value="d.node_id" x-text="deviceLabel(d.node_id)"></option>
+          <select class="select select-sm select-bordered w-full font-mono" x-model="activeDevice" @change="selectDevice(activeDevice)">
+            <template x-for="d in availableDevices" :key="d.addr">
+              <option :value="d.addr" x-text="deviceLabel(d.node_id)"></option>
             </template>
           </select>
         </div>

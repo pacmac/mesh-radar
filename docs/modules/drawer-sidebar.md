@@ -1,8 +1,8 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: 2d0fc5f34d999a08cfba9fd12f0d1293e72aa27f75b83dca072d5dddfab77d41
-updated: 2026-07-02
+source_hash: c1f6440b3dbf643e9837d9c67283c704c27ef89e39cadc7d75b83e36d0fcad12
+updated: 2026-07-03
 ---
 
 # Module: drawer-sidebar
@@ -82,3 +82,10 @@ radios. BLE health surfaces: per-device bars + state in the drawer footer,
 per-device amber warning badges in the navbar whenever any radio is not
 ready, and per-card bars on the Devices page. `signalBarFill` deleted with
 its sole consumer.
+
+## Phase C3a
+
+The device selector binds `x-model="activeDevice"`; options carry
+`:value="d.addr"` and are keyed by `d.addr` (node_id can be null
+pre-sync — keying on it produced duplicate-null Alpine keys). Labels
+still render via deviceLabel until C3c bundles.

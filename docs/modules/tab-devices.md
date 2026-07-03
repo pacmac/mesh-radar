@@ -1,8 +1,8 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: 1b616c8a791fa2f513251c8015863558ed55ed289760dfd0db1151868cff9990
-updated: 2026-07-02
+source_hash: 2ca4ca0eb9d34a9ffbe7bdd057e45f6dba3d5e2b9a3e7f6487036ecf8061578f
+updated: 2026-07-03
 ---
 
 # Module: tab-devices
@@ -194,3 +194,8 @@ Manual/Playwright verification:
 - Stats row sync time reads `sync_duration_s` (V2 name; `ready_secs` never existed).
 - "Nodes seen" / "Packets RX/TX" cells removed — `local_stats` is not in the V2
   `node_info` contract; the cells could never render.
+
+## Phase C3a
+
+Set Active passes `dev.addr` to selectDevice. The active-badge compare
+(`dev.node_id === activeNodeId`) still works — activeNodeId is derived.

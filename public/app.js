@@ -31,7 +31,20 @@ function dashboard() {
     sidebarPinned: persistGet('sidebarPinned', true),
 
     // -- Device selection -----------------------------------------------------
-    activeNodeId:  persistGet('activeNodeId', ''),
+    // SSOT is the radio's BLE MAC (IDENTITY.md; C3a). activeNodeId is a
+    // DERIVED view for Domain-N uses (env/tilt slices, mesh addressing) and
+    // legacy read sites; its setter maps node_id writes back to the MAC so
+    // unconverted writers keep working. Persisted key: 'activeDevice'
+    // (legacy 'activeNodeId' is shimmed once in the device_list handler).
+    activeDevice:  persistGet('activeDevice', ''),
+    get activeNodeId() {
+      return (this.availableDevices || []).find(d => d.addr === this.activeDevice)?.node_id ?? '';
+    },
+    set activeNodeId(v) {
+      this.activeDevice = v
+        ? ((this.availableDevices || []).find(d => d.node_id === v || d.addr === v)?.addr ?? '')
+        : '';
+    },
     cfgRadioId:    '',
     radioTab:      'device',
     availableDevices: [],
@@ -284,7 +297,7 @@ function dashboard() {
         this.setNav(t);
       });
 
-      this.$watch('activeNodeId', () => { this.loadTiltHistory(); this.loadEnvHistory(this.activeNodeId); });
+      this.$watch('activeDevice', () => { this.loadTiltHistory(); this.loadEnvHistory(this.activeNodeId); });
       this.$watch('tiltWindow',        () => this.loadTiltHistory());
       this.$watch('envWindow',         () => this.loadEnvHistory(this.activeNodeId));
       this.$watch('rangeNodeFilter',   () => { this._rangeStats = null; this._rangeChartCache = null; });

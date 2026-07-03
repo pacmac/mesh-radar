@@ -31,9 +31,11 @@ export const navMixin = {
     else if (t === 'perf') { this.adoptPerfLoraCfg(); this.perfHistory = this.perfHistorySlice(); this.$nextTick(() => this.initPerfCharts()); }
   },
 
-  // Build a device-scoped URL using the active device.
+  // Build a device-scoped URL using the active device. MAC-addressed:
+  // always valid, whereas a node_id 404s pre-sync (IDENTITY.md §2).
   d(path) {
-    return this.activeNodeId ? '/' + this.activeNodeId + path : path;
+    const key = this.activeDevice || this.activeNodeId;
+    return key ? '/' + key + path : path;
   },
 
   // Like d() but uses cfgRadioId for Radio Config tab operations.

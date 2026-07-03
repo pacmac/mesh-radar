@@ -45,9 +45,13 @@ export const devicesMixin = {
     this.fixedPosition = { lat: null, lon: null, alt: null, loaded: false, saved: false, error: '' };
   },
 
-  async selectDevice(nodeId) {
-    this.activeNodeId = nodeId;
-    persistSet('activeNodeId', nodeId);
+  // Accepts the device MAC (canonical) or a node_id during transition.
+  // Persisting happens ONLY here and in set-primary — explicit user actions;
+  // adoption/fallback writes never persist (set-active invariant).
+  async selectDevice(key) {
+    const dev = (this.availableDevices || []).find(d => d.addr === key || d.node_id === key);
+    this.activeDevice = dev?.addr ?? key;
+    persistSet('activeDevice', this.activeDevice);
     this._clearDeviceState();
     this.reconnectWS();
     await this.bootstrapDevice();
@@ -95,9 +99,9 @@ export const devicesMixin = {
 
   async disconnectDevice(nodeId) {
     await fetchJSON('/devices/' + encodeURIComponent(nodeId), 'DELETE');
-    if (this.activeNodeId === nodeId) this.activeNodeId = '';
-    if (!this.activeNodeId && this.availableDevices.length > 0) {
-      await this.selectDevice(this.availableDevices[0].node_id);
+    if (this.activeNodeId === nodeId) this.activeDevice = '';
+    if (!this.activeDevice && this.availableDevices.length > 0) {
+      await this.selectDevice(this.availableDevices[0].addr);
     }
   },
 
@@ -148,8 +152,9 @@ export const devicesMixin = {
         if (id !== nodeId) next[id] = { ...next[id], is_primary: false };
       }
       this.deviceConfigs = next;
-      this.activeNodeId = nodeId;
-      persistSet('activeNodeId', nodeId);
+      // Set-primary also becomes the active radio — explicit user action
+      const mac = (this.availableDevices || []).find(d => d.node_id === nodeId || d.addr === nodeId)?.addr;
+      if (mac) { this.activeDevice = mac; persistSet('activeDevice', mac); }
     }
     try {
       await fetchJSON(`/device-config/${encodeURIComponent(nodeId)}`, 'PUT', { [field]: value });
@@ -318,7 +323,7 @@ export const devicesMixin = {
             break;
           }
           if (devState?.ble_state === 'ready') {
-            if (!this.activeNodeId) await this.selectDevice(dev.node_id);
+            if (!this.activeDevice) await this.selectDevice(dev.addr ?? dev.node_id);
             connected = true;
             break;
           }

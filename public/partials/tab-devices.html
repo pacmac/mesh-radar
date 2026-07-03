@@ -416,7 +416,7 @@
                       <button class="btn btn-sm btn-outline"
                               :class="dev.node_id===activeNodeId ? 'btn-success' : ''"
                               :disabled="dev.node_id===activeNodeId"
-                              @click="selectDevice(dev.node_id)">
+                              @click="selectDevice(dev.addr)">
                         <span x-text="dev.node_id===activeNodeId ? 'Active' : 'Set Active'"></span>
                       </button>
                       <button class="btn btn-sm btn-outline btn-warning"
