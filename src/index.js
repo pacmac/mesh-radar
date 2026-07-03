@@ -52,6 +52,26 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const app = express();
 app.use(express.json());
 
+// -- real-time enforcement guard --------------------------------------------
+// Sec-Fetch-Dest: empty is set by browsers on every JS fetch() call and cannot
+// be forged by JavaScript. Server-side calls, curl, and Postman never send it.
+// Endpoints listed here must only be consumed via WebSocket /events — any
+// browser polling attempt is rejected hard so the violation is unmissable.
+const WS_ONLY_ROUTES = new Set(['/devices', '/traceroute_history']);
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET') return next();
+  const path = '/' + req.path.split('/')[1]; // first segment only
+  if (!WS_ONLY_ROUTES.has(path)) return next();
+  if (req.headers['sec-fetch-dest'] !== 'empty') return next(); // server-side / curl — allow
+  return res.status(410).json({
+    error:   'ws_only',
+    message: 'GET /devices is not available to browser clients. Subscribe to the WebSocket stream — device_list events carry real-time device state.',
+    ws:      '/events',
+  });
+});
+
+
 // Serve src/utils.js to the browser as a classic script — true SSOT.
 // ESM export keywords are stripped; named functions assigned to window.
 app.get('/utils.js', (req, res) => {
@@ -159,25 +179,6 @@ app.use(tracerouteRouter);
 app.use(autoPurgeRouter);
 
 app.use(messagesRouter);
-
-// -- real-time enforcement guard --------------------------------------------
-// Sec-Fetch-Dest: empty is set by browsers on every JS fetch() call and cannot
-// be forged by JavaScript. Server-side calls, curl, and Postman never send it.
-// Endpoints listed here must only be consumed via WebSocket /events — any
-// browser polling attempt is rejected hard so the violation is unmissable.
-const WS_ONLY_ROUTES = new Set(['/devices']);
-
-app.use((req, res, next) => {
-  if (req.method !== 'GET') return next();
-  const path = '/' + req.path.split('/')[1]; // first segment only
-  if (!WS_ONLY_ROUTES.has(path)) return next();
-  if (req.headers['sec-fetch-dest'] !== 'empty') return next(); // server-side / curl — allow
-  return res.status(410).json({
-    error:   'ws_only',
-    message: 'GET /devices is not available to browser clients. Subscribe to the WebSocket stream — device_list events carry real-time device state.',
-    ws:      '/events',
-  });
-});
 
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 

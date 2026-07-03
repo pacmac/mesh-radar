@@ -101,10 +101,10 @@ export const wsMixin = {
           this.msgFrom = this.activeNodeId;
         }
       }
-      // Perf page cold-load race: loadPerfHistory no-ops until the device
-      // list exists — retry once devices arrive.
+      // Perf page cold-load: perfDev() resolves once the device list exists —
+      // re-slice the WS-replayed history and fetch theory constants.
       if (this.tab === 'perf' && !this.perfHistory.length && devices.length) {
-        this.loadPerfHistory();
+        this.perfHistory = this.perfHistorySlice();
         this.loadPerfLoraCfg();
       }
       if (!this.cfgRadioId || !devices.find(d => d.node_id === this.cfgRadioId)) {
@@ -343,8 +343,20 @@ export const wsMixin = {
     }
 
     if (ev.type === 'traceroute_history') {
-      // Perf page loads device-scoped history via REST (per-device contract,
-      // docs/modules/app-perf.md); the global WS replay is ignored.
+      // Sole transport for perf-page history (C1: page data is WS-only).
+      // All-device rows are stored; the page shows the perfDev() slice —
+      // presentation scoping, same pattern as tilt/env history.
+      this._trHistAll = ev.rows || [];
+      if (ev.failure_epoch != null) this.perfFailureEpoch = ev.failure_epoch;
+      this.perfHistory = this.perfHistorySlice();
+      return;
+    }
+
+    if (ev.type === 'traceroute_failed' && ev.row) {
+      this._trHistAll = [ev.row, ...(this._trHistAll || [])].slice(0, 500);
+      if (ev.row.tx_device === this.perfDev()) {
+        this.perfHistory = [ev.row, ...(this.perfHistory || [])].slice(0, 200);
+      }
       return;
     }
 
@@ -444,17 +456,22 @@ export const wsMixin = {
       // Prepend to perfHistory so the perf tab stays live without polling —
       // only when the result belongs to the page's selected device (scope
       // match on the subscribed device, not business filtering).
-      if (ev.from != null && ev.tx_device && ev.tx_device === this.perfDev()) {
+      if (ev.from != null && ev.tx_device) {
         const entry = {
+          id: ev.id ?? null,
           from_num: ev.from, to_num: ev.to ?? null,
           route: ev.route ?? [], route_back: ev.route_back ?? [],
           snr_towards: ev.snr_towards ?? [], snr_back: ev.snr_back ?? [],
           relay_positions: ev.relay_positions ?? {},
-          ts: ev.ts ?? Math.floor(Date.now() / 1000),
+          ts: ev.ts != null && ev.ts > 1e12 ? Math.floor(ev.ts / 1000) : (ev.ts ?? Math.floor(Date.now() / 1000)),
           rx_device: ev.rx_device ?? null,
           tx_device: ev.tx_device, rotator_az: ev.rotator_az ?? null,
+          status: 'ok',
         };
-        this.perfHistory = [entry, ...(this.perfHistory || [])].slice(0, 200);
+        this._trHistAll = [entry, ...(this._trHistAll || [])].slice(0, 500);
+        if (ev.tx_device === this.perfDev()) {
+          this.perfHistory = [entry, ...(this.perfHistory || [])].slice(0, 200);
+        }
       }
       this.passiveTraceNum = ev.from;
       if (this._passiveTraceTimer) clearTimeout(this._passiveTraceTimer);

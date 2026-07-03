@@ -129,19 +129,21 @@ class TracerouteManager extends EventEmitter {
     }
     // from_num derives only from a !hex id — never parseInt a MAC (=233).
     const devId = String(device).includes(':') ? getLiveNodeIdByMac(device) : device;
+    const row = {
+      ts:         Math.floor(Date.now() / 1000),
+      from_num:   devId ? (parseInt(String(devId).replace('!', ''), 16) >>> 0) : 0,
+      to_num:     to,
+      tx_device:  devMac ?? device,   // Phase B: MAC vocabulary
+      rotator_az: rotatorAz,
+      status:     reason,
+    };
     try {
-      stmts.insertTracerouteFailure.run({
-        ts:         Math.floor(Date.now() / 1000),
-        from_num:   devId ? (parseInt(String(devId).replace('!', ''), 16) >>> 0) : 0,
-        to_num:     to,
-        tx_device:  devMac ?? device,   // Phase B: MAC vocabulary
-        rotator_az: rotatorAz,
-        status:     reason,
-      });
+      row.id = stmts.insertTracerouteFailure.run(row).lastInsertRowid;
     } catch (err) {
       log.warn(`failure record failed !${to.toString(16)}: ${err.message}`);
     }
-    this.emit('cancel', { to, device, reason });
+    // row rides the event so ws-relay can push it to the browser (C1)
+    this.emit('cancel', { to, device, reason, row });
   }
 
   // ── handlePacket(pkt, rxDevice) ───────────────────────────────────────────
@@ -188,8 +190,9 @@ class TracerouteManager extends EventEmitter {
 
     log.info(`result from !${pkt.from.toString(16)} route=${JSON.stringify(result.route)}`);
 
-    // Persist — single call site for storage
-    nodeList.setTraceroute(pkt.from, result, pkt.to ?? null, rxDevice ?? null);
+    // Persist — single call site for storage; the returned history row id
+    // rides the result so WS consumers key live rows like replayed ones
+    result.id = nodeList.setTraceroute(pkt.from, result, pkt.to ?? null, rxDevice ?? null);
 
     // Resolve any pending dispatch waiting for this node
     const entry = this._pending.get(pkt.from);

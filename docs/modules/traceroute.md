@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 03d380c49510035dcffb6cb0ac1a262740a99479201f6f6eb9a9f703cd511f4d
+source_hash: bf432e39be7e71853d6e85a518bd3a8899dc4290f0655798f25422f56edcb0f2
 updated: 2026-07-03
 ---
 
@@ -155,3 +155,10 @@ no pending dispatch stay unattributed (null).
 MAC) is resolved through the live registry once, and that MAC flows to
 storage, the `route_discovered` WS event and REST. Unresolvable ids are
 stored as given (never guessed).
+
+## Phase C1 — events carry row identity
+
+`'cancel'` payload is `{ to, device, reason, row }` where `row` is the
+recorded failure row (with DB `id`). Results carry `id` (the history row
+id returned by `nodeList.setTraceroute`) so WS consumers key live rows
+exactly like replayed ones.

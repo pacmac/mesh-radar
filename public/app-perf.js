@@ -16,8 +16,9 @@ const SF_SNR_LIMIT = { 6: -5, 7: -7.5, 8: -10, 9: -12.5, 10: -15, 11: -17.5, 12:
 const RX_NOISE_FIGURE_DB = 6;
 
 export const perfMixin = {
-  perfHistory:      [],
-  perfFailureEpoch: null,   // unix s when failure recording began (config perf.failure_epoch)
+  perfHistory:      [],     // the perfDev() slice shown by the page
+  _trHistAll:       [],     // all-device rows from the WS replay + live events
+  perfFailureEpoch: null,   // unix s when failure recording began (rides the WS replay)
   perfLoading:      false,
   perfAutoNodes:    [],   // node nums scheduled for auto-traceroute
   _perfAutoTimer:   null,
@@ -184,26 +185,19 @@ export const perfMixin = {
     this.perfDevice = addr;
     persistSet('perfDevice', addr);
     this.loraCfg = {};              // force per-device reload of theory constants
-    this.perfHistory = [];
-    await Promise.all([this.loadPerfLoraCfg(), this.loadPerfHistory()]);
+    this.perfHistory = this.perfHistorySlice();
+    await this.loadPerfLoraCfg();
     this.$nextTick(() => this.initPerfCharts());
   },
 
-  // Device-scoped history from REST (per-device contract; the global WS
-  // replay is ignored — docs/modules/app-perf.md).
-  async loadPerfHistory() {
+  // History arrives EXCLUSIVELY over WS (traceroute_history replay on
+  // connect + route_discovered/traceroute_failed live) — page data is
+  // WS-only per BROWSER_CONTRACT; the REST GET is browser-blocked.
+  // This slices the all-device store for the selected radio: presentation
+  // scoping, same pattern as the tilt/env history slices.
+  perfHistorySlice() {
     const dev = this.perfDev();
-    if (!dev) return;
-    try {
-      const rows = await fetchJSON(`/traceroute_history?device=${encodeURIComponent(dev)}&limit=200`);
-      if (Array.isArray(rows)) this.perfHistory = rows;
-      if (this.perfFailureEpoch == null) {
-        const cfg = await fetchJSON('/config');
-        this.perfFailureEpoch = cfg?.['perf.failure_epoch'] ?? null;
-      }
-    } catch (e) {
-      console.warn('[perf] loadPerfHistory failed', e);
-    }
+    return (this._trHistAll || []).filter(r => r.tx_device === dev).slice(0, 200);
   },
 
   // Success rate over post-epoch attempts only. Pre-epoch rows predate

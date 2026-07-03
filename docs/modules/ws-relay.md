@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: f3a9e8d845eea1d39cf28b1bdf93ea1fd9db6e560df4def798116a6b98ff57d9
+source_hash: 9770d35a32b326ea88e7e61e1dfd5853836b104d14bc172c49281caaceeada41
 updated: 2026-07-03
 ---
 
@@ -378,3 +378,11 @@ Object keyed by BLE MAC address. Each entry is the flattened device shape from `
 ## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
 
 Consumes the V2 `range_test` event name (was `rangetest` — dead pipeline). Dead `text_message` enrichment branch removed (texts ride `packet` events).
+
+## Phase C1 — traceroute history over WS
+
+The on-connect `traceroute_history` replay (limit 500, includes `status`
+and row `id`) carries `failure_epoch` (config `perf.failure_epoch`) and is
+the SOLE browser transport for perf history. `traceroute.on('cancel')`
+broadcasts `{ type: 'traceroute_failed', row }` when the event carries the
+recorded failure row.

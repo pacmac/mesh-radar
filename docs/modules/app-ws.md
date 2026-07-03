@@ -1,8 +1,8 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 4502583f87baa5709ba20f6bf799e5b58c166ac50256be9d3e3c4c04cc3fbb74
-updated: 2026-07-02
+source_hash: 667816b2c789783aa17b284390e2549e87580351ede2928d95bd6129e56c64a1
+updated: 2026-07-03
 ---
 
 # Module: app-ws
@@ -59,3 +59,14 @@ ownership (`device_list.active_device`) will supersede this mechanism.
 
 Full per-event documentation — see `docs/BROWSER_ARCH.md` canonical handler
 map. This spec exists to hash-guard the file and record fixed contracts.
+
+## Phase C1 — traceroute history handlers
+
+- `traceroute_history` replay: stores `ev.rows` in `_trHistAll`, adopts
+  `ev.failure_epoch`, re-slices `perfHistory`. (Previously ignored by
+  design; that design violated BROWSER_CONTRACT's WS-only transport.)
+- `traceroute_failed`: prepends `ev.row` to `_trHistAll` (cap 500) and to
+  `perfHistory` when `row.tx_device === perfDev()`.
+- `route_discovered`: entry now carries `id` (DB row id) and `status:'ok'`,
+  is pushed to `_trHistAll` for all devices, and prepends to the visible
+  slice only on scope match. `ev.ts` in ms is normalized to seconds.

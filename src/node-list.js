@@ -169,7 +169,7 @@ class NodeList extends EventEmitter {
   // Save a traceroute result for a node — persists to SQLite and patches in-memory entry
   setTraceroute(num, data, fromNum, rxDevice) {
     stmts.upsertTraceroute.run({ num, json: JSON.stringify(data) });
-    stmts.insertTracerouteHistory.run({
+    const info = stmts.insertTracerouteHistory.run({
       ts:              Math.floor((data.ts ?? Date.now()) / 1000),
       from_num:        fromNum ?? null,
       to_num:          num,
@@ -183,6 +183,7 @@ class NodeList extends EventEmitter {
       rotator_az:      data.rotator_az ?? null,
       status:          'ok',
     });
+    const historyId = info.lastInsertRowid;
     const existing = this._cache.get(num) ?? this._pending.get(num);
     if (existing) {
       const patched = { ...existing, last_traceroute: data };
@@ -190,6 +191,9 @@ class NodeList extends EventEmitter {
       else                         this._pending.set(num, patched);
       this._scheduleEmit();
     }
+    // History row id — WS-pushed rows carry it so the browser table keys
+    // live rows the same way as replayed ones (C1, WS-only page data)
+    return historyId;
   }
 
   // Called when scanner emits a scan_contact — promotes pending node data into the live cache

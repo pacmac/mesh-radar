@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: aa10d84ed3460e7aca787e40fa0b433f6eff0a5f598d00b3849eeec4b6c08e87
+source_hash: 51e4ca8ddd7cef3f98c38cccc37de7a1483c332eb0b2ac3e9b2e3aad11dcdf82
 updated: 2026-07-03
 ---
 
@@ -224,3 +224,7 @@ step 2 — failure rows are inserted by traceroute.js, never through here).
 
 `_ownDevices._device` is MAC-first (`ev.__ble_addr ?? ev.addr ??
 ev.node_id`), matching `_cache._device` — audit violation B8.
+
+## Phase C1
+
+`setTraceroute` returns the inserted history row id (for WS row keying).

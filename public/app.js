@@ -312,7 +312,7 @@ function dashboard() {
       if (this.tab === 'radar') this.$nextTick(() => this.initRadar());
       else if (this.tab === 'cfg') this.switchCfgTab(this.cfgTab);
       else if (this.tab === 'range') { this.loadRangeTest(); this.loadRangeTimer(); }
-      else if (this.tab === 'perf') { this.loadPerfLoraCfg(); this.loadPerfHistory(); this.$nextTick(() => this.initPerfCharts()); }
+      else if (this.tab === 'perf') { this.loadPerfLoraCfg(); this.perfHistory = this.perfHistorySlice(); this.$nextTick(() => this.initPerfCharts()); }
     },
   };
 }

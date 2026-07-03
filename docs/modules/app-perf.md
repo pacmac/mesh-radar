@@ -1,7 +1,7 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: b7b109d90dcb8302435bb2f971a3fbe6aba91c652b2dbb4fb37e93e4f11cf155
+source_hash: d81b1dae0fb302d42632a77d84c9bba6ead2a5391051511636360391991a95b3
 updated: 2026-07-03
 ---
 
@@ -115,3 +115,15 @@ posts via the selected device. Playwright both themes; 0 console errors.
 - History query `?device=`, lora-config fetch path, auto-traceroute `via`,
   and the `route_discovered` scope gate all carry the same MAC. The gate
   comparison in app-ws.js is unchanged code — both sides flipped together.
+
+## Phase C1 — history is WS-only
+
+`loadPerfHistory` and its `/config` epoch fetch are DELETED. History
+arrives exclusively over WS: the `traceroute_history` replay on connect
+(all-device rows + `failure_epoch`) fills `_trHistAll`; live
+`route_discovered` / `traceroute_failed` events prepend. The page shows
+`perfHistorySlice()` — the `tx_device === perfDev()` slice, capped 200 —
+presentation scoping like the tilt/env slices. Device switches and tab
+entry re-slice; no fetch. The REST GET is browser-blocked
+(`WS_ONLY_ROUTES`). Remaining GET: `loadPerfLoraCfg` — page data, to be
+WS-carried via device payload enrichment (next C step).

@@ -3,7 +3,7 @@ import { bridge } from './bridge.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
-import { insertTilt, insertEnvHistory, getTiltCal, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts, persistNodeMac, loadNodeMacMap } from './db.js';
+import { insertTilt, insertEnvHistory, getTiltCal, getConfig, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts, persistNodeMac, loadNodeMacMap } from './db.js';
 import { queryMessages } from './filters.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode } from './dash-mode.js';
@@ -482,9 +482,11 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       if (dashMode.value === 0) _rcPassiveTracingNode = null;
       broadcastRadarContext();
     });
-    traceroute.on('cancel', () => {
+    traceroute.on('cancel', ({ row } = {}) => {
       _rcActive = false;
       broadcastRadarContext();
+      // Failed attempts reach the perf page live — same channel as results
+      if (row) broadcast({ type: 'traceroute_failed', row });
     });
     passiveTracer.on('tracing', (data) => {
       _rcPassiveTracingNode = data.from;
@@ -569,7 +571,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const timer = getRangeTimer();
       ws.send(JSON.stringify({ type: 'range_test_timer', ...timer }));
 
-      const traceRows = stmts.queryTracerouteHistory.all({ to_num: null, limit: 200 }).map(r => ({
+      // Sole transport for perf-page history (C1: page data is WS-only; the
+      // REST GET is browser-blocked). failure_epoch rides along so the
+      // success-rate stat never needs a config GET.
+      const traceRows = stmts.queryTracerouteHistory.all({ to_num: null, limit: 500 }).map(r => ({
         ...r,
         route:           JSON.parse(r.route           || '[]'),
         route_back:      JSON.parse(r.route_back      || '[]'),
@@ -577,7 +582,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         snr_back:        JSON.parse(r.snr_back        || '[]'),
         relay_positions: JSON.parse(r.relay_positions || '{}'),
       }));
-      ws.send(JSON.stringify({ type: 'traceroute_history', rows: traceRows }));
+      ws.send(JSON.stringify({ type: 'traceroute_history', rows: traceRows,
+                               failure_epoch: getConfig('perf.failure_epoch', null) }));
     } catch (e) {
       console.error('[ws-relay] history push failed:', e.message);
     }

@@ -73,3 +73,8 @@ through a specific radio so its RF chain is measured (default: primary).
 
 `via` accepts a BLE MAC (`AA:BB:…`) or a `!hex` node id. The perf page
 sends MACs from Phase B on; `!hex` stays valid for manual/legacy callers.
+
+## Phase C1
+
+`GET /traceroute_history` is in `WS_ONLY_ROUTES` — browser fetches get
+410; curl/server-side reads still work (debug tool, not page transport).
