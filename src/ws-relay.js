@@ -58,6 +58,69 @@ export function getLiveMacByNodeId(nodeId) {
 // when the same packet is heard by multiple gateway radios.
 const _seenLivePktIds = new Set();
 
+// Tilt broadcasts are heard by both radios — decode each packet id once.
+const _seenTiltPktIds = new Set();
+// The firmware also emits the same reading twice with DIFFERENT packet ids
+// (BLE sendToPhone copy + LoRa broadcast) — dedupe identical payloads per
+// device within a short window.
+const _lastTiltPayload = new Map(); // devKey → { b64, ts }
+
+// Tilt payload decode — struct version detected by length.
+// 24 B: TiltSummaryV2 (centidegrees). 20 B: legacy float32x5 [roll, pitch,
+// x_g, y_g, z_g] — the struct current RAK firmware emits. Anything else
+// is ignored. devKey is node_id-preferred (interim, task tilt-ingest-v2):
+// the browser tilt gate and history slice compare against activeNodeId
+// (!hex); tilt_history re-keying to MAC belongs to the identity migration.
+function _handleTiltPayload(b64, devKey, fromNum, handleAlertEvent, broadcast) {
+  const last = _lastTiltPayload.get(devKey);
+  const now  = Date.now();
+  if (last && last.b64 === b64 && now - last.ts < 10000) return;
+  _lastTiltPayload.set(devKey, { b64, ts: now });
+  const buf = Buffer.from(b64 || '', 'base64');
+  let dbRow = null, data = null;
+  if (buf.length === 24) {
+    const v           = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    data = {
+      version:      v.getUint8(0),
+      sample_count: v.getUint8(1),
+      window_ms:    v.getUint16(2,  true),
+      roll:         v.getInt16(4,   true) / 100,
+      pitch:        v.getInt16(6,   true) / 100,
+      avg_roll:     v.getInt16(8,   true) / 100,
+      avg_pitch:    v.getInt16(10,  true) / 100,
+      min_roll:     v.getInt16(12,  true) / 100,
+      max_roll:     v.getInt16(14,  true) / 100,
+      min_pitch:    v.getInt16(16,  true) / 100,
+      max_pitch:    v.getInt16(18,  true) / 100,
+      max_delta:    v.getUint16(20, true) / 100,
+      rms_motion:   v.getUint16(22, true) / 100,
+    };
+    dbRow = { ...data };
+  } else if (buf.length === 20) {
+    const v     = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const roll  = Math.round(v.getFloat32(0,  true) * 100) / 100;
+    const pitch = Math.round(v.getFloat32(4,  true) * 100) / 100;
+    const x_g   = Math.round(v.getFloat32(8,  true) * 1000) / 1000;
+    const y_g   = Math.round(v.getFloat32(12, true) * 1000) / 1000;
+    const z_g   = Math.round(v.getFloat32(16, true) * 1000) / 1000;
+    data  = { roll, pitch, x: x_g, y: y_g, z: z_g, version: 0 };
+    dbRow = {
+      roll, pitch, version: 0,
+      sample_count: null, window_ms: null,
+      avg_roll: null, avg_pitch: null, min_roll: null, max_roll: null,
+      min_pitch: null, max_pitch: null, max_delta: null, rms_motion: null,
+    };
+  } else {
+    return;
+  }
+  try {
+    insertTilt({ ts: Math.floor(Date.now() / 1000), node_id: devKey, ...dbRow });
+  } catch (e) { console.error('[tilt] insert failed:', e.message); }
+  const tiltEv = { type: 'tilt_update', device: devKey, from_num: fromNum, data };
+  handleAlertEvent(tiltEv);
+  broadcast(tiltEv);
+}
+
 // Returns the set of own gateway node numbers (uint32) from the live node_id map.
 function _ownNums() {
   const nums = new Set();
@@ -247,52 +310,28 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // -- AppRouter typed event translations ----------------------------------
     // AppRouter emits generic events; translate to legacy names for browser compat.
 
+    // Tilt — V1 typed event (legacy replay shape); fully consumed here
     if (ev.type === 'private_app' && ev.portnum === 256) {
-      const buf = Buffer.from(ev.payload_b64 || '', 'base64');
-      if (buf.length === 24) {
-        // TiltSummaryV2 — 24-byte packed little-endian struct from RAK4631 sendToPhone()
-        const v           = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-        const version     = v.getUint8(0);
-        const sampleCount = v.getUint8(1);
-        const windowMs    = v.getUint16(2,  true);
-        const roll        = v.getInt16(4,   true) / 100;
-        const pitch       = v.getInt16(6,   true) / 100;
-        const avgRoll     = v.getInt16(8,   true) / 100;
-        const avgPitch    = v.getInt16(10,  true) / 100;
-        const minRoll     = v.getInt16(12,  true) / 100;
-        const maxRoll     = v.getInt16(14,  true) / 100;
-        const minPitch    = v.getInt16(16,  true) / 100;
-        const maxPitch    = v.getInt16(18,  true) / 100;
-        const maxDelta    = v.getUint16(20, true) / 100;
-        const rmsMotion   = v.getUint16(22, true) / 100;
-        try {
-          insertTilt({
-            ts: Math.floor(Date.now() / 1000),
-            node_id: ev.addr || ev.device || '?',
-            pitch, roll, version,
-            sample_count: sampleCount,
-            window_ms:    windowMs,
-            avg_roll:     avgRoll,   avg_pitch:  avgPitch,
-            min_roll:     minRoll,   max_roll:   maxRoll,
-            min_pitch:    minPitch,  max_pitch:  maxPitch,
-            max_delta:    maxDelta,  rms_motion: rmsMotion,
-          });
-        } catch (e) { console.error('[tilt] insert failed:', e.message); }
-        const tiltEv = {
-          type: 'tilt_update', device: ev.addr || ev.device, from_num: ev.from_num,
-          data: {
-            roll, pitch, version,
-            sample_count: sampleCount, window_ms: windowMs,
-            avg_roll: avgRoll,   avg_pitch:  avgPitch,
-            min_roll: minRoll,   max_roll:   maxRoll,
-            min_pitch: minPitch, max_pitch:  maxPitch,
-            max_delta: maxDelta, rms_motion: rmsMotion,
-          },
-        };
-        handleAlertEvent(tiltEv);
-        broadcast(tiltEv);
-      }
+      _handleTiltPayload(ev.payload_b64, ev.node_id ?? ev.addr ?? ev.device ?? '?',
+                         ev.from_num, handleAlertEvent, broadcast);
       return;
+    }
+
+    // Tilt — V2 shape: raw packet event, decoded.portnum is the STRING
+    // 'PRIVATE_APP'. Gating only on the V1 shape above is what silently
+    // killed ingest 2026-06-30 → 07-03. Do NOT consume the event — the raw
+    // packet still falls through to the browser packet log. Both radios
+    // deliver the same broadcast: decode once per packet id.
+    if (ev.type === 'packet' && ev.data?.packet?.decoded?.portnum === 'PRIVATE_APP') {
+      const pkt = ev.data.packet;
+      if (pkt.id == null || !_seenTiltPktIds.has(pkt.id)) {
+        if (pkt.id != null) {
+          _seenTiltPktIds.add(pkt.id);
+          if (_seenTiltPktIds.size > 500) _seenTiltPktIds.delete(_seenTiltPktIds.values().next().value);
+        }
+        _handleTiltPayload(pkt.decoded.payload, ev.node_id ?? ev.addr ?? ev.device ?? '?',
+                           pkt.from, handleAlertEvent, broadcast);
+      }
     }
 
     if (ev.type === 'telemetry' && ev.from_num) {

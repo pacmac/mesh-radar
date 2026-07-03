@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: fc6add069b7614a8bc6f69b96fd837510d2201fc882a9f8c00b4d9486307e06f
-updated: 2026-06-30
+source_hash: f3a9e8d845eea1d39cf28b1bdf93ea1fd9db6e560df4def798116a6b98ff57d9
+updated: 2026-07-03
 ---
 
 # Module: ws-relay
@@ -119,9 +119,31 @@ Updates `lastDeviceState[ev.addr]` with the new state and `ble_state`. Triggers 
 
 Updates `lastDeviceState[evAddr]` with `data_event`. Updates `_liveNodeIds` if `ev.node_id` present. Calls `broadcastDeviceList()`.
 
-### `private_app` (portnum 256)
+### Tilt ingest — PRIVATE_APP (task `tilt-ingest-v2`, 2026-07-03)
 
-Tilt sensor data — `TiltSummaryV2` struct, sent via BLE FromRadio `sendToPhone()` from the RAK4631. NOT transmitted over LoRa; `transport_mechanism` and `hop_start` will be null. Decodes `ev.payload_b64` as a 24-byte packed little-endian binary. Values are displacement from boot baseline — stationary readings near 0°.
+Tilt sensor data from the RAK4631. TWO event shapes are accepted:
+
+- **V2 (live)**: raw `packet` event with `decoded.portnum === 'PRIVATE_APP'`
+  (string) and base64 `decoded.payload`. Handled WITHOUT consuming the
+  event — the raw packet still falls through to the browser packet log.
+  Both radios deliver the same broadcast, so decoding is deduped per
+  `packet.id` (`_seenTiltPktIds`, capped at 500). The firmware ALSO emits
+  each reading twice under different packet ids (BLE sendToPhone copy +
+  LoRa broadcast), so `_handleTiltPayload` additionally drops identical
+  payloads per device within 10 s (`_lastTiltPayload`).
+- **V1 legacy**: typed `private_app` event with numeric `portnum === 256`
+  and `ev.payload_b64` (returns after handling). Kept for replay compat.
+  Gating on ONLY this shape is what killed ingest 2026-06-30 → 07-03.
+
+The struct is version-detected by payload length in `_handleTiltPayload`:
+
+**20 bytes — legacy float32×5** (current firmware): `[roll, pitch, x_g,
+y_g, z_g]` little-endian float32. Stored with `version: 0` and all
+TiltSummaryV2-only columns null; `tilt_update.data` = `{ roll, pitch,
+x, y, z, version: 0 }`.
+
+**24 bytes — TiltSummaryV2**: values are displacement from boot baseline —
+stationary readings near 0°.
 
 | Offset | Type | Field | Notes |
 |---|---|---|---|
@@ -139,7 +161,15 @@ Tilt sensor data — `TiltSummaryV2` struct, sent via BLE FromRadio `sendToPhone
 | 20 | uint16LE | max_delta_cd | → `max_delta` |
 | 22 | uint16LE | rms_motion_cd | → `rms_motion` |
 
-All centidegree fields are divided by 100 before storage and broadcast. `roll`/`pitch` names are kept for backwards compatibility with `alerts.js` and the browser. No flags field. `insertTilt` is called to persist all fields. A `tilt_update` event carrying `{ roll, pitch, version, sample_count, window_ms, avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch, max_delta, rms_motion }` is sent to `handleAlertEvent` and broadcast. Packets not exactly 24 bytes are silently ignored.
+All centidegree fields are divided by 100 before storage and broadcast. `roll`/`pitch` names are kept for backwards compatibility with `alerts.js` and the browser. No flags field. `insertTilt` is called to persist all fields. A `tilt_update` event carrying `{ roll, pitch, version, sample_count, window_ms, avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch, max_delta, rms_motion }` is sent to `handleAlertEvent` and broadcast. Payloads that are neither 20 nor 24 bytes are silently ignored.
+
+**Interim identity decision** (until the `identity-ssot` migration): the
+tilt row key and `tilt_update.device` use `ev.node_id ?? ev.addr` —
+node_id-preferred — because the browser's tilt-append gate compares
+against `activeNodeId` (`!hex`) and `_tiltHistoryAll` is sliced by the
+same value. The `tilt_history.node_id` column actually holding a device
+key is audited violation #4; re-keying it to MAC happens in the identity
+migration, not here.
 
 ### `telemetry`
 
