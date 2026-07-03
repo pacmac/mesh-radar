@@ -242,7 +242,7 @@
                 <span style="font-family:'Oxanium',monospace;font-size:10px;font-weight:700;
                               letter-spacing:0.14em;color:rgba(0,255,80,0.38)"
                       x-text="scanMode ? 'SCAN CONTACTS' : 'RADAR NODES'"></span>
-                <span style="font-family:monospace;font-size:10px;color:rgba(0,255,80,0.22);margin-left:auto"
+                <span style="font-family:monospace;font-size:10px;color:rgba(0,255,80,0.55);margin-left:auto"
                       x-text="radarNodeList().length"></span>
               </div>
               <template x-for="n in radarNodeList()" :key="n.num">
@@ -256,15 +256,15 @@
                                borderLeft: n.num===yagiPointTarget ? '2px solid rgba(255,160,0,0.75)' : n.num===passiveTraceNum ? '2px solid rgba(0,255,80,0.75)' : '2px solid transparent',
                                paddingLeft: n.num===yagiPointTarget || n.num===passiveTraceNum ? '0.5rem' : '0.3rem' }">
                   <span style="font-family:'Oxanium',monospace;font-size:12px;font-weight:700;min-width:3rem;flex-shrink:0"
-                        :style="{ color: n.num===yagiPointTarget ? 'rgba(255,160,0,0.95)' : n.num===passiveTraceNum ? 'rgba(0,255,80,0.95)' : 'rgba(0,255,80,0.88)' }"
+                        :style="{ color: n.num===yagiPointTarget ? 'rgba(255,160,0,0.95)' : 'rgba(0,255,80,0.95)' }"
                         x-text="nodeShortName(n.num)"></span>
                   <template x-if="scanMode">
-                    <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
+                    <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.80);min-width:2.5rem;flex-shrink:0" x-text="(n._scanAz ?? '?') + '°'"></span>
                   </template>
-                  <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.5rem;flex-shrink:0" x-text="n._az != null ? Math.round(n._az)+'°' : '–'"></span>
-                  <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.42);min-width:2.8rem;flex-shrink:0" x-text="n._km != null ? n._km.toFixed(1)+'km' : '–'"></span>
+                  <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.80);min-width:2.5rem;flex-shrink:0" x-text="n._az != null ? Math.round(n._az)+'°' : '–'"></span>
+                  <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.80);min-width:2.8rem;flex-shrink:0" x-text="n._km != null ? n._km.toFixed(1)+'km' : '–'"></span>
                   <span style="font-family:monospace;font-size:11px;min-width:1.4rem;flex-shrink:0"
-                        :style="{ color: (nodeHops(n)??1)===0 ? 'rgba(255,160,0,0.85)' : 'rgba(0,255,80,0.30)' }"
+                        :style="{ color: (nodeHops(n)??1)===0 ? 'rgba(255,160,0,0.85)' : 'rgba(0,255,80,0.70)' }"
                         x-text="(nodeHops(n)??0)+'h'"></span>
                   <template x-if="n.num === yagiPointTarget && yagiSignal.num === n.num">
                     <span style="flex:1;font-family:monospace;font-size:10px;font-weight:600;white-space:nowrap"
@@ -274,7 +274,7 @@
                     </span>
                   </template>
                   <template x-if="!(n.num === yagiPointTarget && yagiSignal.num === n.num)">
-                    <span style="font-family:monospace;font-size:10px;color:rgba(0,255,80,0.28);flex:1"
+                    <span style="font-family:monospace;font-size:10px;color:rgba(0,255,80,0.65);flex:1"
                           x-text="n.last_heard ? new Date(n.last_heard*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''"></span>
                   </template>
                   <span x-html="n.num===yagiPointTarget && yagiSignal.num===n.num ? sigBars(yagiSignal.rssi,yagiSignal.snr) : sigBars(n._scanRssi??n.rssi,n._scanSnr??n.snr)" style="flex-shrink:0"></span>
