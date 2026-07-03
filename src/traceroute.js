@@ -134,7 +134,7 @@ class TracerouteManager extends EventEmitter {
         ts:         Math.floor(Date.now() / 1000),
         from_num:   devId ? (parseInt(String(devId).replace('!', ''), 16) >>> 0) : 0,
         to_num:     to,
-        tx_device:  device,
+        tx_device:  devMac ?? device,   // Phase B: MAC vocabulary
         rotator_az: rotatorAz,
         status:     reason,
       });
@@ -159,13 +159,17 @@ class TracerouteManager extends EventEmitter {
     // pending entry) stay unattributed. Rotator dispatches also carry the
     // live azimuth so directional samples are azimuth-qualified.
     const pendingEntry = this._pending.get(pkt.from);
-    const txDevice = pendingEntry?.device ?? null;
+    const pendingDev = pendingEntry?.device ?? null;
+    // Phase B: tx_device attribution is the dispatching radio's BLE MAC —
+    // resolved once here, then storage, route_discovered and REST all carry
+    // it. Unresolvable ids are stored as given, never guessed.
+    const txDevice = pendingDev
+      ? (String(pendingDev).includes(':') ? pendingDev : (getLiveMacByNodeId(pendingDev) ?? pendingDev))
+      : null;
     let rotatorAz = null;
     if (txDevice) {
       const rotMac = getRotatorAddress();
-      // MAC-space compare — see _recordFailure
-      const devMac = String(txDevice).includes(':') ? txDevice : getLiveMacByNodeId(txDevice);
-      if (rotMac && devMac === rotMac && rotator.status?.az != null) {
+      if (rotMac && txDevice === rotMac && rotator.status?.az != null) {
         rotatorAz = Number(rotator.status.az);
       }
     }

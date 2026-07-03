@@ -42,7 +42,7 @@ export const perfMixin = {
   },
 
   perfEirpDbm() {
-    const cfg   = this.deviceConfigs?.[this.perfDev()] ?? {};
+    const cfg   = this.perfDevCfg();
     const txPwr = this.loraCfg?.tx_power ?? 0;
     const gain  = cfg.gain_dbi      ?? 0;
     const loss  = cfg.cable_loss_db ?? 0;
@@ -158,15 +158,31 @@ export const perfMixin = {
   },
 
   // Effective perf device: explicit selection, else the primary radio.
+  // Perf scope key is the radio's BLE MAC (identity Phase B). The backend
+  // stores/filters tx_device as MAC; both sides flipped together.
   perfDev() {
-    const sel = this.perfDevice;
-    if (sel && this.availableDevices.some(d => d.node_id === sel)) return sel;
-    return this.primaryDeviceId || this.availableDevices[0]?.node_id || '';
+    let sel = this.perfDevice;
+    // One-time shim: a persisted legacy !hex selection converts via the
+    // device list, then re-persists as MAC.
+    if (sel && !sel.includes(':')) {
+      const mac = this.availableDevices.find(d => d.node_id === sel)?.addr;
+      if (mac) { this.perfDevice = mac; persistSet('perfDevice', mac); sel = mac; }
+    }
+    if (sel && this.availableDevices.some(d => d.addr === sel)) return sel;
+    const primary = this.availableDevices.find(d => d.node_id === this.primaryDeviceId)?.addr;
+    return primary || this.availableDevices[0]?.addr || '';
   },
 
-  async perfSetDevice(nodeId) {
-    this.perfDevice = nodeId;
-    persistSet('perfDevice', nodeId);
+  // Antenna/chain config for the scoped device — read from the backend's
+  // canonical MAC-keyed store, not the node_id re-keyed deviceConfigs map.
+  perfDevCfg() {
+    const mac = this.perfDev();
+    return this._deviceConfigsByMac?.[mac?.toUpperCase()] ?? this.deviceConfigs?.[mac] ?? {};
+  },
+
+  async perfSetDevice(addr) {
+    this.perfDevice = addr;
+    persistSet('perfDevice', addr);
     this.loraCfg = {};              // force per-device reload of theory constants
     this.perfHistory = [];
     await Promise.all([this.loadPerfLoraCfg(), this.loadPerfHistory()]);

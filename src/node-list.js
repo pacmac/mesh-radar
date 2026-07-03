@@ -66,7 +66,8 @@ class NodeList extends EventEmitter {
     // This covers both self-reports and cross-device reports (e.g. YAGI reporting about OMNI).
     // _filter() excludes own nums from the public node list regardless of how they enter.
     if (this._ownNums().has(node.num)) {
-      this._ownDevices.set(node.num, { ...(this._ownDevices.get(node.num) ?? {}), ...node, _device: ev.node_id ?? ev.addr ?? null });
+      // _device is MAC-first, matching _cache._device (identity Phase B, B8)
+      this._ownDevices.set(node.num, { ...(this._ownDevices.get(node.num) ?? {}), ...node, _device: ev.__ble_addr ?? ev.addr ?? ev.node_id ?? null });
       this._scheduleEmit();
       return;
     }

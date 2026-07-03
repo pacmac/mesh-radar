@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { stmts, syncAlertedAt } from './db.js';
 import { nodeList } from './node-list.js';
-import { getLiveNodeIdByMac } from './ws-relay.js';
+import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
 
@@ -42,7 +42,9 @@ router.post('/:nodeId/messages', async (req, res) => {
         rssi:        null,
         packet_id:   result.id,
         reply_id:    req.body.reply_id ?? null,
-        device:      nodeId,
+        // Phase B: messages.device is MAC vocabulary (matches the RX path,
+        // keeps the (packet_id, device) dedup index single-vocabulary)
+        device:      nodeId.includes(':') ? nodeId.toUpperCase() : (getLiveMacByNodeId(resolvedId) ?? nodeId),
         replay:      0,
         hops:        0,
         short_name:  node?.user?.short_name ?? null,

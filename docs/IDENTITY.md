@@ -111,7 +111,7 @@ names first.)
 | B4 | `messages.device` mixed vocabulary inside the dedup index | persist.js, messages-api.js | Phase B |
 | B5 | `resolveDeviceLabel` fed MACs → garbage range-test `rx_name` | ws-relay.js ×2, range-test-api.js | Phase A |
 | B6 | `reply_tokens.from_node_id` = `node_id ?? addr`, used as gw path 24 h later | alerts.js, imap-receiver.js | Phase A |
-| B7 | `tilt_history.node_id` column holds device identity (currently `!hex` by interim decision) | ws-relay.js, performance-api.js | Phase B |
+| B7 | `tilt_history.node_id` column holds device identity (currently `!hex` by interim decision) | ws-relay.js, performance-api.js | Phase D |
 | B8 | `_ownDevices._device` node_id-preferred while `_cache._device` is MAC | node-list.js | Phase B |
 | B9 | `nodes.device` fallback chain can still store node_id when addr absent | persist.js | Phase A |
 | B10 | startup.js own-device seed loop keyed `!hex` against MAC config keys — dead code | startup.js | Phase A |
@@ -141,8 +141,10 @@ Nothing the browser consumes changes vocabulary.
 one-shot migration (pattern: `migrateNodeDeviceMac`); perf page scoping
 (`perfDevice` persisted value, `?device=` param, `route_discovered` gate,
 device pills) flips to MAC **in the same task** — a half-flip silently
-empties the perf feed. `messages.device`, `tilt_history` keying, B7/B8
-land here with their migrations.
+empties the perf feed. `messages.device` and B8 land here with their
+migrations. Tilt keying (B7) moves to Phase D — its browser gate speaks
+`!hex` until Phase C delivers bundles; re-keying it here would break the
+display this task must not touch.
 
 **Phase C — payload denormalization + UI de-translation.** WS/REST payloads
 gain display bundles; browser re-keys runtime state to MAC; one-time shim

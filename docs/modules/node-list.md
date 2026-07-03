@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: e078b5bf48bf08e3b489728b635585cfee910d24407ecbbf685874dec7807c69
+source_hash: aa10d84ed3460e7aca787e40fa0b433f6eff0a5f598d00b3849eeec4b6c08e87
 updated: 2026-07-03
 ---
 
@@ -219,3 +219,8 @@ rssi/snr/hops/via_mqtt/device_metrics — the node-filter fields keep flowing.
 Persists `tx_device` and `rotator_az` from the result into
 traceroute_history. Success rows carry `status: 'ok'` (task `perf-honesty`
 step 2 — failure rows are inserted by traceroute.js, never through here).
+
+## Identity Phase B — _ownDevices vocabulary
+
+`_ownDevices._device` is MAC-first (`ev.__ble_addr ?? ev.addr ??
+ev.node_id`), matching `_cache._device` — audit violation B8.

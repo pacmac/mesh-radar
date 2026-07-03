@@ -1,8 +1,8 @@
 ---
 module: messages-api
 source: src/messages-api.js
-source_hash: 76649b147b63071177fc0cb7b39557321b75f118cf64a65fd0fdeed9c744d5a4
-updated: 2026-06-30
+source_hash: d7da2c681ab6f08ac769b52bff5a494d658cc24a68531e1b3eea264523038cd1
+updated: 2026-07-03
 ---
 
 # Module: messages-api
@@ -65,3 +65,9 @@ _N/A_
 - Message retrieval — `GET /messages` stays in `index.js` (thin, uses `queryMessages` directly).
 - Reply threading logic — `ws-relay.js` enrichment owns that.
 - Alert evaluation on received messages — `alerts.js` owns that.
+
+## Identity Phase B
+
+The TX message row stores `device` as the radio's **BLE MAC** (resolved
+from the `:nodeId` path param via the live registry when it arrives as
+`!hex`), matching the RX path — one vocabulary in the dedup index.

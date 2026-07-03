@@ -586,6 +586,23 @@ export function loadNodeMacMap() {
 
 const _migrateNodeDevice = db.prepare(`UPDATE nodes SET device = @mac WHERE device = @nodeId`);
 
+const _migrateTxDevice   = db.prepare(`UPDATE traceroute_history SET tx_device = @mac WHERE tx_device = @nodeId`);
+const _migrateMsgDevice  = db.prepare(`UPDATE messages SET device = @mac WHERE device = @nodeId`);
+const _migrateRxDevices  = db.prepare(`UPDATE messages SET rx_devices = REPLACE(rx_devices, @nodeId, @mac) WHERE rx_devices LIKE '%' || @nodeId || '%'`);
+
+// Identity Phase B: rewrite legacy !hex device ids to MACs in the device-
+// attribution columns. Unmappable ids stay as-is (IDENTITY.md §7 amnesty).
+export function migrateDeviceColumnsToMac(pairs) {
+  let changed = 0;
+  for (const { nodeId, mac } of pairs) {
+    if (!nodeId || !mac) continue;
+    changed += _migrateTxDevice.run({ nodeId, mac }).changes;
+    changed += _migrateMsgDevice.run({ nodeId, mac }).changes;
+    changed += _migrateRxDevices.run({ nodeId, mac }).changes;
+  }
+  return changed;
+}
+
 // Rewrite legacy nodes.device values stored as node_id (!hex) to the device's
 // BLE MAC. nodes.device feeds restoreDeviceAttribution and must use the same
 // MAC vocabulary the node_source filter compares against. Returns rows changed.

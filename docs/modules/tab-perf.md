@@ -1,7 +1,7 @@
 ---
 module: tab-perf
 source: public/partials/tab-perf.html
-source_hash: 44537f2daccc51b82a7c33ab69d4ab3b8981754eeda693b5aaf13e1599a13ac4
+source_hash: fe78049fd974325f5744463e9621a0895fa520cdcab039c50abe72735e126a4a
 updated: 2026-07-03
 ---
 
@@ -64,3 +64,9 @@ displayed the far target distance while measuring the nearby relay.
   `SEND FAIL`), value cells fall through to their existing null renderings
   (em-dash). Failures are the point of the page — hiding them re-creates
   the survivorship bias this task exists to kill.
+
+## Identity Phase B
+
+Device pills select and compare by `dev.addr` (MAC); labels still render
+via `deviceLabel(dev.node_id)` until Phase C bundles. The four
+`deviceConfigs[perfDev()]` reads became `perfDevCfg()`.

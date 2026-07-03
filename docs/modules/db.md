@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: be80d5d5caa5428be137efc188e25307eae266c0ef3ee350b93e4b0f776a743c
+source_hash: 847e8de7b1fab6b64770c5a8991e8cddeeb6dd56aff5d7176606ab24193058bb
 updated: 2026-07-03
 ---
 
@@ -312,3 +312,11 @@ startup guarded by config flag `migrations.node_device_mac`, with pairs
 resolved from the live MAC↔node_id registry (never MAC-suffix arithmetic).
 Rationale: `nodes.device` feeds `restoreDeviceAttribution` and must use the
 same MAC vocabulary the `node_source` filter compares against.
+
+## Device-vocabulary migration (task `identity-phase-b`)
+
+`migrateDeviceColumnsToMac(pairs)` — one-shot, config-guarded
+(`migrations.device_vocab_mac` in index.js): rewrites `!hex` device ids to
+MACs in `traceroute_history.tx_device`, `messages.device`, and inside
+`messages.rx_devices` comma-lists (string REPLACE per registry pair).
+Unmappable ids are left as-is per IDENTITY.md §7 amnesty.

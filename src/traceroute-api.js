@@ -10,9 +10,11 @@ const router = Router();
 router.post('/:nodeId/traceroute', async (req, res) => {
   const targetNum = parseInt((req.params.nodeId || '').replace('!', ''), 16);
   if (!targetNum) return res.status(400).json({ error: 'invalid nodeId' });
-  // Optional { via: '!hex' } — dispatch through a specific radio so its RF
-  // chain gets measured (per-device performance). Default: primary.
-  const via = typeof req.body?.via === 'string' && /^![0-9a-f]{8}$/i.test(req.body.via)
+  // Optional { via } — dispatch through a specific radio so its RF chain
+  // gets measured (per-device performance). Accepts a BLE MAC (the perf
+  // page's vocabulary since Phase B) or a !hex node id. Default: primary.
+  const via = typeof req.body?.via === 'string' &&
+    (/^![0-9a-f]{8}$/i.test(req.body.via) || /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(req.body.via))
     ? req.body.via : null;
   const sender = via ?? resolvePrimaryNodeId();
   if (!sender) return res.status(503).json({ error: 'no primary device configured' });

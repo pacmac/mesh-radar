@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 15aae5c6891f3a79a9dac6aa23edf8e278aeb22308ae0feae1168f9e2f2dd09a
+source_hash: 03d380c49510035dcffb6cb0ac1a262740a99479201f6f6eb9a9f703cd511f4d
 updated: 2026-07-03
 ---
 
@@ -147,3 +147,11 @@ no pending dispatch stay unattributed (null).
 - **Failure `from_num`**: derived only from a `!hex` id (resolving a MAC
   through the registry first); never `parseInt` a MAC (yields 233). If
   unresolvable, 0 — honest unknown, not garbage.
+
+## Identity Phase B — tx_device speaks MAC
+
+`tx_device` is stamped as the dispatching radio's **BLE MAC** at the source
+(result stamp and failure rows): the dispatch `device` param (node-id or
+MAC) is resolved through the live registry once, and that MAC flows to
+storage, the `route_discovered` WS event and REST. Unresolvable ids are
+stored as given (never guessed).

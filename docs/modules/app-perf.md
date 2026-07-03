@@ -1,7 +1,7 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: b27ce59046d38b2919447e03ce97d22c4c7c543f84f96201baa345e139929068
+source_hash: b7b109d90dcb8302435bb2f971a3fbe6aba91c652b2dbb4fb37e93e4f11cf155
 updated: 2026-07-03
 ---
 
@@ -101,3 +101,17 @@ verify rows land with correct `tx_device` (and `rotator_az` for YAGI);
 page pills switch scope — stats/table show only that device's rows; EIRP
 changes when the selected device's antenna gain differs; auto-traceroute
 posts via the selected device. Playwright both themes; 0 console errors.
+
+## Identity Phase B — perf scope key is the BLE MAC
+
+- `perfDev()` returns a MAC: persisted `perfDevice` validated against
+  `d.addr`; a persisted legacy `!hex` value is converted once via the
+  device list and re-persisted (shim). Fallback: the primary radio's addr,
+  else the first device's addr.
+- `perfDevCfg()` reads the device's antenna config from
+  `_deviceConfigsByMac` (the backend's canonical MAC-keyed store) — the
+  node_id-keyed `deviceConfigs` re-key is Phase C demolition material and
+  perf no longer depends on it.
+- History query `?device=`, lora-config fetch path, auto-traceroute `via`,
+  and the `route_discovered` scope gate all carry the same MAC. The gate
+  comparison in app-ws.js is unchanged code — both sides flipped together.

@@ -1,8 +1,8 @@
 ---
 module: traceroute-api
 source: src/traceroute-api.js
-source_hash: f100994533be2777ee858040921b5a2c1bedaf17ebd1e6f866a75762af71dbce
-updated: 2026-06-30
+source_hash: 54d9a72b7b99c08215c8c5dd2e93e705937552951ee636f80dd57e94e48621df
+updated: 2026-07-03
 ---
 
 # Module: traceroute-api
@@ -68,3 +68,8 @@ _N/A_
 `POST /:nodeId/traceroute` accepts optional `{ via: '!hex' }` — dispatch
 through a specific radio so its RF chain is measured (default: primary).
 `GET /traceroute_history?device=!hex` returns rows scoped by `tx_device`.
+
+## Identity Phase B
+
+`via` accepts a BLE MAC (`AA:BB:…`) or a `!hex` node id. The perf page
+sends MACs from Phase B on; `!hex` stays valid for manual/legacy callers.

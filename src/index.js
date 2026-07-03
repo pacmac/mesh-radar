@@ -8,7 +8,7 @@ import configRouter from './config-api.js';
 import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
 import { registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
-import { getConfig, setConfig, clearNodeCache, stmts, migrateNodeDeviceMac, loadNodeMacMap } from './db.js';
+import { getConfig, setConfig, clearNodeCache, stmts, migrateNodeDeviceMac, migrateDeviceColumnsToMac, loadNodeMacMap } from './db.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
@@ -200,8 +200,10 @@ const BRIDGE_PREFIXES = ['/devices', '/ble', '/ble_devices', '/sections', '/sche
 for (const prefix of BRIDGE_PREFIXES) {
   app.use(prefix, proxyToBridge);
 }
-// Per-device routes: /!hex/...
+// Per-device routes: /!hex/... and /AA:BB:CC:DD:EE:FF/... — the gw accepts
+// either; MAC is the canonical device key (identity Phase B, IDENTITY.md §2)
 app.use(/^\/![0-9a-f]+/i, proxyToBridge);
+app.use(/^\/([0-9a-f]{2}:){5}[0-9a-f]{2}/i, proxyToBridge);
 
 app.use('/alerts', alertsRouter);
 
@@ -252,6 +254,18 @@ if (!getConfig('migrations.traceroute_tx_device', false)) {
 if (getConfig('perf.failure_epoch', null) == null) {
   setConfig('perf.failure_epoch', Math.floor(Date.now() / 1000));
   console.log('[migrate] perf.failure_epoch stamped');
+}
+
+// One-shot (identity Phase B): rewrite legacy !hex device ids to MACs in
+// traceroute_history.tx_device, messages.device and messages.rx_devices —
+// device attribution speaks one vocabulary (docs/IDENTITY.md §6).
+if (!getConfig('migrations.device_vocab_mac', false)) {
+  const pairs = Array.from(loadNodeMacMap(), ([mac, nodeId]) => ({ mac, nodeId }));
+  if (pairs.length) {
+    const n = migrateDeviceColumnsToMac(pairs);
+    setConfig('migrations.device_vocab_mac', true);
+    console.log(`[migrate] device columns !hex→MAC: ${n} rows across ${pairs.length} devices`);
+  }
 }
 
 // One-shot: rewrite legacy nodes.device values stored as node_id (!hex) to BLE
