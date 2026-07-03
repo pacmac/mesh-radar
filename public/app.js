@@ -265,7 +265,7 @@ function dashboard() {
       }
 
       await this.loadConfig();
-      await this.loadDeviceConfigs();
+      // device configs arrive on the WS device_list (C2)
       await this.loadBridgeConfig();
 
       if (this.activeNodeId) await this.bootstrapDevice();
@@ -305,14 +305,14 @@ function dashboard() {
 
       this.loadTiltHistory();
       this.loadEnvHistory(this.activeNodeId);
-      this.loadPerfLoraCfg();
+      this.adoptPerfLoraCfg();
       setInterval(() => { if (this.yagiSignal.ts) this._sigTick++; }, 1000);
       setInterval(() => this._rangeTick++, 60000);
 
       if (this.tab === 'radar') this.$nextTick(() => this.initRadar());
       else if (this.tab === 'cfg') this.switchCfgTab(this.cfgTab);
       else if (this.tab === 'range') { this.loadRangeTest(); this.loadRangeTimer(); }
-      else if (this.tab === 'perf') { this.loadPerfLoraCfg(); this.perfHistory = this.perfHistorySlice(); this.$nextTick(() => this.initPerfCharts()); }
+      else if (this.tab === 'perf') { this.adoptPerfLoraCfg(); this.perfHistory = this.perfHistorySlice(); this.$nextTick(() => this.initPerfCharts()); }
     },
   };
 }

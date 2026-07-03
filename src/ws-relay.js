@@ -9,7 +9,7 @@ import { handleAlertEvent } from './alerts.js';
 import { dashMode } from './dash-mode.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
-import { ensureDeviceCfgMac } from './device-config.js';
+import { ensureDeviceCfgMac, getDeviceCfg } from './device-config.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 
@@ -36,6 +36,11 @@ const STATE_EVENT_TYPES = new Set(['device_state', 'device_data']);
 // Populated from device_snapshot and device_data events. Used by callers that
 // need the authoritative node_id rather than a MAC-derived approximation.
 const _liveNodeIds = new Map();
+
+// Assigned inside attachWsRelay; lets device-config re-broadcast the device
+// list after a settings write (C2 — the browser reads settings from WS).
+let _pokeDeviceList = () => {};
+export function pokeDeviceList() { _pokeDeviceList(); }
 // Seed from persisted mapping so ownDeviceNums() is correct immediately on cold start.
 for (const [mac, nodeId] of loadNodeMacMap()) {
   _liveNodeIds.set(mac, nodeId);
@@ -235,13 +240,36 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     handleAlertEvent({ type: 'bridge_disconnected' });
   });
 
+  // Per-device radio lora config, fetched from the gw when a device is READY
+  // and after reboots — device_list carries it so the browser never GETs it
+  // (C2: page data is WS-only).
+  const lastDeviceLora = {};
+  async function refreshDeviceLora(addr) {
+    if (!addr) return;
+    try {
+      const r = await bridge.get(`/${addr}/config/lora`);
+      if (r?.lora) {
+        lastDeviceLora[addr.toUpperCase()] = r.lora;
+        broadcastDeviceList();
+      }
+    } catch (e) { /* device not ready yet — next READY transition retries */ }
+  }
+
   function broadcastDeviceList() {
     // Compose from in-memory lastDeviceState — never makes an HTTP call.
     // lastDeviceState is seeded once at startup from GET /devices, then kept
     // live by the WS event stream. All configured devices are always present.
-    lastDeviceList = { type: 'device_list', devices: Object.values(lastDeviceState) };
+    // Each device carries its node-dash settings (cfg, MAC-keyed store) and
+    // radio lora config so the browser reads page data from WS alone.
+    const devices = Object.values(lastDeviceState).map(d => ({
+      ...d,
+      cfg:  d.addr ? getDeviceCfg(d.addr) : null,
+      lora: d.addr ? (lastDeviceLora[d.addr.toUpperCase()] ?? null) : null,
+    }));
+    lastDeviceList = { type: 'device_list', devices };
     broadcast(lastDeviceList);
   }
+  _pokeDeviceList = broadcastDeviceList;
 
   bridge.on('event', (ev) => {
     if (ev.type === 'device_snapshot') {
@@ -257,6 +285,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         // ble_state: lowercase state for UI logic (devBleState, devIsReady, etc.)
         flat.ble_state = (d.state_event?.state || 'OFFLINE').toLowerCase();
         lastDeviceState[d.addr] = flat;
+        if (flat.ble_state === 'ready') refreshDeviceLora(d.addr);
         if (flat.node_id) {
           _liveNodeIds.set(d.addr.toUpperCase(), flat.node_id);
           persistNodeMac(flat.node_id, d.addr.toUpperCase());
@@ -277,6 +306,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const { type: _t, ...fields } = ev;
       if (ev.type === 'device_state') {
         lastDeviceState[evAddr] = { ...existing, ...fields, state_event: ev, ble_state: ev.state.toLowerCase() };
+        // READY (incl. post-reboot after a config write) — refresh radio lora
+        if (ev.state === 'READY') refreshDeviceLora(evAddr);
         // Translate OTA FSM states to legacy ota_start/progress/complete/error events for browser UI.
         // Use ev.node_id when available; fall back to ev.addr for pre-sync devices (e.g. stuck bootloader).
         const otaDev = ev.node_id || ev.addr;

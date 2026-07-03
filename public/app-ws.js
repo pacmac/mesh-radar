@@ -53,7 +53,26 @@ export const wsMixin = {
         if (!knownIds.has(dev.node_id)) this.loadAutoPurge(dev.node_id);
       }
       this.availableDevices = devices;
+      // Device settings + radio lora config arrive ON the device_list (C2:
+      // page data is WS-only) — no GET /device-config, no /config/lora.
+      const byMac = {};
+      for (const dev of devices) {
+        if (dev.addr && dev.cfg) byMac[dev.addr.toUpperCase()] = dev.cfg;
+      }
+      if (Object.keys(byMac).length) this._deviceConfigsByMac = byMac;
       this._rebuildDeviceConfigs?.();
+      // Seed primary as active only when the user has no saved choice —
+      // an explicit Set Active always wins (moved from loadDeviceConfigs).
+      if (!this.activeNodeId && !persistGet('activeNodeId', '')) {
+        const primary = devices.find(d => d.cfg?.is_primary && d.node_id);
+        if (primary) {
+          this.activeNodeId = primary.node_id;
+          if (!this.msgFrom) this.msgFrom = primary.node_id;
+        }
+      }
+      // Theory constants for the perf page's selected radio
+      const perfSel = devices.find(d => d.addr === this.perfDev());
+      if (perfSel?.lora) this.loraCfg = perfSel.lora;
       const existing = {};
       for (const dev of devices) {
         const key = dev.node_id ?? dev.addr;
@@ -105,7 +124,7 @@ export const wsMixin = {
       // re-slice the WS-replayed history and fetch theory constants.
       if (this.tab === 'perf' && !this.perfHistory.length && devices.length) {
         this.perfHistory = this.perfHistorySlice();
-        this.loadPerfLoraCfg();
+        this.adoptPerfLoraCfg();
       }
       if (!this.cfgRadioId || !devices.find(d => d.node_id === this.cfgRadioId)) {
         this.cfgRadioId = this.activeNodeId;

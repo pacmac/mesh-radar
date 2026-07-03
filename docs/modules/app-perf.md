@@ -1,7 +1,7 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: d81b1dae0fb302d42632a77d84c9bba6ead2a5391051511636360391991a95b3
+source_hash: d2096faee69c967a2a5301a0c27401bbc399f357dd95cc957899519986f053bb
 updated: 2026-07-03
 ---
 
@@ -127,3 +127,9 @@ presentation scoping like the tilt/env slices. Device switches and tab
 entry re-slice; no fetch. The REST GET is browser-blocked
 (`WS_ONLY_ROUTES`). Remaining GET: `loadPerfLoraCfg` — page data, to be
 WS-carried via device payload enrichment (next C step).
+
+## Phase C2 — theory constants from WS
+
+`loadPerfLoraCfg` (GET /:dev/config/lora) is DELETED; `adoptPerfLoraCfg()`
+copies the selected device's `lora` off `availableDevices` (carried by
+device_list). With C1+C2 the perf page performs ZERO GETs.

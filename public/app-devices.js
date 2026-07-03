@@ -223,29 +223,9 @@ export const devicesMixin = {
     return live?.node_id || null;
   },
 
-  async loadDeviceConfigs() {
-    try {
-      const byMac = await fetchJSON('/device-config');
-      this._deviceConfigsByMac = byMac;
-      this._rebuildDeviceConfigs();
-      // Resolve primary device's actual node_id for activeNodeId.
-      const primaryMacEntry = Object.entries(byMac).find(([, c]) => c?.is_primary);
-      if (primaryMacEntry) {
-        const [primaryMac] = primaryMacEntry;
-        const liveDevice = this.availableDevices.find(
-          d => d.addr.toUpperCase() === primaryMac.toUpperCase()
-        );
-        // Seed primary as active only when the user has no saved choice —
-        // an explicit Set Active always wins (docs/modules/app-ws.md).
-        if (liveDevice?.node_id && !this.activeNodeId) {
-          this.activeNodeId = liveDevice.node_id;
-          if (!this.msgFrom) this.msgFrom = liveDevice.node_id;
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load device configs', e);
-    }
-  },
+  // Device settings arrive on the WS device_list (dev.cfg, MAC-keyed) —
+  // the GET /device-config page-data fetch is gone (C2, WS-only transport).
+  // Primary-as-active seeding lives in the device_list handler now.
 
   _rebuildDeviceConfigs() {
     const byMac = this._deviceConfigsByMac;

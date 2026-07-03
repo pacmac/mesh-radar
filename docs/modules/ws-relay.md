@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 9770d35a32b326ea88e7e61e1dfd5853836b104d14bc172c49281caaceeada41
+source_hash: cc32e6b53515e1ecc179e50355ca0802ed74f0c3f6cefb6fc5e7534253228065
 updated: 2026-07-03
 ---
 
@@ -386,3 +386,12 @@ and row `id`) carries `failure_epoch` (config `perf.failure_epoch`) and is
 the SOLE browser transport for perf history. `traceroute.on('cancel')`
 broadcasts `{ type: 'traceroute_failed', row }` when the event carries the
 recorded failure row.
+
+## Phase C2 — device_list carries settings + radio config
+
+Each device in `device_list` carries `cfg` (its node-dash settings from the
+MAC-keyed store) and `lora` (radio lora config, fetched from the gw by MAC
+whenever the device reaches READY — including post-reboot after config
+writes — and cached in `lastDeviceLora`). `pokeDeviceList()` (module
+export, closure-assigned) lets device-config rebroadcast after a settings
+PUT. The browser reads ALL device page-data from this event; no GETs.

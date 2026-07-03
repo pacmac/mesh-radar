@@ -112,15 +112,11 @@ export const perfMixin = {
 
   // ── Traceroute history ────────────────────────────────────────────────────
 
-  async loadPerfLoraCfg() {
-    const dev = this.perfDev();
-    if (this.loraCfg?.tx_power != null || !dev) return;
-    try {
-      const r = await fetchJSON(`/${dev}/config/lora`);
-      if (r?.lora) this.loraCfg = r.lora;
-    } catch (e) {
-      console.warn('[perf] loadPerfLoraCfg failed', e);
-    }
+  // Radio lora config rides the WS device_list (dev.lora, fetched by the
+  // backend on READY) — no GET (C2). This adopts the selected radio's copy.
+  adoptPerfLoraCfg() {
+    const dev = (this.availableDevices || []).find(d => d.addr === this.perfDev());
+    if (dev?.lora) this.loraCfg = dev.lora;
   },
 
   // ── Auto-traceroute scheduler ─────────────────────────────────────────────
@@ -186,7 +182,7 @@ export const perfMixin = {
     persistSet('perfDevice', addr);
     this.loraCfg = {};              // force per-device reload of theory constants
     this.perfHistory = this.perfHistorySlice();
-    await this.loadPerfLoraCfg();
+    this.adoptPerfLoraCfg();
     this.$nextTick(() => this.initPerfCharts());
   },
 

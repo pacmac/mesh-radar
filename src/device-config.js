@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getConfig, setConfig, deleteConfig, getConfigByPrefix } from './db.js';
+import { pokeDeviceList } from './ws-relay.js';
 
 const router = Router();
 const PREFIX = 'device_cfg.';
@@ -150,6 +151,8 @@ router.put('/:address', (req, res) => {
 
   setConfig(PREFIX + mac, updated);
   if (homePosChanged && updated.is_primary) _onHomePosChange?.();
+  // device_list carries per-device cfg (C2) — push the fresh settings
+  pokeDeviceList();
   res.json(updated);
 });
 

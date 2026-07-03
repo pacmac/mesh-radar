@@ -1,8 +1,8 @@
 ---
 module: device-config
 source: src/device-config.js
-source_hash: d9a00ec96d9fac78942bde47ecebb539114234f388e92670ed03e8d83371af48
-updated: 2026-06-30
+source_hash: ef798d60ff1e3c0a8aff7506d3a0ff006d7adaa005d7e68d10e42eda93f1d09d
+updated: 2026-07-03
 ---
 
 # Module: device-config
@@ -156,3 +156,9 @@ Identity is never inferred from MAC-suffix arithmetic.
 - BLE paired status — lives in bleak_db (mesh-gw side), never in this module
 - Which radio is currently connected — `bridge.js` / `ws-relay.js` own the live device list
 - Home position computation — `active-tracker.js` reads `getConfig('home.lat')` separately; the `fixed_lat/fixed_lon` here are device-specific fallbacks
+
+## Phase C2
+
+The PUT handler calls `pokeDeviceList()` after writing so the enriched
+`device_list` (which carries each device's `cfg`) rebroadcasts immediately.
+GET /device-config remains for tooling but the browser no longer calls it.

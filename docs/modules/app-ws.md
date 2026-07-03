@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 667816b2c789783aa17b284390e2549e87580351ede2928d95bd6129e56c64a1
+source_hash: ba8b125de1aadd5ba3e4529121579c90d1cb88a701131e8fa7d150c21cdf102d
 updated: 2026-07-03
 ---
 
@@ -70,3 +70,10 @@ map. This spec exists to hash-guard the file and record fixed contracts.
 - `route_discovered`: entry now carries `id` (DB row id) and `status:'ok'`,
   is pushed to `_trHistAll` for all devices, and prepends to the visible
   slice only on scope match. `ev.ts` in ms is normalized to seconds.
+
+## Phase C2 — device_list ingestion
+
+The handler builds `_deviceConfigsByMac` from `dev.cfg` on every
+device_list (replacing GET /device-config), seeds primary-as-active when
+no persisted choice exists (moved from the deleted `loadDeviceConfigs`),
+and adopts `dev.lora` into `loraCfg` for the perf page's selected radio.
