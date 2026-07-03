@@ -245,6 +245,14 @@ if (!getConfig('migrations.traceroute_tx_device', false)) {
   }
 }
 
+// One-shot: mark when traceroute failure recording began. Success-rate stats
+// must treat windows before this as "n/a" — no failure rows existed to count,
+// so pre-epoch rates would read a fake 100%.
+if (getConfig('perf.failure_epoch', null) == null) {
+  setConfig('perf.failure_epoch', Math.floor(Date.now() / 1000));
+  console.log('[migrate] perf.failure_epoch stamped');
+}
+
 // One-shot: rewrite legacy nodes.device values stored as node_id (!hex) to BLE
 // MAC, using the persisted node_mac registry. nodes.device must share the MAC
 // vocabulary the node_source filter compares against (__ble_addr contract).

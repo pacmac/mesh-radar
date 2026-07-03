@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 57d7921eca860a30979738111b0f8cf01c7b190070c3afe2c43b747e81e59716
+source_hash: e078b5bf48bf08e3b489728b635585cfee910d24407ecbbf685874dec7807c69
 updated: 2026-07-03
 ---
 
@@ -217,4 +217,5 @@ rssi/snr/hops/via_mqtt/device_metrics — the node-filter fields keep flowing.
 ## setTraceroute (task `perf-per-device`)
 
 Persists `tx_device` and `rotator_az` from the result into
-traceroute_history.
+traceroute_history. Success rows carry `status: 'ok'` (task `perf-honesty`
+step 2 — failure rows are inserted by traceroute.js, never through here).

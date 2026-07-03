@@ -1,8 +1,8 @@
 ---
 module: tab-perf
 source: public/partials/tab-perf.html
-source_hash: a4b980b25625c82f7ae58a4ff16669cc3d7235887b4c2a011826a15590be91bb
-updated: 2026-07-02
+source_hash: 44537f2daccc51b82a7c33ab69d4ab3b8981754eeda693b5aaf13e1599a13ac4
+updated: 2026-07-03
 ---
 
 # Module: tab-perf
@@ -52,3 +52,15 @@ History table shows the first-hop node (short name or !id fallback) and its
 distance — the hop the Headroom column actually measures. Direct rows show
 an em-dash. Added after the distance-laundering finding: first-hop rows
 displayed the far target distance while measuring the nearby relay.
+
+## Success rate lead stat + failure rows (task perf-honesty, step 2)
+
+- New FIRST stat in the grid: **Success Rate** — `perfSuccessRate()` as a
+  percentage, desc "ok of n attempts". When no post-epoch attempts exist
+  for the selected device it reads "n/a — no attempts since <epoch date>";
+  it must never show 100% derived from pre-epoch (failure-blind) windows.
+- History table renders failure rows (status ≠ 'ok'): row dimmed
+  (`opacity-50`), Headroom cell shows an error badge (`TIMEOUT` /
+  `SEND FAIL`), value cells fall through to their existing null renderings
+  (em-dash). Failures are the point of the page — hiding them re-creates
+  the survivorship bias this task exists to kill.

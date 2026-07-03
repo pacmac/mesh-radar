@@ -1,8 +1,8 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 54d045479c1e03f26e6c95ff2e3267b1909024828ecb10c54aac967590323678
-updated: 2026-06-30
+source_hash: 147f1a9d9c60bbae8895c952043ced6bbcde39f8b3585055d5d1b15618c05022
+updated: 2026-07-03
 ---
 
 # Module: config-api
@@ -56,6 +56,7 @@ export default router  // Express Router — mounted at /config by index.js
 | `message_filter.hide_mqtt` | `false` | Exclude MQTT-sourced messages |
 | `packet_sources` | `[]` | Packet source filter |
 | `range_test.duration` | `10` | Default range test duration (minutes) |
+| `perf.failure_epoch` | `null` | Read-only stamp (unix s): when traceroute failure recording began — the perf page treats pre-epoch windows as "n/a" (task `perf-honesty` step 2) |
 
 `NODE_FILTER_KEYS` is the subset of keys starting with `node_filters.` — used to decide when to call `nodeList.refilter()`.
 
@@ -65,7 +66,7 @@ All paths are relative to the mount point `/config`.
 
 ### `GET /config`
 
-Returns an object with all 17 DEFAULTS keys, each populated from `getConfig(key, default)`. No query parameters.
+Returns an object with all 18 DEFAULTS keys, each populated from `getConfig(key, default)`. No query parameters.
 
 ### `GET /config/radar`
 

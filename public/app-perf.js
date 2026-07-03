@@ -17,6 +17,7 @@ const RX_NOISE_FIGURE_DB = 6;
 
 export const perfMixin = {
   perfHistory:      [],
+  perfFailureEpoch: null,   // unix s when failure recording began (config perf.failure_epoch)
   perfLoading:      false,
   perfAutoNodes:    [],   // node nums scheduled for auto-traceroute
   _perfAutoTimer:   null,
@@ -180,9 +181,23 @@ export const perfMixin = {
     try {
       const rows = await fetchJSON(`/traceroute_history?device=${encodeURIComponent(dev)}&limit=200`);
       if (Array.isArray(rows)) this.perfHistory = rows;
+      if (this.perfFailureEpoch == null) {
+        const cfg = await fetchJSON('/config');
+        this.perfFailureEpoch = cfg?.['perf.failure_epoch'] ?? null;
+      }
     } catch (e) {
       console.warn('[perf] loadPerfHistory failed', e);
     }
+  },
+
+  // Success rate over post-epoch attempts only. Pre-epoch rows predate
+  // failure recording — counting them would fake a 100% rate.
+  perfSuccessRate() {
+    if (this.perfFailureEpoch == null) return null;
+    const rows = this.perfHistory.filter(r => r.ts >= this.perfFailureEpoch);
+    if (!rows.length) return null;
+    const ok = rows.filter(r => !r.status || r.status === 'ok').length;
+    return { n: rows.length, ok, rate: Math.round((ok / rows.length) * 100) };
   },
 
   // Distance (km) from home to a lat/lon pair using Haversine
@@ -229,6 +244,18 @@ export const perfMixin = {
 
   // Enrich a history row with calculated fields
   perfEnrich(row) {
+    // Failure rows (status != 'ok') carry no payload — they render as
+    // em-dashes and validTx:false keeps them out of medians/charts.
+    if (row.status && row.status !== 'ok') {
+      return {
+        ...row,
+        failed: true, route: [], routeHops: 0, direct: false,
+        routeKind: 'failed', confidence: 'low', validTx: false,
+        distKm: null, metricDistKm: null, targetDistKm: null,
+        firstHopNum: null, firstHopDistKm: null, firstHopName: null,
+        distLabel: '', snrTx: null, snrRx: null, gapTx: null, marginTx: null,
+      };
+    }
     const route = Array.isArray(row.route) ? row.route.filter(n => n != null && n !== 0xffffffff) : [];
     const routeHops = route.length;
     const direct = routeHops === 0;

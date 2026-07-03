@@ -1,8 +1,8 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: ec48fa11427c65d00daee92a82090735d9cb8012fdcf0dad36f8e91cea3a2668
-updated: 2026-07-02
+source_hash: b27ce59046d38b2919447e03ce97d22c4c7c543f84f96201baa345e139929068
+updated: 2026-07-03
 ---
 
 # Module: app-perf
@@ -76,6 +76,23 @@ startup). Browser: `public/app-perf.js`, `public/app-ws.js`
 
 NOT changed: headroom math (perfMargin/perfSnrGap/FSPL), chart rendering,
 STYLE_GUIDE-compliant layout from perf-refactor.
+
+## Failure awareness (task `perf-honesty`, step 2)
+
+- `perfEnrich` short-circuits failure rows (`row.status && row.status !==
+  'ok'`): returns `{ ...row, failed: true, route: [], direct: false,
+  validTx: false, marginTx: null, snrTx: null, snrRx: null }` plus null
+  distance fields — they render as em-dashes and are excluded from
+  `perfValidRows` (and therefore all medians, charts and trend) via the
+  existing `validTx` filter.
+- `perfFailureEpoch` loaded once from `GET /config` key
+  `perf.failure_epoch` during `initPerf`. Display arithmetic only — the
+  browser makes no filtering decisions with it beyond honest labelling.
+- `perfSuccessRate()` → `{ n, ok, rate }` over `perfHistory` rows with
+  `ts >= perfFailureEpoch` (scoped rows already arrive per-device from the
+  backend); returns `null` when the epoch is unknown or no post-epoch rows
+  exist. Pre-epoch history MUST NOT be counted — those windows contain no
+  failure rows and would fake a 100% rate.
 
 ## Test notes
 

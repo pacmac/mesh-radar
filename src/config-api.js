@@ -23,6 +23,7 @@ const DEFAULTS = {
   'message_filter.hide_mqtt': false,
   'packet_sources':           [],
   'range_test.duration':      10,
+  'perf.failure_epoch':       null,   // read-only stamp: when traceroute failure recording began
 };
 
 router.get('/', (req, res) => {

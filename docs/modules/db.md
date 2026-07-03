@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 7e84a35a8f5250cea745f148b8c8df2bc6ceeeb49ac78ddb72163622e47e5054
+source_hash: be80d5d5caa5428be137efc188e25307eae266c0ef3ee350b93e4b0f776a743c
 updated: 2026-07-03
 ---
 
@@ -289,6 +289,18 @@ Columns `tx_device TEXT`, `rotator_az REAL` (+ ALTER migration). One-shot
 startup backfill attributes pre-migration rows to the primary radio (the
 only historical dispatcher), guarded by config flag
 `migrations.traceroute_tx_device` so later unattributed rows stay null.
+
+## traceroute_history failure recording (task `perf-honesty`, step 2)
+
+Column `status TEXT NOT NULL DEFAULT 'ok'` (ALTER migration; SQLite
+backfills the pre-existing success rows to `'ok'`). Values: `'ok'`,
+`'timeout'`, `'send_failed'`. New stmt `insertTracerouteFailure` inserts
+(ts, from_num, to_num, tx_device, rotator_az, status) with payload columns
+NULL; `insertTracerouteHistory` gains the `status` param (success callers
+pass `'ok'`). One-shot config stamp `perf.failure_epoch` (unix seconds,
+set once in index.js when unset) marks when failure recording began —
+success-rate consumers must treat pre-epoch windows as "n/a", never as
+100% (no failure rows existed to count).
 
 ## nodes.device vocabulary migration (task `node-source-attribution`)
 

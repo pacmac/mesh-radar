@@ -180,6 +180,7 @@ class NodeList extends EventEmitter {
       relay_positions: JSON.stringify(data.relay_positions ?? {}),
       tx_device:       data.tx_device ?? null,
       rotator_az:      data.rotator_az ?? null,
+      status:          'ok',
     });
     const existing = this._cache.get(num) ?? this._pending.get(num);
     if (existing) {

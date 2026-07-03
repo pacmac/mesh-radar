@@ -1,8 +1,8 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: e51b9117f84fb781b1f452a12d8dd8a186f2f8fd064b1f57e25c076dfb063702
-updated: 2026-06-30
+source_hash: 5035b0864c1735b61098d99c9e2d607fbac0ecfcb03ce072464369b099dfbdcf
+updated: 2026-07-03
 ---
 
 # Module: traceroute
@@ -87,7 +87,7 @@ traceroute.handlePacket(pkt, rxDevice)
 |---|---|---|
 | `'start'` | `{ to, device }` | A new dispatch begins (not fired when joining an existing pending entry) |
 | `'result'` | result object | Every completed traceroute — fired for all subscribers regardless of which mode triggered it |
-| `'cancel'` | `{ to }` | Dispatch times out or `bridge.post` rejects |
+| `'cancel'` | `{ to, device, reason }` | Dispatch times out (`reason: 'timeout'`) or `bridge.post` rejects (`reason: 'send_failed'`) |
 
 ## Invariants
 
@@ -98,12 +98,21 @@ traceroute.handlePacket(pkt, rxDevice)
 - **relay_positions SSOT**: `extractRelayPositions` is the single call site for converting route node nums to lat/lon pairs. It reads from `nodeinfo` at decode time and stores null for nodes without known positions.
 - **No mode logic**: callers decide which node to trace, from which device, and with what cooldown. This module does not distinguish ACTV, PASV, SCAN, or manual API calls.
 - **Storage always happens**: `nodeList.setTraceroute` is called for every valid TRACEROUTE_APP response, even if no `dispatch` was pending for that node.
+- **Failures are recorded** (task `perf-honesty`, step 2): both dispatch
+  failure exits (timeout, send error) insert a `traceroute_history` row via
+  `insertTracerouteFailure` — `status` = `'timeout'`/`'send_failed'`,
+  `from_num` = dispatcher node num (parsed from the `!hex` device id),
+  `to_num` = target, `tx_device` = dispatching device, `rotator_az` stamped
+  when the dispatcher is the rotator (same rule as results), payload columns
+  NULL. One pending entry = one failure row regardless of joined callers.
+  Success rows carry `status = 'ok'`. Without this, timeouts are invisible
+  and every stat is survivorship-biased (the PCB-antenna incident).
 
 ## Test notes
 
 - **happy path**: `dispatch({ to, device })` → mock bridge responds → `'result'` fires → Promise resolves with correct result; `nodeList.setTraceroute` called
 - **deduplication**: two concurrent `dispatch({ to })` calls → one bridge.post sent → both Promises resolve with same result; `'start'` fires once
-- **timeout**: dispatch with `timeoutMs: 50` → no response → after 50 ms `'cancel'` fires → Promise rejects with timeout error; entry removed from `_pending`
+- **timeout**: dispatch with `timeoutMs: 50` → no response → after 50 ms `'cancel'` fires → Promise rejects with timeout error; entry removed from `_pending`; failure row inserted with `status='timeout'`, correct `tx_device`
 - **cooldown**: dispatch with `cooldownMs: 1000, cooldownKey: 'x'` twice in quick succession → second call rejects immediately; bridge.post called once
 - **send failure**: `bridge.post` rejects → `'cancel'` fires → Promise rejects with same error; pending entry cleaned up
 - **handlePacket non-traceroute**: packet with different portnum → returns immediately, no state change

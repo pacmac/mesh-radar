@@ -90,7 +90,7 @@ class TracerouteManager extends EventEmitter {
           const err = new Error(`timeout !${to.toString(16)}`);
           log.warn(err.message);
           for (const cb of entry.callbacks) cb.reject(err);
-          this.emit('cancel', { to });
+          this._recordFailure(to, device, 'timeout');
         }
       }, effectiveMs);
 
@@ -104,10 +104,36 @@ class TracerouteManager extends EventEmitter {
           this._pending.delete(to);
           log.warn(`send failed !${to.toString(16)}: ${err.message}`);
           for (const cb of entry.callbacks) cb.reject(err);
-          this.emit('cancel', { to });
+          this._recordFailure(to, device, 'send_failed');
         }
       });
     });
+  }
+
+  // ── _recordFailure(to, device, reason) ─────────────────────────────────────
+  // Failed attempts get a traceroute_history row (status='timeout'|'send_failed',
+  // payload columns NULL) — without them every stat is survivorship-biased.
+  // One pending entry = one row, regardless of joined callers.
+  _recordFailure(to, device, reason) {
+    let rotatorAz = null;
+    const rotMac = getRotatorAddress();
+    const rotId  = rotMac ? getLiveNodeIdByMac(rotMac) : null;
+    if (rotId && rotId === device && rotator.status?.az != null) {
+      rotatorAz = Number(rotator.status.az);
+    }
+    try {
+      stmts.insertTracerouteFailure.run({
+        ts:         Math.floor(Date.now() / 1000),
+        from_num:   parseInt(String(device).replace('!', ''), 16) || 0,
+        to_num:     to,
+        tx_device:  device,
+        rotator_az: rotatorAz,
+        status:     reason,
+      });
+    } catch (err) {
+      log.warn(`failure record failed !${to.toString(16)}: ${err.message}`);
+    }
+    this.emit('cancel', { to, device, reason });
   }
 
   // ── handlePacket(pkt, rxDevice) ───────────────────────────────────────────

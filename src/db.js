@@ -155,7 +155,8 @@ db.exec(`
     snr_back         TEXT,
     relay_positions  TEXT,
     tx_device        TEXT,
-    rotator_az       REAL
+    rotator_az       REAL,
+    status           TEXT NOT NULL DEFAULT 'ok'
   );
 
   CREATE INDEX IF NOT EXISTS idx_traceroute_ts     ON traceroute_history(ts DESC);
@@ -167,6 +168,7 @@ db.exec(`
   const thCols = db.prepare(`PRAGMA table_info(traceroute_history)`).all().map(r => r.name);
   if (!thCols.includes('tx_device'))  db.exec(`ALTER TABLE traceroute_history ADD COLUMN tx_device TEXT`);
   if (!thCols.includes('rotator_az')) db.exec(`ALTER TABLE traceroute_history ADD COLUMN rotator_az REAL`);
+  if (!thCols.includes('status'))     db.exec(`ALTER TABLE traceroute_history ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'`);
 }
 const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);
 if (!existingCols.includes('reply_id')) {
@@ -349,9 +351,16 @@ export const stmts = {
 
   insertTracerouteHistory: db.prepare(`
     INSERT INTO traceroute_history
-      (ts, from_num, to_num, rx_device, route, route_back, snr_towards, snr_back, relay_positions, tx_device, rotator_az)
+      (ts, from_num, to_num, rx_device, route, route_back, snr_towards, snr_back, relay_positions, tx_device, rotator_az, status)
     VALUES
-      (@ts, @from_num, @to_num, @rx_device, @route, @route_back, @snr_towards, @snr_back, @relay_positions, @tx_device, @rotator_az)
+      (@ts, @from_num, @to_num, @rx_device, @route, @route_back, @snr_towards, @snr_back, @relay_positions, @tx_device, @rotator_az, @status)
+  `),
+
+  // Failed dispatch attempts (timeout / send error) — payload columns stay NULL.
+  // Without these rows every stat is survivorship-biased.
+  insertTracerouteFailure: db.prepare(`
+    INSERT INTO traceroute_history (ts, from_num, to_num, tx_device, rotator_az, status)
+    VALUES (@ts, @from_num, @to_num, @tx_device, @rotator_az, @status)
   `),
 
   queryTracerouteHistory: db.prepare(`
