@@ -98,3 +98,21 @@ the radar page is STYLE_GUIDE-exempt visually):
   getBoundingClientRect in-page); arms at varied angles; stable across two
   consecutive redraws
 - Linear mode: unchanged equi-spaced behavior (regression)
+
+## REQUIREMENT STATUS — adaptive rings are canonical (2026-07-04)
+
+The compressive/quantile ring scale is Peter's standing requirement (task
+radar-display goal note, verbatim: rings "should get closer together as
+the distance increases", equi-spaced rings are the defect). It is NOT an
+optional visualization mode:
+
+- No refactor removes or bypasses `_radarScaleCtrl`/`_radarNorm`. The
+  algorithm migrates into the radar-scope library (RADAR_SCOPE_SPEC.md §7)
+  carrying the same status.
+- The LIN/PWR toggle persists `radar.log_scale`; a single misclick flips
+  the page to linear rings, which is indistinguishable from "the feature
+  was removed" (this happened 2026-07-04 — git proved the code untouched;
+  the config flag was false). If rings look equi-spaced, check the config
+  flag FIRST: `PUT /config/radar.log_scale {"value":true}`.
+- During SCAN mode with <4 positioned contacts, the pow-0.4 fallback is
+  the spec'd degraded mode — not a regression.
