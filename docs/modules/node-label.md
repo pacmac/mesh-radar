@@ -1,8 +1,8 @@
 ---
 module: node-label
 source: src/node-label.js
-source_hash: ff14e8ea4623a039855fea993457886cf06e2219d5eda1fee7e8872a58c05b52
-updated: 2026-07-03
+source_hash: ffb1cc6d32e8ca3a58b1bdb88b7061440fc02c5f4005292464e958086eee1430
+updated: 2026-07-04
 ---
 
 # Module: node-label
@@ -92,3 +92,9 @@ Convenience wrapper for `!hexid` strings:
 - Storing or modifying display names — this module is read-only
 - Long name resolution — `long_name` is not used; `short_name` is the mesh name source
 - Per-node aliases beyond the device config label — only `device_cfg.label` is used
+
+## Persistent fallback (task radar-list-via)
+
+`resolveNodeLabel` step 2.5: when the in-memory cache misses, the
+persistent `nodeinfo` table is consulted before degrading to `?xxx` —
+labels (including via bundles) survive cache wipes from restarts/scans.

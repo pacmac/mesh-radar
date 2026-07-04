@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 65794d89e83418b6f9e7e0051519a5d626d56d1b44fd52bb8a4ffdc2287b2a13
+source_hash: 5f7645a00ff11874a44fc8e1327b87982206e5f7384e049eb111a5f0a5c892ad
 updated: 2026-07-04
 ---
 
@@ -408,3 +408,10 @@ PUT. The browser reads ALL device page-data from this event; no GETs.
   `{ type: 'geocode', num }` → `lookupGeocode(num)` →
   `{ type: 'geocode_result', num, address }`. The Nominatim 1.1 s queue
   lives in geocode.js regardless of caller.
+
+## radar-list-via
+
+`node_list` rows carry a `via` bundle `{ num, node_id, short_name }` —
+the first hop of the node's last traceroute (route[0]; broadcast sentinel
+excluded), resolved server-side per IDENTITY.md §3. Null when direct or
+no traceroute exists.

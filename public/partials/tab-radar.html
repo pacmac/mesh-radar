@@ -232,7 +232,7 @@
                         background:rgba(2,7,2,0.94);
                         border:1px solid rgba(0,255,80,0.16);
                         border-radius:0.5rem;backdrop-filter:blur(8px);
-                        padding:0.45rem 0.55rem;min-width:15rem;max-width:21rem;
+                        padding:0.45rem 0.55rem;min-width:16rem;max-width:24rem;
                         max-height:55%;overflow-y:auto;pointer-events:auto;
                         box-shadow:0 0 0 1px rgba(0,255,80,0.04),0 8px 32px rgba(0,0,0,0.85)">
               <!-- header row -->
@@ -263,6 +263,9 @@
                   </template>
                   <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.80);min-width:2.5rem;flex-shrink:0" x-text="n._az != null ? Math.round(n._az)+'°' : '–'"></span>
                   <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.80);min-width:2.8rem;flex-shrink:0" x-text="n._km != null ? n._km.toFixed(1)+'km' : '–'"></span>
+                  <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.80);min-width:2.4rem;flex-shrink:0"
+                        :title="(nodeHops(n)??1)===0 ? 'Direct — no relay' : n.via ? 'First hop (from last traceroute): ' + (n.via.short_name || n.via.node_id) : 'Relayed — no traceroute yet'"
+                        x-text="(nodeHops(n)??1)===0 ? '—' : (n.via?.short_name || (n.via?.node_id ? n.via.node_id.slice(-4) : '?'))"></span>
                   <span style="font-family:monospace;font-size:11px;min-width:1.4rem;flex-shrink:0"
                         :style="{ color: (nodeHops(n)??1)===0 ? 'rgba(255,160,0,0.85)' : 'rgba(0,255,80,0.70)' }"
                         x-text="(nodeHops(n)??0)+'h'"></span>

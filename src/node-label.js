@@ -1,5 +1,11 @@
 import { nodeList } from './node-list.js';
 import { getAllDeviceCfgs } from './device-config.js';
+import { stmts } from './db.js';
+
+function getNodeinfoShortName(num) {
+  try { return stmts.getNodeinfoByNum.get(num)?.short_name ?? null; }
+  catch { return null; }
+}
 
 let _nodeIdToMac = null;
 export function registerMacResolver(fn) { _nodeIdToMac = fn; }
@@ -24,6 +30,11 @@ export function resolveNodeLabel(num) {
 
   const cached = nodeList._cache.get(num);
   if (cached?.user?.short_name) return cached.user.short_name;
+
+  // Persistent nodeinfo survives cache wipes (restarts, scans) — without
+  // this, labels degrade to ?xxx whenever the in-memory cache is sparse
+  const stored = getNodeinfoShortName(num);
+  if (stored) return stored;
 
   return '?' + hex.slice(-3).toUpperCase();
 }

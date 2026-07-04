@@ -220,7 +220,15 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // Adds pre-resolved display labels so the UI never needs to resolve names itself.
   function enrichEvent(ev) {
     if (ev.type === 'node_list') {
-      return { ...ev, nodes: (ev.nodes || []).map(n => ({ ...n, display_name: resolveNodeLabel(n.num) })) };
+      return { ...ev, nodes: (ev.nodes || []).map(n => {
+        // First-hop relay bundle (IDENTITY.md §3) — a traceroute-context
+        // fact the browser renders without resolving (task radar-list-via)
+        const viaNum = n.last_traceroute?.route?.[0];
+        const via = (viaNum != null && viaNum !== 0xffffffff)
+          ? { num: viaNum, node_id: '!' + (viaNum >>> 0).toString(16).padStart(8, '0'), short_name: resolveNodeLabel(viaNum) }
+          : null;
+        return { ...n, display_name: resolveNodeLabel(n.num), via };
+      }) };
     }
     if (ev.type === 'device_list') {
       return { ...ev, devices: (ev.devices || []).map(d => ({ ...d, display_name: resolveDeviceLabel(d.node_id) })) };

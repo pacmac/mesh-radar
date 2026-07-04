@@ -1,8 +1,8 @@
 ---
 module: tab-radar
 source: public/partials/tab-radar.html
-source_hash: 4bdacbf319822f2af68df170c2a3ee2e7fa6557bfa28ce374068fbd2a43ce4fc
-updated: 2026-07-03
+source_hash: dfcaf56f6809c77f5422717ead2e74f01b40cd4578d16953feccee6dbe8fff8b
+updated: 2026-07-04
 ---
 
 # Module: tab-radar
@@ -52,3 +52,12 @@ zero filtering or business decisions.
 
 - Radar canvas drawing logic (app-radar.js, spec: app-radar.md).
 - Node list membership/filtering (backend node-filter.js).
+
+## Via column (task radar-list-via)
+
+Between km and hops: direct (live hops 0) renders an em-dash; relayed
+nodes render `via.short_name` (fallback: last 4 of `via.node_id`, or an
+honest `?` when no traceroute exists yet). Tooltip carries the source
+("first hop from last traceroute"). Data comes bundled on the node_list —
+the partial resolves nothing. Legibility floor applies (0.80 phosphor).
+Card width 16–24 rem.
