@@ -240,9 +240,22 @@ class NodeList extends EventEmitter {
     if (this._scanActive === active) return;
     this._scanActive = active;
     if (active) {
-      this._cache.clear();
+      // Snapshot the live list — the scan works on a clean slate, but the
+      // PASV/ACTV world must come back at scan end (previously the wipe was
+      // permanent: post-scan ACTV starved on a near-empty radar).
+      this._preScanCache = this._cache;
+      this._cache = new Map();
       this._pending.clear();
       if (clearPersisted) setConfig('scan_nodes', []);
+    } else if (this._preScanCache) {
+      // Restore the pre-scan list; confirmed scan contacts overlay it —
+      // their signal/az/identity data is fresher than the snapshot's.
+      const restored = this._preScanCache;
+      for (const [num, n] of this._cache) {
+        restored.set(num, { ...(restored.get(num) ?? {}), ...n });
+      }
+      this._cache = restored;
+      this._preScanCache = null;
     }
     this._scheduleEmit();
   }

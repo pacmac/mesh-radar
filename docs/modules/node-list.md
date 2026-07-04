@@ -1,8 +1,8 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 51e4ca8ddd7cef3f98c38cccc37de7a1483c332eb0b2ac3e9b2e3aad11dcdf82
-updated: 2026-07-03
+source_hash: 522b3aee60544f3e3c438a2accaa6612004654eb4cedc254e6406926f5f0536f
+updated: 2026-07-04
 ---
 
 # Module: node-list
@@ -143,6 +143,13 @@ confirmScanContact(num, …)
 setScanActive(false)
   → _scanActive = false; future updates go directly to _cache
   → _pending entries remain until next scan start (they are not promoted)
+  → the pre-scan cache snapshot (_preScanCache, taken at setScanActive(true)
+    before the wipe) is RESTORED, with confirmed scan contacts overlaid on
+    top (scan data is fresher). Without this the wipe was permanent and
+    post-scan ACTV starved on a near-empty radar (task scan-cache-restore).
+    A restart mid-scan loses the in-memory snapshot — the cache then
+    rebuilds from packets (and the gw reseed once its /nodes endpoint is
+    fixed).
 
 restoreScanNodes(nodes)  — called on restart when scan was in progress
   → only nodes with _scanAz or _scanSnr (confirmed contacts) are restored
