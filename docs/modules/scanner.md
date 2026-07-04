@@ -1,8 +1,8 @@
 ---
 module: scanner
 source: src/scanner.js
-source_hash: 69a829af6431bf1105d2f7b8f1553036c22ccfe7aa520fb617648be225444a73
-updated: 2026-06-30
+source_hash: 66dab38e4e3d6e0fb126f87ec6187d38c937530cdc51882ee8fc6817e0024d5a
+updated: 2026-07-04
 ---
 
 # Module: scanner
@@ -161,3 +161,15 @@ Best-SNR wins per azimuth: replaces `_contacts[az]` only if new `snr > existing.
 ## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
 
 Rotator packet matching compares `ev.addr` (BLE MAC) — V2 removed the `device` field from packet events; the old comparison discarded every packet, so SCAN never recorded contacts.
+
+## Direct-only contact gate (task `scan-direct-only`, 2026-07-04)
+
+`handlePacket` accepts only provably-direct receptions:
+`pkt.hop_start === pkt.hop_limit` (both non-null). A relayed packet is the
+RELAY's transmission — attributing its RF to the originator's bearing
+poisons the polar pattern (observed: a relay blast at −28 dBm recorded as
+an originator "peak" 151° off its true bearing, stronger than the
+colocated radio — physically impossible for a 2-hop node). Packets missing
+either hop field are dropped: unprovable ≠ direct. Consequence: sweeps
+record fewer contacts, but every contact's azimuth is real; nodes only
+reachable via relays legitimately never appear in a scan.

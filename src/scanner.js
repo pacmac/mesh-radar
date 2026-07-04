@@ -67,6 +67,13 @@ class Scanner extends EventEmitter {
     if (rotatorId && ev.addr !== rotatorId) return;   // V2: rotator id is the BLE MAC = ev.addr
     const pkt = ev.data?.packet;
     if (!pkt?.from) return;
+    // Direct receptions ONLY. A relayed packet is the RELAY's RF arriving at
+    // the antenna — attributing it to the originator's bearing poisons the
+    // polar pattern (2026-07-04 sweep: a relay blast at -28 dBm registered
+    // as a "peak" 151° off the originator's true bearing). hop_start ===
+    // hop_limit is the only proof the transmitter was the originator;
+    // packets missing either field are dropped — unprovable ≠ direct.
+    if (pkt.hop_start == null || pkt.hop_limit == null || pkt.hop_start !== pkt.hop_limit) return;
     const snr  = pkt.rx_snr  ?? null;
     const rssi = pkt.rx_rssi ?? null;
     if (snr == null && rssi == null) return;
