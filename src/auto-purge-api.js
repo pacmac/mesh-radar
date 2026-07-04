@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getConfig, setConfig, getConfigByPrefix } from './db.js';
+import { pokeDeviceList } from './ws-relay.js';
 import { bridge } from './bridge.js';
 
 let _broadcastAll = () => {};
@@ -43,6 +44,18 @@ export function startAutoPurgeScheduler(broadcastAll) {
 
 const router = Router();
 
+
+// Purge settings for a device key — rides the WS device_list (settings-via-ws).
+// Legacy keys were written with whatever id the browser sent (historically !hex).
+export function getAutoPurgeCfg(key) {
+  if (!key) return null;
+  return {
+    enabled:     getConfig(`auto_purge_enabled_${key}`, false),
+    purge_time:  getConfig(`auto_purge_time_${key}`, '02:00'),
+    last_run_ts: getConfig(`auto_purge_last_run_ts_${key}`, null),
+  };
+}
+
 router.get('/auto-purge', (req, res) => {
   const nodeId = req.query.device;
   if (!nodeId) return res.status(400).json({ error: 'device required' });
@@ -59,6 +72,7 @@ router.put('/auto-purge', (req, res) => {
   setConfig(`auto_purge_enabled_${nodeId}`, !!enabled);
   if (purge_time && /^\d{2}:\d{2}$/.test(purge_time)) setConfig(`auto_purge_time_${nodeId}`, purge_time);
   res.json({ ok: true });
+  pokeDeviceList();
 });
 
 router.post('/purge-nodedb', async (req, res) => {

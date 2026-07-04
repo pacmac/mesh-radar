@@ -10,6 +10,9 @@ import { dashMode } from './dash-mode.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { ensureDeviceCfgMac, getDeviceCfg } from './device-config.js';
+import { DEFAULTS as CONFIG_DEFAULTS } from './config-api.js';
+import { getAutoPurgeCfg } from './auto-purge-api.js';
+import { lookupGeocode } from './geocode.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 
@@ -41,6 +44,11 @@ const _liveNodeIds = new Map();
 // list after a settings write (C2 — the browser reads settings from WS).
 let _pokeDeviceList = () => {};
 export function pokeDeviceList() { _pokeDeviceList(); }
+
+// Settings live on the WS (settings-via-ws): replayed on connect, re-broadcast
+// after every config write so all tabs see filter/radar changes immediately.
+let _broadcastSettings = () => {};
+export function broadcastSettings() { _broadcastSettings(); }
 // Seed from persisted mapping so ownDeviceNums() is correct immediately on cold start.
 for (const [mac, nodeId] of loadNodeMacMap()) {
   _liveNodeIds.set(mac, nodeId);
@@ -265,11 +273,21 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       ...d,
       cfg:  d.addr ? getDeviceCfg(d.addr) : null,
       lora: d.addr ? (lastDeviceLora[d.addr.toUpperCase()] ?? null) : null,
+      auto_purge: getAutoPurgeCfg(d.node_id ?? d.addr),
     }));
     lastDeviceList = { type: 'device_list', devices };
     broadcast(lastDeviceList);
   }
   _pokeDeviceList = broadcastDeviceList;
+
+  function settingsEvent() {
+    const config = {};
+    for (const [key, fallback] of Object.entries(CONFIG_DEFAULTS)) {
+      config[key] = getConfig(key, fallback);
+    }
+    return { type: 'settings', config };
+  }
+  _broadcastSettings = () => broadcast(settingsEvent());
 
   bridge.on('event', (ev) => {
     if (ev.type === 'device_snapshot') {
@@ -537,6 +555,17 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: bridge.connected ? 'bridge_connected' : 'bridge_disconnected' }));
     }
+    // Settings replay — page state never comes from a GET (settings-via-ws)
+    if (ws.readyState === 1) ws.send(JSON.stringify(settingsEvent()));
+    // Client→server RPC. geocode: on-demand address lookup — the Nominatim
+    // queue in lookupGeocode serializes requests regardless of caller.
+    ws.on('message', async (raw) => {
+      let msg; try { msg = JSON.parse(raw); } catch { return; }
+      if (msg?.type === 'geocode' && msg.num) {
+        const address = await lookupGeocode(msg.num).catch(() => null);
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'geocode_result', num: msg.num, address }));
+      }
+    });
     // Replay last-known BLE state for each device — no HTTP
     for (const state of Object.values(lastDeviceState)) {
       if (ws.readyState === 1) ws.send(JSON.stringify(state));

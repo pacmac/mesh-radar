@@ -41,3 +41,14 @@ An exception that is not approved is a bug, not a feature.
 - Any browser code that derives, computes, or decides state (beyond the permitted list above)
   is a violation and must be reported, not silently left in place
 - `python scripts/check_specs.py` does not validate this contract — human review does
+
+## Transport rule (Peter, 2026-07-04 — absolute)
+
+**GET is only for form population/submission workflows. Any other browser
+GET is a violation.** All page data — lists, histories, settings, device
+state, lookups — arrives over the WebSocket (`/events`): replayed on
+connect, pushed on change, requested via WS RPC where inherently
+on-demand (e.g. geocode). `WS_ONLY_ROUTES`/`WS_ONLY_EXACT` in index.js
+enforce this with a hard 410 for browser-flavored GETs; add every new
+page-data endpoint there. Config-editor reads (schemas, sections,
+channels, owner, radar settings panel) are the sanctioned form flows.

@@ -67,13 +67,6 @@ export const devicesMixin = {
     await fetchJSON(`/${nodeId}/admin`, 'POST', { message: { nodedb_reset: true }, want_response: false });
   },
 
-  async loadAutoPurge(nodeId) {
-    try {
-      const r = await fetchJSON(`/auto-purge?device=${encodeURIComponent(nodeId)}`);
-      this.autoPurge = { ...this.autoPurge, [nodeId]: r };
-    } catch (_) {}
-  },
-
   async saveAutoPurge(nodeId) {
     const s = this.autoPurge[nodeId];
     if (!s) return;

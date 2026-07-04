@@ -7,35 +7,8 @@ import { opFlow } from './op-flow.js';
 
 
 export const configMixin = {
-  async loadConfig() {
-    try {
-      const cfg = await fetchJSON('/config');
-      this.nodeFilters = {
-        maxHops:   cfg['node_filters.max_hops']   ?? 99,
-        maxAge:    cfg['node_filters.max_age']    ?? 0,
-        namedOnly: cfg['node_filters.named_only'] ?? false,
-        hasPos:    cfg['node_filters.has_pos']    ?? false,
-        hideMqtt:  cfg['node_filters.hide_mqtt']  ?? false,
-        hasSignal: cfg['node_filters.has_signal'] ?? false,
-        hasTelem:  cfg['node_filters.has_telem']  ?? false,
-        msgOnly:   cfg['node_filters.msg_only']   ?? false,
-        nodeRoles: cfg['node_filters.roles']      ?? [],
-      };
-      this.nodeSource     = cfg['node_filters.node_source'] ?? 'both';
-      this.radarRange     = String(cfg['radar.max_range_km'] ?? 50);
-      this.radarLogScale  = cfg['radar.log_scale']  ?? false;
-      this.radarCrosshair = cfg['radar.crosshair']  ?? true;
-      this.packetSources  = cfg['packet_sources']   ?? [];
-      if (cfg['range_test.duration']) this.rangeDuration = cfg['range_test.duration'];
-    } catch (e) {
-      console.warn('Failed to load config', e);
-    }
-    try {
-      const hp = await fetchJSON('/home_pos');
-      this.homeLat = hp.lat ?? null;
-      this.homeLon = hp.lon ?? null;
-    } catch (_) {}
-  },
+  // loadConfig is gone — settings arrive on the WS 'settings' event
+  // (settings-via-ws): replayed on connect, re-broadcast on config writes.
 
   switchCfgTab(name) {
     this.cfgTab = name;

@@ -57,12 +57,15 @@ app.use(express.json());
 // be forged by JavaScript. Server-side calls, curl, and Postman never send it.
 // Endpoints listed here must only be consumed via WebSocket /events — any
 // browser polling attempt is rejected hard so the violation is unmissable.
-const WS_ONLY_ROUTES = new Set(['/devices', '/traceroute_history']);
+const WS_ONLY_ROUTES = new Set(['/devices', '/traceroute_history', '/auto-purge', '/geocode']);
+// Exact-path entries: '/config' alone is page state (WS settings event);
+// '/config/radar' etc. are form reads and stay allowed.
+const WS_ONLY_EXACT = new Set(['/config']);
 
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
   const path = '/' + req.path.split('/')[1]; // first segment only
-  if (!WS_ONLY_ROUTES.has(path)) return next();
+  if (!WS_ONLY_ROUTES.has(path) && !WS_ONLY_EXACT.has(req.path)) return next();
   if (req.headers['sec-fetch-dest'] !== 'empty') return next(); // server-side / curl — allow
   return res.status(410).json({
     error:   'ws_only',

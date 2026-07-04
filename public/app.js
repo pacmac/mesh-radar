@@ -277,7 +277,7 @@ function dashboard() {
         localStorage.removeItem('tiltNorthAngle');
       }
 
-      await this.loadConfig();
+      // settings arrive via the WS settings event (settings-via-ws)
       // device configs arrive on the WS device_list (C2)
       await this.loadBridgeConfig();
 

@@ -24,6 +24,19 @@ export const wsMixin = {
     };
   },
 
+  // Client→server WS RPC: geocode lookup (GET is form-submission-only).
+  wsGeocode(num) {
+    if (!num || !this._ws || this._ws.readyState !== 1) return Promise.resolve(null);
+    this._geocodePending = this._geocodePending || {};
+    return new Promise((resolve) => {
+      this._geocodePending[num] = resolve;
+      this._ws.send(JSON.stringify({ type: 'geocode', num }));
+      setTimeout(() => {
+        if (this._geocodePending[num]) { this._geocodePending[num] = null; delete this._geocodePending[num]; resolve(null); }
+      }, 30000);
+    });
+  },
+
   reconnectWS() {
     if (this._ws) { this._ws.onclose = null; this._ws.close(); this._ws = null; }
     this.wsConnected = false;
@@ -34,6 +47,39 @@ export const wsMixin = {
     if (ev.type === 'config_op')           { handleConfigOp(ev); return; }
     if (ev.type === 'bridge_connected')    { this.bridgeConnected = true;  return; }
     if (ev.type === 'bridge_disconnected') { this.bridgeConnected = false; return; }
+
+    if (ev.type === 'settings') {
+      // Page state arrives over WS only (settings-via-ws) — replayed on
+      // connect and re-broadcast after every config write, so filter/radar
+      // changes are live in every tab. Replaces the deleted loadConfig GET.
+      const cfg = ev.config || {};
+      this.nodeFilters = {
+        maxHops:   cfg['node_filters.max_hops']   ?? 99,
+        maxAge:    cfg['node_filters.max_age']    ?? 0,
+        namedOnly: cfg['node_filters.named_only'] ?? false,
+        hasPos:    cfg['node_filters.has_pos']    ?? false,
+        hideMqtt:  cfg['node_filters.hide_mqtt']  ?? false,
+        hasSignal: cfg['node_filters.has_signal'] ?? false,
+        hasTelem:  cfg['node_filters.has_telem']  ?? false,
+        msgOnly:   cfg['node_filters.msg_only']   ?? false,
+        nodeRoles: cfg['node_filters.roles']      ?? [],
+      };
+      this.nodeSource     = cfg['node_filters.node_source'] ?? 'both';
+      this.radarRange     = String(cfg['radar.max_range_km'] ?? 50);
+      this.radarLogScale  = cfg['radar.log_scale']  ?? false;
+      this.radarCrosshair = cfg['radar.crosshair']  ?? true;
+      this.packetSources  = cfg['packet_sources']   ?? [];
+      if (cfg['perf.failure_epoch'] != null) this.perfFailureEpoch = cfg['perf.failure_epoch'];
+      if (cfg['range_test.duration']) this.rangeDuration = cfg['range_test.duration'];
+      if (this.tab === 'radar' && this.homePos) this.refreshRadar();
+      return;
+    }
+
+    if (ev.type === 'geocode_result') {
+      const pending = this._geocodePending?.[ev.num];
+      if (pending) { pending(ev.address ?? null); delete this._geocodePending[ev.num]; }
+      return;
+    }
 
     if (ev.type === 'tilt_cal') {
       this.tiltZero       = ev.zero        ?? null;
@@ -48,11 +94,13 @@ export const wsMixin = {
 
     if (ev.type === 'device_list') {
       const devices = ev.devices || [];
-      const knownIds = new Set(this.availableDevices.map(d => d.node_id));
-      for (const dev of devices) {
-        if (!knownIds.has(dev.node_id)) this.loadAutoPurge(dev.node_id);
-      }
       this.availableDevices = devices;
+      // Purge settings ride the device_list (settings-via-ws)
+      for (const dev of devices) {
+        if (dev.auto_purge && dev.node_id) {
+          this.autoPurge = { ...this.autoPurge, [dev.node_id]: dev.auto_purge };
+        }
+      }
       // Device settings + radio lora config arrive ON the device_list (C2:
       // page data is WS-only) — no GET /device-config, no /config/lora.
       const byMac = {};

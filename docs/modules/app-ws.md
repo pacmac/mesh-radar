@@ -1,8 +1,8 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 69421f339550920afc8ff40fd40fbc1b3d240bfbf7bc51eb3afde8a773931df1
-updated: 2026-07-03
+source_hash: f8d85dfea520188fe1542c871b3aaf7ce466ed84fafc93ebc7751ba018be886a
+updated: 2026-07-04
 ---
 
 # Module: app-ws
@@ -88,3 +88,14 @@ selection via the device list. Consequence of MAC keying: a radio keeps
 its selection across factory resets that change its node_id. The
 never-persist-on-adoption invariant is unchanged — only selectDevice and
 set-primary persist.
+
+## settings-via-ws handlers
+
+- `settings`: assigns nodeFilters/nodeSource/radar prefs/packetSources/
+  failure epoch/range duration — replaces the deleted `loadConfig` GET;
+  arrives on connect and after every config write (all tabs live).
+- `geocode_result`: resolves the pending `wsGeocode(num)` promise.
+- `wsGeocode(num)`: client→server RPC with 30 s timeout; replaces the
+  `geocodeNode` fetch helper (radar batch + node info panel both use it).
+- device_list ingest also stores `dev.auto_purge` under the device node_id
+  (replaces `loadAutoPurge`).

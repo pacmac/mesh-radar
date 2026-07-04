@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: cc32e6b53515e1ecc179e50355ca0802ed74f0c3f6cefb6fc5e7534253228065
-updated: 2026-07-03
+source_hash: 65794d89e83418b6f9e7e0051519a5d626d56d1b44fd52bb8a4ffdc2287b2a13
+updated: 2026-07-04
 ---
 
 # Module: ws-relay
@@ -395,3 +395,16 @@ whenever the device reaches READY — including post-reboot after config
 writes — and cached in `lastDeviceLora`). `pokeDeviceList()` (module
 export, closure-assigned) lets device-config rebroadcast after a settings
 PUT. The browser reads ALL device page-data from this event; no GETs.
+
+## settings-via-ws additions
+
+- `settings` event: `{ type, config }` over all config-api DEFAULTS keys —
+  replayed on connect, re-broadcast via the `broadcastSettings()` hook
+  after every config write. Sole transport for page-state settings.
+- `device_list` devices additionally carry `auto_purge`
+  (`getAutoPurgeCfg(node_id ?? addr)` — legacy keys are browser-written,
+  node_id-first); auto-purge saves poke the list.
+- First client→server RPC: `ws.on('message')` handles
+  `{ type: 'geocode', num }` → `lookupGeocode(num)` →
+  `{ type: 'geocode_result', num, address }`. The Nominatim 1.1 s queue
+  lives in geocode.js regardless of caller.

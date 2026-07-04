@@ -1,8 +1,8 @@
 ---
 module: auto-purge-api
 source: src/auto-purge-api.js
-source_hash: fc14119b249889b24b12fb15f170fd6a90a95a2e547d54dfd605113022f3d313
-updated: 2026-06-30
+source_hash: 9ecde2bfd1ac40f879560a866bdac43aa2ace51ef3042872d4e0fd331879a018
+updated: 2026-07-04
 ---
 
 # Module: auto-purge-api
@@ -70,3 +70,8 @@ _N/A_ (broadcasts via injected `broadcastAll` callback)
 
 - Bridge connectivity — `bridge.js` owns that.
 - Broadcast infrastructure — `index.js` owns `broadcastAll`; injected here.
+
+## settings-via-ws
+
+`getAutoPurgeCfg(key)` exported — rides the WS device_list. PUT
+`/auto-purge` calls `pokeDeviceList()`. Browser GET is WS-only-blocked.

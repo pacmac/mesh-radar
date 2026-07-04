@@ -4,15 +4,17 @@ import { getCachedGeocode, setCachedGeocode, stmts } from './db.js';
 const router = Router();
 let _geocodeQueue = Promise.resolve();
 
-router.get('/', async (req, res) => {
-  const num = parseInt(req.query.num) || 0;
-  if (!num) return res.json({ address: null });
+// Shared lookup — the WS geocode RPC (ws-relay) and the REST route (curl/
+// debug only; browser GETs are blocked) both use this. Nominatim etiquette
+// (1.1 s serial queue) is enforced here regardless of caller.
+export async function lookupGeocode(num) {
+  if (!num) return null;
 
   const cached = getCachedGeocode(num);
-  if (cached) return res.json({ address: cached });
+  if (cached) return cached;
 
   const pos = stmts.getNodePos.get(num, num);
-  if (!pos?.lat || !pos?.lon) return res.json({ address: null });
+  if (!pos?.lat || !pos?.lon) return null;
 
   const address = await (_geocodeQueue = _geocodeQueue.then(() =>
     new Promise(resolve => setTimeout(async () => {
@@ -35,7 +37,12 @@ router.get('/', async (req, res) => {
   ));
 
   setCachedGeocode(num, address);
-  res.json({ address });
+  return address;
+}
+
+router.get('/', async (req, res) => {
+  const num = parseInt(req.query.num) || 0;
+  res.json({ address: await lookupGeocode(num) });
 });
 
 export default router;

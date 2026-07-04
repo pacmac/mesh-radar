@@ -63,13 +63,7 @@ export function themeColor(name) {
   return raw ? `oklch(${raw})` : null;
 }
 
-export async function geocodeNode(num) {
-  if (!num) return null;
-  try {
-    const { address } = await fetchJSON(`/geocode?num=${num}`);
-    return address ?? null;
-  } catch (_) { return null; }
-}
+// geocodeNode moved to the WS RPC (wsGeocode in app-ws.js) — settings-via-ws
 
 // Human-readable labels for Meshtastic packet portnums.
 export const PORTNUM_LABELS = {

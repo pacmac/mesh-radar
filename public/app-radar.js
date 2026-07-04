@@ -3,7 +3,7 @@
 //   PASV (0): nodes, route overlays (aged fade), animated dots on active trace, green crosshairs on traced node
 //   ACTV (1): nodes, route overlay for targeted node (animated dots), red crosshairs, target arm
 //   SCAN (2): nodes only, NO route overlays, target arm shows scan position
-import { fetchJSON, svgElem, ageColor, themeColor, geocodeNode, haversine, bearing } from './app-helpers.js';
+import {fetchJSON, svgElem, ageColor, themeColor,  haversine, bearing } from './app-helpers.js';
 import { FF } from './feature-flags.js';
 
 export const radarMixin = {
@@ -535,7 +535,7 @@ export const radarMixin = {
     this.tracerouteResult = null;
     this.$nextTick(() => this.$refs.nodeInfoDialog?.showModal());
     if (!this.nodeInfo._address && node.num) {
-      geocodeNode(node.num).then(addr => {
+      this.wsGeocode(node.num).then(addr => {
         if (addr && this.nodeInfo?.num === node.num)
           this.nodeInfo = { ...this.nodeInfo, _address: addr };
       });
@@ -565,7 +565,7 @@ export const radarMixin = {
     for (const node of [...this.radarNodes]) {
       if (node._address || !node.num) continue;
       if (!node.position?.latitude_i && !node._km) continue;
-      const addr = await geocodeNode(node.num);
+      const addr = await this.wsGeocode(node.num);
       if (!addr) continue;
       const idx = this.radarNodes.findIndex(r => r.num === node.num);
       if (idx >= 0) this.radarNodes[idx] = { ...this.radarNodes[idx], _address: addr };

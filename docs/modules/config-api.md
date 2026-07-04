@@ -1,8 +1,8 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 147f1a9d9c60bbae8895c952043ced6bbcde39f8b3585055d5d1b15618c05022
-updated: 2026-07-03
+source_hash: df4de57fa24bba8080e996dbbcbe224ea3570d950e3623846f2d941a68596e74
+updated: 2026-07-04
 ---
 
 # Module: config-api
@@ -152,3 +152,11 @@ Body: `{ [key]: value, ... }`. Updates multiple keys at once.
 `radar.log_scale` defaults to `true` — selects the adaptive quantile radial
 scale (see docs/modules/app-radar.md); `false` is the linear opt-out. The
 Config → Radar toggle is labelled "Adaptive scale".
+
+## settings-via-ws
+
+`DEFAULTS` is exported — ws-relay builds the WS `settings` event from it.
+Every write path (PUT `/:key`, PUT `/`, PUT `/radar`) calls
+`broadcastSettings()` so all connected tabs converge immediately. Browser
+GET `/config` (exact path) is WS-only-blocked; `/config/:section` form
+reads remain.

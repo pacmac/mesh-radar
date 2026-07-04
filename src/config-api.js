@@ -1,10 +1,11 @@
 import { Router } from 'express';
+import { broadcastSettings } from './ws-relay.js';
 import { getConfig, setConfig } from './db.js';
 import { nodeList } from './node-list.js';
 
 const router = Router();
 
-const DEFAULTS = {
+export const DEFAULTS = {
   'node_filters.max_age':     0,
   'node_filters.max_hops':    99,
   'node_filters.named_only':  false,
@@ -85,6 +86,7 @@ router.put('/radar', (req, res) => {
   }
 
   res.json({ ok: true });
+  broadcastSettings();
 });
 
 router.get('/:key', (req, res) => {
@@ -103,6 +105,7 @@ router.put('/:key', (req, res) => {
   setConfig(key, value);
   if (NODE_FILTER_KEYS.has(key)) nodeList.refilter();
   res.json({ key, value });
+  broadcastSettings();
 });
 
 router.put('/', (req, res) => {
@@ -115,6 +118,7 @@ router.put('/', (req, res) => {
   for (const [key, value] of Object.entries(updates)) setConfig(key, value);
   if (Object.keys(updates).some(k => NODE_FILTER_KEYS.has(k))) nodeList.refilter();
   res.json(updates);
+  broadcastSettings();
 });
 
 export default router;

@@ -1,8 +1,8 @@
 ---
 module: geocode
 source: src/geocode.js
-source_hash: cd3161f53121a154cb46b27619b3e275a5a1ae34f93fa42831c0562732ea4d09
-updated: 2026-06-30
+source_hash: 649b27012789fb16c3edd8f1face42e58b038c3664f4da49e2b727f9dd06279a
+updated: 2026-07-04
 ---
 
 # Module: geocode
@@ -67,3 +67,10 @@ _N/A_
 
 - Forward geocoding.
 - Geocode invalidation — cache entries persist until DB is cleared.
+
+## settings-via-ws
+
+`lookupGeocode(num)` extracted and exported — the WS geocode RPC is the
+browser transport; the REST route remains for curl/debug only (browser
+GETs blocked via WS_ONLY_ROUTES). Cache + 1.1 s Nominatim queue enforced
+inside the function.
