@@ -1,8 +1,8 @@
 ---
 module: rotator-config-schema
 source: src/rotator-config-schema.js
-source_hash: 22ebb52475dbcdc0db93ea8defb904fde37bcfae29a6d380ba03884f17dd6903
-updated: 2026-06-30
+source_hash: 4542d0abdeb1e44cd43df59a065f2e1d9b308ac8d9d88423c8f11a014938b7b1
+updated: 2026-07-07
 ---
 
 # Module: rotator-config-schema
@@ -24,28 +24,34 @@ None.
 ## Exports
 
 ```js
-export const ROTATOR_CONFIG_SCHEMA  // { fields: [...] }
+export const ROTATOR_CONFIG_SCHEMA  // { fields: [...], variants: { v4, v5 } }
 ```
 
 ## Schema structure
 
+Backward-compatible: the top-level `fields` still describes the **v4** form
+(so the current browser settings UI keeps rendering unchanged), and a
+`variants` map adds a per-firmware schema. A later Domain-2 browser task
+picks `variants[rotator.variant].fields`; until then the legacy `fields`
+path is authoritative. `index.js` serves the whole object verbatim at
+`GET /schema/rotator_config` — its call site is unchanged.
+
 ```js
 {
-  fields: [
-    { name: string, type: 'object', fields: FieldDef[] }
-  ]
+  fields: FieldGroup[],              // == variants.v4.fields (legacy)
+  variants: {
+    v4: { fields: FieldGroup[] },
+    v5: { fields: FieldGroup[] },
+  }
 }
 ```
 
-Each `FieldDef`:
-
-```js
-{ name: string, type: 'int'|'float' }
-```
+`FieldGroup` = `{ name, type:'object', fields: FieldDef[] }`;
+`FieldDef` = `{ name, type:'int'|'float' }`.
 
 ## Fields
 
-### `motor` (object)
+### v4 `motor` (PWM DC motor)
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -53,14 +59,23 @@ Each `FieldDef`:
 | `pwm_run` | int | Running PWM duty cycle |
 | `pulses_per_deg` | float | Encoder pulses per degree of rotation |
 
-### `scan` (object)
+### v5 `motor` (NEMA8 stepper / TMC2209)
+
+| Field | Type | Meaning |
+|---|---|---|
+| `run_ma` | int | RMS run current (mA) |
+| `hold_pct` | int | Hold current as % of run |
+| `sps` | int | Cruise step rate (steps/s) |
+| `usteps` | int | Microstepping (changes steps/degree) |
+
+### `scan` (object, both variants)
 
 | Field | Type | Meaning |
 |---|---|---|
 | `step_deg` | int | Degrees between scan positions |
 | `dwell_sec` | float | Seconds to dwell at each scan position |
 
-### `actv` (object)
+### `actv` (object, both variants)
 
 | Field | Type | Meaning |
 |---|---|---|

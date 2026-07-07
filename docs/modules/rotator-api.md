@@ -1,8 +1,8 @@
 ---
 module: rotator-api
 source: src/rotator-api.js
-source_hash: d388e54645a8299f7e952e967f9885bb102621b594b804eda1498bda7beac757
-updated: 2026-06-30
+source_hash: 7b20028362521cd37c05f04f2d3805ec6f2cc0f5bbd46a81780a3065d392901a
+updated: 2026-07-07
 ---
 
 # Module: rotator-api
@@ -25,6 +25,14 @@ targeting, scan control, calibration, and firmware config read/write.
 - Serve `POST /rotator/offset` — set azimuth north offset (normalised to 0–360)
 - Serve `GET /rotator/firmware_config` — read motor/scan/actv config composite
 - Serve `POST /rotator/firmware_config` — write motor/scan/actv config
+- Serve `POST /rotator/active` — switch the active rotator target (v4/v5)
+
+**Variant-aware.** The hardware-facing routes (`/calibrate`, `/setvar`,
+`/offset`, `/firmware_config`) select their command vocabulary by
+`rotator.variant`. The v4 maps are unchanged; v5 maps are added. See
+`docs/ROTATOR_API_V5.md` for the v5 command surface. The browser sending the
+correct per-variant field names is a separate Domain-2 task; until then the
+v4 path is byte-for-byte identical to before.
 
 ## Routes
 
@@ -32,21 +40,28 @@ Mounted at `/rotator` by `index.js`. Paths below are router-relative.
 
 | Method | Path | Action |
 |---|---|---|
-| GET | `/status` | `{ connected, mode, dash_mode, scan_active, scan_az, scan_dwell_az, scan_contacts, ...fwStatus }` |
+| GET | `/status` | `{ connected, variant, active_target, targets, mode, dash_mode, scan_active, scan_az, scan_dwell_az, scan_contacts, ...fwStatus }` |
+| POST | `/active` | `{ name }` → `rotator.setActiveTarget(name)`; 404 on unknown target |
 | POST | `/move` | `{ az }` → `rotator.move(az)` |
 | POST | `/mode` | `{ mode }` → `dashMode.set(mode)`; refused if mode=1 and scan active |
 | POST | `/target` | `{ num }` → `activeTracker.targetNum(num)`; requires dashMode=1 |
 | POST | `/scan/start` | `scanner.start()` |
 | POST | `/scan/abort` | `scanner.abort()` |
-| POST | `/calibrate` | `{ procedure }` → `rotator.sendAction(procedure)`; whitelist enforced |
-| POST | `/setvar` | `{ action, val }` → `rotator.sendAction(action, [String(val)])`; whitelist enforced |
-| POST | `/offset` | `{ offset }` → normalised, `rotator.sendAction('setOffset', [String(offset)])` |
-| GET | `/firmware_config` | `{ motor: {pwm_min,pwm_run,pulses_per_deg}, scan: {step_deg,dwell_sec}, actv: {dwell_sec} }` |
-| POST | `/firmware_config` | Write motor (via sendAction) and scan/actv (via setConfig) |
+| POST | `/calibrate` | `{ procedure }` → `rotator.sendAction(procedure)`; per-variant whitelist |
+| POST | `/setvar` | `{ action, val }` → `rotator.sendAction(action, [String(val)])`; per-variant whitelist |
+| POST | `/offset` | `{ offset }` → normalised, `sendAction(offsetCmd, [String(offset)])` (v4 `setOffset`, v5 `caloffset`) |
+| GET | `/firmware_config` | motor read from status per variant; `scan`/`actv` from DB |
+| POST | `/firmware_config` | Write motor (via sendAction, per variant) and scan/actv (via setConfig) |
 
-**Calibration procedure whitelist:** `['calMotor', 'qmcCali', 'calPwmMin', 'qmcOsStart', 'qmcOsEnd']`
+**Per-variant command maps** (selected by `rotator.variant`, default `v4`):
 
-**Setvar action whitelist:** `['setPwmRunPct', 'setPwmFreq', 'setNorthOffset']`
+| Route | v4 | v5 |
+|---|---|---|
+| calibrate whitelist | `calMotor, qmcCali, calPwmMin, qmcOsStart, qmcOsEnd` | `dirtest, caltrue, caloffset, encsign` |
+| setvar whitelist | `setPwmRunPct, setPwmFreq, setNorthOffset` | `cur, hold, spd, ms, trackband, trackdelay` |
+| offset command | `setOffset` | `caloffset` |
+| firmware_config motor read (status) | `pwm_min←pwmMin, pwm_run←pwmRun, pulses_per_deg←ppd` | `run_ma←curMa, hold_pct←holdPct, sps←sps, usteps←usteps` |
+| firmware_config motor write (sendAction) | `pwmMin, pwmRun, ppd` | `cur, hold, spd, ms` |
 
 **Firmware config defaults:** `scan.step_deg=5`, `scan.dwell_sec=60`, `actv.dwell_sec=90`
 
@@ -76,10 +91,12 @@ _N/A_
 
 - `POST /rotator/mode` with `mode=1` (ACTV) is refused if `scanner.active` — returns `{ refused: true }`.
 - `POST /rotator/target` requires `dashMode.value === 1`; returns 409 otherwise.
-- `POST /rotator/calibrate` only allows procedures in `ALLOWED` whitelist; 400 on unknown.
-- `POST /rotator/setvar` only allows vars in `ALLOWED_VARS` whitelist; 400 on unknown.
-- `POST /rotator/offset` normalises offset to `((offset % 360) + 360) % 360`.
-- Motor firmware config (`pwm_min`, `pwm_run`, `pulses_per_deg`) is sent to the rotator via `sendAction`; scan/actv config is persisted in SQLite.
+- `POST /rotator/calibrate` only allows procedures in the active variant's whitelist; 400 on unknown.
+- `POST /rotator/setvar` only allows vars in the active variant's whitelist; 400 on unknown.
+- `POST /rotator/offset` normalises offset to `((offset % 360) + 360) % 360`; command name is per-variant.
+- Motor firmware config is sent to the rotator via `sendAction` (per-variant command names); scan/actv config is persisted in SQLite.
+- `POST /rotator/active` returns 404 for a target name not in `rotator.targets`; on success reconnects to the new device and returns `{ active }`.
+- Whitelist selection defaults to the v4 map when `rotator.variant` is null (not yet detected).
 
 ## Test notes
 

@@ -7,10 +7,37 @@ import { getConfig, setConfig } from './db.js';
 
 const router = Router();
 
+// Per-variant command vocabulary. Selected by rotator.variant; defaults to v4
+// when the variant is not yet detected. v4 maps are unchanged from before.
+const CAL_PROCEDURES = {
+  v4: ['calMotor', 'qmcCali', 'calPwmMin', 'qmcOsStart', 'qmcOsEnd'],
+  v5: ['dirtest', 'caltrue', 'caloffset', 'encsign'],
+};
+const SETVARS = {
+  v4: ['setPwmRunPct', 'setPwmFreq', 'setNorthOffset'],
+  v5: ['cur', 'hold', 'spd', 'ms', 'trackband', 'trackdelay'],
+};
+const OFFSET_CMD = { v4: 'setOffset', v5: 'caloffset' };
+// Motor config field -> firmware command, per variant (firmware_config POST).
+const MOTOR_WRITE = {
+  v4: { pwm_min: 'pwmMin', pwm_run: 'pwmRun', pulses_per_deg: 'ppd' },
+  v5: { run_ma: 'cur', hold_pct: 'hold', sps: 'spd', usteps: 'ms' },
+};
+// Motor config field -> status field to read back, per variant (GET).
+const MOTOR_READ = {
+  v4: { pwm_min: 'pwmMin', pwm_run: 'pwmRun', pulses_per_deg: 'ppd' },
+  v5: { run_ma: 'curMa', hold_pct: 'holdPct', sps: 'sps', usteps: 'usteps' },
+};
+
+const variant = () => rotator.variant ?? 'v4';
+
 router.get('/status', (req, res) => {
   const fwStatus = rotator.status;
   res.json({
     connected:     rotator.connected,
+    variant:       rotator.variant,
+    active_target: rotator.activeTarget,
+    targets:       rotator.targets,
     mode:          dashMode.value,
     dash_mode:     dashMode.value,
     scan_active:   scanner.active,
@@ -19,6 +46,14 @@ router.get('/status', (req, res) => {
     scan_contacts: scanner.contacts,
     ...fwStatus,
   });
+});
+
+router.post('/active', (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const ok = rotator.setActiveTarget(name);
+  if (!ok) return res.status(404).json({ error: 'unknown target' });
+  res.json({ active: name });
 });
 
 router.post('/move', (req, res) => {
@@ -58,7 +93,7 @@ router.post('/scan/abort', (req, res) => {
 });
 
 router.post('/calibrate', (req, res) => {
-  const ALLOWED = ['calMotor', 'qmcCali', 'calPwmMin', 'qmcOsStart', 'qmcOsEnd'];
+  const ALLOWED = CAL_PROCEDURES[variant()];
   const { procedure } = req.body;
   if (!ALLOWED.includes(procedure)) return res.status(400).json({ error: 'unknown procedure' });
   rotator.sendAction(procedure);
@@ -66,7 +101,7 @@ router.post('/calibrate', (req, res) => {
 });
 
 router.post('/setvar', (req, res) => {
-  const ALLOWED_VARS = ['setPwmRunPct', 'setPwmFreq', 'setNorthOffset'];
+  const ALLOWED_VARS = SETVARS[variant()];
   const { action, val } = req.body;
   if (!ALLOWED_VARS.includes(action)) return res.status(400).json({ error: 'unknown var' });
   if (val == null) return res.status(400).json({ error: 'val required' });
@@ -79,7 +114,7 @@ router.post('/offset', (req, res) => {
   offset = parseFloat(offset);
   if (isNaN(offset)) return res.status(400).json({ error: 'offset must be a number' });
   offset = ((offset % 360) + 360) % 360;
-  rotator.sendAction('setOffset', [String(offset)]);
+  rotator.sendAction(OFFSET_CMD[variant()], [String(offset)]);
   res.json({ sent: true, offset });
 });
 
@@ -87,12 +122,12 @@ router.get('/firmware_config', (req, res) => {
   const s = rotator.status;
   const savedScan = getConfig('scan_config', {});
   const savedActv = getConfig('actv_config', {});
+  const motor = {};
+  for (const [field, statusKey] of Object.entries(MOTOR_READ[variant()])) {
+    motor[field] = s[statusKey] ?? null;
+  }
   res.json({
-    motor: {
-      pwm_min:        s.pwmMin  ?? null,
-      pwm_run:        s.pwmRun  ?? null,
-      pulses_per_deg: s.ppd     ?? null,
-    },
+    motor,
     scan: {
       step_deg:  savedScan.step_deg  ?? 5,
       dwell_sec: savedScan.dwell_sec ?? 60,
@@ -105,9 +140,11 @@ router.get('/firmware_config', (req, res) => {
 
 router.post('/firmware_config', (req, res) => {
   const { motor = {}, scan = {}, actv = {} } = req.body;
-  if (motor.pwm_min        != null) rotator.sendAction('pwmMin', [Math.round(motor.pwm_min)]);
-  if (motor.pwm_run        != null) rotator.sendAction('pwmRun', [Math.round(motor.pwm_run)]);
-  if (motor.pulses_per_deg != null) rotator.sendAction('ppd',    [Number(motor.pulses_per_deg)]);
+  for (const [field, cmd] of Object.entries(MOTOR_WRITE[variant()])) {
+    if (motor[field] == null) continue;
+    const val = (field === 'pulses_per_deg') ? Number(motor[field]) : Math.round(Number(motor[field]));
+    rotator.sendAction(cmd, [val]);
+  }
   if (scan.step_deg != null || scan.dwell_sec != null) {
     const current = getConfig('scan_config', {});
     if (scan.step_deg  != null) current.step_deg  = Number(scan.step_deg);
