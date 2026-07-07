@@ -16,6 +16,7 @@ module.exports = {
         BRIDGE_URL: "http://localhost:8001",
         BRIDGE_WS_URL: "ws://localhost:8001",
         ROTATOR_WS_URL: "ws://192.168.10.186:81",
+        ROTATOR_V5_WS_URL: "ws://192.168.10.195:81",
       },
     },
   ],

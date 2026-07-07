@@ -1,7 +1,7 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: 59ed015c042e341a83424206f8e2c8438916649b0ac1780eba1812a24eae18c8
+source_hash: e201a075d26522b412666e09035f5b9c87eca5ea67e37643fa2352f4fa845821
 updated: 2026-07-07
 ---
 
@@ -43,7 +43,9 @@ are untouched), and lets the active target be switched at runtime.
 - `ws` — WebSocket client
 - `node:events` — EventEmitter base
 - `db.js` — `getConfig`/`setConfig` for `rotator_targets` and `rotator_active`
-- Environment: `ROTATOR_WS_URL` — optional override for the default `v4` target url
+- Environment: `ROTATOR_WS_URL` (v4) and `ROTATOR_V5_WS_URL` (v5) — device WS
+  URLs. Real LAN addresses live in `ecosystem.config.cjs` env, never in source;
+  the source default is `ws://localhost:81` (matches `bridge.js`)
 - Reference: `docs/ROTATOR_API_V5.md` (symlink; v5 contract) — the rotator repo
   itself is out of bounds
 
@@ -104,7 +106,7 @@ unchanged. The aliases are why `scanner.js` and `ws-relay.js` need no edit.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `rotator_targets` | `[{name:'v4',url:ws://…186:81},{name:'v5',url:ws://…195:81}]` | Named targets. `ROTATOR_WS_URL` env, if set, overrides the v4 url. |
+| `rotator_targets` | `[{name:'v4',url:$ROTATOR_WS_URL},{name:'v5',url:$ROTATOR_V5_WS_URL}]` (env URLs, `ws://localhost:81` fallback) | Named targets. Overrides the env-derived defaults at runtime. No LAN IPs in source — they live in `ecosystem.config.cjs`. |
 | `rotator_active` | `'v4'` | Which target is currently driven. Default `v4` = no behavioural change on deploy. |
 
 ## Events emitted (by rotator.js itself)

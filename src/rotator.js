@@ -9,11 +9,13 @@ const RECONNECT_DELAY_MS = 5000;
 //   v5 — NEMA8 stepper + AS5600 encoder, api:5 (moving/targetAz, move2az)
 // The core contract (WS :81 envelope, {action,args}, absolute seek,
 // started/done, az, northOffset) is shared — see docs/ROTATOR_API_V5.md.
-// ROTATOR_WS_URL env, if set, overrides the default v4 url (back-compat).
-const ENV_URL = process.env.ROTATOR_WS_URL || null;
+//
+// Device addresses come from env (real LAN addresses live in
+// ecosystem.config.cjs, never in source) and fall back to localhost, matching
+// bridge.js. The rotator_targets config key overrides this list at runtime.
 const DEFAULT_TARGETS = [
-  { name: 'v4', url: ENV_URL || 'ws://192.168.10.186:81' },
-  { name: 'v5', url: 'ws://192.168.10.195:81' },
+  { name: 'v4', url: process.env.ROTATOR_WS_URL    || 'ws://localhost:81' },
+  { name: 'v5', url: process.env.ROTATOR_V5_WS_URL || 'ws://localhost:81' },
 ];
 const DEFAULT_ACTIVE = 'v4'; // default = current production; no behaviour change on deploy
 
