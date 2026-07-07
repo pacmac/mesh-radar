@@ -445,7 +445,12 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     broadcast(ev);
   });
 
-  rotator.on('status', makeRotatorThrottle((data) => broadcast({ type: 'rotator', data })));
+  // Rotator status frames also carry the switchable target list + active target
+  // so the browser can render a data-driven v4/v5 selector without a REST GET.
+  rotator.on('status', makeRotatorThrottle((data) => broadcast({
+    type: 'rotator',
+    data: { ...data, targets: rotator.targets, active_target: rotator.activeTarget },
+  })));
   let lastPointTarget  = null;
   let lastSignalUpdate = null;
   rotator.on('point_target', (data) => {
@@ -585,8 +590,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       broadcastDeviceList();
     }
 
-    // Always send current dash mode — rotator may be offline but mode is persisted
-    ws.send(JSON.stringify({ type: 'rotator', data: { _mode: dashMode.value } }));
+    // Always send current dash mode + switchable targets — rotator may be
+    // offline but mode is persisted and the selector must still render so the
+    // user can switch TO an offline/other device.
+    ws.send(JSON.stringify({ type: 'rotator', data: {
+      _mode: dashMode.value,
+      targets: rotator.targets,
+      active_target: rotator.activeTarget,
+    } }));
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
       ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
     }
@@ -673,8 +684,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       ws.send(JSON.stringify(state));
     }
 
-    // Always send current dash mode — rotator may be offline but mode is persisted
-    ws.send(JSON.stringify({ type: 'rotator', data: { _mode: dashMode.value } }));
+    // Always send current dash mode + switchable targets — rotator may be
+    // offline but mode is persisted and the selector must still render so the
+    // user can switch TO an offline/other device.
+    ws.send(JSON.stringify({ type: 'rotator', data: {
+      _mode: dashMode.value,
+      targets: rotator.targets,
+      active_target: rotator.activeTarget,
+    } }));
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
       ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
     }

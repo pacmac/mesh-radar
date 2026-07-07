@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 5f7645a00ff11874a44fc8e1327b87982206e5f7384e049eb111a5f0a5c892ad
-updated: 2026-07-04
+source_hash: 8e865d42bc296b8582b52b4ef08d2151f53d03a005dfb8c1bffb6ecb35fb2586
+updated: 2026-07-07
 ---
 
 # Module: ws-relay
@@ -235,6 +235,15 @@ Rate-limits `rotator 'status'` events per client to avoid flooding during antenn
 
 One throttle instance is created per client connection and per rotator listener.
 
+Each broadcast `rotator 'status'` frame is augmented with the switchable
+target metadata — `{ ...data, targets: rotator.targets, active_target:
+rotator.activeTarget }` — so the browser renders a data-driven v4/v5 selector
+without a REST GET (transport rule). `variant` already rides the normalized
+`rotator.status`. `active_target` on every frame means the UI reflects a
+`POST /rotator/active` switch within one throttle window; `targets` also rides
+the on-connect `{_mode}` frame so the selector renders even when the rotator
+is offline.
+
 ---
 
 ## Feature flags
@@ -285,7 +294,7 @@ Global dashboard view. Broadcasts all events.
 1. Bridge connection state (`bridge_connected` or `bridge_disconnected`)
 2. Last-known device state for each BLE device (individual flattened objects from `lastDeviceState`)
 3. `device_list` (from `lastDeviceList` cache, or freshly composed)
-4. `rotator` with `{ _mode: dashMode.value }`
+4. `rotator` with `{ _mode: dashMode.value, targets, active_target }`
 5. Rotator full status (if connected and non-empty)
 6. `rotator` with `lastPointTarget` (if any)
 7. `signal_update` with `lastSignalUpdate` (if any)
