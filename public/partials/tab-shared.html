@@ -203,7 +203,8 @@
                                  letter-spacing:0.10em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
                                  background:rgba(255,160,0,0.10);color:rgba(255,160,0,0.92);
                                  border:1px solid rgba(255,160,0,0.38)">TARGET</button>
-                  <button @click="pointAtNode(nodeInfo); $refs.nodeInfoDialog?.close()"
+                  <button x-show="rotatorMode === 0 && !scanMode"
+                          @click="pointAtNode(nodeInfo); $refs.nodeInfoDialog?.close()"
                           :disabled="nodeInfo._az == null"
                           style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
                                  letter-spacing:0.10em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
