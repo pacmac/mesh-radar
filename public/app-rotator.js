@@ -126,12 +126,17 @@ export const rotatorMixin = {
       if (data?.scan?.step_deg  != null) this.scanStep  = Number(data.scan.step_deg);
       if (data?.scan?.dwell_sec != null) this.scanDwell = Number(data.scan.dwell_sec);
       if (data?.actv?.dwell_sec != null) this.actvDwell = Number(data.actv.dwell_sec);
+      // Different hardware per firmware — render the ACTIVE variant's fields
+      // (v4 PWM vs v5 stepper). Falls back to the legacy top-level fields (v4).
+      const variant = this.rotatorStatus?.variant || 'v4';
+      const fields = schema.variants?.[variant]?.fields ?? schema.fields;
       await nextFrame();
       const el = document.getElementById('rotator_cfg_form');
       if (el && !el.dataset.dirty) {
         el.innerHTML = '';
         el.dataset.formRoot = '1';
-        el.appendChild(buildForm(schema.fields, data, []));
+        el.dataset.variant = variant;
+        el.appendChild(buildForm(fields, data, []));
       }
     } catch (e) {
       console.warn('Failed to load rotator cfg', e);
@@ -143,7 +148,9 @@ export const rotatorMixin = {
     this.rotatorCfgError = '';
     try {
       const el = document.getElementById('rotator_cfg_form');
-      const payload = collectForm(el, this.rotatorCfgSchema.fields);
+      const variant = this.rotatorStatus?.variant || 'v4';
+      const fields = this.rotatorCfgSchema.variants?.[variant]?.fields ?? this.rotatorCfgSchema.fields;
+      const payload = collectForm(el, fields);
       await fetchJSON('/rotator/firmware_config', 'POST', payload);
       el.removeAttribute('data-dirty');
       if (payload?.scan?.step_deg  != null) this.scanStep  = Number(payload.scan.step_deg);

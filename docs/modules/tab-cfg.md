@@ -1,7 +1,7 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: c0606de244e1f6aca4b47b6f840d42d225024f9344310fa4dc5be108683ba6e1
+source_hash: d6119a9c7140c4051fff875f2010fa2a61d21ff3fcdbc546e349111d68730594
 updated: 2026-07-07
 ---
 
@@ -28,8 +28,26 @@ zero decisions:
   when `!rotatorConnected`, and the active target's URL (which carries the IP).
   The highlighted button already conveys the variant.
 This replaced the stale `alert-info` that claimed the URL comes only from the
-`ROTATOR_WS_URL` env var. v4-only Status/Motor rows already `x-show`-gate off
-on v5; making the calibration/motor controls variant-aware is a later task.
+`ROTATOR_WS_URL` env var.
+
+## Variant-aware rotator config (task `rotator-config-variant-aware`, 2026-07-07)
+
+The v4/v5 rotators are different hardware, so the config surface follows the
+active variant (`rotatorStatus.variant`):
+- **Motor & Scan form** — schema-driven. `loadRotatorCfg`/`saveRotatorConfig`
+  (app-rotator.js) select `schema.variants[variant].fields` (v4 PWM
+  `pwm_min/pwm_run/pulses_per_deg` ↔ v5 stepper `run_ma/hold_pct/sps/usteps`),
+  falling back to the legacy top-level `fields` (= v4). A `$watch` on
+  `rotatorStatus.variant` (app.js) clears `#rotator_cfg_form`'s dirty flag and
+  rebuilds when the device switches while the tab is open. The backend
+  `/rotator/firmware_config` GET/POST are already per-variant.
+- **Status card** — v4 PWM rows and v5 stepper rows (`state`, `northOffset`,
+  `curMa`, `holdPct`, `sps`, `usteps`) each `x-show` on their own field, so
+  only the active firmware's telemetry appears.
+- **Calibration** — v4 compass/PWM routines (`qmcCali`, `calPwmMin`, `calMotor`,
+  `qmcOs*`) are `x-show`-gated to v4; a v5 block offers `dirtest`. The offset
+  Set maps per-variant server-side (`setOffset`/`caloffset`). Arg-taking v5
+  north-set (`caltrue <bearing>`) is a later task (needs backend arg passing).
 
 ## Scope
 

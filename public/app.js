@@ -303,6 +303,15 @@ function dashboard() {
       this.$watch('envWindow',         () => this.loadEnvHistory(this.activeNodeId));
       this.$watch('rangeNodeFilter',   () => { this._rangeStats = null; this._rangeChartCache = null; });
       this.$watch('rangeRxFilter',     () => { this._rangeStats = null; this._rangeChartCache = null; this.rangeNodeFilter = ''; });
+      this.$watch('rotatorStatus.variant', () => {
+        // Device switched — rebuild the firmware config form against the new
+        // variant's schema (v4 PWM ↔ v5 stepper) if the rotator cfg tab is open.
+        if (this.tab === 'cfg' && this.cfgTab === 'rotator') {
+          const el = document.getElementById('rotator_cfg_form');
+          if (el) delete el.dataset.dirty;
+          this.loadRotatorCfg();
+        }
+      });
       this.$watch('tab',               t => { if (t === 'perf') this.$nextTick(() => this.initPerfCharts()); });
       this.$watch('perfHistory',       () => this.$nextTick(() => this.updatePerfCharts()));
       this.$watch('perfTrendWindowHours', () => this.$nextTick(() => this.updatePerfCharts()));

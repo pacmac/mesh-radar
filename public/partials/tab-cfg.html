@@ -292,6 +292,31 @@
                     <span class="opacity-60">Yagi offset</span>
                     <span class="font-mono" x-text="rotatorStatus.yagiOffset != null ? (+rotatorStatus.yagiOffset).toFixed(1) + '°' : '–'"></span>
                   </div>
+                  <!-- v5 stepper telemetry -->
+                  <div class="flex justify-between" x-show="rotatorStatus.state != null">
+                    <span class="opacity-60">State</span>
+                    <span class="font-mono" x-text="rotatorStatus.state ?? '–'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.northOffset != null && rotatorStatus.variant==='v5'">
+                    <span class="opacity-60">North offset</span>
+                    <span class="font-mono" x-text="rotatorStatus.northOffset != null ? (+rotatorStatus.northOffset).toFixed(1) + '°' : '–'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.curMa != null">
+                    <span class="opacity-60">Run current</span>
+                    <span class="font-mono" x-text="rotatorStatus.curMa + ' mA'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.holdPct != null">
+                    <span class="opacity-60">Hold current</span>
+                    <span class="font-mono" x-text="rotatorStatus.holdPct + '%'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.sps != null">
+                    <span class="opacity-60">Step rate</span>
+                    <span class="font-mono" x-text="rotatorStatus.sps + ' sps'"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="rotatorStatus.usteps != null">
+                    <span class="opacity-60">Microsteps</span>
+                    <span class="font-mono" x-text="rotatorStatus.usteps"></span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -322,7 +347,10 @@
                     <button class="btn btn-sm btn-primary" :disabled="pwmFreqInput == null" @click="applyPwmFreq()">Set</button>
                   </div>
                 </div>
-                <div id="rotator_cfg_form" class="mt-2"></div>
+                <!-- x-ignore: buildForm renders plain DOM with manual listeners; Alpine must
+                     not walk/teardown this subtree, else rebuilding it on a variant switch
+                     throws _x_effects errors -->
+                <div id="rotator_cfg_form" class="mt-2" x-ignore></div>
                 <div class="flex items-center gap-2 mt-3">
                   <button class="btn btn-sm btn-primary" :disabled="!rotatorCfgSchema" @click="saveRotatorConfig()">Apply to Firmware</button>
                   <span class="text-success text-sm" x-show="rotatorCfgSaved" x-transition>Sent ✓</span>
@@ -342,24 +370,35 @@
                       <div class="form-control">
                         <label class="label py-0.5"><span class="label-text text-xs">Direct (0–359°)</span></label>
                         <input type="number" min="0" max="359" step="1" class="input input-sm input-bordered w-28 font-mono"
-                               :placeholder="rotatorStatus.yagiOffset != null ? rotatorStatus.yagiOffset.toFixed(1) : '0'"
+                               :placeholder="(rotatorStatus.yagiOffset ?? rotatorStatus.northOffset) != null ? (+(rotatorStatus.yagiOffset ?? rotatorStatus.northOffset)).toFixed(1) : '0'"
                                x-model="rotatorOffsetInput">
                       </div>
                       <button class="btn btn-sm btn-primary mb-0.5" @click="setRotatorOffset(rotatorOffsetInput)">Set</button>
                     </div>
-                    <p class="text-sm text-base-content/60 mt-1">Or use compass-guided: point YAGI to North, then:</p>
-                    <div class="flex gap-2 flex-wrap mt-1">
-                      <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsStart')">1. Move to North</button>
-                      <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsEnd')">2. Set North Here</button>
+                    <div x-show="(rotatorStatus.variant || 'v4') === 'v4'">
+                      <p class="text-sm text-base-content/60 mt-1">Or use compass-guided: point YAGI to North, then:</p>
+                      <div class="flex gap-2 flex-wrap mt-1">
+                        <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsStart')">1. Move to North</button>
+                        <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsEnd')">2. Set North Here</button>
+                      </div>
                     </div>
                   </div>
-                  <div>
+                  <!-- v4 calibration routines (compass + PWM hardware) -->
+                  <div x-show="(rotatorStatus.variant || 'v4') === 'v4'">
                     <p class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2">Calibration routines (~20 s each)</p>
                     <div class="flex gap-2 flex-wrap">
                       <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('calMotor')">Motor</button>
                       <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('qmcCali')">Compass</button>
                       <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('calPwmMin')">PWM Min</button>
                     </div>
+                  </div>
+                  <!-- v5 encoder/stepper calibration -->
+                  <div x-show="rotatorStatus.variant === 'v5'">
+                    <p class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2">Encoder calibration</p>
+                    <div class="flex gap-2 flex-wrap">
+                      <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('dirtest')">Direction test (+10°)</button>
+                    </div>
+                    <p class="text-xs text-base-content/50 mt-1">North set (<code>caltrue &lt;bearing&gt;</code>) and encoder-sign trim need a bearing argument — a later task.</p>
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="text-success text-sm" x-show="rotatorCalSent" x-transition>Sent ✓</span>
