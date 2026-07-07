@@ -1,8 +1,8 @@
 ---
 module: tab-radar
 source: public/partials/tab-radar.html
-source_hash: dfcaf56f6809c77f5422717ead2e74f01b40cd4578d16953feccee6dbe8fff8b
-updated: 2026-07-04
+source_hash: 584ec0b6d92d99934ab8665f097f09513995711fbff45f248040725046ca1854
+updated: 2026-07-07
 ---
 
 # Module: tab-radar
@@ -47,6 +47,19 @@ zero filtering or business decisions.
 - Static: grep the RADAR NODES block for the α values above.
 - Visual: Playwright screenshot both themes — DEFERRED while Playwright MCP
   is disconnected.
+
+## Radar SVG groups are `x-ignore` (task radar-arm-xeffects-fix, 2026-07-07)
+
+The five `<g>` groups inside `#radar-svg` — `radar-bg-g`, `radar-beam-g`,
+`radar-scan-arm-g`, `radar-traceroute-g`, `radar-nodes-g` — are drawn purely
+imperatively (`svgElem`/`appendChild`/`innerHTML`) and carry no Alpine
+directives, so each is marked `x-ignore`. Alpine must not walk or tear down
+these subtrees: the draw functions clear and rebuild them many times per
+second, and letting Alpine's mutation observer process that churn throws
+continuous `Cannot read properties of undefined (reading '_x_effects')`
+errors (~22/s while viewing the radar). `x-show="homePos"` stays on the outer
+`#radar-svg` (Alpine-managed); only the inner groups are ignored. Same root
+fix as `#rotator_cfg_form`.
 
 ## Out of scope
 

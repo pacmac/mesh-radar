@@ -51,7 +51,13 @@ export const rotatorMixin = {
         this.yagiAz = data.az;
         if (azChanged && this.tab === 'radar') this._animateBeam(data.az);
       }
-      if ('target' in data && this.tab === 'radar') this._drawTargetArm();
+      // Redraw the target arm only when the bearing actually changes. `target`
+      // now rides every normalized frame, so a per-frame redraw would churn the
+      // SVG ~10-20x/s for no reason (and flicker the arm).
+      if (this.tab === 'radar' && data.target !== this._lastArmTarget) {
+        this._lastArmTarget = data.target;
+        this._drawTargetArm();
+      }
     }
   },
 

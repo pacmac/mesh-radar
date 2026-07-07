@@ -219,11 +219,14 @@
                 </filter>
                 <clipPath id="radarClip"><circle cx="300" cy="300" r="256"/></clipPath>
               </defs>
-              <g id="radar-bg-g"></g>
-              <g id="radar-beam-g" style="transform-box:view-box;transform-origin:300px 300px;transition:transform 1.2s ease"></g>
-              <g id="radar-scan-arm-g" clip-path="url(#radarClip)"></g>
-              <g id="radar-traceroute-g" clip-path="url(#radarClip)"></g>
-              <g id="radar-nodes-g"></g>
+              <!-- x-ignore: these groups are drawn imperatively (svgElem/appendChild/innerHTML)
+                   and contain zero Alpine directives. Alpine must not walk or tear them down,
+                   else the rapid redraw churn throws _x_effects errors. -->
+              <g id="radar-bg-g" x-ignore></g>
+              <g id="radar-beam-g" x-ignore style="transform-box:view-box;transform-origin:300px 300px;transition:transform 1.2s ease"></g>
+              <g id="radar-scan-arm-g" x-ignore clip-path="url(#radarClip)"></g>
+              <g id="radar-traceroute-g" x-ignore clip-path="url(#radarClip)"></g>
+              <g id="radar-nodes-g" x-ignore></g>
             </svg>
 
             <!-- Node list overlay — top-left -->
