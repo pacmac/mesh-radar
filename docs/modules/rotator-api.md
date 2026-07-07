@@ -1,7 +1,7 @@
 ---
 module: rotator-api
 source: src/rotator-api.js
-source_hash: 7b20028362521cd37c05f04f2d3805ec6f2cc0f5bbd46a81780a3065d392901a
+source_hash: d8e762fe42d3905921599265e211d5438b3967085208edd0707e1dc8f5337604
 updated: 2026-07-07
 ---
 
@@ -42,7 +42,7 @@ Mounted at `/rotator` by `index.js`. Paths below are router-relative.
 |---|---|---|
 | GET | `/status` | `{ connected, variant, active_target, targets, mode, dash_mode, scan_active, scan_az, scan_dwell_az, scan_contacts, ...fwStatus }` |
 | POST | `/active` | `{ name }` → `rotator.setActiveTarget(name)`; 404 on unknown target |
-| POST | `/move` | `{ az }` → `rotator.move(az)` |
+| POST | `/move` | `{ az }` → `rotator.move(az)`; **PASV-only** — 409 `{refused}` in ACTV or during a scan |
 | POST | `/mode` | `{ mode }` → `dashMode.set(mode)`; refused if mode=1 and scan active |
 | POST | `/target` | `{ num }` → `activeTracker.targetNum(num)`; requires dashMode=1 |
 | POST | `/scan/start` | `scanner.start()` |
@@ -89,6 +89,7 @@ _N/A_
 
 ## Invariants
 
+- `POST /rotator/move` (manual point) is **PASV-only**: refused with 409 `{ refused: true, reason }` when `dashMode.value === 1` (ACTV — active-tracker owns the rotator) or `scanner.active` (scan owns it). This is a backend control — the browser must not decide it. Rationale: a competing manual `move2az` aborts the in-progress closed-loop move on v5 and stutters the motor.
 - `POST /rotator/mode` with `mode=1` (ACTV) is refused if `scanner.active` — returns `{ refused: true }`.
 - `POST /rotator/target` requires `dashMode.value === 1`; returns 409 otherwise.
 - `POST /rotator/calibrate` only allows procedures in the active variant's whitelist; 400 on unknown.

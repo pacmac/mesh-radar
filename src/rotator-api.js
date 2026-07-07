@@ -59,6 +59,12 @@ router.post('/active', (req, res) => {
 router.post('/move', (req, res) => {
   const { az } = req.body;
   if (az == null) return res.status(400).json({ error: 'az required' });
+  // Manual point is a PASV-only action. In ACTV the active-tracker owns the
+  // rotator, and during a scan the scanner does — a competing manual move2az
+  // aborts the in-progress closed-loop move (v5) and stutters the motor. This
+  // is a BACKEND control: the browser does not decide it.
+  if (dashMode.value === 1) return res.status(409).json({ refused: true, reason: 'ACTV mode owns the rotator' });
+  if (scanner.active)        return res.status(409).json({ refused: true, reason: 'scan in progress' });
   rotator.move(az);
   res.json({ moving: true, az });
 });
