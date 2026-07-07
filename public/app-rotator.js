@@ -8,6 +8,21 @@ export const rotatorMixin = {
     // is sent on WS connect to seed the persisted mode even when rotator is offline.
     if (data.az != null || 'busy' in data || 'point_target' in data) this.rotatorConnected = true;
 
+    // Switchable target list lives in its OWN stable state (not the per-frame
+    // rotatorStatus), updated only when the list actually changes — otherwise the
+    // Device-card x-for would tear down and rebuild on every status frame.
+    if (data.targets && JSON.stringify(data.targets) !== JSON.stringify(this.rotatorTargets)) {
+      this.rotatorTargets = data.targets;
+    }
+    // A device switch (possibly from another client) invalidates the previous
+    // firmware's telemetry — drop stale fields so variant-gated rows hide.
+    // (variant/active_target arrive via this frame + the fwData spread below.)
+    if (data.active_target != null && this.rotatorStatus.active_target != null
+        && data.active_target !== this.rotatorStatus.active_target) {
+      this.rotatorStatus = {};
+    }
+    if (data.active_target != null) this.rotatorStatus = { ...this.rotatorStatus, active_target: data.active_target };
+
     if ('point_target' in data) {
       this.yagiPointTarget = data.point_target;
       this.yagiTargetMeta  = {
@@ -59,6 +74,18 @@ export const rotatorMixin = {
 
   async setRotatorMode(m) {
     await fetchJSON('/rotator/mode', 'POST', { mode: m });
+  },
+
+  // Switch the active rotator device (v4/v5). Optimistic: reflect the choice
+  // immediately; the WS stream confirms and supplies the detected variant.
+  async selectRotatorTarget(name) {
+    if (!name || name === this.rotatorStatus.active_target) return;
+    // Switching device invalidates the old firmware's telemetry — reset so
+    // variant-gated rows (v4 PWM, etc.) don't linger while the new device
+    // reconnects. The WS stream repopulates + supplies the detected variant.
+    // (rotatorTargets is separate stable state and is left intact.)
+    this.rotatorStatus = { active_target: name };
+    await fetchJSON('/rotator/active', 'POST', { name });
   },
 
   async moveRotator(az) {

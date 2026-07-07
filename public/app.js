@@ -85,6 +85,7 @@ function dashboard() {
     _sigTick:        0,
     rotatorStatus:   {},
     rotatorConnected: false,
+    rotatorTargets:  [],
     rotatorManualAz:  null,
     rotatorMode:      0,
     pwmRunPctInput:   null,

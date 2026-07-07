@@ -239,8 +239,24 @@
 
           <!-- ==================== ROTATOR TAB ==================== -->
           <div x-show="cfgTab==='rotator'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
-            <div class="alert alert-info shadow-sm text-sm">
-              <span>Rotator managed by node-dash. WS URL via <code>ROTATOR_WS_URL</code> env var.</span>
+            <!-- Device (v4/v5 switch) -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title">Device</h2>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <template x-for="t in rotatorTargets" :key="t.name">
+                    <button class="btn btn-sm"
+                            :class="t.name === rotatorStatus.active_target ? 'btn-primary' : 'btn-outline'"
+                            @click="selectRotatorTarget(t.name)"
+                            x-text="t.name.toUpperCase()"></button>
+                  </template>
+                  <span class="text-xs opacity-60 ml-1" x-show="rotatorStatus.variant"
+                        x-text="'API ' + (rotatorStatus.api ?? '4 (legacy)') + (rotatorConnected ? '' : ' · offline')"></span>
+                </div>
+                <p class="text-xs font-mono opacity-50 mt-1"
+                   x-text="rotatorTargets.find(t => t.name === rotatorStatus.active_target)?.url || ''"></p>
+                <p class="text-xs opacity-50 mt-0.5">Switching reconnects live. <code>ROTATOR_WS_URL</code> overrides the default target URL.</p>
+              </div>
             </div>
 
             <!-- Status -->
