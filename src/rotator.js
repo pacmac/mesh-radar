@@ -42,12 +42,39 @@ class RotatorClient extends EventEmitter {
     this._pingTimer = null;
     this._variant = null;                                     // 'v4' | 'v5' — from status.api
     this._activeName = getConfig('rotator_active', DEFAULT_ACTIVE);
+    this._schema = null;                                      // v5 device config schema (evt:schema)
+    this._v5Init = false;                                     // sent the v5 subscription + schema request?
+    this._cfgPending = new Map();                             // id -> { resolve, t } awaiting evt:reply
   }
 
   get connected()    { return this._connected; }
   get variant()      { return this._variant; }
   get activeTarget() { return this._activeName; }
   get targets()      { return loadTargets(); }
+  get schema()       { return this._schema; }
+
+  // Clear v5 device state (schema/subscription) and fail any pending config
+  // sets — called on device switch and disconnect.
+  _resetV5State(reason) {
+    this._schema = null;
+    this._v5Init = false;
+    for (const [, p] of this._cfgPending) { clearTimeout(p.t); p.resolve({ ok: false, msg: reason, value: null }); }
+    this._cfgPending.clear();
+  }
+
+  // Set one v5 config value and resolve with the device's own reply
+  // ({ ok, msg, value }). The device validates (rejects out-of-range, not
+  // clamped) — it is the single validator. 3 s timeout on no reply.
+  setConfigValue(id, value) {
+    return new Promise((resolve) => {
+      if (!id || !this._connected) return resolve({ ok: false, msg: 'not connected', value: null });
+      const prev = this._cfgPending.get(id);
+      if (prev) { clearTimeout(prev.t); prev.resolve({ ok: false, msg: 'superseded', value: null }); }
+      const t = setTimeout(() => { this._cfgPending.delete(id); resolve({ ok: false, msg: 'no reply', value: null }); }, 3000);
+      this._cfgPending.set(id, { resolve, t });
+      this._send({ action: id, args: [String(value)] });
+    });
+  }
 
   // Normalized status: guarantees canonical moving/targetAz AND the legacy
   // busy/target aliases so existing consumers (scanner.js:103 busy,
@@ -96,6 +123,7 @@ class RotatorClient extends EventEmitter {
     console.log(`[rotator] switching active target -> ${name}`);
     this._variant = null;                                     // re-detect on the new device
     this._status = {};                                        // do not leak stale fields
+    this._resetV5State('switched');                           // drop stale schema + fail pending sets
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     if (this._pingTimer) { clearInterval(this._pingTimer); this._pingTimer = null; }
     if (this._ws) { try { this._ws.terminate(); } catch { /* already down */ } this._ws = null; }
@@ -143,10 +171,30 @@ class RotatorClient extends EventEmitter {
       if (this._ws !== ws) return;                            // ignore frames from an old socket
       let msg;
       try { msg = JSON.parse(data.toString()); } catch { return; }
+
+      // v5 config protocol frames — handled, not merged into _status.
+      if (msg.evt === 'schema') { this._schema = msg.config ?? []; this.emit('schema', this._schema); return; }
+      if (msg.evt === 'reply') {
+        const p = this._cfgPending.get(msg.cmd);
+        if (p) { clearTimeout(p.t); this._cfgPending.delete(msg.cmd); p.resolve({ ok: !!msg.ok, msg: msg.msg, value: msg.value }); }
+        return;
+      }
+      if (msg.evt === 'subs' || msg.evt === 'started' || msg.evt === 'done') return;
+      if (msg.log != null && msg.az == null && msg.evt == null) return;   // bare log echo
+
       // Auto-detect variant from the announced api version. v5 status frames
       // always carry api:5; v4 frames never do (identified by pwm/busy fields).
       if (msg.api === 5) this._variant = 'v5';
       else if (this._variant == null && (msg.pwmMin != null || msg.busy != null)) this._variant = 'v4';
+
+      // On first v5 detection: subscribe to log/done (enables config replies)
+      // and request the device config schema. Guarded so it fires once.
+      if (this._variant === 'v5' && !this._v5Init) {
+        this._v5Init = true;
+        this._send({ op: 'set', events: ['status', 'log', 'done'] });
+        this._send({ action: 'schema' });
+      }
+
       this._status = { ...this._status, ...msg };
       this.emit('status', this._normalize(msg));
     });
@@ -157,6 +205,7 @@ class RotatorClient extends EventEmitter {
       this._connected = false;
       this._ws = null;
       if (this._pingTimer) { clearInterval(this._pingTimer); this._pingTimer = null; }
+      this._resetV5State('disconnected');                     // re-fetched on reconnect
       this.emit('disconnected');
       this._reconnectTimer = setTimeout(() => this._connect(), RECONNECT_DELAY_MS);
     });

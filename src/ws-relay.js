@@ -461,6 +461,9 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     lastSignalUpdate = data;
     broadcast({ type: 'signal_update', data });
   });
+  // v5 device config schema — pushed on (re)fetch so the browser builds its
+  // rotator config form from the device's own field list (shared buildForm).
+  rotator.on('schema', (schema) => broadcast({ type: 'rotator', data: { schema } }));
   dashMode.on('change',      (data) => broadcast({ type: 'rotator', data }));
 
   scanner.on('start',    (data) => broadcast({ type: 'scan_start',    data }));
@@ -597,6 +600,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       _mode: dashMode.value,
       targets: rotator.targets,
       active_target: rotator.activeTarget,
+      schema: rotator.schema,
     } }));
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
       ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
@@ -691,6 +695,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       _mode: dashMode.value,
       targets: rotator.targets,
       active_target: rotator.activeTarget,
+      schema: rotator.schema,
     } }));
     if (rotator.connected && Object.keys(rotator.status).length > 0) {
       ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));

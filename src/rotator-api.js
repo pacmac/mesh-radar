@@ -56,6 +56,16 @@ router.post('/active', (req, res) => {
   res.json({ active: name });
 });
 
+// Set one v5 device config value. Returns the device's own reply
+// { ok, msg, value } — the device is the single validator (rejects
+// out-of-range, not clamped). The schema (bounds/labels) is pushed over WS.
+router.post('/config', async (req, res) => {
+  const { id, value } = req.body;
+  if (!id || value == null) return res.status(400).json({ error: 'id and value required' });
+  const result = await rotator.setConfigValue(id, value);
+  res.json(result);
+});
+
 router.post('/move', (req, res) => {
   const { az } = req.body;
   if (az == null) return res.status(400).json({ error: 'az required' });

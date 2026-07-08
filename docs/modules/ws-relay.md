@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 8e865d42bc296b8582b52b4ef08d2151f53d03a005dfb8c1bffb6ecb35fb2586
+source_hash: b021f8540d07c62194b0f8e700b9248bd13f69e6017cdb9e1e94d1c7ee5cf89c
 updated: 2026-07-07
 ---
 
@@ -244,6 +244,13 @@ without a REST GET (transport rule). `variant` already rides the normalized
 the on-connect `{_mode}` frame so the selector renders even when the rotator
 is offline.
 
+**Rotator device schema (task rotator-device-schema-backend).** The v5 config
+`schema` (`rotator.schema`) rides the on-connect `{_mode,…}` frame, and a
+`rotator.on('schema')` handler broadcasts `{type:'rotator', data:{schema}}`
+whenever the device (re)sends it — so the browser builds its rotator config
+form from the device's own field list via the shared `buildForm`. Not added to
+the per-status throttled frame (it changes only on connect/device-switch).
+
 ---
 
 ## Feature flags
@@ -294,7 +301,8 @@ Global dashboard view. Broadcasts all events.
 1. Bridge connection state (`bridge_connected` or `bridge_disconnected`)
 2. Last-known device state for each BLE device (individual flattened objects from `lastDeviceState`)
 3. `device_list` (from `lastDeviceList` cache, or freshly composed)
-4. `rotator` with `{ _mode: dashMode.value, targets, active_target }`
+4. `rotator` with `{ _mode: dashMode.value, targets, active_target, schema }`
+   (`schema` = `rotator.schema`, the v5 device config schema or null)
 5. Rotator full status (if connected and non-empty)
 6. `rotator` with `lastPointTarget` (if any)
 7. `signal_update` with `lastSignalUpdate` (if any)

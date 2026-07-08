@@ -1,7 +1,7 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: e201a075d26522b412666e09035f5b9c87eca5ea67e37643fa2352f4fa845821
+source_hash: 095603595f33979e384b6dc081626f30567874f815f188e7cf9769d527f964de
 updated: 2026-07-07
 ---
 
@@ -71,6 +71,10 @@ rotator.setActiveTarget(name)     // → boolean; false if name is not a known t
 // Commands (silently no-op when not connected)
 rotator.move(az)                  // v4: { action:'seek2az', args:[az] }; v5: { action:'move2az', args:[az] }
 rotator.sendAction(action, args?) // send { action, args } or { action }
+
+// v5 device config schema (null on v4 — no schema command)
+rotator.schema                    // [{ id, label, type:'num'|'bool', min, max, def, value }] | null
+rotator.setConfigValue(id, val)   // → Promise<{ ok, msg, value }> (from the device's evt:reply)
 ```
 
 ### Normalized status shape
@@ -138,6 +142,33 @@ unchanged. The aliases are why `scanner.js` and `ws-relay.js` need no edit.
 - `'status'` fires for **every** inbound message, including partial updates. Consumers must not assume a `'status'` event contains the full status object.
 - **Code smell**: `index.js` attaches `_lastTracedNum` and `_lastTracedAt` directly to the `rotator` instance as ad-hoc state. These fields do not belong to this module and must be moved to `index.js`/`traceroute.js` state in a future refactor.
 - **Proxy bus**: the `'point_target'` and `'signal_update'` events are emitted by `active-tracker.js` via `rotator.emit()`, not by this module. This is a design choice (single subscriber surface) but couples `active-tracker.js` to this module's EventEmitter identity.
+
+## v5 device config schema & set replies (task rotator-device-schema-backend)
+
+The v5 firmware self-describes its config and validates every set. node-dash
+consumes this instead of a hardcoded schema (the device is the single
+validator).
+
+- **Subscription (v5 only):** on the first v5 detection, the client sends
+  `{op:'set', events:['status','log','done']}` once (guard `_v5Init`). The
+  `log` bit is what makes config replies arrive; without it the device streams
+  only `status`. (It also enables `started`/`done` for a future closed-loop task.)
+- **Schema:** the client then sends `{action:'schema'}`; the device replies
+  `{evt:'schema', config:[{id,label,type:'num'|'bool',min,max,def,value}]}`
+  (14 settings). Cached in `_schema`, exposed as `rotator.schema`, and emitted
+  as a `'schema'` event (consumed by ws-relay to push to the browser).
+- **Set + reply:** `setConfigValue(id, value)` sends `{action:id,
+  args:[String(value)]}` and resolves the returned Promise on the matching
+  `{evt:'reply', cmd:id, ok, msg, value}` — `ok` bool, `msg` the human
+  `OK …`/`ERR … out of range [min..max]` text, `value` the live setting.
+  Out-of-range is **rejected, not clamped**. Pending resolvers keyed by `cmd`
+  in `_cfgPending` (Map); 3 s timeout → `{ok:false, msg:'no reply'}`. The
+  duplicate `{log:'…'}` frame is ignored.
+- **Reset:** `setActiveTarget` / disconnect clear `_schema`, `_v5Init`, and
+  reject/clear `_cfgPending` (device changed).
+- **v4** (`.186`, no `schema`/`reply`): `rotator.schema` is null; `setConfigValue`
+  times out to `{ok:false}`. v4 config keeps the hardcoded `rotator-config-schema.js`
+  path, selected by variant.
 
 ## Test notes
 

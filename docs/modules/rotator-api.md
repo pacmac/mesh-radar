@@ -1,7 +1,7 @@
 ---
 module: rotator-api
 source: src/rotator-api.js
-source_hash: d8e762fe42d3905921599265e211d5438b3967085208edd0707e1dc8f5337604
+source_hash: 0abde947f919778002115824fd2b24ac2479f8555376793a401850a0a268e90d
 updated: 2026-07-07
 ---
 
@@ -26,6 +26,10 @@ targeting, scan control, calibration, and firmware config read/write.
 - Serve `GET /rotator/firmware_config` — read motor/scan/actv config composite
 - Serve `POST /rotator/firmware_config` — write motor/scan/actv config
 - Serve `POST /rotator/active` — switch the active rotator target (v4/v5)
+- Serve `POST /rotator/config` — set one v5 device config value; returns the
+  device's `{ ok, msg, value }` reply (the device is the single validator).
+  Task `rotator-device-schema-backend`. v4 keeps the hardcoded
+  `firmware_config` path unchanged.
 
 **Variant-aware.** The hardware-facing routes (`/calibrate`, `/setvar`,
 `/offset`, `/firmware_config`) select their command vocabulary by
@@ -42,6 +46,7 @@ Mounted at `/rotator` by `index.js`. Paths below are router-relative.
 |---|---|---|
 | GET | `/status` | `{ connected, variant, active_target, targets, mode, dash_mode, scan_active, scan_az, scan_dwell_az, scan_contacts, ...fwStatus }` |
 | POST | `/active` | `{ name }` → `rotator.setActiveTarget(name)`; 404 on unknown target |
+| POST | `/config` | `{ id, value }` → `await rotator.setConfigValue(id, value)` → `{ ok, msg, value }` (device's `evt:reply`); 400 if `id`/`value` missing. v5 only — the device validates. |
 | POST | `/move` | `{ az }` → `rotator.move(az)`; **PASV-only** — 409 `{refused}` in ACTV or during a scan |
 | POST | `/mode` | `{ mode }` → `dashMode.set(mode)`; refused if mode=1 and scan active |
 | POST | `/target` | `{ num }` → `activeTracker.targetNum(num)`; requires dashMode=1 |
