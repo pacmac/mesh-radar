@@ -1,7 +1,7 @@
 ---
 module: style-css
 source: public/style.css
-source_hash: ca7e2a6e7db96687385d1c39a4921aacfa752507834f438844f42a6c78947618
+source_hash: 6299146b60648d386a4a11006e320b811a2a903957580d15f57e2e14c51756e7
 updated: 2026-07-08
 ---
 
@@ -34,8 +34,9 @@ must comply with the guide and update this spec's hash.
    (+ `--active`, `--amber`, `--red`), `.instrument-divider` (STYLE_GUIDE §6)
 8. **Utility classes** — `.font-oxanium`, `.hop-circle` (hop-count badge;
    border+text colour = hop count via `text-*`) + `.hop-dot` (traceroute-
-   VERIFIED marker — a small green dot centred on the circle's border at
-   ~2 o'clock, half in/out; base-bg ring for separation; absence = reported;
+   VERIFIED marker — a small green dot riding the circle's OUTER ring at
+   ~2 o'clock (body outside the interior so it never covers the hop number);
+   base-bg ring for separation; absence = reported;
    task `hops-badge-verified-dot`, superseded the illegible 5-point-star
    `.hop-star` which wasted the tiny interior on its points),
    `.radar-stat-grid`, `.sig-bars`, `.perf-*` chart classes
