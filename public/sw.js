@@ -2,7 +2,7 @@
 // restarts or is temporarily unreachable.
 // API calls go cross-origin (MESH_API on port 8001) so the SW never
 // intercepts them — no exclusion list needed.
-const CACHE = 'mesh-gw-dash-v1';
+const CACHE = 'mesh-gw-dash-v2';
 const SHELL = ['/', '/app.js', '/style.css', '/config.js'];
 
 self.addEventListener('install', e => {
@@ -21,9 +21,16 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  // Navigation: try network, fall back to cached shell
+  // Navigation: network-first, and REFRESH the cached '/' on success so the
+  // shell never freezes at install time (a stale '/' referencing an old Alpine
+  // wedged the page after asset changes). Fall back to cache only on failure.
   if (e.request.mode === 'navigate') {
-    e.respondWith(fetch(e.request).catch(() => caches.match('/')));
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res.ok) caches.open(CACHE).then(c => c.put('/', res.clone()));
+        return res;
+      }).catch(() => caches.match('/'))
+    );
     return;
   }
   // Static shell assets: network-first so updates land immediately; cache as offline fallback
