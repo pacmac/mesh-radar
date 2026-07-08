@@ -1,5 +1,5 @@
 import { handleEvent } from './persist.js';
-import { nodeList } from './node-list.js';
+import { nodeList, hopsAway } from './node-list.js';
 import { activeTracker } from './active-tracker.js';
 import { scanner } from './scanner.js';
 import { traceroute } from './traceroute.js';
@@ -40,7 +40,11 @@ export function registerBridgeEvents(bridge) {
       const rxDevice = ev.addr || ev.device || null;
       const rotatorId = getRotatorAddress();
       const yagiOnly = scanner.active && rotatorId && rxDevice !== rotatorId;
-      if (pkt?.from && !yagiOnly) nodeList.touchLastHeard(pkt.from, pkt.rx_time, rxDevice);
+      if (pkt?.from && !yagiOnly) {
+        nodeList.touchLastHeard(pkt.from, pkt.rx_time, rxDevice);
+        // Guarded hops-away, updated per packet (firmware NodeDB updateFrom analog)
+        nodeList.setHopsAway(pkt.from, hopsAway(pkt.hop_start, pkt.hop_limit));
+      }
       // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
       if (!FF.SSOT_TRACEROUTE) {
         if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery && pkt?.from) {

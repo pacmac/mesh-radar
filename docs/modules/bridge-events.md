@@ -1,8 +1,8 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: 6507617798357d01a7bdd033f557e6671c537da249c8efe9f501e2a8bb9e9906
-updated: 2026-06-30
+source_hash: 307c11828970bbe6989081414a4cdf9ccf4f2d882b7db78c872df529a231973e
+updated: 2026-07-08
 ---
 
 # Module: bridge-events
@@ -17,7 +17,7 @@ the single dispatch point for all live mesh-gw events entering the backend.
 
 - Register `bridge.on('event', handler)` on startup
 - For `node_update`: call `handleEvent`, `nodeList.handleNodeUpdate`, and conditionally insert environment metrics (own devices, >60s dedup)
-- For `packet`: call `handleEvent`, `activeTracker.handlePacket`, `scanner.handlePacket`, `nodeList.touchLastHeard` (with rotator/yagi-only guard), and traceroute dispatch (V1 inline or V2 via `traceroute.js`)
+- For `packet`: call `handleEvent`, `activeTracker.handlePacket`, `scanner.handlePacket`, `nodeList.touchLastHeard` + `nodeList.setHopsAway(pkt.from, hopsAway(pkt.hop_start, pkt.hop_limit))` (both under the rotator/yagi-only guard), and traceroute dispatch (V1 inline or V2 via `traceroute.js`)
 - For `traceroute` typed event: route to traceroute.js (V2) or inline `nodeList.setTraceroute` (V1)
 - For `rangetest` typed event: call `insertRangeTestEntry`
 - Accept injected dependencies (bridge instance, broadcastAll, nodeList, etc.) to avoid circular imports
@@ -26,7 +26,7 @@ the single dispatch point for all live mesh-gw events entering the backend.
 
 - `bridge.js` — `bridge` (event source)
 - `persist.js` — `handleEvent`
-- `node-list.js` — `nodeList`
+- `node-list.js` — `nodeList`, `hopsAway` (guarded hops-away helper)
 - `active-tracker.js` — `activeTracker`
 - `scanner.js` — `scanner`
 - `traceroute.js` — `traceroute` (FF.SSOT_TRACEROUTE path)
@@ -55,7 +55,8 @@ _N/A_ (consumes events from bridge; other modules emit downstream)
 
 - `rxDevice = ev.addr || ev.device || null` — v1/v2 compatibility shim.
 - Env metrics: only inserted for own devices (`ownDeviceNums().has(node.num)`) and only when `now - last > 60s`.
-- Yagi-only guard: during scan, packets received by non-rotator device are NOT used for `touchLastHeard`.
+- Yagi-only guard: during scan, packets received by non-rotator device are NOT used for `touchLastHeard` OR `setHopsAway`.
+- Hops-away is computed here from the raw packet (`pkt.hop_start`/`pkt.hop_limit`) — the only per-reception source that carries the hop fields and reaches `nodeList`. The gw's aggregate `node_info.hops` is unguarded and stripped in `node-list.js`; see its "Hops-away ownership" section.
 - `FF.SSOT_TRACEROUTE` governs both raw-packet and typed-event traceroute paths — they must stay in sync.
 - `traceroute` typed event path is additive (parallel to raw packet) in V1; V2 routes both to `traceroute.handlePacket`.
 
@@ -65,6 +66,7 @@ _N/A_ (consumes events from bridge; other modules emit downstream)
 - **packet — yagi-only**: scanner active, packet from non-rotator device → `touchLastHeard` NOT called.
 - **rangetest**: `insertRangeTestEntry` called with correct fields extracted from typed event.
 - **traceroute V2**: `traceroute.handlePacket` called for both raw TRACEROUTE_APP packet and typed event.
+- **packet — hops-away**: packet with `hop_start:3, hop_limit:1` → `setHopsAway(from, 2)`; `hop_start:0` → `setHopsAway(from, null)` (prior value preserved); scanner active + non-rotator device → `setHopsAway` NOT called.
 
 ## Out of scope
 

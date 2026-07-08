@@ -1,8 +1,8 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 522b3aee60544f3e3c438a2accaa6612004654eb4cedc254e6406926f5f0536f
-updated: 2026-07-04
+source_hash: 5f378d4e0eb192af802e9b677fb74e125c7a6078a2e41124b0fc0a410e3e7275
+updated: 2026-07-08
 ---
 
 # Module: node-list
@@ -39,6 +39,23 @@ pending buffer until `confirmScanContact` proves physical proximity.
 
 ## Public interface
 
+### Pure helpers
+
+```js
+export function hopsAway(hopStart, hopLimit)  // → int | null (UNKNOWN)
+```
+
+Hops-away computed the way the Meshtastic firmware does (`NodeDB.cpp`
+`getHopsAway`): `hop_start - hop_limit`, but **guarded**. Returns `null`
+(UNKNOWN — caller must leave the prior value intact) when:
+- `hop_start` or `hop_limit` is missing (`null`/`undefined`), or
+- `hop_start === 0` (old/MQTT-injected packets that never set it; the v3
+  0-hop `has_bitfield` exception is NOT distinguishable from our event feed,
+  so a genuine 0-hop reads as unknown — accepted limitation), or
+- `hop_start < hop_limit` (invalid).
+
+Otherwise returns `hop_start - hop_limit` (≥ 0; 0 = direct/adjacent).
+
 ### Singleton
 
 ```js
@@ -67,6 +84,13 @@ nodeList.touchLastHeard(num, ts, device = null)
 
 // Patch environment metrics onto in-memory entry
 nodeList.setEnvironmentMetrics(num, data)
+
+// Patch guarded hops-away onto in-memory entry (per received packet)
+nodeList.setHopsAway(num, hops)
+// hops from hopsAway(pkt.hop_start, pkt.hop_limit). A null (UNKNOWN) is
+// ignored so a prior KNOWN value survives — mirrors firmware updateFrom,
+// which only sets hops_away when it can compute it. Patches _cache, _pending,
+// or _ownDevices (like setEnvironmentMetrics). No-op / no emit if unchanged.
 
 // Write traceroute result to DB and patch in-memory entry
 nodeList.setTraceroute(num, data, fromNum, rxDevice)
@@ -192,6 +216,9 @@ restoreScanNodes(nodes)  — called on restart when scan was in progress
 - **`refilter()`**: no data change → `'change'` fires with same filtered set
 - **`homePos` annotation**: node with position + homePos set → `_km` and `_az` present in `'change'` payload
 - **`setEnvironmentMetrics`**: patches `environment_metrics` onto `_cache` entry; also patches `_pending` if not in cache; also patches `_ownDevices` if own device num
+- **`hopsAway()` guard**: `(3,3)→0`, `(3,1)→2`, `(0,3)→null`, `(null,3)→null`, `(2,3)→null`
+- **`setHopsAway`**: known value patches `_cache` entry `hops`; `null` leaves prior `hops` untouched; same value → no `'change'` emit
+- **gw hops stripped**: `handleNodeUpdate` with `ev.data.hops = 5` on a cached node → entry `hops` unchanged (not set to 5); `seed` node with `hops: 5` → seeded entry has no `hops` from the gw
 
 ## Out of scope
 
@@ -219,7 +246,36 @@ node_info routing fix, caught same day: ACTV targeted GZG/OMT while absent
 from the node list). Cache-entry creation is reserved for heard packets
 (`touchLastHeard`), the opt-in per-device boot seed, and confirmed scan
 contacts. Live `node_info` still enriches heard nodes with
-rssi/snr/hops/via_mqtt/device_metrics — the node-filter fields keep flowing.
+rssi/snr/via_mqtt/device_metrics — the node-filter fields keep flowing.
+(`hops` is NO LONGER taken from `node_info` — see "Hops-away ownership".)
+
+## Hops-away ownership (task `hops-away-official-calc`, 2026-07-08)
+
+`node.hops` (the "hops away" the browser badge shows) is owned **solely** by
+`setHopsAway`, computed per received packet via the guarded `hopsAway()`
+helper — the same calculation the Meshtastic phone app uses
+(`NodeDB.cpp` `getHopsAway`, run on every packet by `updateFrom`).
+
+The gw's aggregate `node_info.data.hops` (and the REST `/nodes` `hops`) is
+**unguarded** — raw `hop_start - hop_limit` with no validity check
+(docs/gw/API_SSE.md), delivered on only a subset of events, and it carries no
+`hop_start`/`hop_limit` to re-guard at the `node_info` layer. It is therefore
+**stripped on ingest**: `handleNodeUpdate` destructures `hops` off `ev.data`,
+and `seed()` destructures it off each REST node, before the entry is merged.
+This is why the earlier badge read `1h` for almost every node regardless of
+its real distance (e.g. a 5-relay traceroute node showing `1h`).
+
+- **Source of truth**: `bridge-events.js` calls `setHopsAway(pkt.from,
+  hopsAway(pkt.hop_start, pkt.hop_limit))` for every heard packet (all
+  portnums), inside the same `!yagiOnly` scan guard as `touchLastHeard`.
+- **UNKNOWN handling**: `hopsAway()` → `null` leaves the prior value; a node
+  never heard with a valid `hop_start` has no `hops` (badge renders `0h` today
+  — the unknown-vs-0 presentation nuance is a separate Domain-2 concern).
+- **Cold start**: nodes seeded from REST before their first heard packet have
+  no `hops` until one arrives (was: the gw's unguarded value). Accepted.
+- **Not the traceroute path length**: hops-away (live reception distance) and
+  `last_traceroute.route.length` (a routed probe path) are different
+  measurements and will rarely match — by design.
 
 ## setTraceroute (task `perf-per-device`)
 

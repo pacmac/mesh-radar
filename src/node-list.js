@@ -6,6 +6,22 @@ import { haversine, bearing } from './utils.js';
 
 const NEW_NODE_TTL = 86400; // 24 hours
 
+// Hops-away, computed the way the Meshtastic firmware does (NodeDB.cpp
+// getHopsAway): hop_start - hop_limit, GUARDED. Returns null (UNKNOWN) so the
+// caller leaves any prior value intact rather than storing a bogus distance.
+//   - hop_start / hop_limit missing → unknown
+//   - hop_start === 0               → unknown (old/MQTT packets that never set
+//                                     it; the v3 0-hop has_bitfield exception
+//                                     isn't visible in our event feed)
+//   - hop_start < hop_limit         → unknown (invalid)
+//   - else                          → hop_start - hop_limit (>= 0; 0 = direct)
+export function hopsAway(hopStart, hopLimit) {
+  if (hopStart == null || hopLimit == null) return null;
+  if (hopStart === 0) return null;
+  if (hopStart < hopLimit) return null;
+  return hopStart - hopLimit;
+}
+
 function enrichFromCache(node) {
   const cached = getMqttNode(node.num);
   if (!cached) return node;
@@ -59,7 +75,9 @@ class NodeList extends EventEmitter {
 
   // Called for each bridge node_update (and node_info) event
   handleNodeUpdate(ev) {
-    const node = ev.data;
+    // Strip the gw's UNGUARDED aggregate `hops` — node hops-away is owned
+    // solely by setHopsAway (guarded, per-packet). See "Hops-away ownership".
+    const { hops: _gwHops, ...node } = ev.data ?? {};
     if (!node?.num) return;
 
     // Route all updates about own BLE devices to _ownDevices (Devices tab).
@@ -166,6 +184,27 @@ class NodeList extends EventEmitter {
     }
   }
 
+  // Patch guarded hops-away onto the in-memory entry (per received packet).
+  // hops comes from hopsAway(pkt.hop_start, pkt.hop_limit): a null (UNKNOWN)
+  // is ignored so a prior KNOWN value survives — mirrors the firmware's
+  // updateFrom, which only sets hops_away when it can compute it.
+  setHopsAway(num, hops) {
+    if (hops == null) return;
+    if (this._ownDevices.has(num)) {
+      const cur = this._ownDevices.get(num);
+      if (cur.hops === hops) return;
+      this._ownDevices.set(num, { ...cur, hops });
+      this._scheduleEmit();
+      return;
+    }
+    const existing = this._cache.get(num) ?? this._pending.get(num);
+    if (!existing || existing.hops === hops) return;
+    const patched = { ...existing, hops };
+    if (this._cache.has(num)) this._cache.set(num, patched);
+    else                       this._pending.set(num, patched);
+    this._scheduleEmit();
+  }
+
   // Save a traceroute result for a node — persists to SQLite and patches in-memory entry
   setTraceroute(num, data, fromNum, rxDevice) {
     stmts.upsertTraceroute.run({ num, json: JSON.stringify(data) });
@@ -263,8 +302,10 @@ class NodeList extends EventEmitter {
   // Bulk seed from bridge REST (call on bridge connect or scan start)
   // forceDevice: if true, device tag overwrites any existing _device (used for scan reseed)
   seed(nodes, device, forceDevice = false) {
-    for (const n of nodes) {
-      if (n.num == null) continue;
+    for (const rawN of nodes) {
+      if (rawN.num == null) continue;
+      // Drop the gw's unguarded hops — owned solely by setHopsAway (guarded).
+      const { hops: _gwHops, ...n } = rawN;
 
       if (this._scanActive) {
         if (this._cache.has(n.num)) {
