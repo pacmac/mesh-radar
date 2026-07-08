@@ -768,23 +768,24 @@ footer {
   background: transparent;
   border: 1.5px solid currentColor;
   opacity: 0.85;
+  position: relative;   /* anchor for the verified .hop-dot */
 }
 
-/* Traceroute-VERIFIED hop count — a 5-point STAR (vs the reported circle).
-   Provenance is the shape; the hop count is the outline+text colour (text-*
-   class → currentColor), matching the circle's colour scale. Rendered as an
-   inline SVG so the outline is clean and theme-aware. */
-.hop-star {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  opacity: 0.95;
-}
-.hop-star svg {
-  width: 1.25rem;
-  height: 1.25rem;
-  display: block;
+/* Traceroute-VERIFIED marker: a small green dot whose centre sits on the
+   circle's border at ~2 o'clock (half in / half out). Green is a distinct
+   provenance colour (not a hop-count colour) and costs no interior space, so
+   the hop number stays fully legible. Absence of the dot = reported. The
+   base-background ring separates it from the colour-coded border in any theme. */
+.hop-dot {
+  position: absolute;
+  left: 89%;
+  top: 27%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 1.5px hsl(var(--b1));
 }
 
 /* Radar / telemetry stats grid */
