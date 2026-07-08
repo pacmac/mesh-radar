@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: b021f8540d07c62194b0f8e700b9248bd13f69e6017cdb9e1e94d1c7ee5cf89c
-updated: 2026-07-07
+source_hash: dd2b8fedc6c556eedae490f93b381ed72c7d698b3766b4611f9c769ed8a6789d
+updated: 2026-07-08
 ---
 
 # Module: ws-relay
@@ -206,7 +206,7 @@ Passed to `handleAlertEvent(ev)` and then broadcast as-is.
 
 | Event type | Enrichment added |
 |---|---|
-| `node_list` | Each node gets `display_name: resolveNodeLabel(n.num)` |
+| `node_list` | Each node gets `display_name: resolveNodeLabel(n.num)`, `via` bundle, and the hops-away display fields `hops_verified` + `hops_display` (see "hops-display") |
 | `device_list` | Each device gets `display_name: resolveDeviceLabel(d.node_id)` |
 | `range_test_entry` | `from_name: resolveNodeLabel(ev.data.from_num)`, `rx_name: resolveDeviceLabel(ev.device)` |
 | `text_message` | `from_name: resolveNodeLabel(ev.data.from_num)` |
@@ -432,3 +432,27 @@ PUT. The browser reads ALL device page-data from this event; no GETs.
 the first hop of the node's last traceroute (route[0]; broadcast sentinel
 excluded), resolved server-side per IDENTITY.md §3. Null when direct or
 no traceroute exists.
+
+## hops-display (task `hops-display-backend-enrich`, 2026-07-08)
+
+The **backend owns the hops-away display decision** — the browser is a
+presentation layer and makes none (BROWSER_CONTRACT). `enrichEvent` adds two
+fields to every `node_list` row, alongside `via`:
+
+- **`hops_verified`** — `number | null`. The traceroute-verified relay count,
+  `n.last_traceroute.route.length` (0 = direct, i.e. reached with no relay;
+  1 = via one node; …). `null` when the node has no traceroute record.
+- **`hops_display`** — `number | null`. The value the UI shows:
+  **verified takes priority over reported** —
+  `hops_verified ?? (n.hops_away ?? n.hops)`. So a traceroute result (incl. a
+  verified direct `0`) wins; otherwise it falls back to the reported live
+  packet hops (`node-list.js` guarded `hopsAway`, see that module). `null`
+  when neither source is known.
+
+The browser renders `hops_display` and styles it as verified when
+`hops_verified != null` — no source selection or fallback logic in the UI.
+
+This reverses the earlier `tab-radar` invariant that forbade traceroute-derived
+hops: with reliable traceroute data we prefer it. The backend `max_hops`
+filter (`node-filter.js`) still keys off reported live hops — a deliberate
+split (proximity filter vs. displayed distance).
