@@ -1,7 +1,7 @@
 ---
 module: style-css
 source: public/style.css
-source_hash: 6299146b60648d386a4a11006e320b811a2a903957580d15f57e2e14c51756e7
+source_hash: 259c40486b01d07bb56c2016cad28747ad21c2ec96932c38aac1511c51b74a9c
 updated: 2026-07-08
 ---
 
@@ -36,7 +36,8 @@ must comply with the guide and update this spec's hash.
    border+text colour = hop count via `text-*`) + `.hop-dot` (traceroute-
    VERIFIED marker — a small green dot riding the circle's OUTER ring at
    ~2 o'clock (body outside the interior so it never covers the hop number);
-   base-bg ring for separation; absence = reported;
+   base-bg ring for separation; green when fresh / amber via `.hop-dot.stale`
+   when the traceroute is stale (backend `hops_fresh`); absence = reported;
    task `hops-badge-verified-dot`, superseded the illegible 5-point-star
    `.hop-star` which wasted the tiny interior on its points),
    `.radar-stat-grid`, `.sig-bars`, `.perf-*` chart classes

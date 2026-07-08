@@ -210,6 +210,12 @@ export const nodesMixin = {
     return n?.hops_verified != null;
   },
 
+  nodeHopsFresh(n) {
+    // Backend-decided: is the verifying traceroute still fresh (vs stale/cached)?
+    // Drives green (fresh) vs amber (stale) dot. No age math in the UI.
+    return !!n?.hops_fresh;
+  },
+
   signalQuality(rssi, snr) {
     const pct = window.signalQuality(rssi, snr);
     if (pct === 0 && rssi == null && snr == null) return { pct: 0, label: 'No signal', cls: 'text-base-content/30', badgeCls: 'badge-ghost', none: true };

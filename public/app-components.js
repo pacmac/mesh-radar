@@ -38,18 +38,18 @@ export const componentsMixin = {
   },
 
   // ── Hops circle ─────────────────────────────────────────────────────────
-  hopsBadge(hops, verified = false) {
+  hopsBadge(hops, verified = false, fresh = false) {
     if (hops == null) return '';
     const cls = hops === 0 ? 'text-success'
               : hops === 1 ? 'text-info'
               : hops === 2 ? 'text-warning'
               :              'text-error';
     const tip = (hops === 0 ? 'Direct' : `${hops} ${hops === 1 ? 'hop' : 'hops'}`)
-              + (verified ? ' · traceroute-verified' : ' · reported');
+              + (verified ? (fresh ? ' · traceroute-verified (fresh)' : ' · traceroute-verified (stale)') : ' · reported');
     // Same small circle either way (number stays fully legible; hop count is the
-    // border+text colour). VERIFIED adds a green dot straddling the border at
-    // ~2 o'clock — a distinct provenance marker that costs no interior space.
-    const dot = verified ? '<i class="hop-dot"></i>' : '';
+    // border+text colour). VERIFIED adds a dot on the outer ring at ~2 o'clock:
+    // green when fresh, amber when the traceroute is stale (backend hops_fresh).
+    const dot = verified ? `<i class="hop-dot${fresh ? '' : ' stale'}"></i>` : '';
     return `<span class="hop-circle ${cls}" title="${tip}">${hops}${dot}</span>`;
   },
 

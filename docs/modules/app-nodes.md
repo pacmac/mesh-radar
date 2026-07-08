@@ -1,7 +1,7 @@
 ---
 module: app-nodes
 source: public/app-nodes.js
-source_hash: b2572ecc419fa0ccfafafd9604ed21c48bd9dbd0b9b3b0583f636b85bbed668f
+source_hash: 7dba2604230e6318100cde7aad1ea8901ddc4c78131ee2c4bc6d4f144fcf1d2e
 updated: 2026-07-08
 ---
 
@@ -22,8 +22,13 @@ REPORTED live packet hops. The UI does NOT choose the source
 
 ```js
 nodeHops(n)           { return n?.hops_display ?? null; }   // backend-decided
-nodeHopsIsVerified(n) { return n?.hops_verified != null; }  // for badge styling
+nodeHopsIsVerified(n) { return n?.hops_verified != null; }  // dot shown?
+nodeHopsFresh(n)      { return !!n?.hops_fresh; }           // green (fresh) vs amber (stale)
 ```
+
+`nodeHopsFresh(n)` reflects the backend `hops_fresh` (traceroute within the
+auto-tracer staleness window) — the badge dot is green when fresh, amber when
+stale. The age/threshold decision is the backend's; the UI only reads the flag.
 
 `nodeHopsIsVerified(n)` reports whether that value came from a traceroute
 (`n.hops_verified`), used only to style the badge (verified = green ring/border).

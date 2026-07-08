@@ -788,6 +788,12 @@ footer {
   box-shadow: 0 0 0 1.5px hsl(var(--b1));
 }
 
+/* Stale verification (traceroute older than the auto-tracer staleness window,
+   backend hops_fresh:false) — amber instead of green. */
+.hop-dot.stale {
+  background: #f59e0b;
+}
+
 /* Radar / telemetry stats grid */
 .radar-stat-grid {
   display: grid;
