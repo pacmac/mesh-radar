@@ -86,6 +86,7 @@ function dashboard() {
     rotatorStatus:   {},
     rotatorConnected: false,
     rotatorTargets:  [],
+    rotatorSchema:   null,   // v5 device config schema (pushed over WS)
     rotatorManualAz:  null,
     rotatorMode:      0,
     pwmRunPctInput:   null,
@@ -306,6 +307,14 @@ function dashboard() {
       this.$watch('rotatorStatus.variant', () => {
         // Device switched — rebuild the firmware config form against the new
         // variant's schema (v4 PWM ↔ v5 stepper) if the rotator cfg tab is open.
+        if (this.tab === 'cfg' && this.cfgTab === 'rotator') {
+          const el = document.getElementById('rotator_cfg_form');
+          if (el) delete el.dataset.dirty;
+          this.loadRotatorCfg();
+        }
+      });
+      this.$watch('rotatorSchema', () => {
+        // v5 device schema (re)arrived — rebuild the config form from it.
         if (this.tab === 'cfg' && this.cfgTab === 'rotator') {
           const el = document.getElementById('rotator_cfg_form');
           if (el) delete el.dataset.dirty;

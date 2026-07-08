@@ -14,6 +14,8 @@ export const rotatorMixin = {
     if (data.targets && JSON.stringify(data.targets) !== JSON.stringify(this.rotatorTargets)) {
       this.rotatorTargets = data.targets;
     }
+    // v5 device config schema (present on connect-replay + schema event; null on v4)
+    if ('schema' in data) this.rotatorSchema = data.schema;
     // A device switch (possibly from another client) invalidates the previous
     // firmware's telemetry — drop stale fields so variant-gated rows hide.
     // (variant/active_target arrive via this frame + the fwData spread below.)
@@ -121,6 +123,20 @@ export const rotatorMixin = {
     fetchJSON('/rotator/scan/abort', 'POST').catch(() => {});
   },
 
+  // Adapt the device schema (flat {id,label,group,type,min,max,value}) into
+  // buildForm object-groups keyed by `group` + nested data — the SAME builder
+  // the radio config uses (no second form builder).
+  _deviceSchemaGroups(schema) {
+    const groups = {}, data = {};
+    for (const c of schema) {
+      const g = c.group || 'device';
+      (groups[g] ??= []).push({ name: c.id, label: c.label, type: c.type === 'bool' ? 'bool' : 'int', min: c.min, max: c.max });
+      (data[g] ??= {})[c.id] = c.type === 'bool' ? !!c.value : c.value;
+    }
+    const fields = Object.entries(groups).map(([name, f]) => ({ name, type: 'object', fields: f }));
+    return { fields, data };
+  },
+
   async loadRotatorCfg() {
     try {
       const needsSchema = !this.rotatorCfgSchema;
@@ -132,17 +148,31 @@ export const rotatorMixin = {
       if (data?.scan?.step_deg  != null) this.scanStep  = Number(data.scan.step_deg);
       if (data?.scan?.dwell_sec != null) this.scanDwell = Number(data.scan.dwell_sec);
       if (data?.actv?.dwell_sec != null) this.actvDwell = Number(data.actv.dwell_sec);
-      // Different hardware per firmware — render the ACTIVE variant's fields
-      // (v4 PWM vs v5 stepper). Falls back to the legacy top-level fields (v4).
+
       const variant = this.rotatorStatus?.variant || 'v4';
-      const fields = schema.variants?.[variant]?.fields ?? schema.fields;
+      const useDevice = variant === 'v5' && Array.isArray(this.rotatorSchema) && this.rotatorSchema.length > 0;
+      let fields, formData;
+      if (useDevice) {
+        // v5: build from the DEVICE's own grouped schema; append the node-dash
+        // scan/actv groups (which the device doesn't own) from the hardcoded schema.
+        const dev = this._deviceSchemaGroups(this.rotatorSchema);
+        const extra = (schema.variants?.v5?.fields ?? schema.fields ?? []).filter(f => f.name === 'scan' || f.name === 'actv');
+        fields = [...dev.fields, ...extra];
+        formData = { ...dev.data, scan: data.scan, actv: data.actv };
+      } else {
+        // v4 (or before schema arrives): hardcoded per-variant fields.
+        fields = schema.variants?.[variant]?.fields ?? schema.fields;
+        formData = data;
+      }
+      this._rotatorCfgFields = fields;
       await nextFrame();
       const el = document.getElementById('rotator_cfg_form');
       if (el && !el.dataset.dirty) {
         el.innerHTML = '';
         el.dataset.formRoot = '1';
         el.dataset.variant = variant;
-        el.appendChild(buildForm(fields, data, []));
+        el.dataset.device = useDevice ? '1' : '';
+        el.appendChild(buildForm(fields, formData, []));
       }
     } catch (e) {
       console.warn('Failed to load rotator cfg', e);
@@ -155,15 +185,44 @@ export const rotatorMixin = {
     try {
       const el = document.getElementById('rotator_cfg_form');
       const variant = this.rotatorStatus?.variant || 'v4';
-      const fields = this.rotatorCfgSchema.variants?.[variant]?.fields ?? this.rotatorCfgSchema.fields;
+      const fields = this._rotatorCfgFields
+        ?? (this.rotatorCfgSchema.variants?.[variant]?.fields ?? this.rotatorCfgSchema.fields);
       const payload = collectForm(el, fields);
-      await fetchJSON('/rotator/firmware_config', 'POST', payload);
-      el.removeAttribute('data-dirty');
-      if (payload?.scan?.step_deg  != null) this.scanStep  = Number(payload.scan.step_deg);
-      if (payload?.scan?.dwell_sec != null) this.scanDwell = Number(payload.scan.dwell_sec);
-      if (payload?.actv?.dwell_sec != null) this.actvDwell = Number(payload.actv.dwell_sec);
-      this.rotatorCfgSaved = true;
-      setTimeout(() => { this.rotatorCfgSaved = false; }, 2000);
+
+      if (el.dataset.device === '1') {
+        // v5 device settings — set each CHANGED field via /rotator/config; the
+        // device validates and returns { ok, msg, value }. Surface any ERRs.
+        const errs = [];
+        for (const c of (this.rotatorSchema ?? [])) {
+          const g = c.group || 'device';
+          const nv = payload[g]?.[c.id];
+          if (nv == null) continue;
+          const same = c.type === 'bool' ? ((nv ? 1 : 0) === c.value) : (Number(nv) === Number(c.value));
+          if (same) continue;
+          const value = c.type === 'bool' ? (nv ? 1 : 0) : Number(nv);
+          const r = await fetchJSON('/rotator/config', 'POST', { id: c.id, value });
+          if (!r?.ok) errs.push(`${c.label}: ${r?.msg ?? 'failed'}`);   // don't mutate reactive rotatorSchema
+        }
+        // scan/actv are node-dash config, not device settings.
+        if (payload.scan || payload.actv) {
+          await fetchJSON('/rotator/firmware_config', 'POST', { scan: payload.scan, actv: payload.actv });
+        }
+        el.removeAttribute('data-dirty');
+        if (payload?.scan?.step_deg  != null) this.scanStep  = Number(payload.scan.step_deg);
+        if (payload?.scan?.dwell_sec != null) this.scanDwell = Number(payload.scan.dwell_sec);
+        if (payload?.actv?.dwell_sec != null) this.actvDwell = Number(payload.actv.dwell_sec);
+        if (errs.length) { this.rotatorCfgError = errs.join('; '); }
+        else { this.rotatorCfgSaved = true; setTimeout(() => { this.rotatorCfgSaved = false; }, 2000); }
+      } else {
+        // v4 hardcoded path — unchanged.
+        await fetchJSON('/rotator/firmware_config', 'POST', payload);
+        el.removeAttribute('data-dirty');
+        if (payload?.scan?.step_deg  != null) this.scanStep  = Number(payload.scan.step_deg);
+        if (payload?.scan?.dwell_sec != null) this.scanDwell = Number(payload.scan.dwell_sec);
+        if (payload?.actv?.dwell_sec != null) this.actvDwell = Number(payload.actv.dwell_sec);
+        this.rotatorCfgSaved = true;
+        setTimeout(() => { this.rotatorCfgSaved = false; }, 2000);
+      }
     } catch (e) {
       this.rotatorCfgError = String(e);
     }

@@ -49,6 +49,27 @@ active variant (`rotatorStatus.variant`):
   Set maps per-variant server-side (`setOffset`/`caloffset`). Arg-taking v5
   north-set (`caltrue <bearing>`) is a later task (needs backend arg passing).
 
+## v5 config built from the DEVICE schema (task rotator-config-device-schema-ui)
+
+For v5 the Motor & Scan form (`#rotator_cfg_form`) is built from the device's
+own config schema (pushed over WS as `rotatorSchema`), not the hardcoded
+`rotator-config-schema.js`. The DRY win: it reuses the **same** `buildForm`/
+`collectForm` as the radio config — no second form builder or validator.
+
+- `_deviceSchemaGroups(schema)` (app-rotator.js) buckets the flat device fields
+  by their `group` (`display`/`motor`/`tracking`) into `buildForm`
+  `type:'object'` group boxes; `num`→`int`, `bool`→toggle; `min`/`max` become
+  input bounds (`buildForm` now honors `field.max`, added alongside `field.min`).
+- The node-owned `scan`/`actv` dwell groups (not device settings) are appended
+  from the hardcoded schema; the form is `[device groups…, scan, actv]`.
+- **Save** (`el.dataset.device==='1'`): each *changed* device field is set via
+  `POST /rotator/config {id,value}` — the **device validates** and returns
+  `{ok,msg,value}`; any `ERR` is surfaced in `rotatorCfgError`. `scan`/`actv`
+  still go to `/rotator/firmware_config`.
+- v4 (or before the schema arrives) keeps the hardcoded per-variant path
+  unchanged. A `$watch('rotatorSchema')` rebuilds the form when the schema
+  (re)arrives while the tab is open.
+
 ## Scope
 
 **STYLE_GUIDE.md compliance refactor (task `config-refactor`).** Zero logic

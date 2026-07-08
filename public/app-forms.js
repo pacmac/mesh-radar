@@ -92,9 +92,11 @@ export function buildField(field, value, path, opts = {}) {
     } else if (field.type === 'int') {
       input.type = 'number'; input.step = '1'; input.value = value ?? 0;
       if (field.min !== undefined) input.min = field.min;
+      if (field.max !== undefined) input.max = field.max;
     } else if (field.type === 'float') {
       input.type = 'number'; input.step = 'any'; input.value = value ?? 0;
       if (field.min !== undefined) input.min = field.min;
+      if (field.max !== undefined) input.max = field.max;
     } else {
       input.type = (sensitive && field.type !== 'bytes') ? 'password' : 'text';
       input.value = value ?? '';
