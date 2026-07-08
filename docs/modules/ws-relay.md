@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: dd2b8fedc6c556eedae490f93b381ed72c7d698b3766b4611f9c769ed8a6789d
+source_hash: 249efadff8ce7c833324948622bcb14052a48b5f244ef1c8897d56710e7ee150
 updated: 2026-07-08
 ---
 
@@ -449,8 +449,17 @@ fields to every `node_list` row, alongside `via`:
   packet hops (`node-list.js` guarded `hopsAway`, see that module). `null`
   when neither source is known.
 
+- **`hops_fresh`** — `boolean`. True when the node is verified
+  (`hops_verified != null`) **and** its traceroute is still within the passive
+  auto-tracer's staleness window: `Date.now() - last_traceroute.ts <=
+  (pasv_config.stale_sec ?? 1800) * 1000` (`ts` in ms). So `hops_fresh:false`
+  on a verified node means "old enough that the auto-tracer would re-trace it".
+  The UI renders the verified marker **green when fresh, amber when stale**;
+  the age/threshold decision is made here, not in the browser.
+
 The browser renders `hops_display` and styles it as verified when
-`hops_verified != null` — no source selection or fallback logic in the UI.
+`hops_verified != null` (green dot = `hops_fresh`, amber dot = stale) — no
+source selection, age comparison, or fallback logic in the UI.
 
 This reverses the earlier `tab-radar` invariant that forbade traceroute-derived
 hops: with reliable traceroute data we prefer it. The backend `max_hops`

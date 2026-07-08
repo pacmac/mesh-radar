@@ -233,7 +233,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         const route = n.last_traceroute?.route;
         const hops_verified = Array.isArray(route) ? route.length : null;
         const hops_display = hops_verified ?? (n.hops_away ?? n.hops ?? null);
-        return { ...n, display_name: resolveNodeLabel(n.num), via, hops_verified, hops_display };
+        // Freshness of the verification: true while the traceroute is within the
+        // passive auto-tracer's staleness window (pasv_config.stale_sec, ms ts) —
+        // i.e. NOT fresh == old enough that we'd re-trace it. UI shows a green
+        // (fresh) vs amber (stale) dot; the threshold decision stays here.
+        const staleMs = (getConfig('pasv_config', {}).stale_sec ?? 1800) * 1000;
+        const traceTs = n.last_traceroute?.ts;
+        const hops_fresh = hops_verified != null && traceTs != null && (Date.now() - traceTs) <= staleMs;
+        return { ...n, display_name: resolveNodeLabel(n.num), via, hops_verified, hops_display, hops_fresh };
       }) };
     }
     if (ev.type === 'device_list') {
