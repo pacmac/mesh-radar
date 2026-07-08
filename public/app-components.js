@@ -38,14 +38,15 @@ export const componentsMixin = {
   },
 
   // ── Hops circle ─────────────────────────────────────────────────────────
-  hopsBadge(hops) {
+  hopsBadge(hops, verified = false) {
     if (hops == null) return '';
     const cls = hops === 0 ? 'text-success'
               : hops === 1 ? 'text-info'
               : hops === 2 ? 'text-warning'
               :              'text-error';
-    const tip = hops === 0 ? 'Direct' : `${hops} ${hops === 1 ? 'hop' : 'hops'}`;
-    return `<span class="hop-circle ${cls}" title="${tip}">${hops}</span>`;
+    const tip = (hops === 0 ? 'Direct' : `${hops} ${hops === 1 ? 'hop' : 'hops'}`)
+              + (verified ? ' · traceroute-verified' : ' · reported');
+    return `<span class="hop-circle ${cls}${verified ? ' hop-verified' : ''}" title="${tip}">${hops}</span>`;
   },
 
   // ── Signal bars (consolidated from app-radar.js) ─────────────────────────

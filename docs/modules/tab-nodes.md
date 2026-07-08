@@ -1,8 +1,8 @@
 ---
 module: tab-nodes
 source: public/partials/tab-nodes.html
-source_hash: 23001054ee0244f30e0a3dd82f138aed00931b02696b6ec984ecbfcd1f756400
-updated: 2026-07-02
+source_hash: ae56d93f99f5be8c805077d4d7e4126a0580cf639c4e7894e8666defa55af920
+updated: 2026-07-08
 ---
 
 # Module: tab-nodes
@@ -61,3 +61,7 @@ Playwright, both themes, 1440×900 (guide §8):
   N sample rendered cards against backend values — name, node count badge,
   distance badge vs position, hops badge, device source badges
 - 0 console errors
+- Hops badge: `hopsBadge(nodeHops(n), nodeHopsIsVerified(n))` — the second arg
+  adds the `hop-verified` class (green outer ring) when the backend marked the
+  value traceroute-verified (`n.hops_verified != null`). Value + provenance are
+  backend-decided (`hops_display`/`hops_verified`); the UI only renders.

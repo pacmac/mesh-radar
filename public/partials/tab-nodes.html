@@ -146,7 +146,7 @@
                                       :style="deviceConfigs[devId]?.color ? `color:${themeColor(deviceConfigs[devId].color)}` : ''"
                                       x-text="deviceConfigs[devId]?.label || deviceLabel(devId)"></span>
                               </template>
-                              <span class="contents" x-html="hopsBadge(nodeHops(n))"></span>
+                              <span class="contents" x-html="hopsBadge(nodeHops(n), nodeHopsIsVerified(n))"></span>
                             </div>
                           </div>
                         </div>

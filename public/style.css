@@ -770,6 +770,14 @@ footer {
   opacity: 0.85;
 }
 
+/* Traceroute-VERIFIED hop count — green outer ring around the (colour-coded)
+   circle. Absence of the ring = reported (live packet hops). The circle's own
+   colour still encodes the hop count; the ring encodes provenance. */
+.hop-circle.hop-verified {
+  opacity: 1;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.55);
+}
+
 /* Radar / telemetry stats grid */
 .radar-stat-grid {
   display: grid;

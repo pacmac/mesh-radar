@@ -199,12 +199,15 @@ export const nodesMixin = {
   },
 
   nodeHops(n) {
-    // Live packet hops — the SAME source the backend max_hops filter uses
-    // (node-filter.js). The last traceroute's route length is a routed-path
-    // property, often longer and stale; it belongs in traceroute contexts
-    // (radar overlay, perf Via column), never on the node's hop badge —
-    // preferring it here made cards show 5-6 hops inside a ≤2 filter.
-    return n?.hops_away ?? n?.hops ?? null;
+    // Backend-decided display distance (ws-relay.enrichEvent): traceroute-
+    // verified relay count preferred over reported live hops. The UI does NOT
+    // choose the source — presentation layer only (BROWSER_CONTRACT).
+    return n?.hops_display ?? null;
+  },
+
+  nodeHopsIsVerified(n) {
+    // Whether nodeHops came from a traceroute — for badge styling only.
+    return n?.hops_verified != null;
   },
 
   signalQuality(rssi, snr) {

@@ -1,8 +1,8 @@
 ---
 module: tab-radar
 source: public/partials/tab-radar.html
-source_hash: 584ec0b6d92d99934ab8665f097f09513995711fbff45f248040725046ca1854
-updated: 2026-07-07
+source_hash: 923de1d807554b54a80a260789a0cf234774673b068bbee1eeae99fb74dc47b5
+updated: 2026-07-08
 ---
 
 # Module: tab-radar
@@ -39,8 +39,16 @@ zero filtering or business decisions.
   Amber yagi-target highlight values are unchanged.
 - The radar page is STYLE_GUIDE-exempt visually (phosphor instrument idiom),
   but legibility is non-negotiable.
-- Hops badge value comes from `nodeHops(n)` (live packet hops), never from
-  traceroute route length.
+- Hops badge value comes from `nodeHops(n)` = `n.hops_display`, the
+  backend-decided distance (traceroute-verified relay count preferred over
+  reported live hops; `ws-relay.enrichEvent`). The badge is styled as
+  **verified** (green border) when `nodeHopsIsVerified(n)` is true
+  (`n.hops_verified != null`), else plain (reported). The UI picks neither the
+  value nor the provenance — it only renders them. This reverses the earlier
+  "never from traceroute route length" rule (task
+  `radar-hops-verified-vs-reported`): with reliable traceroute data we prefer
+  it. The verified border uses `1px solid rgba(0,255,80,0.55)`; the reported
+  state uses a transparent border of equal width so the row does not shift.
 
 ## Test notes
 

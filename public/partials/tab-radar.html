@@ -269,8 +269,9 @@
                   <span style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.80);min-width:2.4rem;flex-shrink:0"
                         :title="(nodeHops(n)??1)===0 ? 'Direct — no relay' : n.via ? 'First hop (from last traceroute): ' + (n.via.short_name || n.via.node_id) : 'Relayed — no traceroute yet'"
                         x-text="(nodeHops(n)??1)===0 ? '—' : (n.via?.short_name || (n.via?.node_id ? n.via.node_id.slice(-4) : '?'))"></span>
-                  <span style="font-family:monospace;font-size:11px;min-width:1.4rem;flex-shrink:0"
-                        :style="{ color: (nodeHops(n)??1)===0 ? 'rgba(255,160,0,0.85)' : 'rgba(0,255,80,0.70)' }"
+                  <span style="font-family:monospace;font-size:11px;min-width:1.4rem;flex-shrink:0;border-radius:3px;padding:0 2px"
+                        :style="{ color: (nodeHops(n)??1)===0 ? 'rgba(255,160,0,0.85)' : 'rgba(0,255,80,0.70)', border: nodeHopsIsVerified(n) ? '1px solid rgba(0,255,80,0.55)' : '1px solid transparent' }"
+                        :title="nodeHopsIsVerified(n) ? 'Verified via traceroute: '+nodeHops(n)+' hop'+(nodeHops(n)===1?'':'s') : 'Reported (live packet hops)'"
                         x-text="(nodeHops(n)??0)+'h'"></span>
                   <template x-if="n.num === yagiPointTarget && yagiSignal.num === n.num">
                     <span style="flex:1;font-family:monospace;font-size:10px;font-weight:600;white-space:nowrap"

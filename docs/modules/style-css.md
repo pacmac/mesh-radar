@@ -1,8 +1,8 @@
 ---
 module: style-css
 source: public/style.css
-source_hash: b7d9181027567a30a30de4e336c2d93dc7e38d22e92f481f48292b6bbe0382bc
-updated: 2026-07-02
+source_hash: 29e3a1060ce30c2484916d597d40aea41fc17db3f20e62d6f2fb388b80f91d21
+updated: 2026-07-08
 ---
 
 # Module: style-css
@@ -32,8 +32,10 @@ must comply with the guide and update this spec's hash.
    `.instrument-value` (+ `--amber`, `--red`), `.instrument-faint`,
    `.instrument-header`, `.instrument-screen`, `.instrument-btn`
    (+ `--active`, `--amber`, `--red`), `.instrument-divider` (STYLE_GUIDE §6)
-8. **Utility classes** — `.font-oxanium`, `.hop-circle`, `.radar-stat-grid`,
-   `.sig-bars`, `.perf-*` chart classes
+8. **Utility classes** — `.font-oxanium`, `.hop-circle`
+   (+ `.hop-verified` — green outer ring marking a traceroute-verified hop
+   count vs a reported one; task `radar-hops-verified-vs-reported`),
+   `.radar-stat-grid`, `.sig-bars`, `.perf-*` chart classes
 
 ## Known debt — marked in-file
 
