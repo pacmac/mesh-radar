@@ -46,7 +46,16 @@ export const componentsMixin = {
               :              'text-error';
     const tip = (hops === 0 ? 'Direct' : `${hops} ${hops === 1 ? 'hop' : 'hops'}`)
               + (verified ? ' · traceroute-verified' : ' · reported');
-    return `<span class="hop-circle ${cls}${verified ? ' hop-verified' : ''}" title="${tip}">${hops}</span>`;
+    // Provenance by SHAPE: verified (traceroute) = 5-point star, reported = circle.
+    // Both take the hop-count colour from the text-* class (currentColor).
+    if (verified) {
+      return `<span class="hop-star ${cls}" title="${tip}">`
+        + `<svg viewBox="0 0 24 24" aria-hidden="true">`
+        + `<polygon points="12,1 14.7,8.3 22.5,8.6 16.4,13.4 18.5,20.9 12,16.6 5.5,20.9 7.6,13.4 1.5,8.6 9.3,8.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>`
+        + `<text x="12" y="13" text-anchor="middle" dominant-baseline="central" fill="currentColor" font-size="10" font-weight="700" font-family="'JetBrains Mono',monospace">${hops}</text>`
+        + `</svg></span>`;
+    }
+    return `<span class="hop-circle ${cls}" title="${tip}">${hops}</span>`;
   },
 
   // ── Signal bars (consolidated from app-radar.js) ─────────────────────────
