@@ -1,6 +1,6 @@
 // Performance mixin: link budget calculator, traceroute history, RF analytics.
 // Chart instances live outside Alpine's reactive scope to prevent proxy recursion.
-const _charts = {};
+let _charts = {}; // reassigned by destroyPerfCharts() on tab-leave (lazy tabs)
 
 const REGION_FREQ_MHZ = {
   EU_433: 433.175, EU_868: 868.0, US: 915.0, AU_915: 915.0, CN: 470.0,

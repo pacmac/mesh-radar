@@ -233,15 +233,19 @@
     <div class="flex-1 min-h-0 overflow-hidden">
       <div :class="tab==='radar' ? 'h-full flex flex-col' : 'h-full flex flex-col p-3 max-w-[1400px] w-full mx-auto'">
 
-        <!-- include: tab-overview.html -->
-        <!-- include: tab-radar.html -->
+        <!-- Tabs are lazy-mounted (x-if): only the active tab's DOM + Alpine
+             effects exist, so hidden tabs' x-for lists don't reconcile on every
+             WS update (task lazy-tabs-xif). tab-shared is a node-info panel, not
+             a tab — it stays always-mounted. -->
+        <template x-if="tab==='overview'"><!-- include: tab-overview.html --></template>
+        <template x-if="tab==='radar'"><!-- include: tab-radar.html --></template>
         <!-- include: tab-shared.html -->
-        <!-- include: tab-nodes.html -->
-        <!-- include: tab-cfg.html -->
-        <!-- include: tab-perf.html -->
-        <!-- include: tab-range.html -->
-        <!-- include: tab-messages.html -->
-        <!-- include: tab-devices.html -->
+        <template x-if="tab==='nodes'"><!-- include: tab-nodes.html --></template>
+        <template x-if="tab==='cfg'"><!-- include: tab-cfg.html --></template>
+        <template x-if="tab==='perf'"><!-- include: tab-perf.html --></template>
+        <template x-if="tab==='range'"><!-- include: tab-range.html --></template>
+        <template x-if="tab==='messages'"><!-- include: tab-messages.html --></template>
+        <template x-if="tab==='devices'"><!-- include: tab-devices.html --></template>
 
       </div>
     </div>

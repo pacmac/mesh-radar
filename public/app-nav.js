@@ -18,6 +18,9 @@ export function initTab() {
 
 export const navMixin = {
   setNav(t, c) {
+    // Tabs are lazy-mounted (x-if): destroy the perf Chart.js instances before
+    // leaving perf so its canvases unmount cleanly and re-init fresh on return.
+    if (this.tab === 'perf' && t !== 'perf') this.destroyPerfCharts();
     this.tab = t;
     persistSet('activeTab', t);
     if (c) { this.cfgTab = c; persistSet('cfgTab', c); }

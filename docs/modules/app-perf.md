@@ -1,7 +1,7 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: d2096faee69c967a2a5301a0c27401bbc399f357dd95cc957899519986f053bb
+source_hash: 1edca8de6f123fcd5c25bcd66486ba61b2385f4485e5130717e3a459d41542f6
 updated: 2026-07-03
 ---
 
@@ -133,3 +133,11 @@ WS-carried via device payload enrichment (next C step).
 `loadPerfLoraCfg` (GET /:dev/config/lora) is DELETED; `adoptPerfLoraCfg()`
 copies the selected device's `lora` off `availableDevices` (carried by
 device_list). With C1+C2 the perf page performs ZERO GETs.
+
+## Lazy tabs — chart teardown (task `lazy-tabs-xif`, 2026-07-09)
+
+Tabs are lazy-mounted (`x-if` in index.html), so the perf tab's canvases are
+destroyed on leave and re-created on return. `_charts` is `let` (not `const`)
+so `destroyPerfCharts()` can reset it to `{}`; `app-nav.setNav` calls
+`destroyPerfCharts()` when leaving perf, and `initPerfCharts()` (already wired
+on enter) rebuilds them against the fresh canvases.
