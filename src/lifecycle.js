@@ -1,12 +1,12 @@
 import { scanner } from './scanner.js';
-import { dashMode } from './dash-mode.js';
+import { dashMode, transmitterForMode } from './dash-mode.js';
 import { rotator } from './rotator.js';
 import { activeTracker } from './active-tracker.js';
 import { nodeList } from './node-list.js';
 import { passiveTracer } from './passive-tracer.js';
 import { traceroute } from './traceroute.js';
 import { FF } from './feature-flags.js';
-import { getRotatorAddress, resolvePrimaryNodeId, onHomePosChange } from './device-config.js';
+import { getRotatorAddress, onHomePosChange } from './device-config.js';
 import { bridge } from './bridge.js';
 
 const TRACE_COOLDOWN_MS = 5 * 60 * 1000;
@@ -25,7 +25,7 @@ export function initLifecycle() {
     if (contact.from && rotatorId)
       nodeList.confirmScanContact(contact.from, rotatorId, contact.az, contact.rssi, contact.snr);
     if (FF.SSOT_TRACEROUTE && contact.from) {
-      const sender = resolvePrimaryNodeId();
+      const sender = transmitterForMode('scan');
       if (sender)
         traceroute.dispatch({ to: contact.from, device: sender, cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: contact.from })
           .catch(() => {});
@@ -58,7 +58,7 @@ export function initLifecycle() {
 
   rotator.on('point_target', (data) => {
     const num    = data.point_target;
-    const sender = resolvePrimaryNodeId();
+    const sender = transmitterForMode('actv');
     if (!num || !sender) return;
 
     // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────

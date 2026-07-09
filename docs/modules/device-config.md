@@ -1,8 +1,8 @@
 ---
 module: device-config
 source: src/device-config.js
-source_hash: ef798d60ff1e3c0a8aff7506d3a0ff006d7adaa005d7e68d10e42eda93f1d09d
-updated: 2026-07-03
+source_hash: 3eff1f29015bbd004f413c08a7f79f33bd4f971f4efe5db97dcb044bb939f4e5
+updated: 2026-07-09
 ---
 
 # Module: device-config
@@ -38,6 +38,7 @@ export function registerMacToNodeIdResolver(fn)     // fn(MAC) → !hexid|null �
 
 // Primary device helpers
 export function resolvePrimaryNodeId()              // → !hexid|MAC|null — live node ID of primary device
+export function macToNodeId(mac)                    // → !hexid|MAC|null — resolve any MAC to its live node ID (falls through to MAC)
 
 // Config read helpers
 export function getDeviceCfg(address)               // → {...DEFAULT, ...stored} — by MAC (normalised to uppercase)
@@ -118,8 +119,8 @@ Identity is never inferred from MAC-suffix arithmetic.
 | Caller | Imports |
 |---|---|
 | `index.js` | all exports; mounts router; registers both resolvers; calls `onHomePosChange` |
-| `traceroute-api.js` | `resolvePrimaryNodeId` |
-| `lifecycle.js` | `resolvePrimaryNodeId` |
+| `dash-mode.js` | `getRotatorAddress`, `getPrimaryMac`, `macToNodeId` (per-mode transmitter resolution) |
+| `lifecycle.js` | `getRotatorAddress`, `onHomePosChange` |
 | `active-tracker.js` | `getRotatorAddress` |
 | `scanner.js` | `getRotatorAddress` |
 | `passive-tracer.js` | `getRotatorAddress` |

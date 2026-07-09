@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { bridge } from './bridge.js';
 import { traceroute } from './traceroute.js';
 import { stmts } from './db.js';
-import { resolvePrimaryNodeId } from './device-config.js';
+import { dashMode, transmitterForMode } from './dash-mode.js';
 import { FF } from './feature-flags.js';
 
 const router = Router();
@@ -16,7 +16,7 @@ router.post('/:nodeId/traceroute', async (req, res) => {
   const via = typeof req.body?.via === 'string' &&
     (/^![0-9a-f]{8}$/i.test(req.body.via) || /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(req.body.via))
     ? req.body.via : null;
-  const sender = via ?? resolvePrimaryNodeId();
+  const sender = via ?? transmitterForMode(dashMode.value);
   if (!sender) return res.status(503).json({ error: 'no primary device configured' });
   try {
     // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────

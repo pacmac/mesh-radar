@@ -16,7 +16,13 @@ let _macToNodeId = null;
 export function registerMacToNodeIdResolver(fn) { _macToNodeId = fn; }
 
 export function resolvePrimaryNodeId() {
-  const mac = getPrimaryMac();
+  return macToNodeId(getPrimaryMac());
+}
+
+// Resolve a BLE MAC to its live node_id, falling through to the MAC itself when
+// the live pair is unknown. Shared by resolvePrimaryNodeId and dash-mode's
+// per-mode transmitter resolution.
+export function macToNodeId(mac) {
   if (!mac) return null;
   return _macToNodeId?.(mac) || mac;
 }

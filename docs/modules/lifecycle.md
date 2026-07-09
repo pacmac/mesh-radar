@@ -1,8 +1,8 @@
 ---
 module: lifecycle
 source: src/lifecycle.js
-source_hash: 859563b7c14458d9e1c42adeaa57b926f511ce947cc56d8d0eea7dd1556166fc
-updated: 2026-06-30
+source_hash: f73b1c0b23e585ce6168367de63fc6f4ac90ba285b837664cb0e76ce1c245a03
+updated: 2026-07-09
 ---
 
 # Module: lifecycle
@@ -17,25 +17,25 @@ modules knowing about each other.
 ## Responsibilities
 
 - Register `scanner.on('start')` — stop activeTracker, set dashMode=2 (SCAN), call `nodeList.setScanActive(true)`
-- Register `scanner.on('contact')` — call `nodeList.confirmScanContact`; if `FF.SSOT_TRACEROUTE`, dispatch auto-traceroute
+- Register `scanner.on('contact')` — call `nodeList.confirmScanContact`; if `FF.SSOT_TRACEROUTE`, dispatch auto-traceroute via `transmitterForMode('scan')` (the sweeping YAGI)
 - Register `scanner.on('end')` — restore pre-scan dashMode, call `nodeList.setScanActive(false)`
 - Register `dashMode.on('change')` — start/stop activeTracker on mode transitions
 - Resume ACTV mode on startup if `dashMode.value === 1` at module load
-- Register `rotator.on('point_target')` — dispatch auto-traceroute on new ACTV target (V1 inline or V2 via traceroute.js)
+- Register `rotator.on('point_target')` — dispatch auto-traceroute on new ACTV target via `transmitterForMode('actv')` (the aimed YAGI); V1 inline or V2 via traceroute.js
 - Call `passiveTracer.init()` after bridge event handler is registered (ordering constraint)
 - Export `initLifecycle(broadcastAll)` to be called once at startup
 
 ## Dependencies
 
 - `scanner.js` — `scanner`
-- `dash-mode.js` — `dashMode`
 - `rotator.js` — `rotator`
 - `active-tracker.js` — `activeTracker`
 - `node-list.js` — `nodeList`
 - `passive-tracer.js` — `passiveTracer`
 - `traceroute.js` — `traceroute`
 - `feature-flags.js` — `FF`
-- `device-config.js` — `getRotatorAddress`, `resolvePrimaryNodeId`
+- `dash-mode.js` — `dashMode`, `transmitterForMode` (per-mode dispatch radio)
+- `device-config.js` — `getRotatorAddress`, `onHomePosChange`
 
 ## Public interface
 

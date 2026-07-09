@@ -1,8 +1,8 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: 66cd898bcbdf000c998597afef3d7772de747ee91be2fcf1880b706dc9f08c0d
-updated: 2026-07-03
+source_hash: 0a1b12061afa3ce5d2685b57546b62019ccc35e6ebe0e753754ee90b9691842d
+updated: 2026-07-09
 ---
 
 # Module: passive-tracer
@@ -29,7 +29,7 @@ PASV mode (value 0).
 
 - `bridge.js` — `bridge.on('event', …)` for packet ingestion
 - `node-list.js` — `nodeList._cache` (staleness check) and `ownDeviceNums` (via node-filter)
-- `dash-mode.js` — `dashMode.value` gate
+- `dash-mode.js` — `dashMode.value` gate; `transmitterForMode('pasv', {rxDevice})` for the dispatch radio
 - `db.js` — `getConfig` for `pasv_config`
 - `node-filter.js` — `ownDeviceNums`
 - `device-config.js` — `getRotatorAddress`
@@ -106,12 +106,14 @@ Returns `true` otherwise.
 
 ```
 _trace(from_num, device)
-// device arrives as ev.addr (MAC); the V2 dispatch normalizes it to the
-// node_id via the live registry so tx_device attribution stays in one
-// vocabulary (identity-phase-a; Phase B migrates the column to MAC)
+// device arrives as ev.addr (MAC = the radio that HEARD the node). PASV's
+// transmitter role is 'rx', so transmitterForMode('pasv', {rxDevice: device})
+// resolves it to that radio's node_id — the mode-SSOT replacement for the old
+// inline getLiveNodeIdByMac(device) conversion. tx_device attribution is
+// unchanged (identity-phase-a; Phase B migrates the column to MAC).
   → this._busy = true
   → emit 'tracing'
-  → traceroute.dispatch({ to: from_num, device })
+  → traceroute.dispatch({ to: from_num, device: transmitterForMode('pasv', { rxDevice: device }) })
       .then(result)  → _attempted.set(from_num, now), emit 'traced' with result
       .catch(err)    → _failed.set(from_num, now), emit 'traced' with empty result
       .finally()     → this._busy = false, this._pendingFrom = null

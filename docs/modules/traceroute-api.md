@@ -1,8 +1,8 @@
 ---
 module: traceroute-api
 source: src/traceroute-api.js
-source_hash: 54d9a72b7b99c08215c8c5dd2e93e705937552951ee636f80dd57e94e48621df
-updated: 2026-07-03
+source_hash: 578564905663f8dae5682fbc0118d911aafe84eb03ee57acd8d9586997c0e881
+updated: 2026-07-09
 ---
 
 # Module: traceroute-api
@@ -10,15 +10,17 @@ updated: 2026-07-03
 ## Purpose
 
 Express Router for traceroute initiation and history. Extracted from `index.js`.
-Dispatches a traceroute from the primary device to a target node, and exposes
-the stored traceroute history from SQLite.
+Dispatches a traceroute to a target node from an explicit `via` radio, or — when
+none is given — from the current mode's transmitter (`transmitterForMode`), and
+exposes the stored traceroute history from SQLite.
 
 ## Responsibilities
 
 - Serve `POST /:nodeId/traceroute` — dispatch traceroute from primary device to target
 - Serve `GET /traceroute_history` — query stored traceroute results with JSON-parsed arrays
 - Resolve target nodeId hex string to integer `num`
-- Resolve primary device via `resolvePrimaryNodeId()`
+- Resolve the dispatch radio: `via ?? transmitterForMode(dashMode.value)` — an
+  explicit `via` wins, else the active mode's transmitter (ACTV→YAGI, PASV→primary)
 - Gate on `FF.SSOT_TRACEROUTE`: V1 calls `bridge.post` directly; V2 calls `traceroute.dispatch`
 
 ## Dependencies
@@ -26,7 +28,7 @@ the stored traceroute history from SQLite.
 - `traceroute.js` — `traceroute.dispatch` (V2 path)
 - `bridge.js` — `bridge.post` (V1 legacy path)
 - `db.js` — `stmts.queryTracerouteHistory`
-- `device-config.js` — `resolvePrimaryNodeId` (or equivalent export)
+- `dash-mode.js` — `dashMode`, `transmitterForMode` (mode's dispatch radio when no `via`)
 - `feature-flags.js` — `FF.SSOT_TRACEROUTE`
 
 ## Public interface
@@ -46,7 +48,7 @@ _N/A_
 ## Invariants
 
 - `POST /:nodeId/traceroute` parses `targetNum` as `parseInt(nodeId.replace('!',''), 16)`; returns 400 if result is falsy.
-- Returns 503 if no primary device is configured (`resolvePrimaryNodeId()` returns null).
+- Returns 503 if the dispatch radio is unresolvable (`via ?? transmitterForMode(dashMode.value)` returns null — e.g. no primary/rotator configured).
 - `GET /traceroute_history`: `limit` is capped at 1000; `to_num` filter is applied if query param present.
 - History arrays (`route`, `route_back`, `snr_towards`, `snr_back`, `relay_positions`) are stored as JSON strings and parsed before returning.
 
