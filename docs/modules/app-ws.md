@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: f8d85dfea520188fe1542c871b3aaf7ce466ed84fafc93ebc7751ba018be886a
+source_hash: 0713cc86148d34aaffd22ba2be6b3341e8a3bd7fbbda4fe97bb4429f0bed0844
 updated: 2026-07-04
 ---
 
@@ -99,3 +99,13 @@ set-primary persist.
   `geocodeNode` fetch helper (radar batch + node info panel both use it).
 - device_list ingest also stores `dev.auto_purge` under the device node_id
   (replaces `loadAutoPurge`).
+
+## History array caps — memory-leak fix (task `cap-tilt-history-leak`, 2026-07-09)
+
+Per-node history arrays are bounded to `MAX_HISTORY_ROWS` (2000) so a long-lived
+tab does not leak: `tilt_update` appends to `tiltHistory` live (unbounded + O(n)
+copy per update), and the `tilt_history` / `env_history` replays re-accumulate
+into `_tiltHistoryAll[node]` / `envHistory[nid]` on every WS reconnect. Each is
+now `.slice(-MAX_HISTORY_ROWS)`; charts only ever show a recent window. Other
+live arrays were already capped (events 80, messages 50, perfHistory 200,
+_trHistAll 500).

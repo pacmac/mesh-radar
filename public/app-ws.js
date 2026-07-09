@@ -5,6 +5,11 @@ import { FF } from './feature-flags.js';
 import { handleConfigOp } from './op-client.js';
 window.feedFilterOptions = FEED_FILTER_OPTIONS;
 
+// Cap per-node history arrays so a long-lived tab doesn't leak: live tilt
+// updates append forever, and tilt/env history replays re-accumulate on every
+// WS reconnect. Charts only ever show a recent window.
+const MAX_HISTORY_ROWS = 2000;
+
 export const wsMixin = {
   connectWS() {
     const ws = new WebSocket(location.origin.replace(/^http/, 'ws') + '/events');
@@ -286,7 +291,7 @@ export const wsMixin = {
         this.nodeSelf = { ...this.nodeSelf, tilt: ev.data };
         if (ev.data?.pitch != null && (ev.addr || ev.device) === this.activeNodeId) {
           const entry = { ts: Math.floor(Date.now() / 1000), pitch: ev.data.pitch, roll: ev.data.roll };
-          this.tiltHistory = [...this.tiltHistory, entry];
+          this.tiltHistory = [...this.tiltHistory, entry].slice(-MAX_HISTORY_ROWS);
           const z = this.tiltApplyZero(entry.pitch, entry.roll);
           const t = Math.sqrt(z.pitch ** 2 + z.roll ** 2);
           if (t > this.tiltPeak) this.tiltPeak = t;
@@ -376,6 +381,10 @@ export const wsMixin = {
         if (!this._tiltHistoryAll[r.node_id]) this._tiltHistoryAll[r.node_id] = [];
         this._tiltHistoryAll[r.node_id].push(r);
       }
+      for (const k in this._tiltHistoryAll) {
+        const a = this._tiltHistoryAll[k];
+        if (a.length > MAX_HISTORY_ROWS) this._tiltHistoryAll[k] = a.slice(-MAX_HISTORY_ROWS);
+      }
       if (this.activeNodeId) {
         this.tiltHistory = this._tiltHistoryAll[this.activeNodeId] ?? [];
         this._tiltRecomputePeak?.();
@@ -389,6 +398,9 @@ export const wsMixin = {
         const nid = '!' + (r.num >>> 0).toString(16).padStart(8, '0');
         if (!updated[nid]) updated[nid] = [];
         updated[nid].push(r);
+      }
+      for (const k in updated) {
+        if (updated[k].length > MAX_HISTORY_ROWS) updated[k] = updated[k].slice(-MAX_HISTORY_ROWS);
       }
       this.envHistory = updated;
       // Seed nodeSelf.environment_metrics from most recent own-device row if not yet set
