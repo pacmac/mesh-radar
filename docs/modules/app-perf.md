@@ -1,8 +1,8 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: 1edca8de6f123fcd5c25bcd66486ba61b2385f4485e5130717e3a459d41542f6
-updated: 2026-07-03
+source_hash: 354cb865fcabeebdbc9a2eeb98b636d20d225d01c05948102ae58d2431612a4c
+updated: 2026-07-09
 ---
 
 # Module: app-perf
@@ -53,8 +53,9 @@ must attribute to exactly one device.
 
 ### Page (tab-perf.html / app-perf.js)
 
-- Device selector pills (one per configured radio; default = primary;
-  persisted as `perfDevice`). **No aggregate view.**
+- Device selector pills (one per configured radio, the phantom `UNDEFINED`
+  device filtered out; **default = the current tracer**, persisted as
+  `perfDevice`). **No aggregate view.**
 - All theory constants (EIRP, sensitivity, SNR limit, link budget) read the
   SELECTED device's antenna + lora config — decoupled from the drawer's
   `activeNodeId`.
@@ -104,10 +105,15 @@ posts via the selected device. Playwright both themes; 0 console errors.
 
 ## Identity Phase B — perf scope key is the BLE MAC
 
-- `perfDev()` returns a MAC: persisted `perfDevice` validated against
-  `d.addr`; a persisted legacy `!hex` value is converted once via the
-  device list and re-persisted (shim). Fallback: the primary radio's addr,
-  else the first device's addr.
+- `perfDev()` returns a MAC. An **explicit** persisted `perfDevice` (validated
+  against `d.addr`) always wins — even an empty radio, so it can be targeted for
+  auto-traceroute; a legacy `!hex` value is converted once via the device list
+  and re-persisted (shim). With no explicit pick the default follows dispatch:
+  the **current tracer** (the radio with `mode_role.tx`, backend-provided) when
+  it has rows, else any radio that has traceroute rows, else the tracer even if
+  empty, else the primary, else the first. This is what makes the page follow
+  traceroute dispatch to the rotator instead of sitting on an empty primary view
+  (task `perf-default-tracer`, 2026-07-09).
 - `perfDevCfg()` reads the device's antenna config from
   `_deviceConfigsByMac` (the backend's canonical MAC-keyed store) — the
   node_id-keyed `deviceConfigs` re-key is Phase C demolition material and

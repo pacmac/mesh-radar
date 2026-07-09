@@ -8,7 +8,7 @@
             </div>
             <!-- Device scope: headroom is a property of one radio+coax+antenna chain -->
             <div class="join">
-              <template x-for="dev in availableDevices" :key="dev.addr">
+              <template x-for="dev in availableDevices.filter(d => d.addr && d.addr !== 'UNDEFINED')" :key="dev.addr">
                 <button class="join-item btn btn-sm font-mono"
                         :class="perfDev() === dev.addr ? 'btn-primary' : 'btn-outline btn-neutral'"
                         @click="perfSetDevice(dev.addr)"

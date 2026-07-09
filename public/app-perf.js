@@ -165,9 +165,20 @@ export const perfMixin = {
       const mac = this.availableDevices.find(d => d.node_id === sel)?.addr;
       if (mac) { this.perfDevice = mac; persistSet('perfDevice', mac); sel = mac; }
     }
-    if (sel && this.availableDevices.some(d => d.addr === sel)) return sel;
-    const primary = this.availableDevices.find(d => d.node_id === this.primaryDeviceId)?.addr;
-    return primary || this.availableDevices[0]?.addr || '';
+    const devs = this.availableDevices || [];
+    // Honor an explicit selection (persisted by perfSetDevice) — even an empty
+    // radio, so the user can target it for auto-traceroute.
+    if (sel && devs.some(d => d.addr === sel)) return sel;
+    // No explicit pick: default to the device that is actually tracing now —
+    // the current tracer (backend mode_role.tx) when it has rows to show — else
+    // any radio with data, else the tracer even if still empty, else primary,
+    // else first. This is why the page follows dispatch to the rotator instead
+    // of sitting on an empty primary view.
+    const hasData  = mac => (this._trHistAll || []).some(r => r.tx_device === mac);
+    const tracer   = devs.find(d => d.mode_role?.tx)?.addr;
+    const withData = devs.find(d => hasData(d.addr))?.addr;
+    const primary  = devs.find(d => d.node_id === this.primaryDeviceId)?.addr;
+    return (tracer && hasData(tracer) ? tracer : null) || withData || tracer || primary || devs[0]?.addr || '';
   },
 
   // Antenna/chain config for the scoped device — read from the backend's

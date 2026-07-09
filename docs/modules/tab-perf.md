@@ -1,8 +1,8 @@
 ---
 module: tab-perf
 source: public/partials/tab-perf.html
-source_hash: fe78049fd974325f5744463e9621a0895fa520cdcab039c50abe72735e126a4a
-updated: 2026-07-03
+source_hash: 52c3f89caf8b6fb3f545dedc081e0cb8b9e2d7985e504607f7f14357553f587b
+updated: 2026-07-09
 ---
 
 # Module: tab-perf
@@ -70,3 +70,9 @@ displayed the far target distance while measuring the nearby relay.
 Device pills select and compare by `dev.addr` (MAC); labels still render
 via `deviceLabel(dev.node_id)` until Phase C bundles. The four
 `deviceConfigs[perfDev()]` reads became `perfDevCfg()`.
+
+## Device selector — filter + default (task `perf-default-tracer`, 2026-07-09)
+
+The device-scope pills iterate `availableDevices.filter(d => d.addr && d.addr !== 'UNDEFINED')`
+so the phantom `device_cfg.UNDEFINED` device never appears. The active pill
+follows `perfDev()`, which now defaults to the current tracer (see app-perf.md).
