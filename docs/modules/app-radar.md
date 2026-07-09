@@ -1,8 +1,8 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: 4c6df360723d5ee3b45ece4f26df90551e4ba92a22ddcc964098991b3f9258fc
-updated: 2026-07-04
+source_hash: 8cb83c5633e338cbcd0c6abd6e9d762f40468a0a5c4ee69a8af8a34988bb3158
+updated: 2026-07-09
 ---
 
 # Module: app-radar
@@ -116,3 +116,9 @@ optional visualization mode:
   flag FIRST: `PUT /config/radar.log_scale {"value":true}`.
 - During SCAN mode with <4 positioned contacts, the pow-0.4 fallback is
   the spec'd degraded mode — not a regression.
+
+## Node blip radius (task `radar-dot-2x`, 2026-07-09)
+
+The plotted node dot radius was doubled — `r = isSelected ? 6 : 4` (was `3 : 2`).
+The colored proximity halo (`r + 2`) scales with it; the selection ring (`r: 8`)
+and label offset are unchanged.

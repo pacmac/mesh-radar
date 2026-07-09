@@ -485,7 +485,7 @@ export const radarMixin = {
 
       if (isSelected)
         g.appendChild(svgElem('circle', { cx: x, cy: y, r: 8, style: `fill:none;stroke:${G4};stroke-width:1.5;stroke-dasharray:4 3` }));
-      const r = isSelected ? 3 : 2;
+      const r = isSelected ? 6 : 4;
       if (ringColor)
         g.appendChild(svgElem('circle', { cx: x, cy: y, r: r + 2, style: `fill:${ringColor};opacity:0.85` }));
       g.appendChild(svgElem('circle', { cx: x, cy: y, r, style: `fill:${dotColor};filter:url(#blipGlow)` }));
