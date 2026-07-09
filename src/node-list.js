@@ -30,12 +30,16 @@ function enrichFromCache(node) {
   const isNew = cached.first_heard != null && (now - cached.first_heard) < NEW_NODE_TTL;
 
   const traceroute = cached.last_traceroute ? JSON.parse(cached.last_traceroute) : undefined;
+  // Warm the persisted hops-away onto a COLD entry (no live value yet) so the
+  // badge + max_hops filter start populated after a restart. A live node.hops
+  // always wins — this only fills the gap.
+  const hopsExtra = (node.hops == null && cached.hops_away != null) ? { hops: cached.hops_away } : {};
 
-  // Node already has identity — just tag _new and attach stored traceroute
+  // Node already has identity — just tag _new and attach stored traceroute + warm hops
   if (node.user?.short_name || node.user?.long_name) {
     return isNew
-      ? { ...node, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}) }
-      : (traceroute ? { ...node, last_traceroute: traceroute } : node);
+      ? { ...node, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra }
+      : { ...node, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra };
   }
 
   // Backfill identity + position from cache
@@ -58,6 +62,7 @@ function enrichFromCache(node) {
     _from_cache: true,
     _new: isNew,
     ...(traceroute ? { last_traceroute: traceroute } : {}),
+    ...hopsExtra,
   };
 }
 
@@ -69,6 +74,7 @@ class NodeList extends EventEmitter {
     this._ownDevices = new Map(); // num (int) → nodeData for device self-nodes only (never cleared, never scan-filtered)
     this._scanActive = false;
     this._emitTimer  = null;
+    this._persistedHops = new Map(); // num → last hops_away persisted (write dedup)
   }
 
   _ownNums() { return ownDeviceNums(); }
@@ -190,6 +196,12 @@ class NodeList extends EventEmitter {
   // updateFrom, which only sets hops_away when it can compute it.
   setHopsAway(num, hops) {
     if (hops == null) return;
+    // Write-through to nodeinfo (deduped) so REPORTED hops survives restarts and
+    // accumulates like the firmware NodeDB — independent of live-cache membership.
+    if (this._persistedHops.get(num) !== hops) {
+      stmts.upsertNodeHopsAway.run({ num, hops });
+      this._persistedHops.set(num, hops);
+    }
     if (this._ownDevices.has(num)) {
       const cur = this._ownDevices.get(num);
       if (cur.hops === hops) return;

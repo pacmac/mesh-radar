@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 847e8de7b1fab6b64770c5a8991e8cddeeb6dd56aff5d7176606ab24193058bb
+source_hash: a349fde1e5b133585fa3d6a04217ad307787e7edeb56f8d6c318abf3531b47b2
 updated: 2026-07-03
 ---
 
@@ -155,6 +155,7 @@ syncAlertedAt(packetId)             // → void  — writes alerted_at if alread
 | `clearNodes` | DELETE FROM nodes |
 | `getNodeinfoByNum` | SELECT * FROM nodeinfo WHERE num = ? |
 | `upsertTraceroute` | UPDATE nodeinfo SET last_traceroute WHERE num |
+| `upsertNodeHopsAway` | UPDATE nodeinfo SET hops_away WHERE num — persists our live-computed getHopsAway so REPORTED hops survives restarts (task `persist-hops-away`); no-op if no row yet, reloaded via `enrichFromCache`. Column `nodeinfo.hops_away INTEGER` added by the guarded ALTER block. |
 | `insertTracerouteHistory` | INSERT into traceroute_history |
 | `queryTracerouteHistory` | JOIN traceroute_history + nodes, optional to_num filter |
 | `upsertNodeEnvMetrics` | INSERT … ON CONFLICT(num) — COALESCE env metrics into nodes |

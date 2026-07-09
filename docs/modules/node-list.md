@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 5f378d4e0eb192af802e9b677fb74e125c7a6078a2e41124b0fc0a410e3e7275
+source_hash: a4500566981adc5ad6160b73f2e5342bbedfa42bcd4ecac39254a027ea3e7626
 updated: 2026-07-08
 ---
 
@@ -271,11 +271,31 @@ its real distance (e.g. a 5-relay traceroute node showing `1h`).
 - **UNKNOWN handling**: `hopsAway()` → `null` leaves the prior value; a node
   never heard with a valid `hop_start` has no `hops` (badge renders `0h` today
   — the unknown-vs-0 presentation nuance is a separate Domain-2 concern).
-- **Cold start**: nodes seeded from REST before their first heard packet have
-  no `hops` until one arrives (was: the gw's unguarded value). Accepted.
+- **Cold start**: on a fresh entry with no live `hops` yet, `enrichFromCache`
+  warms it from the **persisted** `nodeinfo.hops_away` (below), so the badge +
+  `max_hops` filter start populated after a restart instead of empty.
 - **Not the traceroute path length**: hops-away (live reception distance) and
   `last_traceroute.route.length` (a routed probe path) are different
   measurements and will rarely match — by design.
+
+### Persistence (task `persist-hops-away`, 2026-07-09)
+
+`hops_away` is our own live `getHopsAway` result — but it accumulates only if
+it survives restarts, the way the firmware NodeDB does (we NEVER read that DB).
+So it is **persisted to `nodeinfo.hops_away`**, mirroring `last_traceroute`:
+
+- **Write-through**: `setHopsAway` writes the KNOWN value via
+  `stmts.upsertNodeHopsAway` (UPDATE by `num`; no-op if the node has no
+  `nodeinfo` row yet). Deduped by `_persistedHops` (num → last written) so a
+  stable value isn't re-written on every packet.
+- **Reload**: `enrichFromCache` attaches `cached.hops_away` as `node.hops` on a
+  COLD entry only — `node.hops ?? cached.hops_away`, so a **live value always
+  wins** and the persisted one just warms the gap.
+- **Why**: the in-memory cache is wiped every process restart; without this the
+  reported number reset to empty each time (and could never retain the higher
+  4–6 hop readings that arrive rarely). Verified: after a restart, nodes reload
+  with values spanning 2–6, and a re-heard node correctly overrides its warm
+  value.
 
 ## setTraceroute (task `perf-per-device`)
 

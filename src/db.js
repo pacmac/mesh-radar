@@ -221,6 +221,11 @@ if (!nodeinfoCols.includes('last_traceroute')) {
 if (!nodeinfoCols.includes('address')) {
   db.exec(`ALTER TABLE nodeinfo ADD COLUMN address TEXT`);
 }
+if (!nodeinfoCols.includes('hops_away')) {
+  // Our real-time getHopsAway result, persisted so REPORTED hops survives
+  // restarts and accumulates like the firmware NodeDB (never read from it).
+  db.exec(`ALTER TABLE nodeinfo ADD COLUMN hops_away INTEGER`);
+}
 
 const nodeCols = db.prepare(`PRAGMA table_info(nodes)`).all().map(r => r.name);
 const envCols = ['temperature', 'relative_humidity', 'barometric_pressure'];
@@ -347,6 +352,12 @@ export const stmts = {
 
   upsertTraceroute: db.prepare(`
     UPDATE nodeinfo SET last_traceroute = @json, updated_at = unixepoch() WHERE num = @num
+  `),
+
+  // Persist the live-computed hops-away (getHopsAway). No-op if the node has no
+  // nodeinfo row yet (same as upsertTraceroute) — reloaded via enrichFromCache.
+  upsertNodeHopsAway: db.prepare(`
+    UPDATE nodeinfo SET hops_away = @hops, updated_at = unixepoch() WHERE num = @num
   `),
 
   insertTracerouteHistory: db.prepare(`
