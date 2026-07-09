@@ -4,6 +4,7 @@
             <a class="tab" :class="cfgTab==='radio'   && 'tab-active font-semibold'" @click="switchCfgTab('radio')">Radio</a>
             <a class="tab" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
             <a class="tab" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
+            <a class="tab" :class="cfgTab==='modes'   && 'tab-active font-semibold'" @click="switchCfgTab('modes')">Modes</a>
             <a class="tab" :class="cfgTab==='radar'   && 'tab-active font-semibold'" @click="switchCfgTab('radar')">Radar</a>
             <a class="tab" :class="cfgTab==='alerts'  && 'tab-active font-semibold'" @click="switchCfgTab('alerts')">Alerts</a>
           </div>
@@ -406,6 +407,100 @@
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- ===================== MODES ===================== -->
+          <div x-show="cfgTab==='modes'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
+
+            <p class="text-sm text-base-content/60">
+              For each mode, choose which radio <b>listens</b> for nodes (RX) and which <b>transmits</b> the traceroute (TX).
+              These drive the backend directly; the RX/TX badges on the Devices page reflect the live roles.
+            </p>
+
+            <!-- PASV roles -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title">PASV — Passive</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Listener (RX)</span></div>
+                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.pasv.rx">
+                      <template x-for="r in rxRoleOptions" :key="r.value">
+                        <option :value="r.value" x-text="r.label"></option>
+                      </template>
+                    </select>
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Transmitter (TX)</span></div>
+                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.pasv.tx">
+                      <template x-for="r in txRoleOptions" :key="r.value">
+                        <option :value="r.value" x-text="r.label"></option>
+                      </template>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- ACTV roles -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title">ACTV — Active targeting</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Listener (RX)</span></div>
+                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.actv.rx">
+                      <template x-for="r in rxRoleOptions" :key="r.value">
+                        <option :value="r.value" x-text="r.label"></option>
+                      </template>
+                    </select>
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Transmitter (TX)</span></div>
+                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.actv.tx">
+                      <template x-for="r in txRoleOptions" :key="r.value">
+                        <option :value="r.value" x-text="r.label"></option>
+                      </template>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- SCAN roles -->
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title">SCAN — Polar scan</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Listener (RX)</span></div>
+                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.scan.rx">
+                      <template x-for="r in rxRoleOptions" :key="r.value">
+                        <option :value="r.value" x-text="r.label"></option>
+                      </template>
+                    </select>
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Transmitter (TX)</span></div>
+                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.scan.tx">
+                      <template x-for="r in txRoleOptions" :key="r.value">
+                        <option :value="r.value" x-text="r.label"></option>
+                      </template>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Save -->
+            <div class="flex items-center gap-2">
+              <button class="btn btn-sm btn-primary" @click="saveModesCfg()" :disabled="modesCfgSaving">
+                <span x-show="modesCfgSaving" class="loading loading-spinner loading-xs"></span>
+                Save all
+              </button>
+              <span x-show="modesCfgSaved" class="text-success text-sm" x-transition>Saved ✓</span>
+              <span x-show="modesCfgError" class="text-error text-sm" x-text="modesCfgError"></span>
             </div>
           </div>
 

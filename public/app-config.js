@@ -19,8 +19,34 @@ export const configMixin = {
       else if (this.radioTab === 'owner')    this.loadOwner();
     } else if (name === 'bridge')  this.loadBridgeConfig();
     else if (name === 'rotator')   this.loadRotatorCfg();
+    else if (name === 'modes')     this.loadModesCfg();
     else if (name === 'radar')     this.loadRadarCfg();
     else if (name === 'alerts')    this.loadAlertRules();
+  },
+
+  // Per-mode radio roles (config-editor form flow — GET populates, PUT submits).
+  async loadModesCfg() {
+    try {
+      this.modesCfg = await fetchJSON('/config/modes');
+    } catch (e) {
+      console.warn('loadModesCfg failed', e);
+    }
+  },
+
+  async saveModesCfg() {
+    this.modesCfgSaving = true;
+    this.modesCfgSaved  = false;
+    this.modesCfgError  = '';
+    try {
+      this.modesCfg = await fetchJSON('/config/modes', 'PUT', this.modesCfg);
+      this.modesCfgSaved = true;
+      setTimeout(() => { this.modesCfgSaved = false; }, 3000);
+    } catch (e) {
+      this.modesCfgError = e.message || 'Save failed';
+      setTimeout(() => { this.modesCfgError = ''; }, 5000);
+    } finally {
+      this.modesCfgSaving = false;
+    }
   },
 
   resetRadioCfg() {
