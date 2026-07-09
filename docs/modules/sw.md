@@ -1,7 +1,7 @@
 ---
 module: sw
 source: public/sw.js
-source_hash: c0b3be6d6abb8ea93516d4f3d4fe44873b510c5ddcb50d050fe97f4e1e4c6921
+source_hash: 4567833f3b1af891fa68eda316cb15128f4892c13c3b7bd8c9d1b1916b9d429d
 updated: 2026-07-08
 ---
 
@@ -36,9 +36,14 @@ so the SW never intercepts them.
   any network blip served that stale `index.html`, wedging the page. The handler
   now `caches.put('/', res.clone())` on a 2xx.
 - **Bump `CACHE` whenever shell assets change in a way that must invalidate old
-  clients.** It was `v1` across many `index.html`/asset edits; `v2` clears the
-  frozen caches. Future asset edits self-heal via the navigation put, so routine
-  bumps are no longer strictly required — bump only to force a hard purge.
+  clients.** `v1` → `v2` cleared the original frozen caches; **`v2` → `v3`**
+  (task `sw-cache-bump-shell`, 2026-07-09) invalidates the stale `index.html`
+  shell after the lazy-tabs change (`46649b7`). **Lesson: the navigation `put`
+  self-heal is NOT sufficient when a shell change must land atomically with JS
+  module changes** — a client on the old cached shell + new modules (or vice
+  versa) is a broken *mix* (lazy-tabs split the perf mount/teardown across
+  `index.html` + `app-nav` + `app-perf`, so a partial update showed "perf: no
+  data"). Any `index.html` edit that pairs with module changes MUST bump `CACHE`.
 
 ## Test notes
 
