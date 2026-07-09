@@ -1,10 +1,9 @@
 import { EventEmitter } from 'events';
 import { bridge } from './bridge.js';
 import { nodeList } from './node-list.js';
-import { dashMode, transmitterForMode } from './dash-mode.js';
+import { dashMode, transmitterForMode, isListenerForMode } from './dash-mode.js';
 import { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
-import { getRotatorAddress } from './device-config.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 
@@ -95,9 +94,10 @@ class PassiveTracer extends EventEmitter {
     const rxDevice = ev.addr ?? ev.device ?? null;
     if (!pkt?.from || !rxDevice) return;
     if (pkt.decoded?.portnum === 'TRACEROUTE_APP') return;
-    // Never traceroute own bridge radios, and don't transmit via the rotator
+    // Never traceroute own bridge radios; only act on packets heard by a radio
+    // that is a listener for PASV mode (default: any non-rotator radio).
     if (ownDeviceNums().has(pkt.from)) return;
-    if (rxDevice === getRotatorAddress()) return;
+    if (!isListenerForMode('pasv', rxDevice)) return;
     // Skip MQTT-relayed nodes (firmware returns NO_ROUTE immediately)
     if (pkt.via_mqtt) return;
     if (!needsTrace(pkt.from)) return;

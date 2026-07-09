@@ -1,6 +1,5 @@
 import { rotator } from './rotator.js';
-import { dashMode } from './dash-mode.js';
-import { getRotatorAddress } from './device-config.js';
+import { dashMode, isListenerForMode } from './dash-mode.js';
 import { stmts, getConfig, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
 import { nodeList } from './node-list.js';
 import { bearing } from './utils.js';
@@ -107,8 +106,8 @@ export const activeTracker = {
   },
 
   handlePacket(ev) {
-    const rotatorId = getRotatorAddress();
-    if (!rotatorId || ev.addr !== rotatorId) return;   // V2: rotator id is the BLE MAC = ev.addr
+    // Only count receptions on a radio that is a listener for ACTV (default: the rotator/YAGI).
+    if (!isListenerForMode('actv', ev.addr)) return;
 
     if (ev.type === 'packet') {
       const pkt = ev.data?.packet;
@@ -123,7 +122,7 @@ export const activeTracker = {
       rotator.emit('signal_update', { signal_num: _firedNum, rssi, snr, ts: Date.now() });
       try {
         recordYagiContact(_firedNum, rssi, snr);
-        insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: _firedNum, rssi, snr, hops: null, seq: null, rx_device: rotatorId });
+        insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: _firedNum, rssi, snr, hops: null, seq: null, rx_device: ev.addr });
       } catch (err) { log.error('contact record failed:', err.message); }
     }
   },

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { rotator } from './rotator.js';
-import { getRotatorAddress } from './device-config.js';
+import { isListenerForMode } from './dash-mode.js';
 import { getConfig, setConfig } from './db.js';
 
 class Scanner extends EventEmitter {
@@ -63,8 +63,8 @@ class Scanner extends EventEmitter {
 
   handlePacket(ev) {
     if (!this._active || this._dwellAz == null) return;
-    const rotatorId = getRotatorAddress();
-    if (rotatorId && ev.addr !== rotatorId) return;   // V2: rotator id is the BLE MAC = ev.addr
+    // Only accept receptions on a radio that is a listener for SCAN (default: the rotator/YAGI).
+    if (!isListenerForMode('scan', ev.addr)) return;
     const pkt = ev.data?.packet;
     if (!pkt?.from) return;
     // Direct receptions ONLY. A relayed packet is the RELAY's RF arriving at

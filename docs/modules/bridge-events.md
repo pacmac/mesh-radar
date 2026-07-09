@@ -1,8 +1,8 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: 307c11828970bbe6989081414a4cdf9ccf4f2d882b7db78c872df529a231973e
-updated: 2026-07-08
+source_hash: f66406f5d8cc2f6830ca53da0cc2f17b42a44c0fe3cd0abf1a078102e309a397
+updated: 2026-07-09
 ---
 
 # Module: bridge-events
@@ -32,7 +32,7 @@ the single dispatch point for all live mesh-gw events entering the backend.
 - `traceroute.js` — `traceroute` (FF.SSOT_TRACEROUTE path)
 - `db.js` — `stmts`, `insertRangeTestEntry`, `insertEnvHistory`
 - `node-filter.js` — `ownDeviceNums`
-- `device-config.js` — `getRotatorAddress`
+- `dash-mode.js` — `isListenerForMode('scan', …)` (scan-time last-heard guard)
 - `feature-flags.js` — `FF`
 
 ## Public interface
@@ -55,7 +55,7 @@ _N/A_ (consumes events from bridge; other modules emit downstream)
 
 - `rxDevice = ev.addr || ev.device || null` — v1/v2 compatibility shim.
 - Env metrics: only inserted for own devices (`ownDeviceNums().has(node.num)`) and only when `now - last > 60s`.
-- Yagi-only guard: during scan, packets received by non-rotator device are NOT used for `touchLastHeard` OR `setHopsAway`.
+- Scan-time listener guard: during scan, `yagiOnly = scanner.active && !isListenerForMode('scan', rxDevice)` — packets received by a radio that is NOT a SCAN listener are excluded from `touchLastHeard` and `setHopsAway`. Default SCAN listener is the rotator, so this is the historic yagi-only behaviour; `mode_config` can widen it.
 - Hops-away is computed here from the raw packet (`pkt.hop_start`/`pkt.hop_limit`) — the only per-reception source that carries the hop fields and reaches `nodeList`. The gw's aggregate `node_info.hops` is unguarded and stripped in `node-list.js`; see its "Hops-away ownership" section.
 - `FF.SSOT_TRACEROUTE` governs both raw-packet and typed-event traceroute paths — they must stay in sync.
 - `traceroute` typed event path is additive (parallel to raw packet) in V1; V2 routes both to `traceroute.handlePacket`.

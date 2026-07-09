@@ -1,7 +1,7 @@
 ---
 module: dash-mode
 source: src/dash-mode.js
-source_hash: 98c9594e159d2e18f17d84687aaa9327162a95b15cc794897a99951604e382dc
+source_hash: 2540caafb653a330e7c0b2a1a3bd1a54c7dee26f6f1cd2ec2c88a85efb304caa
 updated: 2026-07-09
 ---
 
@@ -37,29 +37,39 @@ dashMode.set(mode)     // → void — persist mode and emit 'change'
 dashMode.on('change', ({ _mode }) => {})  // EventEmitter listener
 
 export function modeName(mode)              // number|string → 'pasv'|'actv'|'scan'
-export function transmitterForMode(mode, ctx = {})  // → node_id — the radio that TXs in this mode
+export function transmitterForMode(mode, ctx = {})  // → node_id — the single radio that TXs in this mode
+export function isListenerForMode(mode, mac)        // → bool — is this radio a listener (rx) in this mode?
+export function isTransmitterForMode(mode, mac)     // → bool — is this radio a transmitter in this mode? (tx:'rx' follows the listener)
 ```
 
 ## Per-mode radio roles (single source of truth)
 
-`transmitterForMode(mode, ctx)` is the one place that decides **which radio
-transmits** an auto/manual traceroute for a given mode — replacing the four
-call sites that each picked a radio independently. It resolves a role to a live
-node_id at call time:
+Each mode has a **listener (`rx`)** role and a **transmitter (`tx`)** role. This
+module is the one place that decides both — replacing the reception gates and
+dispatch sites that each hardcoded `getRotatorAddress()`. Roles resolve live at
+call time.
 
-| Mode | Default `tx` role | Resolves to | Rationale |
-|---|---|---|---|
-| `pasv` | `'rx'` | `ctx.rxDevice` (the radio that heard the node), else primary | passive re-trace via the hearing radio |
-| `actv` | `'rotator'` | `getRotatorAddress()` (YAGI) | the aimed antenna transmits — and perf measures it |
-| `scan` | `'rotator'` | `getRotatorAddress()` (YAGI) | the sweeping antenna transmits |
+| Mode | Default `rx` (listener) | Default `tx` (transmitter) |
+|---|---|---|
+| `pasv` | `'non-rotator'` — any radio except the YAGI | `'rx'` — the radio that heard the node |
+| `actv` | `'rotator'` — the YAGI | `'rotator'` — the YAGI |
+| `scan` | `'rotator'` — the YAGI | `'rotator'` — the YAGI |
 
-- Defaults live in `MODE_DEFAULTS`. A browser-editable override is read from
-  config key **`mode_config`** (per-mode `{ tx: <role|MAC> }`), merged over the
-  defaults — its config UI is a later phase; unset today, so defaults apply.
-- Roles: `'rotator'`→YAGI, `'primary'`→OMNI, `'rx'`→`ctx.rxDevice` (falls back to
-  primary when absent), any other string is treated as an explicit MAC/node_id.
-- The result is passed through `macToNodeId` so callers always receive node_id
-  vocabulary (the `tx_device` attribution key), matching the prior behaviour.
+- **Role vocabulary:** `'rotator'`→YAGI, `'primary'`→OMNI, `'non-rotator'`→any
+  radio ≠ YAGI, `'all'`→every radio, `'rx'` (tx only)→whichever radio heard the
+  packet; any other string is an explicit MAC.
+- **Consumers:**
+  - `isListenerForMode(mode, mac)` — reception gate. `passive-tracer`,
+    `active-tracker`, `scanner`, `bridge-events` gate on it so the configured
+    listener controls which radio each mode actually receives on.
+  - `isTransmitterForMode(mode, mac)` — per-radio predicate (badges, later phase);
+    `tx:'rx'` resolves to the same set as the listener.
+  - `transmitterForMode(mode, ctx)` — resolves the single dispatch node_id
+    (through `macToNodeId`) for a traceroute; `'rx'` uses `ctx.rxDevice`.
+- Defaults live in `MODE_DEFAULTS` and **reproduce the historic hardcoded
+  behaviour exactly**. A browser-editable override is read from config key
+  **`mode_config`** (per-mode `{ rx, tx }`), merged over the defaults — its
+  read/write endpoint and config UI are later phases; unset today, so defaults apply.
 
 ### Mode values
 

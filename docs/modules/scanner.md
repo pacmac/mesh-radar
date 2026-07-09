@@ -1,8 +1,8 @@
 ---
 module: scanner
 source: src/scanner.js
-source_hash: 66dab38e4e3d6e0fb126f87ec6187d38c937530cdc51882ee8fc6817e0024d5a
-updated: 2026-07-04
+source_hash: 0de12353da930ad8a5bd9f5d151cd15a174d2493e0a82468f2989f4871ff6ce9
+updated: 2026-07-09
 ---
 
 # Module: scanner
@@ -27,7 +27,7 @@ the config DB so a server restart can resume mid-sweep.
 ## Dependencies
 
 - `rotator.js` — `rotator.move`, `rotator.status.busy`
-- `device-config.js` — `getRotatorAddress`
+- `dash-mode.js` — `isListenerForMode('scan', …)` (reception gate)
 - `db.js` — `getConfig`, `setConfig` (for `scan_config` and `scan_state`)
 - `node:events` — EventEmitter base
 
@@ -109,7 +109,8 @@ _pollIdle()
 ## Contact recording (`handlePacket`)
 
 Accepts a packet during dwell only (`_active && _dwellAz != null`). Filter:
-1. If `rotatorId` configured: `ev.device === rotatorId` (v1; post-v2: `ev.__ble_addr`)
+1. `isListenerForMode('scan', ev.addr)` — the receiving radio is a SCAN listener
+   (default role `'rotator'` → the YAGI; configurable via `mode_config`)
 2. `pkt.from` must be non-null
 3. At least one of `rx_snr` or `rx_rssi` must be present
 
@@ -135,7 +136,7 @@ Best-SNR wins per azimuth: replaces `_contacts[az]` only if new `snr > existing.
 - `'progress'` fires twice per step: once with `dwell_az: null` (moving) and once with `dwell_az: az` (settled and accepting contacts).
 - Contacts are best-SNR-wins per azimuth. A contact with lower SNR than the existing entry is silently dropped.
 - `scan_state` in the DB is the authoritative resume checkpoint. It is written synchronously before every step so any restart can continue from the last position.
-- **v1 defect (handlePacket)**: `ev.device !== rotatorId` uses the v1 `device` field. After bridge.js v2 alignment this must become `ev.__ble_addr`.
+- **Reception gate is the per-mode listener (task `mode-roles-ssot-backend`)**: `handlePacket` gates on `isListenerForMode('scan', ev.addr)` instead of `ev.addr === getRotatorAddress()`. Default SCAN listener is `'rotator'`, so behaviour is unchanged until `mode_config` overrides it. (Edge case: with no rotator configured the old code accepted all radios; the new code accepts none — a listener role of `'rotator'` that resolves to null matches nothing.)
 - **Code smell**: `index.js` accesses `scanner._preMode` directly (private field) to restore the prior mode on `'end'`. `_preMode` should be included in the `'end'` event payload or exposed via a getter.
 
 ## Test notes

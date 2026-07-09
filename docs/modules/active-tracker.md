@@ -1,8 +1,8 @@
 ---
 module: active-tracker
 source: src/active-tracker.js
-source_hash: 979d78dcf0e6cb1af77da8ab1453ed9bc1d06714ce6c03e3917e18f17da790f4
-updated: 2026-06-30
+source_hash: dcd538ccd27611aa312c4c581ef7ad98e6c54ce0e1d0e7efe13c8c0943a9a151
+updated: 2026-07-09
 ---
 
 # Module: active-tracker
@@ -28,8 +28,7 @@ scan contact.
 ## Dependencies
 
 - `rotator.js` — `rotator.move`, `rotator.emit`
-- `dash-mode.js` — `dashMode.value` (included in `point_target` payload)
-- `device-config.js` — `getRotatorAddress`
+- `dash-mode.js` — `dashMode.value` (in `point_target` payload); `isListenerForMode('actv', …)` (reception gate)
 - `db.js` — `stmts.getNodeinfoByNum`, `getConfig`, `insertRangeTestEntry`, `recordYagiTargeted`, `recordYagiContact`
 - `node-list.js` — `nodeList.nodes` (filtered live nodes)
 - `utils.js` — `bearing`
@@ -91,11 +90,11 @@ advance()
 ## `handlePacket` filter
 
 Accepts only packets where:
-1. `rotatorId` is configured
-2. `ev.device === rotatorId` — packet received via the YAGI radio (v1; post-v2 use `ev.__ble_addr`)
-3. `pkt.from === _firedNum` — from the currently targeted node
+1. `isListenerForMode('actv', ev.addr)` — the receiving radio is an ACTV listener
+   (default role `'rotator'` → the YAGI; now configurable via `mode_config`)
+2. `pkt.from === _firedNum` — from the currently targeted node
 
-On match: updates `_lastRssi`/`_lastSnr`, emits `rotator.signal_update`, calls `recordYagiContact` and `insertRangeTestEntry`.
+On match: updates `_lastRssi`/`_lastSnr`, emits `rotator.signal_update`, calls `recordYagiContact` and `insertRangeTestEntry` with `rx_device: ev.addr` (the radio that actually heard it, not a hardcoded rotator id).
 
 ## Invariants
 
@@ -105,7 +104,7 @@ On match: updates `_lastRssi`/`_lastSnr`, emits `rotator.signal_update`, calls `
 - `buildSchedule()` reads `nodeList.nodes` fresh on every call — no caching. Schedule reflects filter and config changes immediately.
 - Nodes without `position.latitude_i` or `position.longitude_i` are excluded from the schedule.
 - If `home.lat`/`home.lon` is not configured, `buildSchedule()` returns `[]` and `advance()` retries indefinitely.
-- **v1 defect (handlePacket)**: `ev.device !== rotatorId` uses the v1 `device` field. After bridge.js v2 alignment, this must become `ev.__ble_addr`.
+- **Reception gate is the per-mode listener (task `mode-roles-ssot-backend`)**: `handlePacket` now gates on `isListenerForMode('actv', ev.addr)` instead of `ev.addr === getRotatorAddress()`. The default ACTV listener role is `'rotator'`, so behaviour is identical until `mode_config` overrides it.
 - `activeTracker` is a plain object — it is not an EventEmitter. It uses `rotator` as a proxy for event emission.
 
 ## Test notes

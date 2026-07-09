@@ -1,7 +1,7 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: 0a1b12061afa3ce5d2685b57546b62019ccc35e6ebe0e753754ee90b9691842d
+source_hash: 9092ab025573f4a44f464e3a850803a53b4e677f358a2206fb2b06c570f789ae
 updated: 2026-07-09
 ---
 
@@ -29,10 +29,9 @@ PASV mode (value 0).
 
 - `bridge.js` — `bridge.on('event', …)` for packet ingestion
 - `node-list.js` — `nodeList._cache` (staleness check) and `ownDeviceNums` (via node-filter)
-- `dash-mode.js` — `dashMode.value` gate; `transmitterForMode('pasv', {rxDevice})` for the dispatch radio
+- `dash-mode.js` — `dashMode.value` gate; `isListenerForMode('pasv', rxDevice)` (reception gate); `transmitterForMode('pasv', {rxDevice})` for the dispatch radio
 - `db.js` — `getConfig` for `pasv_config`
 - `node-filter.js` — `ownDeviceNums`
-- `device-config.js` — `getRotatorAddress`
 - `feature-flags.js` — `FF.SSOT_TRACEROUTE` gate
 - `traceroute.js` — `traceroute.dispatch` (V2 path only)
 
@@ -89,7 +88,7 @@ A packet triggers a trace only if ALL conditions pass:
 5. `rxDevice` (`ev.addr ?? ev.device`) is non-null
 6. `pkt.decoded.portnum !== 'TRACEROUTE_APP'` — don't self-trigger on responses
 7. `!ownDeviceNums().has(pkt.from)` — not a local BLE radio
-8. `rxDevice !== getRotatorAddress()` — don't transmit via the YAGI
+8. `isListenerForMode('pasv', rxDevice)` — the receiving radio is a PASV listener (default role `'non-rotator'`, i.e. any radio except the YAGI; configurable via `mode_config`)
 9. `!pkt.via_mqtt` — MQTT nodes return NO_ROUTE immediately
 10. `needsTrace(pkt.from) === true` — not within stale or fail-backoff window
 

@@ -5,7 +5,7 @@ import { scanner } from './scanner.js';
 import { traceroute } from './traceroute.js';
 import { stmts, insertRangeTestEntry, insertEnvHistory } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
-import { getRotatorAddress } from './device-config.js';
+import { isListenerForMode } from './dash-mode.js';
 import { FF } from './feature-flags.js';
 
 const _lastEnvTs = new Map(); // num → last inserted ts (env metrics dedup)
@@ -38,8 +38,8 @@ export function registerBridgeEvents(bridge) {
       scanner.handlePacket(ev);
       const pkt = ev.data?.packet;
       const rxDevice = ev.addr || ev.device || null;
-      const rotatorId = getRotatorAddress();
-      const yagiOnly = scanner.active && rotatorId && rxDevice !== rotatorId;
+      // During a scan, only the SCAN listener(s) may update last-heard (default: rotator/YAGI).
+      const yagiOnly = scanner.active && !isListenerForMode('scan', rxDevice);
       if (pkt?.from && !yagiOnly) {
         nodeList.touchLastHeard(pkt.from, pkt.rx_time, rxDevice);
         // Guarded hops-away, updated per packet (firmware NodeDB updateFrom analog)
