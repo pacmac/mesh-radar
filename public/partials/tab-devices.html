@@ -62,7 +62,7 @@
                 <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm font-mono text-base-content/50">
                   <span x-show="deviceBleStates[dev.node_id]?.node_count != null"
                         x-text="deviceBleStates[dev.node_id]?.node_count + ' nodes'"></span>
-                  <span x-show="dev.ble_address" x-text="dev.ble_address"></span>
+                  <span x-show="dev.addr" x-text="dev.addr"></span>
                   <span x-show="dev.tcp_port"
                         x-text="'TCP :' + dev.tcp_port + ' (' + dev.tcp_clients + ' clients)'"></span>
                   <span x-show="deviceBleStates[dev.node_id]?.sync_duration_s != null"
@@ -144,9 +144,9 @@
                       <input type="number" min="1024" max="65535"
                              class="input input-sm input-bordered font-mono w-24"
                              x-model="_tcpVal" placeholder="4403"
-                             @keydown.enter.prevent="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">
+                             @keydown.enter.prevent="saveBleCfg(dev.addr, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">
                       <button class="btn btn-sm btn-primary"
-                              @click="saveBleCfg(dev.ble_address, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">Save</button>
+                              @click="saveBleCfg(dev.addr, 'tcp_port', _tcpVal ? parseInt(_tcpVal) : null)">Save</button>
                     </div>
 
                     <!-- Flags -->
@@ -166,7 +166,7 @@
                       <label class="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
                                :checked="dev.auto_connect !== false"
-                               @change="saveBleCfg(dev.ble_address, 'auto_connect', $event.target.checked)">
+                               @change="saveBleCfg(dev.addr, 'auto_connect', $event.target.checked)">
                         <span class="text-xs">Auto-connect</span>
                       </label>
                       <label class="flex items-center gap-2 cursor-pointer">
@@ -258,7 +258,7 @@
                                          || !(otaFiles[dev.node_id]?.files || []).find(f => f.name === otaSelectedFile[dev.node_id])?.ota_ready
                                          || devBleState(dev.node_id) !== 'ready'"
                               :class="{'loading loading-spinner': opLoading('otaFlash_' + dev.node_id)}"
-                              @click="flashOta(dev.node_id, dev.ble_address, otaSelectedFile[dev.node_id])">
+                              @click="flashOta(dev.node_id, dev.addr, otaSelectedFile[dev.node_id])">
                         <span x-show="!opLoading('otaFlash_' + dev.node_id)">Flash</span>
                       </button>
                     </div>
@@ -428,20 +428,20 @@
                       <button class="btn btn-sm btn-outline btn-info"
                               x-show="['reconnecting','failed'].includes(devBleState(dev.node_id))"
                               :disabled="opLoading('retry_' + dev.node_id)"
-                              @click="asyncOp('retry_' + dev.node_id, () => fetchJSON('/devices/' + encodeURIComponent(dev.node_id) + '/retry', 'POST', {}), { successMsg: 'Retry triggered' })">
+                              @click="asyncOp('retry_' + dev.node_id, () => fetchJSON('/devices/' + encodeURIComponent(dev.addr) + '/retry', 'POST', {}), { successMsg: 'Retry triggered' })">
                         <span x-show="opLoading('retry_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Retry Now
                       </button>
                       <button class="btn btn-sm btn-outline btn-error"
                               :disabled="opLoading('disconnect_' + dev.node_id)"
-                              @click="asyncOp('disconnect_' + dev.node_id, () => disconnectDevice(dev.node_id))">
+                              @click="asyncOp('disconnect_' + dev.node_id, () => disconnectDevice(dev.addr))">
                         <span x-show="opLoading('disconnect_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         Disconnect
                       </button>
                       <button class="btn btn-sm btn-error"
-                              x-show="dev.ble_address"
+                              x-show="dev.addr"
                               :disabled="opLoading('remove_' + dev.node_id)"
-                              @click="asyncOp('remove_' + dev.node_id, () => bleRemove(dev.ble_address), { successMsg: 'Device removed' })"
+                              @click="asyncOp('remove_' + dev.node_id, () => bleRemove(dev.addr), { successMsg: 'Device removed' })"
                               title="Remove from config and BlueZ bond">
                         <span x-show="opLoading('remove_' + dev.node_id)" class="loading loading-spinner loading-xs"></span>
                         <span x-show="!opLoading('remove_' + dev.node_id)">Remove</span>

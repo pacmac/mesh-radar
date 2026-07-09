@@ -90,9 +90,10 @@ export const devicesMixin = {
     return Math.round(diffSec / 3600) + 'h ago';
   },
 
-  async disconnectDevice(nodeId) {
-    await fetchJSON('/devices/' + encodeURIComponent(nodeId), 'DELETE');
-    if (this.activeNodeId === nodeId) this.activeDevice = '';
+  async disconnectDevice(addr) {
+    // gw DELETE /devices/{addr} is keyed on the BLE MAC, not node_id.
+    await fetchJSON('/devices/' + encodeURIComponent(addr), 'DELETE');
+    if (this.activeDevice === addr) this.activeDevice = '';
     if (!this.activeDevice && this.availableDevices.length > 0) {
       await this.selectDevice(this.availableDevices[0].addr);
     }
@@ -124,11 +125,12 @@ export const devicesMixin = {
     if (!res?.verified) throw new Error('Position not verified by device');
   },
 
-  async saveBleCfg(bleAddress, field, value) {
-    const dev = this.availableDevices.find(d => d.ble_address === bleAddress);
+  async saveBleCfg(addr, field, value) {
+    // gw PATCH /ble_devices/{address} is keyed on the BLE MAC (dev.addr).
+    const dev = this.availableDevices.find(d => d.addr === addr);
     if (dev) dev[field] = value;
     try {
-      await fetchJSON(`/ble_devices/${encodeURIComponent(bleAddress)}`, 'PATCH', { [field]: value });
+      await fetchJSON(`/ble_devices/${encodeURIComponent(addr)}`, 'PATCH', { [field]: value });
     } catch (e) {
       console.warn('saveBleCfg failed', e);
       if (dev) dev[field] = !value;
@@ -308,7 +310,7 @@ export const devicesMixin = {
           this.bleError = 'Connect failed: ' + (pending.ble_error || 'device disconnected');
           break;
         }
-        const dev = this.availableDevices.find(d => d.ble_address?.toUpperCase() === addrUpper);
+        const dev = this.availableDevices.find(d => d.addr?.toUpperCase() === addrUpper);
         if (dev) {
           const devState = this.deviceBleStates[dev.node_id];
           if (devState?.ble_state === 'error') {

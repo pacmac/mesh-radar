@@ -1,7 +1,7 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: 2ca4ca0eb9d34a9ffbe7bdd057e45f6dba3d5e2b9a3e7f6487036ecf8061578f
+source_hash: d99e4a8f0c55d5cbb61f283f3b55ba10b39a431c8605361111a56a157b67ec33
 updated: 2026-07-03
 ---
 
@@ -162,6 +162,27 @@ the section header keeps only the "Connected Radios" title.
 - No logic moved between template and `app-devices.js`
 - All colors via DaisyUI semantic tokens — no raw hex/rgba
 - Outer `x-for="dev in availableDevices" :key="dev.addr"` loop preserved
+
+## Device-control identity — MAC-keyed (task `device-controls-mac-migration`, 2026-07-09)
+
+All gateway device operations are keyed on the **BLE MAC = `dev.addr`** (V2),
+never the removed V1 `dev.ble_address` (which is `null` on live devices) nor
+`dev.node_id`. This was the V2-migration gap that made auto-connect, disconnect,
+remove and tcp-port silently no-op (they hit `/…/null` or a node_id the gw
+rejects):
+
+- **Auto-connect / TCP-port** → `saveBleCfg(dev.addr, …)` → `PATCH /ble_devices/{MAC}`
+- **Disconnect** → `disconnectDevice(dev.addr)` → `DELETE /devices/{MAC}`
+- **Remove** → `bleRemove(dev.addr)` → `DELETE /ble/known/{MAC}`; the button's
+  `x-show` gates on `dev.addr`
+- **Retry** → `POST /devices/{MAC}/retry`
+- **OTA** → `flashOta(dev.node_id, dev.addr, …)` → `POST /ota` (gw accepts either
+  `node_id` or `ble_addr`; pass the non-null MAC)
+- **Not changed:** `wipeNodeDb`/`backupRadioConfig` use `/{node_id}/…`
+  per-device routes, which the gw accepts by node_id **or** MAC.
+
+`opLoading` state keys may still use `dev.node_id` — they are local UI keys, not
+gateway identifiers.
 
 ## Decision violations in scope (display only — NOT fixed here)
 
