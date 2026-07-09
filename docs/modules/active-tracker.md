@@ -1,7 +1,7 @@
 ---
 module: active-tracker
 source: src/active-tracker.js
-source_hash: dcd538ccd27611aa312c4c581ef7ad98e6c54ce0e1d0e7efe13c8c0943a9a151
+source_hash: 8104de31de5263cf10fa6892330f6384eabf2cc488a7a3b32cf10699fdda707e
 updated: 2026-07-09
 ---
 
@@ -28,7 +28,7 @@ scan contact.
 ## Dependencies
 
 - `rotator.js` — `rotator.move`, `rotator.emit`
-- `dash-mode.js` — `dashMode.value` (in `point_target` payload); `isListenerForMode('actv', …)` (reception gate)
+- `dash-mode.js` — `dashMode.value` (in `point_target` payload); `isTransmitterForMode('actv', …)` (directional-signal gate — the tracer)
 - `db.js` — `stmts.getNodeinfoByNum`, `getConfig`, `insertRangeTestEntry`, `recordYagiTargeted`, `recordYagiContact`
 - `node-list.js` — `nodeList.nodes` (filtered live nodes)
 - `utils.js` — `bearing`
@@ -90,8 +90,10 @@ advance()
 ## `handlePacket` filter
 
 Accepts only packets where:
-1. `isListenerForMode('actv', ev.addr)` — the receiving radio is an ACTV listener
-   (default role `'rotator'` → the YAGI; now configurable via `mode_config`)
+1. `isTransmitterForMode('actv', ev.addr)` — the receiving radio is the **tracer**
+   (the beam that points at and traceroutes the target; default `tx:'rotator'` →
+   the YAGI). The directional signal must be measured on the beam, NOT on the
+   `rx` discovery listener — the tracer auto-listens for its own replies.
 2. `pkt.from === _firedNum` — from the currently targeted node
 
 On match: updates `_lastRssi`/`_lastSnr`, emits `rotator.signal_update`, calls `recordYagiContact` and `insertRangeTestEntry` with `rx_device: ev.addr` (the radio that actually heard it, not a hardcoded rotator id).
@@ -104,7 +106,7 @@ On match: updates `_lastRssi`/`_lastSnr`, emits `rotator.signal_update`, calls `
 - `buildSchedule()` reads `nodeList.nodes` fresh on every call — no caching. Schedule reflects filter and config changes immediately.
 - Nodes without `position.latitude_i` or `position.longitude_i` are excluded from the schedule.
 - If `home.lat`/`home.lon` is not configured, `buildSchedule()` returns `[]` and `advance()` retries indefinitely.
-- **Reception gate is the per-mode listener (task `mode-roles-ssot-backend`)**: `handlePacket` now gates on `isListenerForMode('actv', ev.addr)` instead of `ev.addr === getRotatorAddress()`. The default ACTV listener role is `'rotator'`, so behaviour is identical until `mode_config` overrides it.
+- **Signal gate is the tracer, not the discovery listener (task `tracer-auto-listens`)**: `handlePacket` gates on `isTransmitterForMode('actv', ev.addr)` — the directional signal of the targeted node is measured on the beam that traceroutes it (the tracer auto-listens for replies). The `rx` (discovery) listener — e.g. the OMNI — feeds the node list / schedule via general reception, not this path. Superseded the earlier `isListenerForMode` gate, which let a picked Listener wrongly steer the directional measurement off the YAGI. Default `tx:'rotator'`, so the historic behaviour (YAGI measures) holds.
 - `activeTracker` is a plain object — it is not an EventEmitter. It uses `rotator` as a proxy for event emission.
 
 ## Test notes

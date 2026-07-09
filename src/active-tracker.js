@@ -1,5 +1,5 @@
 import { rotator } from './rotator.js';
-import { dashMode, isListenerForMode } from './dash-mode.js';
+import { dashMode, isTransmitterForMode } from './dash-mode.js';
 import { stmts, getConfig, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
 import { nodeList } from './node-list.js';
 import { bearing } from './utils.js';
@@ -106,8 +106,10 @@ export const activeTracker = {
   },
 
   handlePacket(ev) {
-    // Only count receptions on a radio that is a listener for ACTV (default: the rotator/YAGI).
-    if (!isListenerForMode('actv', ev.addr)) return;
+    // The directional signal is measured on the TRACER — the beam that points at
+    // and traceroutes the target auto-listens for its replies. Discovery (which
+    // nodes to point at) comes from the omni listener via the node list, not here.
+    if (!isTransmitterForMode('actv', ev.addr)) return;
 
     if (ev.type === 'packet') {
       const pkt = ev.data?.packet;

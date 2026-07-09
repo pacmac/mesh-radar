@@ -60,10 +60,16 @@ function roleMatchesMac(role, mac) {
   }
 }
 
-// Per-radio role predicates (mac = BLE MAC). The reception paths gate on
-// isListenerForMode; badges (later phase) read both.
+// Per-radio role predicates (mac = BLE MAC).
+// A radio listens if it matches the rx (discovery) role OR the tx role — the
+// route tracer automatically listens for its own traceroute replies. tx==='rx'
+// means "the hearing radio itself", so it adds no new radio here (and skipping
+// it avoids recursion with isTransmitterForMode below).
 export function isListenerForMode(mode, mac) {
-  return roleMatchesMac(modeCfg(mode).rx, mac);
+  const c = modeCfg(mode);
+  if (roleMatchesMac(c.rx, mac)) return true;
+  if (c.tx && c.tx !== 'rx' && roleMatchesMac(c.tx, mac)) return true;
+  return false;
 }
 export function isTransmitterForMode(mode, mac) {
   const tx = modeCfg(mode).tx;

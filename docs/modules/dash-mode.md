@@ -1,7 +1,7 @@
 ---
 module: dash-mode
 source: src/dash-mode.js
-source_hash: b8b99ef345bb7e746fe1800e3262eba009164c463461293f9f46bb07f7668994
+source_hash: 3993c9beb33d09a307b58eda59d0a25c27a48770520b253f8ca8e3f9b9e7a865
 updated: 2026-07-09
 ---
 
@@ -66,10 +66,14 @@ call time.
   radio ≠ YAGI, `'all'`→every radio, `'rx'` (tx only)→whichever radio heard the
   packet; any other string is an explicit MAC.
 - **Consumers:**
-  - `isListenerForMode(mode, mac)` — reception gate. `passive-tracer`,
-    `active-tracker`, `scanner`, `bridge-events` gate on it so the configured
-    listener controls which radio each mode actually receives on.
-  - `isTransmitterForMode(mode, mac)` — per-radio predicate (badges, later phase);
+  - `isListenerForMode(mode, mac)` — true if the radio matches the `rx` role **or
+    the `tx` role**: the route tracer automatically listens for its own traceroute
+    replies (`tx:'rx'` is skipped here — it means "the hearing radio itself" — which
+    also avoids recursion with `isTransmitterForMode`). Used by `passive-tracer`,
+    `scanner`, `bridge-events` and the RX badge.
+  - `isTransmitterForMode(mode, mac)` — the tracer predicate. `active-tracker`
+    gates its **directional signal measurement** on this (the beam that points at
+    and traceroutes a node measures that node), and the TX badge reads it;
     `tx:'rx'` resolves to the same set as the listener.
   - `transmitterForMode(mode, ctx)` — resolves the single dispatch node_id
     (through `macToNodeId`) for a traceroute; `'rx'` uses `ctx.rxDevice`.
