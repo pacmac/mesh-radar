@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 249efadff8ce7c833324948622bcb14052a48b5f244ef1c8897d56710e7ee150
-updated: 2026-07-08
+source_hash: 6d14766a5eb4ae607480eebe4a387c1c488e4d95373645c7cefba3fc7905499d
+updated: 2026-07-09
 ---
 
 # Module: ws-relay
@@ -35,7 +35,7 @@ to every newly connected client so the browser is immediately consistent.
 - `rotator.js` — `rotator` (events: `status`, `point_target`, `signal_update`)
 - `scanner.js` — `scanner` (events: `start`, `progress`, `contact`, `end`)
 - `node-list.js` — `nodeList` (event: `change`; fields: `nodes`, `ownDeviceNodes`, `homePos`, `_cache`)
-- `dash-mode.js` — `dashMode` (event: `change`; field: `value`)
+- `dash-mode.js` — `dashMode` (event: `change`; field: `value`); `isListenerForMode`, `isTransmitterForMode` (per-radio role for the current mode)
 - `passive-tracer.js` — `passiveTracer` (events: `tracing`, `traced`)
 - `traceroute.js` — `traceroute` (events: `start`, `result`, `cancel`)
 - `feature-flags.js` — `FF.SSOT_TRACEROUTE`, `FF.SSOT_ROUTE_RENDER`
@@ -421,6 +421,17 @@ PUT. The browser reads ALL device page-data from this event; no GETs.
 - `device_list` devices additionally carry `auto_purge`
   (`getAutoPurgeCfg(node_id ?? addr)` — legacy keys are browser-written,
   node_id-first); auto-purge saves poke the list.
+
+## mode_role on device_list (task `mode-roles-expose-backend`)
+
+Each device in `device_list` carries `mode_role: { rx, tx } | null` — the
+radio's listener/transmitter role for the **current** mode, computed via
+`isListenerForMode(dashMode.value, d.addr)` / `isTransmitterForMode(...)`. The
+browser renders RX/TX badges straight from this and makes no decision
+(BROWSER_CONTRACT). Because it is mode-dependent, `dashMode.on('change')` now
+also calls `broadcastDeviceList()` so badges flip live on a mode switch; a
+`PUT /config/modes` refresh comes via `pokeDeviceList()`. `null` when the
+device has no `addr`.
 - First client→server RPC: `ws.on('message')` handles
   `{ type: 'geocode', num }` → `lookupGeocode(num)` →
   `{ type: 'geocode_result', num, address }`. The Nominatim 1.1 s queue

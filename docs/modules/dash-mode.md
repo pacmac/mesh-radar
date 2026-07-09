@@ -1,7 +1,7 @@
 ---
 module: dash-mode
 source: src/dash-mode.js
-source_hash: 2540caafb653a330e7c0b2a1a3bd1a54c7dee26f6f1cd2ec2c88a85efb304caa
+source_hash: b8b99ef345bb7e746fe1800e3262eba009164c463461293f9f46bb07f7668994
 updated: 2026-07-09
 ---
 
@@ -40,6 +40,13 @@ export function modeName(mode)              // number|string → 'pasv'|'actv'|'
 export function transmitterForMode(mode, ctx = {})  // → node_id — the single radio that TXs in this mode
 export function isListenerForMode(mode, mac)        // → bool — is this radio a listener (rx) in this mode?
 export function isTransmitterForMode(mode, mac)     // → bool — is this radio a transmitter in this mode? (tx:'rx' follows the listener)
+
+// Config-editor surface (consumed by config-api's GET/PUT /config/modes)
+export const MODE_KEYS   // ['pasv','actv','scan']
+export const RX_ROLES    // valid listener roles: ['rotator','non-rotator','primary','all']
+export const TX_ROLES    // valid transmitter roles: ['rotator','primary','non-rotator','all','rx']
+export function isValidRole(role, kind)  // 'rx'|'tx' → bool — known keyword or a MAC
+export function modeConfigAll()          // → { pasv:{rx,tx}, actv:{…}, scan:{…} } effective (defaults+override)
 ```
 
 ## Per-mode radio roles (single source of truth)

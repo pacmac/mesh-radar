@@ -71,6 +71,25 @@ export function isTransmitterForMode(mode, mac) {
   return roleMatchesMac(tx, mac);
 }
 
+// Role vocabulary (SSOT). rx roles exclude 'rx' (which only means "the hearing
+// radio" and is meaningless as a listener); tx roles include it.
+export const MODE_KEYS = ['pasv', 'actv', 'scan'];
+export const RX_ROLES  = ['rotator', 'non-rotator', 'primary', 'all'];
+export const TX_ROLES  = ['rotator', 'primary', 'non-rotator', 'all', 'rx'];
+const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i;
+
+// Validate a role string for a given kind ('rx' | 'tx'): a known keyword or a MAC.
+export function isValidRole(role, kind) {
+  if (typeof role !== 'string' || !role) return false;
+  const known = kind === 'tx' ? TX_ROLES : RX_ROLES;
+  return known.includes(role) || MAC_RE.test(role);
+}
+
+// The full effective per-mode config (defaults merged with any stored override).
+export function modeConfigAll() {
+  return Object.fromEntries(MODE_KEYS.map((k) => [k, modeCfg(k)]));
+}
+
 // Resolve the single transmitter (dispatch) node_id for a mode. ctx.rxDevice (a
 // MAC) is used by the 'rx' role; when it is absent the role falls back to primary.
 export function transmitterForMode(mode, ctx = {}) {

@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { broadcastSettings } from './ws-relay.js';
+import { broadcastSettings, pokeDeviceList } from './ws-relay.js';
 import { getConfig, setConfig } from './db.js';
 import { nodeList } from './node-list.js';
+import { modeConfigAll, isValidRole, MODE_KEYS } from './dash-mode.js';
 
 const router = Router();
 
@@ -87,6 +88,35 @@ router.put('/radar', (req, res) => {
 
   res.json({ ok: true });
   broadcastSettings();
+});
+
+// Per-mode radio roles (config-editor form flow). GET returns the effective
+// config (defaults merged with any override); PUT writes allowlisted rx/tx roles
+// per mode. dash-mode owns the role vocabulary and defaults (SSOT).
+router.get('/modes', (req, res) => {
+  res.json(modeConfigAll());
+});
+
+router.put('/modes', (req, res) => {
+  const body = req.body || {};
+  const current = getConfig('mode_config', {});
+  for (const mode of MODE_KEYS) {
+    const upd = body[mode];
+    if (!upd || typeof upd !== 'object') continue;
+    const cur = { ...current[mode] };
+    if (upd.rx !== undefined) {
+      if (!isValidRole(upd.rx, 'rx')) return res.status(400).json({ error: `invalid rx role for ${mode}: ${upd.rx}` });
+      cur.rx = upd.rx;
+    }
+    if (upd.tx !== undefined) {
+      if (!isValidRole(upd.tx, 'tx')) return res.status(400).json({ error: `invalid tx role for ${mode}: ${upd.tx}` });
+      cur.tx = upd.tx;
+    }
+    current[mode] = cur;
+  }
+  setConfig('mode_config', current);
+  res.json(modeConfigAll());
+  pokeDeviceList();   // roles changed → refresh RX/TX badges on device_list
 });
 
 router.get('/:key', (req, res) => {

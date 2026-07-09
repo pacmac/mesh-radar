@@ -6,7 +6,7 @@ import { nodeList } from './node-list.js';
 import { insertTilt, insertEnvHistory, getTiltCal, getConfig, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts, persistNodeMac, loadNodeMacMap } from './db.js';
 import { queryMessages } from './filters.js';
 import { handleAlertEvent } from './alerts.js';
-import { dashMode } from './dash-mode.js';
+import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { ensureDeviceCfgMac, getDeviceCfg } from './device-config.js';
@@ -290,11 +290,15 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // live by the WS event stream. All configured devices are always present.
     // Each device carries its node-dash settings (cfg, MAC-keyed store) and
     // radio lora config so the browser reads page data from WS alone.
+    const mode = dashMode.value;
     const devices = Object.values(lastDeviceState).map(d => ({
       ...d,
       cfg:  d.addr ? getDeviceCfg(d.addr) : null,
       lora: d.addr ? (lastDeviceLora[d.addr.toUpperCase()] ?? null) : null,
       auto_purge: getAutoPurgeCfg(d.node_id ?? d.addr),
+      // Per-radio role for the CURRENT mode — the browser renders RX/TX badges
+      // from this and makes no decision (BROWSER_CONTRACT).
+      mode_role: d.addr ? { rx: isListenerForMode(mode, d.addr), tx: isTransmitterForMode(mode, d.addr) } : null,
     }));
     lastDeviceList = { type: 'device_list', devices };
     broadcast(lastDeviceList);
@@ -477,7 +481,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // v5 device config schema — pushed on (re)fetch so the browser builds its
   // rotator config form from the device's own field list (shared buildForm).
   rotator.on('schema', (schema) => broadcast({ type: 'rotator', data: { schema } }));
-  dashMode.on('change',      (data) => broadcast({ type: 'rotator', data }));
+  dashMode.on('change',      (data) => { broadcast({ type: 'rotator', data }); broadcastDeviceList(); });
 
   scanner.on('start',    (data) => broadcast({ type: 'scan_start',    data }));
   scanner.on('progress', (data) => broadcast({ type: 'scan_progress', data }));

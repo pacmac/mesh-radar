@@ -1,8 +1,8 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: df4de57fa24bba8080e996dbbcbe224ea3570d950e3623846f2d941a68596e74
-updated: 2026-07-04
+source_hash: 8e22f7b426b1ec752400c665c901687ba9e62c2ba8b7b932afa379153efdf6bf
+updated: 2026-07-09
 ---
 
 # Module: config-api
@@ -21,11 +21,15 @@ when filter-relevant keys change.
 - Validate all key names against a known DEFAULTS map (404/400 on unknown/missing)
 - Call `nodeList.refilter()` whenever any `node_filters.*` key changes
 - Expose mode timing defaults (pasv/actv/scan) alongside radar display settings
+- Expose per-mode radio roles via `/modes` (read/write), delegating role
+  vocabulary + defaults to dash-mode and refreshing badges via `pokeDeviceList`
 
 ## Dependencies
 
 - `db.js` — `getConfig`, `setConfig`
 - `node-list.js` — `nodeList.refilter()`
+- `dash-mode.js` — `modeConfigAll`, `isValidRole`, `MODE_KEYS` (per-mode role vocabulary + defaults, SSOT)
+- `ws-relay.js` — `broadcastSettings`, `pokeDeviceList` (refresh RX/TX badges after a mode-role write)
 - `express` — `Router`
 
 ## Exports
@@ -93,6 +97,28 @@ Body: `{ display?, pasv?, actv?, scan? }` — any combination of sub-objects.
 - `scan`: allowed fields `step_deg`, `dwell_sec` → merged into `scan_config` object
 
 Values for mode fields are coerced to `Number`. Unknown fields in each sub-object are silently ignored. Returns `{ ok: true }`.
+
+### `GET /config/modes`
+
+Returns the effective per-mode radio roles — `modeConfigAll()` from dash-mode
+(defaults merged with any stored `mode_config` override):
+
+```js
+{ pasv: { rx, tx }, actv: { rx, tx }, scan: { rx, tx } }
+```
+
+Config-editor form read (like `/radar`); not WS-blocked. dash-mode owns the
+role vocabulary and defaults — this router does not duplicate them.
+
+### `PUT /config/modes`
+
+Body: `{ pasv?: { rx?, tx? }, actv?: {…}, scan?: {…} }` — any subset. For each
+mode present, `rx`/`tx` are validated via `isValidRole(role, kind)` (400 on an
+invalid role) and merged into the stored `mode_config` blob. Returns the full
+effective config (`modeConfigAll()`) and calls `pokeDeviceList()` so the
+per-radio `mode_role` on `device_list` (and thus the browser's RX/TX badges)
+refreshes immediately. Does **not** call `broadcastSettings()` — `mode_config`
+is not part of the settings event.
 
 ### `GET /config/:key`
 
