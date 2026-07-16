@@ -1,8 +1,8 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 0713cc86148d34aaffd22ba2be6b3341e8a3bd7fbbda4fe97bb4429f0bed0844
-updated: 2026-07-04
+source_hash: c1c68b87357b0f539bdb1f047f998b330e50aabe829037f783c9bd0e4631d285
+updated: 2026-07-16
 ---
 
 # Module: app-ws
@@ -109,3 +109,21 @@ into `_tiltHistoryAll[node]` / `envHistory[nid]` on every WS reconnect. Each is
 now `.slice(-MAX_HISTORY_ROWS)`; charts only ever show a recent window. Other
 live arrays were already capped (events 80, messages 50, perfHistory 200,
 _trHistAll 500).
+
+## NEED_PAIR dismissal on success (task `pair-modal-dismiss`, 2026-07-16)
+
+`submitPairPin` keeps `needPairBusy = true` while the gw retries pairing; the
+failure paths (`device_state` NEED_PAIR → wrong-PIN message, OFFLINE →
+pairing-failed message) clear it. The SUCCESS path never did — and the
+`device_list` dismissal branch was gated on `!needPairBusy`, so after a
+correct PIN the modal (`index.html`, `x-show="needPairAddr"`) stayed up
+forever.
+
+The dismissal branch now handles success regardless of `busy`: when
+`needPairAddr` is set, no device is in `need_pair`, and the pairing device's
+`ble_state` is `discovering`/`syncing`/`ready`, it toasts
+"Device paired successfully" and clears `needPairAddr`, `needPairBusy`, and
+`needPairPin`. The device-vanished fallback (dismiss without toast) stays
+gated on `!needPairBusy` so a transient dropout during a busy retry doesn't
+kill the modal prematurely; the wrong-PIN/OFFLINE feedback in the
+`device_state` handler is unchanged.

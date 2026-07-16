@@ -152,13 +152,21 @@ export const wsMixin = {
           this.needPairError = '';
           this.needPairPin   = this.deviceConfigs[needPairDev.node_id]?.ble_pin || '';
         }
-      } else if (!needPairDev && this.needPairAddr && !this.needPairBusy) {
+      } else if (!needPairDev && this.needPairAddr) {
         const prevDev = devices.find(d => d.addr === this.needPairAddr);
         const s = prevDev?.ble_state;
         if (s === 'discovering' || s === 'syncing' || s === 'ready') {
+          // Pairing succeeded — dismiss even while busy. Nothing else clears
+          // needPairBusy on success (only wrong-PIN/OFFLINE do), so gating
+          // this on !needPairBusy left the modal up forever (pair-modal-dismiss).
           this.showToast('Device paired successfully', 'success');
+          this.needPairAddr = null;
+          this.needPairBusy = false;
+          this.needPairPin  = '';
+        } else if (!this.needPairBusy) {
+          // Device vanished while the modal was idle — dismiss without toast.
+          this.needPairAddr = null;
         }
-        this.needPairAddr = null;
       }
 
       // Active-device adoption (see docs/modules/app-ws.md):
