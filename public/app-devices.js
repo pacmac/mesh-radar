@@ -282,11 +282,15 @@ export const devicesMixin = {
 
   async bleRemove(address) {
     try {
-      await fetchJSON(`/ble/known/${encodeURIComponent(address)}`, 'DELETE');
+      // Backend removal operation — gw forget + full local cleanup; the
+      // device_list rebroadcast removes the card and re-selects activeDevice.
+      await fetchJSON(`/device/${encodeURIComponent(address)}`, 'DELETE');
       const dev = this.bleDevices.find(d => d.address?.toUpperCase() === address.toUpperCase());
       if (dev) { dev.paired = false; dev.trusted = false; }
     } catch (e) {
       this.bleError = 'Remove failed: ' + (e.message || e);
+      this.showToast('Remove failed: ' + (e.message || e), 'error');
+      return false;   // asyncOp: suppress the success toast (result===false path)
     }
   },
 
