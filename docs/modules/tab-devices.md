@@ -1,8 +1,8 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: d99e4a8f0c55d5cbb61f283f3b55ba10b39a431c8605361111a56a157b67ec33
-updated: 2026-07-03
+source_hash: 33b38c3b5756110f4088054a12817b76914391f90ce3eac1949fd318bf63e713
+updated: 2026-07-16
 ---
 
 # Module: tab-devices
@@ -14,20 +14,22 @@ packet source selection. Presentation only — no logic lives here.
 
 ## Scope
 
-**This spec covers the grid-panel redesign of `tab-devices.html` (task
-`devices-page-refactor`, step 7).**
+**This spec covers the chassis/strip redesign (task `devices-accordion-layout`,
+2026-07-16, mockup approved by Peter).** Supersedes the grid-panel layout: that
+design showed all five config panels for every radio permanently — Peter's
+verdict was "complete data overload."
 
 Files in scope:
-- `public/partials/tab-devices.html` — full rewrite
+- `public/partials/tab-devices.html` — full rewrite (layout only)
 
 Files explicitly NOT changed:
-- `public/app-devices.js` — logic unchanged; violations noted in BROWSER_ARCH.md
-  are deferred pending backend additions
-- `public/partials/drawer-sidebar.html` — device switcher in drawer is a separate task
-- All other partials and JS files
+- `public/app-devices.js` — every handler keeps its exact signature; markup
+  relocates, bindings do not change
+- `public/partials/tab-cfg.html` — Radio/Channels/Owner migration is the
+  follow-up task `radio-config-into-devices`
+- `public/app.js` — new UI state is a scoped `x-data`, not app state
 
-See `docs/BROWSER_CONTRACT.md` and `docs/BROWSER_ARCH.md` — mandatory for all
-browser tasks.
+See `docs/BROWSER_CONTRACT.md` and `docs/STYLE_GUIDE.md` — both mandatory.
 
 ---
 
@@ -35,188 +37,152 @@ browser tasks.
 
 Page order, top to bottom:
 
-1. Empty state (`!availableDevices.length`)
-2. "Connected Radios" section header
-3. One accordion card per device (`x-for="dev in availableDevices"`)
-4. Packet Sources card (shown when `availableDevices.length > 1`)
-5. Connect Device card
+1. Page header row: page-title "Connected radios" + `+ Connect radio` button
+2. Connect card (`x-show="connectOpen"`, closed by default) — the previous
+   Connect Device card content, verbatim
+3. Empty state (`!availableDevices.length`)
+4. THE CHASSIS: one `card` containing one strip per device (`divide-y`)
+5. Packet sources — single-row card (shown when `availableDevices.length > 1`)
 
-### Per-device accordion card
-
-Exactly ONE expand/collapse per device. No nested section toggles.
+### Chassis / strip anatomy
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ ▶ ALIAS  Long Name  !nodeid  [PRIMARY] [ROTATOR]   ▂▄▆ dBm   │ ← header (toggle)
-│                                       [READY] [Active]       │
-├──────────────────────────────────────────────────────────────┤
-│  nodes · BLE addr · TCP port · sync        (stats row)       │ ← Status & Telemetry
-│  Hardware  Uptime  Battery  ChUtil  ...    (telemetry grid)  │   ALWAYS VISIBLE
-├──────────────────────────────────────────────────────────────┤
-│  ┌────────────────────────┐  ┌────────────────────────────┐  │
-│  │ DEVICE CONFIG          │  │ OTA FIRMWARE               │  │ ← panel, x-show="open"
-│  └────────────────────────┘  │  (sm:row-span-3)           │  │
-│  ┌────────────────────────┐  │                            │  │
-│  │ RADIO CONFIG           │  │                            │  │
-│  └────────────────────────┘  │                            │  │
-│  ┌────────────────────────┐  │                            │  │
-│  │ RANGE TEST             │  └────────────────────────────┘  │
-│  └────────────────────────┘                                  │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │ MAINTENANCE (sm:col-span-2)                            │  │
-│  └────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────┘
+Connected radios                              [+ Connect radio]
+┌────────────────────────────────────────────────────────────────┐
+│▍OMNI Peter Omni RAK !2687afb1 [PRIMARY]  1 node 100%⚡ ▂▄▆36% READY │ ← strip header
+│  RAK4631 · fw … · up … · ch … · temp … · MAC · TCP · sync      │ ← vitals caption
+├────────────────────────────────────────────────────────────────┤
+│▍YAGI Meshtastic f7b4 … [ROTATOR] [Set active]  … stats … READY │ ← expanded strip
+│  vitals caption line                                            │
+│  ┌ [Settings][Firmware][Maintenance] ──────────────────────┐   │
+│  │  active tab content (bg-base-200 rounded-xl p-3)        │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────┘
+PACKET SOURCES  ☑ OMNI ☑ YAGI  All radios active
 ```
 
-### Alpine local state
+### Alpine local state (scoped x-data on the tab root)
 
-Per-card `x-data="{ open: true }"` — one flag, open by default. Section flags
-from the previous design are removed.
+`x-data="{ expandedDevice: null, deviceTab: 'settings', connectOpen: false }"`
 
-The Device Config section card carries its own
-`x-data="{ _labelVal: …, _tcpVal: … }"` for its two text inputs (form field
-state — permitted by BROWSER_CONTRACT).
+- **All strips collapsed on page load** (`expandedDevice: null`) — the page is
+  a status list first.
+- **Exclusive accordion**: header click sets
+  `expandedDevice = expandedDevice === dev.addr ? null : dev.addr` and resets
+  `deviceTab = 'settings'` — opening one strip closes any other; max one open.
+- `connectOpen` toggled by the header button; auto-runs nothing.
+- The Settings tab keeps the pre-existing
+  `x-data="{ _labelVal…, _tcpVal… }"` input state; vitals line keeps the `_em`
+  getter shorthand for `environment_metrics`.
 
-Two telemetry grid cells use a local `x-data` getter `_em` as a shorthand for
-`nodeById(dev.node_id)?.environment_metrics` (pure display convenience).
+### Strip header (one line, `flex-nowrap`)
 
-### Header (always visible, `@click="open = !open"`)
+Left: chevron (rotates when expanded) · `labelBadge(label, color)` ·
+name (`font-display font-semibold truncate`) · mono `node_id` caption ·
+`roleBadge('PRIMARY')` / `roleBadge('ROTATOR')`.
+Right (`shrink-0`): `Set active` btn-xs (hidden when active) · node count ·
+battery % · `pctBars(signal_pct)` + % · `devStateBadge(dev.node_id)`.
+The active radio's strip carries a `border-l`-accent (`border-success`,
+matching the previous active tint precedent); inactive strips a transparent
+border of equal width so text aligns.
 
-- Chevron, rotates 90° when open
-- Label badge via `labelBadge(label, color)` when set
-- Long/short name, monospace `node_id`
-- Role badges via `roleBadge('PRIMARY')` / `roleBadge('ROTATOR')`
-- Right-aligned: RSSI bars + dBm (`sigBars`), state badge (`devStateBadge`),
-  `Active` badge when `dev.node_id === activeNodeId`
-- Card border tinted `border-success/40` when active
+### Vitals caption line (always visible, wraps to 2 lines max)
 
-### Status & Telemetry (always visible — NOT inside `x-show="open"`)
+Caption role, values mono: hw_model · fw version · uptime (`fmtUptime`) ·
+voltage · ch util / air TX · temp/humidity + dew-point `cond.` badge and
+pressure (when `environment_metrics` present) · MAC · TCP port + clients ·
+sync seconds. Same `deviceBleStates`/`nodeById` bindings as the old telemetry
+grid (F1 rebind preserved) — the grid's key/value cells become inline
+`key value` pairs.
 
-- Stats row: node count, BLE address, TCP port + clients, sync seconds
-- Telemetry grid (`grid-cols-2 sm:grid-cols-4`): hardware + firmware, uptime,
-  battery + voltage, ch util / air TX, nodes seen (local_stats), packets RX/TX
-  (local_stats), temp/humidity, pressure/dew point + condensation badge
+### Detail tabs (`x-show="expandedDevice === dev.addr"`)
 
-### Panel grid (`x-show="open"`, `grid-cols-1 sm:grid-cols-2 gap-3`)
+`join` of three `btn-sm` tabs — Settings / Firmware / Maintenance — switching
+`deviceTab`. (Radio / Channels / Owner join this row in the follow-up task.)
+Content sits in one `bg-base-200 rounded-xl p-3` surface.
 
-Section cards are `bg-base-200 rounded-xl p-3` with an uppercase
-`text-xs font-semibold text-base-content/40 tracking-wide` label. Order:
+1. **Settings** (`deviceTab==='settings'`) — alias input + colour select +
+   Save; TCP port + Save; checkboxes Primary / Rotator / Auto-connect /
+   Load nodes on boot. Handlers `saveDeviceCfg`, `saveBleCfg` — verbatim.
+2. **Firmware** (`deviceTab==='firmware'`) — the entire OTA block verbatim:
+   header (hw_model, version, flash badges, refresh), file list
+   (select/prepare/delete), upload + flash row, GitHub fetch expander
+   (`otaFetchOpen[dev.node_id]`), reboot note.
+3. **Maintenance** (`deviceTab==='maintenance'`) — absorbs the old Radio
+   Config and Range Test panels:
+   - Row 1: Backup / Restore (file input, inline JSON parse unchanged) /
+     Push Position + helper caption.
+   - Row 2: Range test — duration select + Start TX, or countdown + Stop TX.
+   - Row 3: auto-purge checkbox + time + last-run.
+   - Row 4 (actions, `border-t`): Disconnect, Retry Now (conditional) left;
+     spacer; **danger cluster right**: Wipe NodeDB and Remove as
+     `btn-outline btn-error` — destructive actions isolated and de-shouted
+     (Remove was solid `btn-error`, Wipe was `btn-warning`).
+   - Set Active leaves Maintenance — it lives in the strip header.
 
-1. **Device Config** (left, row 1) — alias input + colour select + save;
-   TCP port input + save; checkboxes: Primary, Rotator, Auto-connect,
-   Load nodes on boot. Handlers: `saveDeviceCfg`, `saveBleCfg` — unchanged.
-2. **OTA Firmware** (right column, `sm:row-span-3`) — header with hw_model +
-   running version + flash progress badges + refresh button; file list with
-   select/prepare/delete; upload + flash row; GitHub fetch expander
-   (`otaFetchOpen[dev.node_id]` — global map, pre-existing). Handlers:
-   `loadOtaFiles`, `uploadOtaFile`, `flashOta`, `prepareOtaVersion`,
-   `deleteOtaFile`, `loadOtaReleases`, `otaAssetsForDevice`,
-   `downloadOtaAsset` — unchanged.
-3. **Radio Config** (left, row 2) — Backup, Restore (file input), Push
-   Position. Handlers: `backupRadioConfig`, radio_restore POST,
-   `pushFixedPosition` — unchanged.
-4. **Range Test** (left, row 3) — duration select + Start TX, or countdown +
-   Stop TX when `rangeTimer.active && rangeTimer.nodeId === dev.node_id`.
-5. **Maintenance** (`sm:col-span-2`) — Set Active, Wipe NodeDB, Retry Now
-   (conditional), Disconnect, Remove (conditional); auto-purge checkbox +
-   time + last-run.
+### Packet sources row
 
-## Consistency pass (task `devices-consistency`)
+One card, `card-body py-3 flex-row flex-wrap`: section label, one
+checkbox+`deviceLabel` badge pair per device (same `togglePacketSource`
+binding), status caption ("All radios active" / "Active: …").
 
-**Telemetry rebind (F1 pattern):** the four main telemetry cells (Hardware,
-Uptime, Battery, Ch util/Air TX) and the OTA hw_model fallbacks previously
-read `nodeById(dev.node_id)` — the *filtered* node list — so they emptied
-whenever node filters excluded the radios. They now bind to
-`deviceBleStates[dev.node_id]` pushed fields (`hw_model`, `uptime_s`,
-`battery_level`, `voltage`, `channel_utilization`, `air_util_tx`).
-Nodes-seen / packets (local_stats) and temp/pressure (environment_metrics)
-cells keep `nodeById` — no per-device pushed source exists — and hide
-gracefully when absent.
+### Connect card (behind the header button)
 
-**Control sizes (guide §5):** section-card controls move from `-xs` to `-sm`
-(Device Config inputs/select/saves/checkboxes, Radio Config buttons, Range
-Test select + Start/Stop, Maintenance buttons + auto-purge controls, OTA
-upload + Flash). Dense repeating contexts keep `-xs`: OTA file-list rows
-(select/prepare/delete), GitHub-fetch panel internals, header refresh icon.
-
-**Text roles:** stats row and telemetry values to `text-sm` (data role);
-cell keys stay caption (`text-xs text-base-content/40`).
-
-## Bug fix in the grid-panel revision
-
-The step-7 draft added a "Refresh" button calling `loadDevices()` — **that
-function does not exist** (device list is WS-pushed). The button is removed;
-the section header keeps only the "Connected Radios" title.
-
-## Sections that do NOT change
-
-- **Packet Sources card** — unchanged
-- **Connect Device card** — unchanged (scan, results table, manual entry,
-  error alert)
+Content identical to the old Connect Device card: scan button + found count,
+results table (name/address/RSSI/paired/trusted/PIN/Connect/✕ remove),
+manual-entry `details`, `bleError` alert. Only the wrapper changed
+(`x-show="connectOpen"` + `x-transition`).
 
 ## Invariants
 
-- Exactly one toggle per device card; no nested section toggles
-- Status & Telemetry renders regardless of `open`
-- No state shared between card instances
-- No logic moved between template and `app-devices.js`
-- All colors via DaisyUI semantic tokens — no raw hex/rgba
+- All strips collapsed on load; at most one expanded; expanding resets the
+  tab to Settings
+- The strip header and vitals line render regardless of expansion
+- Every handler call, ops key, and `:disabled` expression is carried over
+  verbatim — zero logic change
+- All colors via DaisyUI semantic tokens; type per STYLE_GUIDE §3 roles
 - Outer `x-for="dev in availableDevices" :key="dev.addr"` loop preserved
 
 ## Device-control identity — MAC-keyed (task `device-controls-mac-migration`, 2026-07-09)
 
 All gateway device operations are keyed on the **BLE MAC = `dev.addr`** (V2),
-never the removed V1 `dev.ble_address` (which is `null` on live devices) nor
-`dev.node_id`. This was the V2-migration gap that made auto-connect, disconnect,
-remove and tcp-port silently no-op (they hit `/…/null` or a node_id the gw
-rejects):
+never the removed V1 `dev.ble_address` nor `dev.node_id`:
 
 - **Auto-connect / TCP-port** → `saveBleCfg(dev.addr, …)` → `PATCH /ble_devices/{MAC}`
 - **Disconnect** → `disconnectDevice(dev.addr)` → `DELETE /devices/{MAC}`
-- **Remove** → `bleRemove(dev.addr)` → `DELETE /ble/known/{MAC}`; the button's
-  `x-show` gates on `dev.addr`
+- **Remove** → `bleRemove(dev.addr)` → `DELETE /device/{MAC}` (node-dash
+  removal op since task `remove-button-repoint`); button `x-show` gates on `dev.addr`
 - **Retry** → `POST /devices/{MAC}/retry`
-- **OTA** → `flashOta(dev.node_id, dev.addr, …)` → `POST /ota` (gw accepts either
-  `node_id` or `ble_addr`; pass the non-null MAC)
-- **Not changed:** `wipeNodeDb`/`backupRadioConfig` use `/{node_id}/…`
-  per-device routes, which the gw accepts by node_id **or** MAC.
+- **OTA** → `flashOta(dev.node_id, dev.addr, …)`
+- **Not changed:** `wipeNodeDb`/`backupRadioConfig` use `/{node_id}/…` routes.
 
-`opLoading` state keys may still use `dev.node_id` — they are local UI keys, not
-gateway identifiers.
-
-## Decision violations in scope (display only — NOT fixed here)
-
-Rendered as-is; deferred to the backend-additions task per BROWSER_ARCH.md:
-
-- "Set Active" label/disabled computed from `dev.node_id === activeNodeId`
-- `activeNodeId` currently owned by the browser
-- Flash button disabled-state computed from `devBleState() !== 'ready'` and
-  file `ota_ready` (pre-existing pattern, unchanged)
-
-## Test notes
-
-Browser task (Phase 2 scope) — no backend tests apply.
-
-Manual/Playwright verification:
-- Card renders with header, always-visible telemetry, open panel by default
-- Header click collapses/expands panel only — telemetry stays
-- Grid: two columns ≥sm, OTA occupies right column full height,
-  Maintenance spans both columns; single column on narrow viewports
-- No "Refresh" button; no `loadDevices` reference anywhere
-- All handlers fire (spot-check: alias save, OTA refresh, range start disabled
-  when not ready)
-- Packet Sources and Connect Device cards unchanged and functional
-- No Alpine console errors
+`opLoading` keys may still use `dev.node_id` — local UI keys, not gateway ids.
 
 ## V2 metrics alignment (task `v2-browser-metrics`)
 
-- Card-header BLE signal: `pctBars(signal_pct)` + `signal_pct %` — V2 replaced
-  raw BLE dBm (`ble_rssi`, removed) with `signal_pct` 0–100.
-- Stats row sync time reads `sync_duration_s` (V2 name; `ready_secs` never existed).
-- "Nodes seen" / "Packets RX/TX" cells removed — `local_stats` is not in the V2
-  `node_info` contract; the cells could never render.
+- BLE signal: `pctBars(signal_pct)` + `signal_pct %` (raw dBm removed in V2).
+- Sync time reads `sync_duration_s`.
+- Telemetry binds `deviceBleStates` pushed fields (F1 rebind), not the
+  filtered `nodeById` — except environment_metrics, which has no pushed source.
 
 ## Phase C3a
 
-Set Active passes `dev.addr` to selectDevice. The active-badge compare
+Set Active passes `dev.addr` to `selectDevice`. Active compare
 (`dev.node_id === activeNodeId`) still works — activeNodeId is derived.
+
+## Decision violations in scope (display only — NOT fixed here)
+
+- "Set active" visibility computed from `dev.node_id === activeNodeId`
+- Flash disabled-state computed from `devBleState() !== 'ready'` + `ota_ready`
+
+## Test notes
+
+Playwright, both themes, 1440×900 (guide §8):
+- Load → pure list: every strip collapsed, headers one line, vitals caption
+  beneath, active radio has the accent edge
+- Click strip → expands with Settings tab; click another → first closes
+  (exclusive); click same → closes (all collapsed again)
+- Tabs switch; Maintenance shows backup/range/purge + isolated danger cluster
+- `+ Connect radio` reveals the connect card; scan/manual controls present
+- Packet sources row renders with both radios
+- 0 unexpected console errors in both themes
