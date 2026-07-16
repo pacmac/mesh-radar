@@ -1,8 +1,8 @@
 ---
 module: auto-purge-api
 source: src/auto-purge-api.js
-source_hash: 9ecde2bfd1ac40f879560a866bdac43aa2ace51ef3042872d4e0fd331879a018
-updated: 2026-07-04
+source_hash: e5cacd933659fed328ad4b5934becc5eb4a53917724ed0e2ac8bd35f1744010f
+updated: 2026-07-16
 ---
 
 # Module: auto-purge-api
@@ -75,3 +75,10 @@ _N/A_ (broadcasts via injected `broadcastAll` callback)
 
 `getAutoPurgeCfg(key)` exported — rides the WS device_list. PUT
 `/auto-purge` calls `pokeDeviceList()`. Browser GET is WS-only-blocked.
+
+## Removal (task `device-remove-op`, 2026-07-16)
+
+`removeAutoPurgeCfg(key)` exported — deletes the three
+`auto_purge_{enabled,time,last_run_ts}_<key>` rows for a device key.
+`device-remove.js` calls it with both the node_id and the MAC (legacy rows
+were written under whichever key the browser had at the time).

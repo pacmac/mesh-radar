@@ -4,6 +4,8 @@ import { pokeDeviceList } from './ws-relay.js';
 
 const router = Router();
 const PREFIX = 'device_cfg.';
+const MAC_RE    = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i;
+const NODEID_RE = /^![0-9a-f]+$/i;
 
 
 let _onHomePosChange = null;
@@ -80,9 +82,25 @@ export function ensureDeviceCfgMac(addr, nodeId) {
     // Exact live pair known: migrate legacy !hexid entry to MAC key.
     setConfig(PREFIX + mac, all[nodeId]);
     deleteConfig(PREFIX + nodeId);
-  } else if (getConfig(PREFIX + mac, null) === null) {
+  } else if (MAC_RE.test(mac) && getConfig(PREFIX + mac, null) === null) {
     // No exact pair available: defer migration, bootstrap empty entry only.
+    // MAC-shaped keys only — junk keys must never grow cfg rows (device-remove-op).
     setConfig(PREFIX + mac, { ...DEFAULT });
+  }
+}
+
+// Removes a device's cfg row. Accepts a MAC (canonical, stored uppercase) or
+// a legacy !hexid key (stored as-is). Task device-remove-op.
+export function deleteDeviceCfg(key) {
+  deleteConfig(PREFIX + (key.startsWith('!') ? key : key.toUpperCase()));
+}
+
+// One-time idempotent cleanup: drop malformed cfg rows created before key
+// validation existed (e.g. device_cfg.UNDEFINED from PUT /device-config/undefined).
+for (const key of Object.keys(getConfigByPrefix(PREFIX))) {
+  if (!MAC_RE.test(key) && !NODEID_RE.test(key)) {
+    deleteConfig(PREFIX + key);
+    console.log(`[device-config] purged malformed cfg row: ${PREFIX}${key}`);
   }
 }
 
@@ -94,6 +112,9 @@ router.get('/', (req, res) => {
 // GET /device-config/:address  (MAC or !hexid)
 router.get('/:address', (req, res) => {
   const raw = req.params.address;
+  if (!MAC_RE.test(raw) && !NODEID_RE.test(raw)) {
+    return res.status(400).json({ error: `not a device key: ${raw}` });
+  }
   if (raw.startsWith('!')) {
     const mac = _nodeIdToMac?.(raw);
     if (mac) return res.json(getDeviceCfg(mac));
@@ -107,6 +128,9 @@ router.get('/:address', (req, res) => {
 // PUT /device-config/:address  (MAC or !hexid)
 router.put('/:address', (req, res) => {
   const raw = req.params.address;
+  if (!MAC_RE.test(raw) && !NODEID_RE.test(raw)) {
+    return res.status(400).json({ error: `not a device key: ${raw}` });
+  }
   let mac;
   if (raw.startsWith('!')) {
     mac = _nodeIdToMac?.(raw);

@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 6d14766a5eb4ae607480eebe4a387c1c488e4d95373645c7cefba3fc7905499d
-updated: 2026-07-09
+source_hash: cd43859b39494c4053a5801324795909eeff87ef47377027baf3670be2b968ea
+updated: 2026-07-16
 ---
 
 # Module: ws-relay
@@ -476,3 +476,21 @@ This reverses the earlier `tab-radar` invariant that forbade traceroute-derived
 hops: with reliable traceroute data we prefer it. The backend `max_hops`
 filter (`node-filter.js`) still keys off reported live hops — a deliberate
 split (proximity filter vs. displayed distance).
+
+## Device removal + ghost guard (task `device-remove-op`, 2026-07-16)
+
+`lastDeviceState` was add-only: no code path ever deleted an entry, so a
+device removed at the gw was re-broadcast in every `device_list` until
+restart, and stray `device_state`/`device_data` events for unknown keys
+created skeleton `{ addr }` entries — ghost devices with no name and no data.
+
+- `pruneDevice(mac, nodeId?)` exported (closure-holder pattern, like
+  `pokeDeviceList`): drops every `lastDeviceState` entry matching the MAC
+  (case-insensitive) or the node_id (catches historic node_id-keyed
+  duplicates), deletes `lastDeviceLora[MAC]` and the `_liveNodeIds` entry,
+  then rebroadcasts `device_list`. Called by `device-remove.js`.
+- Ghost guard in the STATE_EVENT_TYPES block: `evAddr` now resolves
+  `ev.device` (a node_id) to its MAC via `getLiveMacByNodeId` before falling
+  back, and only a MAC-shaped key may CREATE a new entry — events for
+  unknown non-MAC keys are dropped instead of becoming ghost rows. Known
+  keys update exactly as before; OFFLINE devices stay visible.

@@ -6,6 +6,7 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
+import deviceRemoveRouter from './device-remove.js';
 import { registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, clearNodeCache, stmts, migrateNodeDeviceMac, migrateDeviceColumnsToMac, loadNodeMacMap } from './db.js';
@@ -148,6 +149,8 @@ app.get('/nodes', (req, res) => {
 
 app.use('/config', configRouter);
 app.use('/device-config', deviceConfigRouter);
+// The ONE device-removal operation — gw forget + local state cleanup (device-remove-op)
+app.use('/device', deviceRemoveRouter);
 
 app.get('/home_pos', (_req, res) => {
   res.json({ lat: getConfig('home.lat', null), lon: getConfig('home.lon', null) });

@@ -1,8 +1,8 @@
 ---
 module: device-config
 source: src/device-config.js
-source_hash: 3eff1f29015bbd004f413c08a7f79f33bd4f971f4efe5db97dcb044bb939f4e5
-updated: 2026-07-09
+source_hash: 1caf8a959e858fec7755edb2e23506606bc944f1f94977a62fa693a3ff2950c5
+updated: 2026-07-16
 ---
 
 # Module: device-config
@@ -163,3 +163,15 @@ Identity is never inferred from MAC-suffix arithmetic.
 The PUT handler calls `pokeDeviceList()` after writing so the enriched
 `device_list` (which carries each device's `cfg`) rebroadcasts immediately.
 GET /device-config remains for tooling but the browser no longer calls it.
+
+## Key validation + removal (task `device-remove-op`, 2026-07-16)
+
+- `GET/PUT /:address` reject keys that are neither MAC- nor `!hexid`-shaped
+  with 400 — this kills the `device_cfg.UNDEFINED` creation path (a browser
+  bug once sent `PUT /device-config/undefined`; the perf task filtered the
+  phantom in the UI and deferred the real cleanup here).
+- `ensureDeviceCfgMac` bootstraps a default row only for MAC-shaped keys.
+- `deleteDeviceCfg(key)` exported — removes a cfg row by MAC (uppercased) or
+  legacy `!hexid` key (as stored). Called by `device-remove.js`.
+- One-time idempotent purge at module load deletes any malformed
+  `device_cfg.*` rows, logging each purged key.

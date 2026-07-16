@@ -34,6 +34,7 @@ function makeRotatorThrottle(sendFn) {
 
 // State event types from the bridge BLE state machine — buffered per device
 const STATE_EVENT_TYPES = new Set(['device_state', 'device_data']);
+const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i;
 
 // Module-level map: uppercase BLE MAC → live firmware node_id (!hexid).
 // Populated from device_snapshot and device_data events. Used by callers that
@@ -44,6 +45,16 @@ const _liveNodeIds = new Map();
 // list after a settings write (C2 — the browser reads settings from WS).
 let _pokeDeviceList = () => {};
 export function pokeDeviceList() { _pokeDeviceList(); }
+
+// Assigned inside attachWsRelay; device-remove uses it to drop a removed
+// device from the in-memory state and push a fresh device_list. Before this
+// existed, lastDeviceState was add-only and removed devices were re-broadcast
+// forever (task device-remove-op).
+let _pruneDevice = () => {};
+export function pruneDevice(mac, nodeId = null) {
+  _liveNodeIds.delete(mac.toUpperCase());
+  _pruneDevice(mac, nodeId);
+}
 
 // Settings live on the WS (settings-via-ws): replayed on connect, re-broadcast
 // after every config write so all tabs see filter/radar changes immediately.
@@ -305,6 +316,20 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   }
   _pokeDeviceList = broadcastDeviceList;
 
+  _pruneDevice = (mac, nodeId) => {
+    const MAC = mac.toUpperCase();
+    for (const key of Object.keys(lastDeviceState)) {
+      const e = lastDeviceState[key];
+      // Match by MAC, and by node_id to catch historic node_id-keyed duplicates.
+      if (key.toUpperCase() === MAC ||
+          (nodeId && (e?.node_id === nodeId || e?.state_event?.node_id === nodeId))) {
+        delete lastDeviceState[key];
+      }
+    }
+    delete lastDeviceLora[MAC];
+    broadcastDeviceList();
+  };
+
   function settingsEvent() {
     const config = {};
     for (const [key, fallback] of Object.entries(CONFIG_DEFAULTS)) {
@@ -342,8 +367,11 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // All state types update the in-memory map — OFFLINE devices stay visible.
     // seed populates { addr, state_event:{...}, data_event:{...} } — live events
     // must update the nested key, not spread flat on top of it.
-    const evAddr = ev.addr || ev.device;
+    const evAddr = ev.addr || getLiveMacByNodeId(ev.device) || ev.device;
     if (evAddr && STATE_EVENT_TYPES.has(ev.type)) {
+      // Ghost guard (device-remove-op): only a MAC-shaped key may CREATE an
+      // entry — node_id-keyed strays previously became no-name ghost devices.
+      if (!lastDeviceState[evAddr] && !MAC_RE.test(evAddr)) return;
       if (ev.type === 'device_state' && ev.addr) ensureDeviceCfgMac(ev.addr, ev.node_id);
       const existing = lastDeviceState[evAddr] || { addr: evAddr };
       const { type: _t, ...fields } = ev;

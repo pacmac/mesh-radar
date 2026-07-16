@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getConfig, setConfig, getConfigByPrefix } from './db.js';
+import { getConfig, setConfig, deleteConfig, getConfigByPrefix } from './db.js';
 import { pokeDeviceList } from './ws-relay.js';
 import { bridge } from './bridge.js';
 
@@ -54,6 +54,14 @@ export function getAutoPurgeCfg(key) {
     purge_time:  getConfig(`auto_purge_time_${key}`, '02:00'),
     last_run_ts: getConfig(`auto_purge_last_run_ts_${key}`, null),
   };
+}
+
+// Removes all purge rows for a device key (node_id or MAC) — device-remove-op.
+export function removeAutoPurgeCfg(key) {
+  if (!key) return;
+  deleteConfig(`auto_purge_enabled_${key}`);
+  deleteConfig(`auto_purge_time_${key}`);
+  deleteConfig(`auto_purge_last_run_ts_${key}`);
 }
 
 router.get('/auto-purge', (req, res) => {
