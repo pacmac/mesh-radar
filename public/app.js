@@ -26,7 +26,10 @@ function dashboard() {
   return {
     // -- Navigation -----------------------------------------------------------
     tab:           initTab(),
-    cfgTab:        persistGet('cfgTab', 'radio'),
+    // 'radio' shim: the Radio config tab moved to the Devices page
+    // (radio-config-into-devices) — a persisted 'radio' would strand the
+    // user on a tab that no longer exists.
+    cfgTab:        (t => t === 'radio' ? 'bridge' : t)(persistGet('cfgTab', 'bridge')),
     drawerOpen:    false,
     sidebarPinned: persistGet('sidebarPinned', true),
 

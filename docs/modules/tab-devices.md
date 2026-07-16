@@ -1,7 +1,7 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: 33b38c3b5756110f4088054a12817b76914391f90ce3eac1949fd318bf63e713
+source_hash: 8594799030d1e7f6f2a017b52697e16001e59b79bedd47e951f0e5e4b9043c2f
 updated: 2026-07-16
 ---
 
@@ -132,6 +132,43 @@ Content identical to the old Connect Device card: scan button + found count,
 results table (name/address/RSSI/paired/trusted/PIN/Connect/✕ remove),
 manual-entry `details`, `bleError` alert. Only the wrapper changed
 (`x-show="connectOpen"` + `x-transition`).
+
+## Radio / Channels / Owner tabs (task `radio-config-into-devices`, 2026-07-16)
+
+Config → Radio was per-radio configuration living on the wrong page behind a
+duplicate radio selector. Its three sub-tabs move into each device strip as
+siblings of Settings/Firmware/Maintenance; expanding a strip IS selecting the
+radio, so the selector dies.
+
+Tab row becomes: **Settings · Radio · Channels · Owner · Firmware · Maintenance.**
+
+- **Radio** — the old Device sub-tab verbatim: Antenna card (type/beam/gain/
+  cable-loss + `saveAntennaCfg`, `antennaSaved`/`antennaError`), tilt
+  calibration block (`nodeSelf.tilt && cfgRadioId === activeNodeId`), the
+  schema-info alert, and the `allSections` collapse list (incl. the
+  fixed-position sub-panel on `position`).
+- **Channels** — the old Channels sub-tab verbatim (psk warning + `channels`
+  collapse list).
+- **Owner** — the old Owner sub-tab verbatim (`#owner_form` + save).
+
+**Mount-point rule:** the moved content builds forms into element IDs
+(`#sec_<name>`, `#ch_<index>`, `#owner_form`), so each moved tab body is
+wrapped in `<template x-if="expandedDevice === dev.addr && deviceTab === '…'">`
+— with the exclusive accordion this guarantees at most one instance of each ID
+in the DOM. x-show would duplicate IDs across strips and break `buildForm`.
+
+**Load contract (each tab click, since x-if destroys the forms on leave):**
+
+```
+Radio:    @click="deviceTab='radio';    cfgRadioId=dev.node_id; radioTab='device';   resetRadioCfg()"
+Channels: @click="deviceTab='channels'; cfgRadioId=dev.node_id; radioTab='channels'; resetRadioCfg()"
+Owner:    @click="deviceTab='owner';    cfgRadioId=dev.node_id; radioTab='owner';    resetRadioCfg()"
+```
+
+`resetRadioCfg()` (app-config.js, unchanged) clears `allSections`/`channels`/
+`ownerSchema`/`fixedPosition` and reloads for the current `radioTab` —
+required because the loaders early-return on cached state and the x-if
+unmount destroys the rendered forms while that cache survives.
 
 ## Invariants
 

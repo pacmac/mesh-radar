@@ -1,8 +1,8 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: fac543e5a6f3e755971651fdc0b8b35d9026dfd7c5337f91c041d86155d99c1f
-updated: 2026-07-09
+source_hash: fa631cd6d28b328b3b5e9ccdfba7b394e340845a2140bdcc4ef2e822fd41f2ff
+updated: 2026-07-16
 ---
 
 # Module: tab-cfg
@@ -157,3 +157,18 @@ Playwright, both themes, 1440×900 (guide §8):
 - Alerts: SMTP grid labels legible; rules table intact with input-xs rows
 - Devices spot-check (label-text bump)
 - 0 console errors
+
+## Radio tab removed (task `radio-config-into-devices`, 2026-07-16)
+
+The Radio tab (radio selector + Device/Channels/Owner sub-tabs: antenna card,
+tilt calibration, schema section collapses with the fixed-position panel,
+channel collapses, owner form) moved into the Devices page strips — per-radio
+configuration belongs with the radio, and expanding a strip replaces the
+selector. Config keeps the system-level tabs: Bridge / Rotator / Modes /
+Radar / Alerts.
+
+Related non-partial edits in the same task (modules unspecced): `app.js`
+sanitizes the persisted `cfgTab` (`'radio'` → `'bridge'`, new default
+`'bridge'`) so users who last visited the removed tab don't land on a blank
+page; `app-config.js` `switchCfgTab` drops its dead `'radio'` branch
+(`resetRadioCfg` and the loaders stay — the Devices page calls them now).

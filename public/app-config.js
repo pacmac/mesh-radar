@@ -13,11 +13,9 @@ export const configMixin = {
   switchCfgTab(name) {
     this.cfgTab = name;
     persistSet('cfgTab', name);
-    if (name === 'radio') {
-      if (this.radioTab === 'device')        this.loadSections();
-      else if (this.radioTab === 'channels') this.loadChannels();
-      else if (this.radioTab === 'owner')    this.loadOwner();
-    } else if (name === 'bridge')  this.loadBridgeConfig();
+    // 'radio' is no longer a Config tab — the per-radio config lives on the
+    // Devices page (radio-config-into-devices), which calls resetRadioCfg().
+    if (name === 'bridge')         this.loadBridgeConfig();
     else if (name === 'rotator')   this.loadRotatorCfg();
     else if (name === 'modes')     this.loadModesCfg();
     else if (name === 'radar')     this.loadRadarCfg();
