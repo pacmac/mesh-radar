@@ -168,9 +168,10 @@ export const configMixin = {
     ch.loading = true;
     try {
       if (!this.channelSchema) this.channelSchema = await fetchJSON('/schema/channel');
-      const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
-      ch.data = live || {};
-      const formData = { ...(live?.settings || {}), role: live?.role };
+      // Build from the bulk-loaded channel set (loadChannels) — the
+      // per-channel GET does a live admin round-trip the form doesn't need
+      // (channels-form-from-bulk; it also 500s on the current gw).
+      const formData = { ...(ch.data?.settings || {}), role: ch.data?.role };
       await nextFrame();
       const el = document.getElementById('ch_' + ch.index);
       if (!el.dataset.dirty) {
@@ -193,10 +194,15 @@ export const configMixin = {
     delete body.settings.role;
     const target = this.cfgRadioId || this.activeNodeId;
     await submitOp('channel_config', target, { index: ch.index, values: body });
-    // Refresh the form UI
-    const live = await fetchJSON(this.cd(`/channels/${ch.index}`));
-    ch.data = live || {};
-    const formData = { ...(live?.settings || {}), role: live?.role };
+    // Refresh ALL channels from the bulk endpoint (a role change can affect
+    // the set) and rebuild this form — no per-channel live GET
+    // (channels-form-from-bulk).
+    const all = await fetchJSON(this.cd('/channels'));
+    for (const c of this.channels) {
+      const fresh = all.channels?.[String(c.index)];
+      if (fresh) c.data = fresh;
+    }
+    const formData = { ...(ch.data?.settings || {}), role: ch.data?.role };
     const formEl = document.getElementById('ch_' + ch.index);
     if (formEl && !formEl.dataset.dirty) {
       formEl.innerHTML = '';
