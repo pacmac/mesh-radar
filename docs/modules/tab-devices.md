@@ -1,7 +1,7 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: 8594799030d1e7f6f2a017b52697e16001e59b79bedd47e951f0e5e4b9043c2f
+source_hash: da120152853105ea54dd0aff563b0c2f19ba209caf4580fed119c1648101a373
 updated: 2026-07-16
 ---
 
@@ -172,6 +172,12 @@ unmount destroys the rendered forms while that cache survives.
 
 ## Invariants
 
+- **The chassis card is `shrink-0`** (task `devices-chassis-scroll-fix`,
+  Peter-reported): it carries `overflow-hidden` for corner clipping, which
+  resolves the flex child's `min-height:auto` to 0 — without `shrink-0` the
+  card shrinks to the viewport inside the page's `flex-col overflow-y-auto`
+  and clips tall tab content (Radio: 2281px clipped to 717px) instead of
+  making the page scroll.
 - All strips collapsed on load; at most one expanded; expanding resets the
   tab to Settings
 - The strip header and vitals line render regardless of expansion

@@ -115,7 +115,10 @@
           </div>
 
           <!-- ── THE CHASSIS — one card, one strip per radio ─────── -->
-          <div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden divide-y divide-base-300"
+          <!-- shrink-0 is load-bearing: with overflow-hidden this flex child's
+               min-height resolves to 0, so without it the card shrinks to the
+               viewport and CLIPS tall tab content instead of scrolling the page. -->
+          <div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden divide-y divide-base-300 shrink-0"
                x-show="availableDevices.length">
             <template x-for="dev in availableDevices" :key="dev.addr">
               <div class="border-l-[3px]"
