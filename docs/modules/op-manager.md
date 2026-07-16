@@ -1,8 +1,8 @@
 ---
 module: op-manager
 source: src/op-manager.js
-source_hash: a3ea309acd6216cefb300c802ce1bf7b2fba7b26983af5e996628fab2b552ea2
-updated: 2026-06-30
+source_hash: 99c99dce7858542d0c1e213c033e37312419b5ffd574750e32a7fc6f1364d4b6
+updated: 2026-07-16
 ---
 
 # Module: op-manager
@@ -227,3 +227,21 @@ Returns the current op state: `{ op_id, kind, target, state, result, error, ts }
 - Retry on failure — each op runs once; retry is the caller's responsibility
 - Persistent op history — in-memory only; lost on restart
 - Browser rendering of op state — `ws-relay.js` relays `config_op` events to the browser
+
+## Read-back retry (task `radio-readback-retry`, 2026-07-16)
+
+Radio config commits are not instantaneous: after a `PUT`, the live-admin
+read-back can briefly return the pre-write state. First observed enabling a
+new channel — the radio reported the old `DISABLED` role (omitted in proto3
+JSON) for a moment, so the single-attempt verify threw
+`Read-back mismatch: role: expected "SECONDARY"` for a write that landed.
+(Masked before 2026-07-16: the per-channel read-back endpoint 500'd at the
+gw, so this verify never actually ran.)
+
+`_radioRunner` now retries the read-back + compare up to 4 attempts with
+1s/2s/3s backoff (~6s budget, inside every Radio op's 15s timeout) and only
+throws the last error after all attempts fail. Applies to every Radio-class
+op with a `read_back_path` (`channel_config`, `owner_info`,
+`fixed_position_push`, `tilt_cal`) — commit latency is a property of the
+write→verify mechanism, not of any one op. A genuine mismatch still fails,
+just ~6s later.

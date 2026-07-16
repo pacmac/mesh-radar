@@ -415,11 +415,23 @@ export class OpManager {
     if (!entry.read_back_path) return { ok: true };
 
     this._transition(op, 'validating');
-    const rbr = await _localFetch('GET', entry.read_back_path(params));
-    if (!rbr.ok) throw new Error(`Read-back failed HTTP ${rbr.status}`);
-    _compareMatchFields(entry, body, rbr.json);
-
-    return { ok: true };
+    // Radio config commits are not instantaneous — an immediate read-back can
+    // return the pre-write state (first seen enabling a new channel: the radio
+    // briefly reported the old DISABLED role). Retry with backoff before
+    // failing; a genuine mismatch still fails after all attempts.
+    let lastErr = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) await new Promise(r => setTimeout(r, attempt * 1000));
+      try {
+        const rbr = await _localFetch('GET', entry.read_back_path(params));
+        if (!rbr.ok) throw new Error(`Read-back failed HTTP ${rbr.status}`);
+        _compareMatchFields(entry, body, rbr.json);
+        return { ok: true };
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr;
   }
 
   async _modeRunner(entry, params, op) {
