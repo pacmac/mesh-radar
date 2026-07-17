@@ -1,8 +1,8 @@
 ---
 module: messages-api
 source: src/messages-api.js
-source_hash: d7da2c681ab6f08ac769b52bff5a494d658cc24a68531e1b3eea264523038cd1
-updated: 2026-07-03
+source_hash: ac0ed8400f2819fa6c6abf818845dd30a5ed0a1b0ea16318b4a6a105d0672daf
+updated: 2026-07-17
 ---
 
 # Module: messages-api
@@ -71,3 +71,12 @@ _N/A_
 The TX message row stores `device` as the radio's **BLE MAC** (resolved
 from the `:nodeId` path param via the live registry when it arrives as
 `!hex`), matching the RX path — one vocabulary in the dedup index.
+
+## Broadcast after send (task `message-tx-broadcast`, 2026-07-17)
+
+After `insertTxMessage` + `syncAlertedAt`, the route calls
+`broadcastMessageHistory()` (ws-relay) so every connected session receives
+the fresh enriched history containing the just-sent message. Before this,
+TX messages were invisible to all sessions except the sender's optimistic
+entry until their next WS reconnect. On persist failure the broadcast is
+skipped with the existing error log — the gw send itself already succeeded.

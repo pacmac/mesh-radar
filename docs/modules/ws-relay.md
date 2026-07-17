@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: cd43859b39494c4053a5801324795909eeff87ef47377027baf3670be2b968ea
-updated: 2026-07-16
+source_hash: d18cdf1102467560a05ce45fcf6496da4207f342a886f33a77f0f8be18c3a794
+updated: 2026-07-17
 ---
 
 # Module: ws-relay
@@ -494,3 +494,24 @@ created skeleton `{ addr }` entries — ghost devices with no name and no data.
   back, and only a MAC-shaped key may CREATE a new entry — events for
   unknown non-MAC keys are dropped instead of becoming ghost rows. Known
   keys update exactly as before; OFFLINE devices stay visible.
+
+## Sent-message rebroadcast (task `message-tx-broadcast`, 2026-07-17)
+
+A gateway radio never receives its own transmission, so a dash-sent message
+generated no event: only the sending session (optimistic entry) ever saw it,
+and every other connected browser was blind to it until a reload's
+`message_history` replay. Peter-reported as "the feed only shows received
+messages".
+
+- The on-connect history block's enriched-rows construction is extracted to
+  `buildMessageHistoryEvent()` (inside `attachWsRelay`): `_enrichMessages`
+  over `queryMessages(HISTORY_DEPTH)` with `display_name` resolution,
+  returning the `{type:'message_history', messages}` event.
+- New module-level export `broadcastMessageHistory()` (closure-holder
+  pattern, like `pokeDeviceList`): broadcasts a fresh
+  `message_history` to ALL clients. Called by `messages-api` after
+  persisting a sent message — the browser's wholesale
+  `_applyMessageRows` replace makes delivery idempotent and threading
+  authoritative (BROWSER_CONTRACT: order/threads precomputed here).
+- `HISTORY_DEPTH` = 200 (was 50): with chatty bots the feed window churned
+  in hours and sent messages vanished from view quickly.

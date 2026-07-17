@@ -46,6 +46,13 @@ const _liveNodeIds = new Map();
 let _pokeDeviceList = () => {};
 export function pokeDeviceList() { _pokeDeviceList(); }
 
+// Assigned inside attachWsRelay; messages-api calls this after persisting a
+// sent message. A gateway radio never receives its own transmission, so
+// without this rebroadcast only the sending session (optimistic entry) ever
+// saw a TX message (task message-tx-broadcast).
+let _broadcastMessageHistory = () => {};
+export function broadcastMessageHistory() { _broadcastMessageHistory(); }
+
 // Assigned inside attachWsRelay; device-remove uses it to drop a removed
 // device from the in-memory state and push a fresh device_list. Before this
 // existed, lastDeviceState was add-only and removed devices were re-broadcast
@@ -315,6 +322,18 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     broadcast(lastDeviceList);
   }
   _pokeDeviceList = broadcastDeviceList;
+
+  // Enriched message history — used for the on-connect replay and rebroadcast
+  // to all clients after a dash send (message-tx-broadcast). 200 rows: bot
+  // chatter churned the old 50-row window within hours.
+  function buildMessageHistoryEvent() {
+    const msgRows = _enrichMessages(queryMessages(200).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) })));
+    return { type: 'message_history', messages: msgRows };
+  }
+  _broadcastMessageHistory = () => {
+    try { broadcast(buildMessageHistoryEvent()); }
+    catch (e) { console.error('[ws-relay] message_history rebroadcast failed:', e.message); }
+  };
 
   _pruneDevice = (mac, nodeId) => {
     const MAC = mac.toUpperCase();
@@ -681,8 +700,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     try {
       const since24h = Math.floor(Date.now() / 1000) - 86400;
 
-      const msgRows = _enrichMessages(queryMessages(50).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) })));
-      ws.send(JSON.stringify({ type: 'message_history', messages: msgRows }));
+      ws.send(JSON.stringify(buildMessageHistoryEvent()));
 
       const tiltRows = queryAllTiltHistory(since24h);
       ws.send(JSON.stringify({ type: 'tilt_history', rows: tiltRows }));

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { stmts, syncAlertedAt } from './db.js';
 import { nodeList } from './node-list.js';
-import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
+import { getLiveNodeIdByMac, getLiveMacByNodeId, broadcastMessageHistory } from './ws-relay.js';
 
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
 
@@ -52,6 +52,9 @@ router.post('/:nodeId/messages', async (req, res) => {
         message_key: 't-' + result.id,
       });
       syncAlertedAt(result.id);
+      // A radio never hears its own TX — push the fresh history so every
+      // connected session sees the sent message live (message-tx-broadcast).
+      broadcastMessageHistory();
     } catch (persistErr) {
       console.error('[messages] post-send persistence error, packet_id:', result?.id, persistErr.message);
     }
