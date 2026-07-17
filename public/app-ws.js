@@ -620,8 +620,10 @@ export const wsMixin = {
             if (dupe.rssi == null && pkt.rx_rssi != null) dupe.rssi = pkt.rx_rssi;
             if (dupe.snr  == null && pkt.rx_snr  != null) dupe.snr  = pkt.rx_snr;
           } else {
-          // Thread structure for live events: treat as root; corrected on next message_history replay.
-          this.messages.unshift({
+          // Thread live events at insert time (live-reply-threading) — the
+          // shared helper resolves the parent by reply_id and indents/groups
+          // the reply, so no page refresh is needed to see threading.
+          this._insertThreadedMessage({
             pktId, fromNum, to: toNum,
             fromShortName: fromName,
             fromLongName:  longName,
@@ -629,11 +631,9 @@ export const wsMixin = {
             broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
             channel: pkt.channel ?? 0,
             replyId: pkt.decoded.reply_id || null,
-            threadRootPktId: pktId, replyDepth: 0, isOrphan: false, isReply: false,
             text, ts: pkt.rx_time || Math.floor(Date.now() / 1000), time, direction: 'rx', ackStatus: null,
             src: (ev.node_id || ev.addr || ev.device) ? [ev.node_id || ev.addr || ev.device] : [],
           });
-          if (this.messages.length > 50) this.messages.pop();
           if (this.tab !== 'messages') { this.unreadMessages++; this.playMsgSound(); }
           }
         } catch (_) {}

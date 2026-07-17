@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 5674a129b556eb71a1fbeb5fd6f3b31aa5c8494c06b20a17ede7585193328481
+source_hash: 13ef26fe41210327bd309f0a6cd36e738c0ea0248f971bafc768c1b610ccdb38
 updated: 2026-07-17
 ---
 
@@ -133,3 +133,15 @@ kill the modal prematurely; the wrong-PIN/OFFLINE feedback in the
 `node_status` → `_onNodeStatus`, `node_status_update` → `_onNodeStatusUpdate`
 (app-status.js). The settings event maps `monitored_nodes` → `this.monitoredNodes`
 (nav pins). On WS reconnect while on the status tab, `requestNodeStatus()` re-fetches.
+
+## Live reply threading (task `live-reply-threading`, 2026-07-17)
+
+The live TEXT_MESSAGE_APP append previously set flat thread fields
+(threadRootPktId=pktId, replyDepth=0, isReply=false) and ignored
+`decoded.reply_id`, so a reply arriving live showed un-indented until the
+next on-connect message_history replay re-threaded it ("only after refresh").
+The handler now builds the entry with its real `replyId` and calls the shared
+`_insertThreadedMessage` (messagesMixin) which resolves the parent in
+`this.messages`, computes threadRootPktId/replyDepth/isReply/isOrphan, splices
+the entry after the parent's thread (else unshift), and caps at 200 — the same
+threading `sendMessage` applies to TX. The stray 50-cap here is removed.

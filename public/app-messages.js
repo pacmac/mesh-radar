@@ -39,6 +39,29 @@ export const messagesMixin = {
 
   loadMessages() { /* no-op — history arrives via WS message_history on connect */ },
 
+  // Thread a message into this.messages by its reply relationship at insert
+  // time — mirrors the backend history enrichment so live replies indent/group
+  // without a refresh (live-reply-threading). Mutates entry's thread fields.
+  _insertThreadedMessage(entry) {
+    const parent = entry.replyId ? this.messages.find(m => m.pktId === entry.replyId) : null;
+    entry.threadRootPktId = parent ? (parent.threadRootPktId ?? parent.pktId) : entry.pktId;
+    entry.replyDepth      = parent ? (parent.replyDepth ?? 0) + 1 : 0;
+    entry.isOrphan        = !!(entry.replyId && !parent);
+    entry.isReply         = !!(parent || entry.isOrphan);
+    if (parent) {
+      // Insert after the last message already in this thread so it appears inline.
+      let insertAt = -1;
+      for (let i = 0; i < this.messages.length; i++) {
+        if (this.messages[i].threadRootPktId === entry.threadRootPktId) insertAt = i;
+      }
+      if (insertAt >= 0) this.messages.splice(insertAt + 1, 0, entry);
+      else this.messages.unshift(entry);
+    } else {
+      this.messages.unshift(entry);
+    }
+    if (this.messages.length > 200) this.messages.pop();
+  },
+
   // The sending radio's configured channels (device_list dev.channels,
   // backend task device-channels-on-list). Fallback before the first fetch:
   // Primary only. Display convenience — no decisions.
