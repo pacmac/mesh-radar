@@ -1,8 +1,8 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: de7b8cd7fe6cb5c4b813ed20f0bb3e8769709ebf6aab100361e2430368342911
-updated: 2026-07-02
+source_hash: c56f12bdbf83873798f7d61cfaf01abc3a6d795479b411a0e873c55f8956052b
+updated: 2026-07-17
 ---
 
 # Module: tab-messages
@@ -76,3 +76,14 @@ reconciled via the `pkt_id` hint sent to the gw, so status events match).
 Playwright, both themes (guide §8): compose controls legible, joins at sm,
 feed renders; data check — first rendered feed texts/senders match
 `GET /messages`; 0 console errors.
+
+## TX row treatment + 200-row window (task `feed-tx-cap-style`, 2026-07-17)
+
+Sent messages were visually near-identical to received ones (only the small
+avatar ↑ badge and ACK tick differed) — easy to scan past in a busy feed.
+The feed row div now adds `bg-success/5 border-l-2 border-l-success` when
+`m.direction === 'tx'` (success = the established TX color, matching the
+avatar badge). Non-partial edit in the same task (module unspecced):
+`app-messages.js` sendMessage trim cap 50 → 200, matching the backend's
+`message_history` depth (task `message-tx-broadcast`) so optimistic sends
+don't shrink the window the next replay refills.

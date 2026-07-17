@@ -97,7 +97,8 @@ export const messagesMixin = {
     } else {
       this.messages.unshift(txEntry);
     }
-    if (this.messages.length > 50) this.messages.pop();
+    // 200 matches the backend message_history depth (message-tx-broadcast)
+    if (this.messages.length > 200) this.messages.pop();
 
     this.msgInputHistory = [text, ...this.msgInputHistory.filter(t => t !== text)].slice(0, 50);
     persistSet('msgInputHistory', this.msgInputHistory);
