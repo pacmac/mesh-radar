@@ -302,6 +302,25 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     } catch (e) { /* device not ready yet — next READY transition retries */ }
   }
 
+  // Configured channels per radio — same lifecycle as lastDeviceLora. The
+  // send form lists channels by NAME and hides unconfigured slots, and the
+  // browser holds zero gw knowledge, so this rides the device_list too
+  // (device-channels-on-list). Refreshed on READY; channel edits that reboot
+  // the radio (role changes) self-refresh via the next READY.
+  const lastDeviceChannels = {};
+  async function refreshDeviceChannels(addr) {
+    if (!addr) return;
+    try {
+      const r = await bridge.get(`/${addr}/channels`);
+      if (Array.isArray(r?.channels)) {
+        lastDeviceChannels[addr.toUpperCase()] = r.channels
+          .map((c, i) => ({ index: c.index ?? i, name: c.settings?.name ?? '', role: c.role ?? null }))
+          .filter(c => c.role === 'PRIMARY' || c.role === 'SECONDARY');
+        broadcastDeviceList();
+      }
+    } catch (e) { /* device not ready yet — next READY transition retries */ }
+  }
+
   function broadcastDeviceList() {
     // Compose from in-memory lastDeviceState — never makes an HTTP call.
     // lastDeviceState is seeded once at startup from GET /devices, then kept
@@ -313,6 +332,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       ...d,
       cfg:  d.addr ? getDeviceCfg(d.addr) : null,
       lora: d.addr ? (lastDeviceLora[d.addr.toUpperCase()] ?? null) : null,
+      channels: d.addr ? (lastDeviceChannels[d.addr.toUpperCase()] ?? null) : null,
       auto_purge: getAutoPurgeCfg(d.node_id ?? d.addr),
       // Per-radio role for the CURRENT mode — the browser renders RX/TX badges
       // from this and makes no decision (BROWSER_CONTRACT).
@@ -372,7 +392,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         // ble_state: lowercase state for UI logic (devBleState, devIsReady, etc.)
         flat.ble_state = (d.state_event?.state || 'OFFLINE').toLowerCase();
         lastDeviceState[d.addr] = flat;
-        if (flat.ble_state === 'ready') refreshDeviceLora(d.addr);
+        if (flat.ble_state === 'ready') { refreshDeviceLora(d.addr); refreshDeviceChannels(d.addr); }
         if (flat.node_id) {
           _liveNodeIds.set(d.addr.toUpperCase(), flat.node_id);
           persistNodeMac(flat.node_id, d.addr.toUpperCase());
@@ -396,8 +416,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const { type: _t, ...fields } = ev;
       if (ev.type === 'device_state') {
         lastDeviceState[evAddr] = { ...existing, ...fields, state_event: ev, ble_state: ev.state.toLowerCase() };
-        // READY (incl. post-reboot after a config write) — refresh radio lora
-        if (ev.state === 'READY') refreshDeviceLora(evAddr);
+        // READY (incl. post-reboot after a config write) — refresh radio lora + channels
+        if (ev.state === 'READY') { refreshDeviceLora(evAddr); refreshDeviceChannels(evAddr); }
         // Translate OTA FSM states to legacy ota_start/progress/complete/error events for browser UI.
         // Use ev.node_id when available; fall back to ev.addr for pre-sync devices (e.g. stuck bootloader).
         const otaDev = ev.node_id || ev.addr;

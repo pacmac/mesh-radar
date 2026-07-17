@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: d18cdf1102467560a05ce45fcf6496da4207f342a886f33a77f0f8be18c3a794
+source_hash: 9ffa1138feb1b02e60c6f6043b98e08a182a619159b4d23ca10d862b83e0225d
 updated: 2026-07-17
 ---
 
@@ -515,3 +515,21 @@ messages".
   authoritative (BROWSER_CONTRACT: order/threads precomputed here).
 - `HISTORY_DEPTH` = 200 (was 50): with chatty bots the feed window churned
   in hours and sent messages vanished from view quickly.
+
+## Device channels on the device_list (task `device-channels-on-list`, 2026-07-17)
+
+The send form needs each radio's configured channels by NAME, and the
+browser may hold zero gw knowledge — so channels ride the `device_list`
+like `cfg`/`lora`/`auto_purge` (C2: page data is WS-only).
+
+- `lastDeviceChannels` cache (MAC-keyed), mirror of `lastDeviceLora`:
+  `refreshDeviceChannels(addr)` fetches the gw bulk `/{addr}/channels` on
+  every READY transition (device_snapshot seed + live `device_state`), maps
+  entries to `{index, name, role}` and keeps only `PRIMARY`/`SECONDARY`
+  roles (disabled slots are omitted — that IS the "configured" set), then
+  rebroadcasts the device list.
+- `device_list` entries gain `channels: [{index, name, role}] | null`
+  (null until first READY fetch).
+- Known limitation: a channel edit refreshes the cache on the next READY
+  transition, not instantly; role changes reboot the radio, so the common
+  case self-refreshes.
