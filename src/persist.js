@@ -6,7 +6,35 @@ import db from './db.js';
 // ALL pairs land in kv verbatim (unknown keys kept — the sensor firmware may
 // add fields freely); typed extraction is opportunistic for charting only.
 export function parseSensorHeartbeat(text) {
-  if (!text || !text.startsWith('v=')) return null;
+  if (!text) return null;
+
+  // JSON heartbeat: {"type":"status", fw, upt, boot, vbat, batt, env(bool),
+  // temp, hum, trig, beat, ...} — the firmware moved off the v= text format
+  // (heartbeat-json-parse). env is an OK flag: false ⇒ fault, temp/hum junk.
+  if (text[0] === '{') {
+    let o = null;
+    try { o = JSON.parse(text); } catch { o = null; }
+    if (o && o.type === 'status') {
+      const envOk = o.env !== false;
+      return {
+        kv: o,
+        fw:       o.fw ?? null,
+        up_s:     Number.isFinite(o.upt)  ? o.upt  : null,
+        boot:     Number.isFinite(o.boot) ? o.boot : null,
+        rst:      o.rst ?? null,
+        vbat_v:   Number.isFinite(o.vbat) ? o.vbat : null,
+        vbat_pct: Number.isFinite(o.batt) ? o.batt : null,
+        temp_c:   envOk && Number.isFinite(o.temp) ? o.temp : null,
+        rh_pct:   envOk && Number.isFinite(o.hum)  ? o.hum  : null,
+        env_err:  envOk ? 0 : 1,
+        trig:     Number.isFinite(o.trig) ? o.trig : null,
+        hb_s:     Number.isFinite(o.beat) ? o.beat : null,
+      };
+    }
+    return null;   // other JSON message types (sleep, schema, …) aren't heartbeats
+  }
+
+  if (!text.startsWith('v=')) return null;
   const kv = {};
   let pairs = 0;
   for (const tok of text.trim().split(/\s+/)) {
@@ -57,10 +85,12 @@ function _insertHeartbeat(ts, num, packetId, text, hb) {
 }
 
 // One-shot backfill from pre-existing messages (distinct per packet_id).
-if (!getConfig('migrations.sensor_heartbeats_backfill', false)) {
+// Flag bumped to _v2 when JSON heartbeats were added — re-runs once, and the
+// INSERT OR IGNORE dedups already-captured v= rows by packet_id.
+if (!getConfig('migrations.sensor_heartbeats_backfill_v2', false)) {
   const rows = db.prepare(`
     SELECT MIN(ts) AS ts, from_num, text, packet_id FROM messages
-    WHERE text LIKE 'v=%'
+    WHERE text LIKE 'v=%' OR text LIKE '{%status%'
     GROUP BY CASE WHEN packet_id IS NOT NULL THEN packet_id ELSE id END
   `).all();
   let n = 0;
@@ -68,7 +98,7 @@ if (!getConfig('migrations.sensor_heartbeats_backfill', false)) {
     const hb = parseSensorHeartbeat(r.text);
     if (hb && r.from_num) { _insertHeartbeat(r.ts, r.from_num, r.packet_id, r.text, hb); n++; }
   }
-  setConfig('migrations.sensor_heartbeats_backfill', true);
+  setConfig('migrations.sensor_heartbeats_backfill_v2', true);
   if (n) console.log(`[persist] sensor_heartbeats backfill: ${n} rows`);
 }
 // ────────────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: 5728c31780f0bc15bec722900cb2fa0170143d0bf7695844864bb55d1f818f74
+source_hash: cbc9a685dd5389b0956d8d508748779045cf44b0964105956eb7a8bfc230dc9e
 updated: 2026-07-17
 ---
 
@@ -155,3 +155,17 @@ One-shot backfill at module load behind config flag
 `migrations.sensor_heartbeats_backfill` (pattern:
 `migrations.traceroute_tx_device`): distinct-by-packet_id `v=%` messages
 parsed and inserted, then the flag is set.
+
+## JSON heartbeat format (task `heartbeat-json-parse`, 2026-07-17)
+
+The sensor firmware moved heartbeats from `v=…` text to JSON
+`{"type":"status", fw, upt, boot, vbat, batt, env(bool), temp, hum, trig,
+beat, detn, detw, txp, cfg, slp, sim}`. `parseSensorHeartbeat` gains a JSON
+branch (tried first when the text starts with `{` and is valid JSON with
+`type==="status"`); the `v=` path stays for legacy nodes. Key map:
+`fw←fw · up_s←upt · boot←boot · vbat_v←vbat · vbat_pct←batt · trig←trig ·
+hb_s←beat`; `rst` is absent → null; `env` is a boolean OK flag —
+`env===false ⇒ env_err=1` with temp/hum nulled, else `temp_c←temp rh_pct←hum`.
+`kv` keeps the whole parsed object (unknown keys preserved). The one-shot
+backfill flag `migrations.sensor_heartbeats_backfill` is cleared once so the
+backfill re-runs and captures the JSON heartbeats emitted since the switch.
