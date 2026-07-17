@@ -59,6 +59,33 @@ export const statusMixin = {
     return this.statusData?.heartbeats?.[0] ?? null;
   },
 
+  // Freshness-aware pick (status-fresh-precedence). The custom {type:status}
+  // heartbeat can go quiet while the node stays alive on standard MT
+  // telemetry, so a value that exists in both must show whichever was
+  // observed more recently — live nodes value (@ node.last_heard) vs the
+  // heartbeat snapshot (@ heartbeat.ts) — not blindly prefer the heartbeat.
+  statusVal(nodeVal, hbVal) {
+    if (nodeVal == null) return hbVal ?? null;
+    if (hbVal == null) return nodeVal;
+    const nodeTs = this.statusData?.node?.last_heard ?? 0;
+    const hbTs = this.statusHeartbeat()?.ts ?? 0;
+    return hbTs > nodeTs ? hbVal : nodeVal;
+  },
+
+  // Age of the latest custom heartbeat — the staleness caption.
+  statusHbAge() {
+    return this.statusAge(this.statusHeartbeat()?.ts);
+  },
+
+  // True when the custom heartbeat lags the node's liveness by > 5 min, i.e.
+  // the heartbeat-only fields (boot/rst/trig/fw) are showing stale data.
+  statusHbStale() {
+    const hb = this.statusHeartbeat();
+    if (!hb?.ts) return false;
+    const lastHeard = this.statusData?.node?.last_heard ?? 0;
+    return lastHeard - hb.ts > 300;
+  },
+
   // "2m ago" — the liveness headline.
   statusAge(ts) {
     if (!ts) return '—';

@@ -48,6 +48,13 @@
                               x-text="'via ' + (deviceLabel(statusSignal().device) || statusSignal().device || '?') + ' · ' + (statusSignal().rssi ?? '–') + 'dBm / ' + (statusSignal().snr ?? '–')"></span>
                       </template>
                     </div>
+                    <!-- Custom-heartbeat age — the only surface for the age of the
+                         {type:status} snapshot, so heartbeat-only fields (boot/rst/
+                         trig/fw) aren't mistaken for live values (status-fresh-precedence). -->
+                    <template x-if="statusIsMonitored(statusNum) && statusHeartbeat()">
+                      <span class="text-xs font-mono" :class="statusHbStale() ? 'text-error' : 'text-base-content/40'"
+                            x-text="'heartbeat ' + statusHbAge()"></span>
+                    </template>
                   </div>
                 </div>
 
@@ -65,17 +72,17 @@
                     <div class="card-body py-3 gap-0.5">
                       <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Power</span>
                       <span class="text-xl font-mono font-bold tabular-nums"
-                            x-text="(statusHeartbeat()?.vbat_v ?? statusData.node?.voltage ?? '–') + 'V'"></span>
-                      <span class="text-xs text-base-content/40" x-show="!statusMasked('battery_pct') && (statusHeartbeat()?.vbat_pct ?? statusData.node?.battery) != null"
-                            x-text="(statusHeartbeat()?.vbat_pct ?? statusData.node?.battery) + '%'"></span>
+                            x-text="(v => v != null ? Number(v).toFixed(2) : '–')(statusVal(statusData.node?.voltage, statusHeartbeat()?.vbat_v)) + 'V'"></span>
+                      <span class="text-xs text-base-content/40" x-show="!statusMasked('battery_pct') && statusVal(statusData.node?.battery, statusHeartbeat()?.vbat_pct) != null"
+                            x-text="statusVal(statusData.node?.battery, statusHeartbeat()?.vbat_pct) + '%'"></span>
                     </div>
                   </div>
                   <!-- Environment — data-driven: each stat shows only when present
                        (temp/hum fall back to heartbeat; pressure + dew point from
                        env telemetry, so BME280 pressure auto-appears) -->
                   <div class="card bg-base-100 shadow-sm border border-base-300"
-                       x-data="{ get _t() { return statusHeartbeat()?.temp_c ?? statusEnvLatest()?.temperature ?? null; },
-                                 get _h() { return statusHeartbeat()?.rh_pct ?? statusEnvLatest()?.relative_humidity ?? null; },
+                       x-data="{ get _t() { return statusVal(statusData.node?.temperature, statusHeartbeat()?.temp_c); },
+                                 get _h() { return statusVal(statusData.node?.relative_humidity, statusHeartbeat()?.rh_pct); },
                                  get _p() { return statusEnvLatest()?.barometric_pressure ?? null; } }">
                     <div class="card-body py-3 gap-0.5">
                       <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Environment</span>
@@ -90,7 +97,7 @@
                     <div class="card bg-base-100 shadow-sm border border-base-300">
                       <div class="card-body py-3 gap-0.5">
                         <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Uptime</span>
-                        <span class="text-xl font-mono font-bold tabular-nums" x-text="fmtUptime(statusHeartbeat().up_s)"></span>
+                        <span class="text-xl font-mono font-bold tabular-nums" x-text="fmtUptime(statusVal(statusData.node?.uptime_seconds, statusHeartbeat().up_s))"></span>
                         <span class="text-xs text-base-content/40" x-text="'boot ' + (statusHeartbeat().boot ?? '–') + ' · rst ' + (statusHeartbeat().rst ?? '–')"></span>
                       </div>
                     </div>

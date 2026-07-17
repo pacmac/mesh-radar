@@ -1,7 +1,7 @@
 ---
 module: tab-status
 source: public/partials/tab-status.html
-source_hash: 9d1f907ff4d6c94aef809996534ccf0701302751345e565f3863f20704bc90c5
+source_hash: d16e138cb561f87cca1fbd989a47216218840b77bf0c8d0473532d8ea68edea1
 updated: 2026-07-17
 ---
 
@@ -52,3 +52,33 @@ x-show non-null), dew point (`dewPoint(t,h)`, x-show when both present). A
 separate Pressure chart card is `x-show`n only when any env pressure is non-null.
 Pressure comes from standard Meshtastic env telemetry, so it lights up
 automatically when a BME280 replaces a temp/humidity-only sensor.
+
+## Freshness-aware precedence (task `status-fresh-precedence`)
+
+Every current-value stat that had both a live `nodes` value and a heartbeat
+snapshot previously let the (possibly hours-old) heartbeat win. Each now goes
+through `statusVal(nodeVal, hbVal)` (app-status.js) which returns the fresher
+of the two. Exact rewrites:
+
+- **Power voltage** (was `statusHeartbeat()?.vbat_v ?? node.voltage`) →
+  `statusVal(statusData.node?.voltage, statusHeartbeat()?.vbat_v)`, formatted
+  `.toFixed(2)` — the live `node.voltage` is a raw float (`4.1560545`) whereas
+  the heartbeat `vbat_v` was pre-rounded, so the fresher value needs rounding.
+- **Power battery %** (was `…vbat_pct ?? node.battery`) →
+  `statusVal(statusData.node?.battery, statusHeartbeat()?.vbat_pct)`; the
+  `x-show` non-null guard reads the same expression.
+- **Environment temp** `_t` getter (was `…temp_c ?? statusEnvLatest().temperature`)
+  → `statusVal(statusData.node?.temperature, statusHeartbeat()?.temp_c)`.
+- **Environment humidity** `_h` getter → `statusVal(statusData.node?.relative_humidity,
+  statusHeartbeat()?.rh_pct)`.
+- **Uptime** (was `fmtUptime(statusHeartbeat().up_s)`, no fallback) →
+  `fmtUptime(statusVal(statusData.node?.uptime_seconds, statusHeartbeat()?.up_s))`.
+
+Pressure (`_p`) is unchanged — no heartbeat equivalent.
+
+Staleness surface: the Liveness hero gains a small caption, shown when
+`statusIsMonitored(statusNum) && statusHeartbeat()`, reading
+`'heartbeat ' + statusHbAge()` and tinted `text-error` when `statusHbStale()`.
+This is the single place the age of the custom heartbeat is exposed, so the
+heartbeat-only fields (boot/rst, trig, fw) that still read from the snapshot
+are never mistaken for live values.

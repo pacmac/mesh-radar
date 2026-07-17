@@ -1,7 +1,7 @@
 ---
 module: app-status
 source: public/app-status.js
-source_hash: 47625484e3729a6465d1351eb3a7d3e1645113195feab14bc91ec7dfd378f5c7
+source_hash: f59bdd6cde875e7a6ffa44e76d58970b1dd487b25d861ef7acaa9a2722c015ac
 updated: 2026-07-17
 ---
 
@@ -70,3 +70,38 @@ render; 0 console errors.
 by ts) — the source for "current" pressure. `initStatusCharts` adds
 `statusPressChart` (barometric_pressure, own axis) only when any env point has a
 non-null pressure, so BME280 pressure auto-appears without a dash change.
+
+## Freshness-aware precedence (task `status-fresh-precedence`)
+
+The custom `{type:status}` JSON heartbeat is a separate, firmware-under-
+development stream that can go quiet while the node stays alive on standard
+Meshtastic telemetry (`nodes` row: `last_heard`, `voltage`, `battery`,
+`uptime_seconds`, `temperature`, `relative_humidity`). Bug (node `!987ab80f`,
+2026-07-17): the page preferred `statusHeartbeat()` (a snapshot ~6.5 h old)
+over the live `nodes` values, so Uptime showed 1h 27m vs a real 7h 50m,
+Environment 35.1 °C/25 %rh vs 27.5/39.9, Power 4.18 V/97 % vs 4.15/94.
+
+For any value that exists in **both** the live `nodes` telemetry and the
+heartbeat snapshot, prefer the **fresher** source:
+
+- `statusVal(nodeVal, hbVal)` — returns whichever was observed more recently.
+  Live timestamp is `statusData.node.last_heard`; snapshot timestamp is
+  `statusHeartbeat()?.ts`. If one side is null, returns the other; when both
+  present, picks `hbTs > nodeTs ? hbVal : nodeVal`. So a device actively
+  custom-heartbeating still shows the fresher heartbeat voltage, while a quiet
+  stream correctly yields to live telemetry.
+- `statusHbAge()` — `statusAge(statusHeartbeat()?.ts)`: formatted age of the
+  latest custom heartbeat, for the staleness caption.
+- `statusHbStale()` — true when a heartbeat exists and the node has been heard
+  more than `HB_STALE_GRACE` (300 s) more recently than that heartbeat
+  (`last_heard - hb.ts > 300`), i.e. the custom stream lags the node's
+  liveness. Drives the warning tint on heartbeat-only fields.
+
+Heartbeat-only fields with no live equivalent — `boot`/`rst`, `trig`, `fw`,
+`env_err` — keep their heartbeat source but the template shows `statusHbAge()`
+so they never masquerade as current.
+
+Not changed: the vbat chart plots heartbeat samples only (node-dash stores no
+device-metrics history — established design); it legitimately ends where the
+samples end and is *history*, not a lying current-value. `statusEnvLatest()`
+stays the pressure source (no heartbeat equivalent — no precedence conflict).
