@@ -1,4 +1,77 @@
-import { stmts, insertEnvHistory, syncAlertedAt } from './db.js';
+import { stmts, insertEnvHistory, syncAlertedAt, getConfig, setConfig } from './db.js';
+import db from './db.js';
+
+// ── Sensor heartbeat capture (NODE_STATUS_SPEC §4) ──────────────────────────
+// Loose contract: text starts with 'v=' and yields ≥3 key=value tokens.
+// ALL pairs land in kv verbatim (unknown keys kept — the sensor firmware may
+// add fields freely); typed extraction is opportunistic for charting only.
+export function parseSensorHeartbeat(text) {
+  if (!text || !text.startsWith('v=')) return null;
+  const kv = {};
+  let pairs = 0;
+  for (const tok of text.trim().split(/\s+/)) {
+    const i = tok.indexOf('=');
+    if (i > 0) { kv[tok.slice(0, i)] = tok.slice(i + 1); pairs++; }
+  }
+  if (pairs < 3) return null;
+
+  const intOf = (s) => { const m = /^-?\d+/.exec(s ?? ''); return m ? parseInt(m[0], 10) : null; };
+
+  let vbat_v = null, vbat_pct = null;
+  const vm = /^([\d.]+)V(?:\/(\d+)%)?/.exec(kv.vbat ?? '');
+  if (vm) { vbat_v = Number(vm[1]); vbat_pct = vm[2] != null ? Number(vm[2]) : null; }
+
+  // env=35.1C/25%  |  env=ERR:0.0C/0%  — a fault marker keeps env_err=1 and
+  // nulls the junk numbers (fault preserved for display, kept out of charts)
+  let temp_c = null, rh_pct = null, env_err = 0;
+  if (kv.env != null) {
+    const em = /^(ERR[^:]*:)?(-?[\d.]+)C\/(\d+)%/.exec(kv.env);
+    if (em) {
+      if (em[1]) env_err = 1;
+      else { temp_c = Number(em[2]); rh_pct = Number(em[3]); }
+    } else if (/err/i.test(kv.env)) {
+      env_err = 1;
+    }
+  }
+
+  return {
+    kv,
+    fw:       kv.v   ?? null,
+    up_s:     intOf(kv.up),
+    boot:     intOf(kv.boot),
+    rst:      kv.rst ?? null,
+    vbat_v, vbat_pct, temp_c, rh_pct, env_err,
+    trig:     intOf(kv.trig),
+    hb_s:     intOf(kv.hb),
+  };
+}
+
+function _insertHeartbeat(ts, num, packetId, text, hb) {
+  stmts.insertSensorHeartbeat.run({
+    ts, num, packet_id: packetId ?? null, raw: text, kv: JSON.stringify(hb.kv),
+    fw: hb.fw, up_s: hb.up_s, boot: hb.boot, rst: hb.rst,
+    vbat_v: hb.vbat_v, vbat_pct: hb.vbat_pct,
+    temp_c: hb.temp_c, rh_pct: hb.rh_pct, env_err: hb.env_err,
+    trig: hb.trig, hb_s: hb.hb_s,
+  });
+}
+
+// One-shot backfill from pre-existing messages (distinct per packet_id).
+if (!getConfig('migrations.sensor_heartbeats_backfill', false)) {
+  const rows = db.prepare(`
+    SELECT MIN(ts) AS ts, from_num, text, packet_id FROM messages
+    WHERE text LIKE 'v=%'
+    GROUP BY CASE WHEN packet_id IS NOT NULL THEN packet_id ELSE id END
+  `).all();
+  let n = 0;
+  for (const r of rows) {
+    const hb = parseSensorHeartbeat(r.text);
+    if (hb && r.from_num) { _insertHeartbeat(r.ts, r.from_num, r.packet_id, r.text, hb); n++; }
+  }
+  setConfig('migrations.sensor_heartbeats_backfill', true);
+  if (n) console.log(`[persist] sensor_heartbeats backfill: ${n} rows`);
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 function _validCoord(lat, lon) {
   return lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
@@ -154,6 +227,10 @@ function handlePacket(packet, device, ts, replay) {
       message_key: pktId ? 'r-' + pktId : null,
     });
     syncAlertedAt(packet.id ?? null);
+    // Structured sensor heartbeat? Capture it (NODE_STATUS_SPEC §4). Any
+    // node — the monitored-device flag gates display, not capture.
+    const hb = parseSensorHeartbeat(text);
+    if (hb && packet.from) _insertHeartbeat(packet.rx_time || ts, packet.from, pktId, text, hb);
     return;
   }
 

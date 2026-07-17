@@ -1,8 +1,8 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: d0c79bd2e8ec51346e6bc2abf2d784c7a3c5218b8ef00155d8b2382a1a101457
-updated: 2026-07-03
+source_hash: 5728c31780f0bc15bec722900cb2fa0170143d0bf7695844864bb55d1f818f74
+updated: 2026-07-17
 ---
 
 # Module: persist
@@ -136,3 +136,22 @@ All tests use an in-memory SQLite DB (`:memory:`) with the same schema as `db.js
 - Tilt writes — `ws-relay.js` (leaked concern, to be moved in ws-relay refactor task)
 - Event delivery / bridge listener wiring — `index.js` / future `event-handler.js`
 - Browser WebSocket broadcast — `ws-relay.js`
+
+## Sensor heartbeat capture (NODE_STATUS_SPEC §4, task `sensor-heartbeat-parse`)
+
+`parseSensorHeartbeat(text)` (exported for tests): returns null unless the
+text starts with `v=` and yields ≥3 `key=value` tokens. All pairs land in
+`kv` verbatim (unknown keys kept — firmware may add fields freely); typed
+extraction is opportunistic: `up`(s) `boot` `trig` `hb`(s) numeric-prefix
+parsed, `rst`/`v` kept as strings, `vbat=4.29V/100%` → volts + pct,
+`env=35.1C/25%` → temp+rh, `env=ERR:...` → `env_err=1` with temp/rh nulled.
+
+Hook: in `handlePacket`'s TEXT_MESSAGE_APP branch, after the message insert,
+a successful parse inserts via `stmts.insertSensorHeartbeat` (dedup by
+packet_id unique index). Applies to any node — the monitored-device flag
+(Phase B) only gates DISPLAY, not capture.
+
+One-shot backfill at module load behind config flag
+`migrations.sensor_heartbeats_backfill` (pattern:
+`migrations.traceroute_tx_device`): distinct-by-packet_id `v=%` messages
+parsed and inserted, then the flag is set.

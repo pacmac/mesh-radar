@@ -161,6 +161,29 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_traceroute_ts     ON traceroute_history(ts DESC);
   CREATE INDEX IF NOT EXISTS idx_traceroute_to_num ON traceroute_history(to_num, ts DESC);
+
+  CREATE TABLE IF NOT EXISTS sensor_heartbeats (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        INTEGER NOT NULL,
+    num       INTEGER NOT NULL,
+    packet_id INTEGER,
+    raw       TEXT NOT NULL,
+    kv        TEXT NOT NULL,
+    fw        TEXT,
+    up_s      INTEGER,
+    boot      INTEGER,
+    rst       TEXT,
+    vbat_v    REAL,
+    vbat_pct  INTEGER,
+    temp_c    REAL,
+    rh_pct    INTEGER,
+    env_err   INTEGER NOT NULL DEFAULT 0,
+    trig      INTEGER,
+    hb_s      INTEGER
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_shb_pkt    ON sensor_heartbeats(packet_id) WHERE packet_id IS NOT NULL;
+  CREATE INDEX        IF NOT EXISTS idx_shb_num_ts ON sensor_heartbeats(num, ts);
 `);
 
 // Migrations for columns added after initial schema
@@ -250,6 +273,13 @@ db.transaction(() => {
 })();
 
 export const stmts = {
+  insertSensorHeartbeat: db.prepare(`
+    INSERT OR IGNORE INTO sensor_heartbeats
+      (ts, num, packet_id, raw, kv, fw, up_s, boot, rst, vbat_v, vbat_pct, temp_c, rh_pct, env_err, trig, hb_s)
+    VALUES
+      (@ts, @num, @packet_id, @raw, @kv, @fw, @up_s, @boot, @rst, @vbat_v, @vbat_pct, @temp_c, @rh_pct, @env_err, @trig, @hb_s)
+  `),
+
   insertMessage: db.prepare(`
     INSERT OR IGNORE INTO messages (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi, packet_id, reply_id, device, replay, hops, short_name, long_name)
     VALUES (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name)
