@@ -273,6 +273,27 @@ db.transaction(() => {
 })();
 
 export const stmts = {
+  // Read-only support for the node_status WS RPC (node-status-rpc)
+  getNodeByNum: db.prepare(`SELECT * FROM nodes WHERE num = @num`),
+  getSensorHeartbeats: db.prepare(`
+    SELECT * FROM sensor_heartbeats WHERE num = @num ORDER BY ts DESC LIMIT @limit
+  `),
+  getEnvHistoryBucketed: db.prepare(`
+    SELECT CAST(ts / @bucket AS INTEGER) * @bucket AS ts,
+           AVG(temperature)         AS temperature,
+           AVG(relative_humidity)   AS relative_humidity,
+           AVG(barometric_pressure) AS barometric_pressure
+    FROM environment_history
+    WHERE num = @num AND ts >= @since
+    GROUP BY CAST(ts / @bucket AS INTEGER)
+    ORDER BY 1
+  `),
+  getSignalHistory: db.prepare(`
+    SELECT ts, snr, rssi, device FROM messages
+    WHERE from_num = @num AND ts >= @since AND (snr IS NOT NULL OR rssi IS NOT NULL)
+    ORDER BY ts DESC LIMIT 500
+  `),
+
   insertSensorHeartbeat: db.prepare(`
     INSERT OR IGNORE INTO sensor_heartbeats
       (ts, num, packet_id, raw, kv, fw, up_s, boot, rst, vbat_v, vbat_pct, temp_c, rh_pct, env_err, trig, hb_s)

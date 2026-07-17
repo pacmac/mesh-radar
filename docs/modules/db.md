@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 5b00ee786f0592bebfb7d0882b8b9a9469c8e943b3d6615b760d31ee832d5d8b
+source_hash: 1d05d9813da5da40309bbbc228ce02eeb686c7cbc31ef290a586417b9e0585c4
 updated: 2026-07-17
 ---
 
@@ -346,3 +346,10 @@ CREATE INDEX        idx_shb_num_ts ON sensor_heartbeats(num, ts);
 - `stmts.insertSensorHeartbeat` — INSERT OR IGNORE with all columns.
 - `env_err=1` marks a fault-valued env reading; temp/rh are NULL in that
   case (fault preserved for display, junk numbers kept out of charts).
+
+## Node-status query statements (task `node-status-rpc`)
+
+`stmts.getNodeByNum`, `stmts.getSensorHeartbeats` (num+limit, ts DESC),
+`stmts.getEnvHistoryBucketed` (num+since+bucket: AVG temp/rh/pressure GROUP
+BY ts/bucket), `stmts.getSignalHistory` (messages ts/snr/rssi/device for
+from_num since ts, capped 500). Read-only support for the node_status RPC.

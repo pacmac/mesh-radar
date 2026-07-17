@@ -1,8 +1,8 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 8e22f7b426b1ec752400c665c901687ba9e62c2ba8b7b932afa379153efdf6bf
-updated: 2026-07-09
+source_hash: 59e7b0ba3a8ac34c3b3e8b856667645501274dc756695c8dbca86d49d00610a4
+updated: 2026-07-17
 ---
 
 # Module: config-api
@@ -186,3 +186,13 @@ Every write path (PUT `/:key`, PUT `/`, PUT `/radar`) calls
 `broadcastSettings()` so all connected tabs converge immediately. Browser
 GET `/config` (exact path) is WS-only-blocked; `/config/:section` form
 reads remain.
+
+## monitored_nodes (NODE_STATUS_SPEC §2, task `node-status-rpc`)
+
+`GET/PUT /config/monitored_nodes` (the /modes route pattern) reads/writes the
+`monitored_nodes` config key: `{"<num>": {label, expected_heartbeat_s, mask}}`.
+`expected_heartbeat_s` stays null until the wake cadence is decided (enables
+the future verdict/alert); `mask` lists display fields the status page hides
+for this node (first use: 'battery_pct'). PUT replaces the whole object
+(validated: numeric keys, object values) and pokes no broadcast — the status
+page reads it via the node_status RPC.

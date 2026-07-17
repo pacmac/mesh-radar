@@ -119,6 +119,33 @@ router.put('/modes', (req, res) => {
   pokeDeviceList();   // roles changed → refresh RX/TX badges on device_list
 });
 
+// ── monitored_nodes (NODE_STATUS_SPEC §2, task node-status-rpc) ─────────────
+// {"<num>": {label, expected_heartbeat_s, mask}} — the status page's
+// monitored-device designation. expected_heartbeat_s stays null until the
+// wake cadence is decided (enables the future verdict/alert).
+router.get('/monitored_nodes', (req, res) => {
+  res.json(getConfig('monitored_nodes', {}));
+});
+
+router.put('/monitored_nodes', (req, res) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return res.status(400).json({ error: 'expected an object keyed by node num' });
+  }
+  const clean = {};
+  for (const [key, val] of Object.entries(body)) {
+    if (!/^\d+$/.test(key)) return res.status(400).json({ error: `not a node num: ${key}` });
+    if (!val || typeof val !== 'object') return res.status(400).json({ error: `entry ${key} must be an object` });
+    clean[key] = {
+      label:                typeof val.label === 'string' ? val.label : null,
+      expected_heartbeat_s: Number.isFinite(val.expected_heartbeat_s) ? val.expected_heartbeat_s : null,
+      mask:                 Array.isArray(val.mask) ? val.mask.filter(m => typeof m === 'string') : [],
+    };
+  }
+  setConfig('monitored_nodes', clean);
+  res.json(clean);
+});
+
 router.get('/:key', (req, res) => {
   const { key } = req.params;
   if (!(key in DEFAULTS)) return res.status(404).json({ error: 'Unknown config key' });
