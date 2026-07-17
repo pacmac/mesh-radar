@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 59e7b0ba3a8ac34c3b3e8b856667645501274dc756695c8dbca86d49d00610a4
+source_hash: 2c4b23a213d03ffd783e942a8fc178c1326e3e7de6b11134b665ae681f2f604e
 updated: 2026-07-17
 ---
 
@@ -196,3 +196,10 @@ the future verdict/alert); `mask` lists display fields the status page hides
 for this node (first use: 'battery_pct'). PUT replaces the whole object
 (validated: numeric keys, object values) and pokes no broadcast — the status
 page reads it via the node_status RPC.
+
+## monitored_nodes default (task `node-status-page`)
+
+`DEFAULTS['monitored_nodes'] = {}` so the config value rides the settings WS
+event (CONFIG_DEFAULTS = these DEFAULTS) and the browser gets its nav pins on
+connect. The explicit GET/PUT /monitored_nodes routes (registered before the
+generic /:key) own read/write.

@@ -115,6 +115,9 @@ const _servePage = (req, res, next) =>
 for (const p of ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range','/performance']) {
   app.get(p, _servePage);
 }
+// Node Status deep link — /status/:id (num or !hexid). The status JSON API
+// is GET /status (no param), so these paths do not collide.
+app.get('/status/:id', _servePage);
 
 // -- node-dash APIs ----------------------------------------------------------
 

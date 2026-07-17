@@ -89,6 +89,15 @@
             <span class="badge badge-sm ml-auto" :class="availableDevices.length ? 'badge-success' : 'badge-ghost'" x-text="availableDevices.length"></span>
           </a>
         </li>
+        <!-- Monitored-node status pins (NODE_STATUS_SPEC) -->
+        <template x-for="[num, mon] in Object.entries(monitoredNodes || {})" :key="num">
+          <li>
+            <a :class="tab==='status' && statusNum==Number(num) && 'active'" @click="openNodeStatus(Number(num))">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <span x-text="mon.label || ('!' + (Number(num) >>> 0).toString(16).padStart(8,'0'))"></span>
+            </a>
+          </li>
+        </template>
       </ul>
 
       <!-- Status footer inside sidebar -->

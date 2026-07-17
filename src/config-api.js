@@ -26,6 +26,7 @@ export const DEFAULTS = {
   'packet_sources':           [],
   'range_test.duration':      10,
   'perf.failure_epoch':       null,   // read-only stamp: when traceroute failure recording began
+  'monitored_nodes':          {},     // status-page monitored devices (NODE_STATUS_SPEC) — rides the settings WS event
 };
 
 router.get('/', (req, res) => {

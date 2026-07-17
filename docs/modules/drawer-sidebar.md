@@ -1,8 +1,8 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: c1f6440b3dbf643e9837d9c67283c704c27ef89e39cadc7d75b83e36d0fcad12
-updated: 2026-07-03
+source_hash: 0600ca102f54186aa27bbc457345764c914e53b76c7de4ab7f5c6550ae5203df
+updated: 2026-07-17
 ---
 
 # Module: drawer-sidebar
@@ -89,3 +89,9 @@ The device selector binds `x-model="activeDevice"`; options carry
 `:value="d.addr"` and are keyed by `d.addr` (node_id can be null
 pre-sync — keying on it produced duplicate-null Alpine keys). Labels
 still render via deviceLabel until C3c bundles.
+
+## Monitored-node status pins (task `node-status-page`)
+
+Below the Devices item, one nav entry per `monitoredNodes` entry (shield-check
+icon, `mon.label` or `!hexid`), active when `tab==='status' && statusNum===num`,
+`@click="openNodeStatus(num)"` → `/status/!hexid`.

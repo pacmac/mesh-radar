@@ -1,0 +1,163 @@
+        <!-- ===================== NODE STATUS ===================== -->
+        <!-- Mobile-first (NODE_STATUS_SPEC Phase C): single column on a phone,
+             two columns ≥md. Data from the node_status WS RPC (app-status.js). -->
+        <div x-show="tab==='status'" class="flex-1 min-h-0 overflow-y-auto">
+          <div class="max-w-3xl mx-auto p-4 flex flex-col gap-4">
+
+            <!-- Empty / unknown states -->
+            <template x-if="statusNum == null">
+              <div class="card bg-base-100 shadow-sm border border-base-300">
+                <div class="card-body py-6 text-center">
+                  <p class="text-sm text-base-content/60">No node selected — open a node from the list or use <span class="font-mono">/status/!id</span>.</p>
+                </div>
+              </div>
+            </template>
+            <template x-if="statusNum != null && !statusData">
+              <div class="card bg-base-100 shadow-sm border border-base-300">
+                <div class="card-body py-6 text-center">
+                  <span class="loading loading-spinner loading-sm mx-auto"></span>
+                  <p class="text-sm text-base-content/50" x-text="'Loading ' + statusHex(statusNum) + '…'"></p>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="statusData">
+              <div class="flex flex-col gap-4">
+
+                <!-- Verdict slot — reserved; backend rules deferred -->
+                <template x-if="false"><div id="status-verdict"></div></template>
+
+                <!-- Liveness hero -->
+                <div class="card bg-base-100 shadow-sm border border-base-300">
+                  <div class="card-body py-4 gap-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <h1 class="text-lg font-display font-bold tracking-wide"
+                          x-text="statusData.node?.display_name || statusData.node?.long_name || statusHex(statusNum)"></h1>
+                      <span class="font-mono text-xs text-base-content/40" x-text="statusHex(statusNum)"></span>
+                      <template x-if="statusIsMonitored(statusNum)">
+                        <span class="badge badge-sm badge-primary badge-outline">MONITORED</span>
+                      </template>
+                    </div>
+                    <div class="flex items-baseline gap-3 flex-wrap">
+                      <span class="text-2xl font-mono font-bold tabular-nums"
+                            :class="statusData.node?.last_heard ? '' : 'text-base-content/40'"
+                            x-text="statusAge(statusData.node?.last_heard)"></span>
+                      <span class="text-sm text-base-content/50">last heard</span>
+                      <template x-if="statusSignal()">
+                        <span class="text-sm font-mono text-base-content/60"
+                              x-text="'via ' + (deviceLabel(statusSignal().device) || statusSignal().device || '?') + ' · ' + (statusSignal().rssi ?? '–') + 'dBm / ' + (statusSignal().snr ?? '–')"></span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Fault banner (monitored, env_err) -->
+                <template x-if="statusIsMonitored(statusNum) && statusHeartbeat()?.env_err">
+                  <div class="alert alert-error py-2 text-sm">
+                    <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3C7 3 3 7 3 12s4 9 9 9 9-4 9-9-4-9-9-9z"/></svg>
+                    <span>Sensor reported an environment fault (env=ERR) in its latest heartbeat.</span>
+                  </div>
+                </template>
+
+                <!-- Stat grid: power + env + heartbeat essentials -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div class="card bg-base-100 shadow-sm border border-base-300">
+                    <div class="card-body py-3 gap-0.5">
+                      <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Power</span>
+                      <span class="text-xl font-mono font-bold tabular-nums"
+                            x-text="(statusHeartbeat()?.vbat_v ?? statusData.node?.voltage ?? '–') + 'V'"></span>
+                      <span class="text-xs text-base-content/40" x-show="!statusMasked('battery_pct') && (statusHeartbeat()?.vbat_pct ?? statusData.node?.battery) != null"
+                            x-text="(statusHeartbeat()?.vbat_pct ?? statusData.node?.battery) + '%'"></span>
+                    </div>
+                  </div>
+                  <div class="card bg-base-100 shadow-sm border border-base-300">
+                    <div class="card-body py-3 gap-0.5">
+                      <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Environment</span>
+                      <span class="text-xl font-mono font-bold tabular-nums"
+                            x-text="(statusHeartbeat()?.temp_c ?? '–') + ' °C'"></span>
+                      <span class="text-xs text-base-content/40" x-text="(statusHeartbeat()?.rh_pct ?? '–') + ' %rh'"></span>
+                    </div>
+                  </div>
+                  <template x-if="statusIsMonitored(statusNum) && statusHeartbeat()">
+                    <div class="card bg-base-100 shadow-sm border border-base-300">
+                      <div class="card-body py-3 gap-0.5">
+                        <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Uptime</span>
+                        <span class="text-xl font-mono font-bold tabular-nums" x-text="fmtUptime(statusHeartbeat().up_s)"></span>
+                        <span class="text-xs text-base-content/40" x-text="'boot ' + (statusHeartbeat().boot ?? '–') + ' · rst ' + (statusHeartbeat().rst ?? '–')"></span>
+                      </div>
+                    </div>
+                  </template>
+                  <template x-if="statusIsMonitored(statusNum) && statusHeartbeat()">
+                    <div class="card bg-base-100 shadow-sm border border-base-300">
+                      <div class="card-body py-3 gap-0.5">
+                        <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Triggers</span>
+                        <span class="text-xl font-mono font-bold tabular-nums" x-text="statusHeartbeat().trig ?? '–'"></span>
+                        <span class="text-xs text-base-content/40" x-text="'fw ' + (statusHeartbeat().fw ?? '–')"></span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- Charts -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="card bg-base-100 shadow-sm border border-base-300">
+                    <div class="card-body py-3 gap-2">
+                      <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Temperature / humidity</span>
+                      <div class="h-40"><canvas id="statusEnvChart"></canvas></div>
+                    </div>
+                  </div>
+                  <div class="card bg-base-100 shadow-sm border border-base-300">
+                    <div class="card-body py-3 gap-2">
+                      <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Voltage</span>
+                      <div class="h-40"><canvas id="statusVbatChart"></canvas></div>
+                    </div>
+                  </div>
+                  <div class="card bg-base-100 shadow-sm border border-base-300 md:col-span-2">
+                    <div class="card-body py-3 gap-2">
+                      <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Signal (RSSI / SNR)</span>
+                      <div class="h-40"><canvas id="statusSigChart"></canvas></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Heartbeat log (monitored) -->
+                <template x-if="statusIsMonitored(statusNum) && statusData.heartbeats?.length">
+                  <div class="card bg-base-100 shadow-sm border border-base-300">
+                    <div class="card-body py-3 gap-2 overflow-x-auto">
+                      <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Heartbeat log</span>
+                      <table class="table table-xs">
+                        <thead><tr><th>Time</th><th>Up</th><th>Boot</th><th>Rst</th><th>Vbat</th><th>Trig</th></tr></thead>
+                        <tbody>
+                          <template x-for="h in statusData.heartbeats.slice(0, 30)" :key="h.id">
+                            <tr :class="h.env_err ? 'text-error' : ''">
+                              <td class="font-mono whitespace-nowrap" x-text="new Date(h.ts*1000).toLocaleString()"></td>
+                              <td class="font-mono" x-text="fmtUptime(h.up_s)"></td>
+                              <td class="font-mono" x-text="h.boot ?? '–'"></td>
+                              <td class="font-mono" x-text="h.rst ?? '–'"></td>
+                              <td class="font-mono" x-text="(h.vbat_v ?? '–') + 'V'"></td>
+                              <td class="font-mono" x-text="h.trig ?? '–'"></td>
+                            </tr>
+                          </template>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- Identity / link detail -->
+                <div class="card bg-base-100 shadow-sm border border-base-300">
+                  <div class="card-body py-3 gap-1 text-sm">
+                    <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Identity</span>
+                    <div class="flex flex-wrap gap-x-4 gap-y-0.5 text-base-content/70 font-mono text-xs">
+                      <span x-show="statusData.node?.hw_model" x-text="'hw ' + statusData.node?.hw_model"></span>
+                      <span x-show="statusData.node?.role" x-text="'role ' + statusData.node?.role"></span>
+                      <span x-show="statusData.node?.hops != null" x-text="statusData.node.hops + ' hops'"></span>
+                      <span x-show="statusData.node?.lat != null" x-text="Number(statusData.node.lat).toFixed(5) + ', ' + Number(statusData.node.lon).toFixed(5)"></span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </template>
+          </div>
+        </div>

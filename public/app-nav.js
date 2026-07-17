@@ -13,6 +13,7 @@ const _TAB_TO_PATH = {
 };
 
 export function initTab() {
+  if (window.location.pathname.startsWith('/status/')) return 'status';
   return _PATH_TO_TAB[window.location.pathname] ?? persistGet('activeTab', 'overview');
 }
 
@@ -21,17 +22,20 @@ export const navMixin = {
     // Tabs are lazy-mounted (x-if): destroy the perf Chart.js instances before
     // leaving perf so its canvases unmount cleanly and re-init fresh on return.
     if (this.tab === 'perf' && t !== 'perf') this.destroyPerfCharts();
+    if (this.tab === 'status' && t !== 'status') this.destroyStatusCharts();
     this.tab = t;
     persistSet('activeTab', t);
     if (c) { this.cfgTab = c; persistSet('cfgTab', c); }
     this.drawerOpen = false;
-    const p = _TAB_TO_PATH[t] || '/';
+    // Status carries a node in its URL; every other tab uses the static map.
+    const p = t === 'status' ? '/status/' + this.statusHex(this.statusNum) : (_TAB_TO_PATH[t] || '/');
     if (window.location.pathname !== p) history.pushState({ tab: t }, '', p);
     if (t === 'radar') this.$nextTick(() => this.initRadar());
     else if (t === 'cfg') this.switchCfgTab(c || this.cfgTab || 'radio');
     else if (t === 'range') { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
     else if (t === 'messages') this.unreadMessages = 0;
     else if (t === 'perf') { this.adoptPerfLoraCfg(); this.perfHistory = this.perfHistorySlice(); this.$nextTick(() => this.initPerfCharts()); }
+    else if (t === 'status') this.requestNodeStatus();
   },
 
   // Build a device-scoped URL using the active device. MAC-addressed:

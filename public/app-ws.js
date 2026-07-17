@@ -18,6 +18,7 @@ export const wsMixin = {
       const wasDisconnected = !this.wsConnected;
       this.wsConnected = true;
       if (wasDisconnected) this.bootstrapDevice();
+      if (this.tab === 'status') this.requestNodeStatus();   // re-fetch after reconnect
     };
     ws.onclose = () => {
       this.wsConnected = false;
@@ -76,9 +77,13 @@ export const wsMixin = {
       this.packetSources  = cfg['packet_sources']   ?? [];
       if (cfg['perf.failure_epoch'] != null) this.perfFailureEpoch = cfg['perf.failure_epoch'];
       if (cfg['range_test.duration']) this.rangeDuration = cfg['range_test.duration'];
+      this.monitoredNodes = cfg['monitored_nodes'] ?? {};   // status-page nav pins
       if (this.tab === 'radar' && this.homePos) this.refreshRadar();
       return;
     }
+
+    if (ev.type === 'node_status')        { this._onNodeStatus(ev); return; }
+    if (ev.type === 'node_status_update') { this._onNodeStatusUpdate(ev); return; }
 
     if (ev.type === 'geocode_result') {
       const pending = this._geocodePending?.[ev.num];
