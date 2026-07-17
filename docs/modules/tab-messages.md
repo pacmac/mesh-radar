@@ -1,7 +1,7 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: c56f12bdbf83873798f7d61cfaf01abc3a6d795479b411a0e873c55f8956052b
+source_hash: 673747a47e89bb9df74cef0e228c4149b2ff8f65524bf18e834b2f514c613245
 updated: 2026-07-17
 ---
 
@@ -87,3 +87,16 @@ avatar badge). Non-partial edit in the same task (module unspecced):
 `app-messages.js` sendMessage trim cap 50 → 200, matching the backend's
 `message_history` depth (task `message-tx-broadcast`) so optimistic sends
 don't shrink the window the next replay refills.
+
+## Named channel select (task `send-channel-names`, 2026-07-17)
+
+The Ch select offered static indexes 0–7 regardless of configuration —
+sending on an unconfigured channel silently fails, and bare numbers mean
+nothing. It now iterates `msgFromChannels()` (the sending radio's
+`dev.channels` from the device_list, backend task `device-channels-on-list`),
+rendering `ch.name`, with "Primary" for an unnamed index 0 and
+"Channel N" for other unnamed entries; unconfigured slots don't appear.
+An `x-effect` resets `msgChannel` to 0 when the From radio changes to one
+that lacks the selected index. Fallback before the first channels fetch:
+`[{index:0}]` (Primary only). Helper `msgFromChannels()` lives in
+`app-messages.js` (display convenience, no decisions).

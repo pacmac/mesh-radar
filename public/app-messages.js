@@ -39,6 +39,14 @@ export const messagesMixin = {
 
   loadMessages() { /* no-op — history arrives via WS message_history on connect */ },
 
+  // The sending radio's configured channels (device_list dev.channels,
+  // backend task device-channels-on-list). Fallback before the first fetch:
+  // Primary only. Display convenience — no decisions.
+  msgFromChannels() {
+    return this.availableDevices.find(d => d.node_id === this.msgFrom)?.channels
+        || [{ index: 0, name: '', role: 'PRIMARY' }];
+  },
+
   displayMessages() {
     // Order and thread structure are pre-computed by node-dash.
     // Browser renders the array as-is — no sorting, no classification.

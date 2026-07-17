@@ -39,10 +39,11 @@
                 <!-- Channel -->
                 <div class="flex items-center gap-2">
                   <span class="text-sm text-base-content/60 w-12 shrink-0">Ch</span>
-                  <select class="select select-bordered select-sm" x-model="msgChannel">
-                    <option value="0">0 — Primary</option>
-                    <option value="1">1</option><option value="2">2</option><option value="3">3</option>
-                    <option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
+                  <select class="select select-bordered select-sm" x-model.number="msgChannel"
+                          x-effect="if (!msgFromChannels().some(c => c.index === Number(msgChannel))) msgChannel = 0">
+                    <template x-for="ch in msgFromChannels()" :key="ch.index">
+                      <option :value="ch.index" x-text="ch.name || (ch.index === 0 ? 'Primary' : 'Channel ' + ch.index)"></option>
+                    </template>
                   </select>
                 </div>
 
