@@ -1,7 +1,7 @@
 ---
 module: app-status
 source: public/app-status.js
-source_hash: f59bdd6cde875e7a6ffa44e76d58970b1dd487b25d861ef7acaa9a2722c015ac
+source_hash: ad5c8de6d5d919dd9278d413863fa969823943bce542a1c57c7a4db286b6b2b4
 updated: 2026-07-17
 ---
 
@@ -105,3 +105,21 @@ Not changed: the vbat chart plots heartbeat samples only (node-dash stores no
 device-metrics history — established design); it legitimately ends where the
 samples end and is *history*, not a lying current-value. `statusEnvLatest()`
 stays the pressure source (no heartbeat equivalent — no precedence conflict).
+
+## SSOT unit formatters (task `status-fmt-ssot`)
+
+Conversion/rounding must not be duplicated across the page. `uiMixin`
+(`app-ui.js`) is the formatter home (`fmtUptime`/`fmtBytes`/`fmtAge`); all
+mixins merge into one Alpine object (`app.js`), so its methods are callable
+both from templates and from `this.*` inside this mixin. Added there, each
+returning `'–'` on null/non-finite:
+
+- `fmtVolts(v)` → `2dp + 'V'`; `fmtTemp(c)` → `1dp + ' °C'`;
+  `fmtRh(h)` → `round + ' %rh'`; `fmtPressure(p)` → `1dp + ' hPa'`.
+- `fmtClock(ts)` → `toLocaleTimeString` (chart axis/tooltip; `''` when no ts);
+  `fmtDateTime(ts)` → `toLocaleString` (heartbeat-log timestamp).
+
+`initStatusCharts` labels every dataset with `this.fmtClock(r.ts)` instead of
+the raw epoch `r.ts`, so chart tooltips read as clock times, not `1784298962`.
+The unused `persistSet` import is dropped. Chart series still return raw
+numbers; formatting happens only at the display edge.

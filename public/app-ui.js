@@ -77,4 +77,18 @@ export const uiMixin = {
     if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
     return Math.floor(secs / 86400) + 'd ago';
   },
+
+  // ── SSOT unit formatters — one per unit, used everywhere; never inline a
+  //    conversion/rounding for these. Each yields '–' on null/non-finite
+  //    (guard null/'' first — Number(null) and Number('') are a finite 0, so a
+  //    missing reading must be rejected before the isFinite check; a real 0 is
+  //    kept, e.g. 0.0 °C). ──
+  fmtVolts(v)    { if (v == null || v === '') return '–'; const n = Number(v); return Number.isFinite(n) ? n.toFixed(2) + 'V'     : '–'; },
+  fmtTemp(c)     { if (c == null || c === '') return '–'; const n = Number(c); return Number.isFinite(n) ? n.toFixed(1) + ' °C'   : '–'; },
+  fmtRh(h)       { if (h == null || h === '') return '–'; const n = Number(h); return Number.isFinite(n) ? Math.round(n) + ' %rh' : '–'; },
+  fmtPressure(p) { if (p == null || p === '') return '–'; const n = Number(p); return Number.isFinite(n) ? n.toFixed(1) + ' hPa'  : '–'; },
+
+  // Epoch-seconds → locale strings (centralises the *1000 conversion).
+  fmtClock(ts)    { return ts ? new Date(ts * 1000).toLocaleTimeString() : ''; },   // chart axis/tooltip
+  fmtDateTime(ts) { return ts ? new Date(ts * 1000).toLocaleString()     : '–'; },  // log timestamp
 };

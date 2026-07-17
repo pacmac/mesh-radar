@@ -1,7 +1,7 @@
 ---
 module: tab-status
 source: public/partials/tab-status.html
-source_hash: d16e138cb561f87cca1fbd989a47216218840b77bf0c8d0473532d8ea68edea1
+source_hash: 5cf2db9ea75cb929ea48bf6e029231d137da9870a07785e17157f0768a61631d
 updated: 2026-07-17
 ---
 
@@ -82,3 +82,24 @@ Staleness surface: the Liveness hero gains a small caption, shown when
 This is the single place the age of the custom heartbeat is exposed, so the
 heartbeat-only fields (boot/rst, trig, fw) that still read from the snapshot
 are never mistaken for live values.
+
+## SSOT formatting + env-history fallback restore (task `status-fmt-ssot`)
+
+Every inline conversion/rounding is replaced by a shared `uiMixin` formatter
+(see app-status.md) — no `toFixed`/`Math.round`/unit literal is duplicated in
+the template: Power `fmtVolts(statusVal(node.voltage, hb.vbat_v))`; Environment
+`fmtTemp(_t)` / `fmtRh(_h)` / `fmtPressure(_p)` and dew `'dew ' +
+fmtTemp(dewPoint(_t,_h))`; heartbeat-log `fmtDateTime(h.ts)` and
+`fmtVolts(h.vbat_v)`. The `_t`/`_h` getters still return raw numbers (dewPoint
+and the `x-show` guards need them); formatting is at the display edge only.
+
+Env-history fallback restored (code-review #1): a prior change made the env
+card read `node.temperature`/`relative_humidity` exclusively, so a node with
+`environment_history` rows but a null `nodes.temperature` column showed "– °C"
+while pressure (from `statusEnvLatest()`) still rendered. The getters now fall
+back: `statusVal(node?.temperature ?? statusEnvLatest()?.temperature,
+hb?.temp_c)` (and likewise humidity), so the live source degrades to env
+history before the heartbeat, matching pressure's source.
+
+Not changed: `lat`/`lon` `toFixed(5)` (single occurrence, not repeated) and the
+`statusVal` freshness rule (review #2/#3 deferred to discussion).

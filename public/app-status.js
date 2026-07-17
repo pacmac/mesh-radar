@@ -1,7 +1,6 @@
 // Node Status page mixin (NODE_STATUS_SPEC Phase C). Presentation only:
 // requests the node_status WS RPC, renders generic + monitored enrichment,
 // manages its Chart.js instances, drives /status/:id navigation.
-import { persistSet } from './app-persist.js';
 
 let _statusCharts = {};   // reassigned by destroyStatusCharts() (lazy tab)
 
@@ -133,32 +132,33 @@ export const statusMixin = {
       _statusCharts[ref] = new window.Chart(el, { ...base, data: { labels, datasets } });
     };
 
-    // Environment: temp + humidity (chronological)
+    // Environment: temp + humidity (chronological). Labels are clock times
+    // (fmtClock) so tooltips read as times, not raw epoch seconds.
     const env = [...(d.env || [])];
     mk('statusEnvChart', [
       { label: '°C',  data: env.map(r => r.temperature),       borderColor: '#f5a623', yAxisID: 'y' },
       { label: '%rh', data: env.map(r => r.relative_humidity), borderColor: '#00d4c8', yAxisID: 'y' },
-    ], env.map(r => r.ts));
+    ], env.map(r => this.fmtClock(r.ts)));
 
     // Voltage from heartbeats (reverse: they arrive newest-first)
     const hb = [...(d.heartbeats || [])].reverse();
     mk('statusVbatChart', [
       { label: 'V', data: hb.map(r => r.vbat_v), borderColor: '#f87171' },
-    ], hb.map(r => r.ts));
+    ], hb.map(r => this.fmtClock(r.ts)));
 
     // Signal rssi/snr (reverse: newest-first)
     const sig = [...(d.signal || [])].reverse();
     mk('statusSigChart', [
       { label: 'RSSI', data: sig.map(r => r.rssi), borderColor: '#00857d' },
       { label: 'SNR',  data: sig.map(r => r.snr),  borderColor: '#996607' },
-    ], sig.map(r => r.ts));
+    ], sig.map(r => this.fmtClock(r.ts)));
 
     // Pressure — own chart/axis (its ~1000 hPa scale would flatten temp/hum);
     // rendered only when the sensor actually reports it (BME280, not SHTC3).
     if (env.some(r => r.barometric_pressure != null)) {
       mk('statusPressChart', [
         { label: 'hPa', data: env.map(r => r.barometric_pressure), borderColor: '#8b5cf6' },
-      ], env.map(r => r.ts));
+      ], env.map(r => this.fmtClock(r.ts)));
     }
   },
 
