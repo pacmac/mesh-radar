@@ -1,7 +1,7 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: 673747a47e89bb9df74cef0e228c4149b2ff8f65524bf18e834b2f514c613245
+source_hash: 0c0218fa37d146e8abab95f381973701793ad09e76987eb10154e0ae907058bc
 updated: 2026-07-17
 ---
 
@@ -94,7 +94,7 @@ The Ch select offered static indexes 0–7 regardless of configuration —
 sending on an unconfigured channel silently fails, and bare numbers mean
 nothing. It now iterates `msgFromChannels()` (the sending radio's
 `dev.channels` from the device_list, backend task `device-channels-on-list`),
-rendering `ch.name`, with "Primary" for an unnamed index 0 and
+rendering `ch.name` UPPERCASED for display (values stay numeric indexes), with "Primary" for an unnamed index 0 and
 "Channel N" for other unnamed entries; unconfigured slots don't appear.
 An `x-effect` resets `msgChannel` to 0 when the From radio changes to one
 that lacks the selected index. Fallback before the first channels fetch:

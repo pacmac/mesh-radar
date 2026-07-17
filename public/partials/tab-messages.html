@@ -42,7 +42,7 @@
                   <select class="select select-bordered select-sm" x-model.number="msgChannel"
                           x-effect="if (!msgFromChannels().some(c => c.index === Number(msgChannel))) msgChannel = 0">
                     <template x-for="ch in msgFromChannels()" :key="ch.index">
-                      <option :value="ch.index" x-text="ch.name || (ch.index === 0 ? 'Primary' : 'Channel ' + ch.index)"></option>
+                      <option :value="ch.index" x-text="(ch.name || (ch.index === 0 ? 'Primary' : 'Channel ' + ch.index)).toUpperCase()"></option>
                     </template>
                   </select>
                 </div>
