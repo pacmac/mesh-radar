@@ -1,7 +1,7 @@
 ---
 module: app-status
 source: public/app-status.js
-source_hash: fa12ce4f508cc823cfc5fa4daf3cbeab65f28c218d7c6b765347da68ba7a57bf
+source_hash: 47625484e3729a6465d1351eb3a7d3e1645113195feab14bc91ec7dfd378f5c7
 updated: 2026-07-17
 ---
 
@@ -63,3 +63,10 @@ canonical `!hexid` for URLs and display.
 Playwright phone (390×844) first + desktop, both themes; deep links by num
 and `!hexid`; hint-driven refresh; battery % hidden under the mask; charts
 render; 0 console errors.
+
+## Data-driven env (task `status-env-datadriven`)
+
+`statusEnvLatest()` returns the most recent env-history point (env is ascending
+by ts) — the source for "current" pressure. `initStatusCharts` adds
+`statusPressChart` (barometric_pressure, own axis) only when any env point has a
+non-null pressure, so BME280 pressure auto-appears without a dash change.

@@ -70,12 +70,20 @@
                             x-text="(statusHeartbeat()?.vbat_pct ?? statusData.node?.battery) + '%'"></span>
                     </div>
                   </div>
-                  <div class="card bg-base-100 shadow-sm border border-base-300">
+                  <!-- Environment — data-driven: each stat shows only when present
+                       (temp/hum fall back to heartbeat; pressure + dew point from
+                       env telemetry, so BME280 pressure auto-appears) -->
+                  <div class="card bg-base-100 shadow-sm border border-base-300"
+                       x-data="{ get _t() { return statusHeartbeat()?.temp_c ?? statusEnvLatest()?.temperature ?? null; },
+                                 get _h() { return statusHeartbeat()?.rh_pct ?? statusEnvLatest()?.relative_humidity ?? null; },
+                                 get _p() { return statusEnvLatest()?.barometric_pressure ?? null; } }">
                     <div class="card-body py-3 gap-0.5">
                       <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Environment</span>
-                      <span class="text-xl font-mono font-bold tabular-nums"
-                            x-text="(statusHeartbeat()?.temp_c ?? '–') + ' °C'"></span>
-                      <span class="text-xs text-base-content/40" x-text="(statusHeartbeat()?.rh_pct ?? '–') + ' %rh'"></span>
+                      <span class="text-xl font-mono font-bold tabular-nums" x-text="(_t != null ? Number(_t).toFixed(1) : '–') + ' °C'"></span>
+                      <span class="text-xs text-base-content/40" x-show="_h != null" x-text="Math.round(_h) + ' %rh'"></span>
+                      <span class="text-xs text-base-content/40" x-show="_p != null" x-text="Number(_p).toFixed(1) + ' hPa'"></span>
+                      <span class="text-xs text-base-content/40" x-show="_t != null && _h != null"
+                            x-text="'dew ' + (dewPoint(_t, _h)?.toFixed(1) ?? '–') + ' °C'"></span>
                     </div>
                   </div>
                   <template x-if="statusIsMonitored(statusNum) && statusHeartbeat()">
@@ -110,6 +118,14 @@
                     <div class="card-body py-3 gap-2">
                       <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Voltage</span>
                       <div class="h-40"><canvas id="statusVbatChart"></canvas></div>
+                    </div>
+                  </div>
+                  <!-- Pressure — appears only when the sensor reports it (BME280) -->
+                  <div class="card bg-base-100 shadow-sm border border-base-300"
+                       x-show="statusData.env?.some(r => r.barometric_pressure != null)">
+                    <div class="card-body py-3 gap-2">
+                      <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Pressure</span>
+                      <div class="h-40"><canvas id="statusPressChart"></canvas></div>
                     </div>
                   </div>
                   <div class="card bg-base-100 shadow-sm border border-base-300 md:col-span-2">

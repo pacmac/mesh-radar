@@ -1,7 +1,7 @@
 ---
 module: tab-status
 source: public/partials/tab-status.html
-source_hash: f3f8f450fca1d45540de03d37572088eb0adecd6990137f11f8129495b71b551
+source_hash: 9d1f907ff4d6c94aef809996534ccf0701302751345e565f3863f20704bc90c5
 updated: 2026-07-17
 ---
 
@@ -43,3 +43,12 @@ points for app-status.js.
 
 Playwright phone + desktop, both themes; every section reachable by scroll;
 charts present; 0 console errors.
+
+## Data-driven env (task `status-env-datadriven`)
+
+The Environment stat card renders each value only when present: temp/humidity
+(heartbeat, falling back to `statusEnvLatest()`), pressure (`barometric_pressure`,
+x-show non-null), dew point (`dewPoint(t,h)`, x-show when both present). A
+separate Pressure chart card is `x-show`n only when any env pressure is non-null.
+Pressure comes from standard Meshtastic env telemetry, so it lights up
+automatically when a BME280 replaces a temp/humidity-only sensor.

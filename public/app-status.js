@@ -75,6 +75,14 @@ export const statusMixin = {
     return this.statusData?.signal?.[0] ?? null;
   },
 
+  // Most recent environment-history point (env is ascending by ts). Source of
+  // truth for "current" pressure — data-driven so BME280 pressure/dew-point
+  // auto-appear when present (status-env-datadriven).
+  statusEnvLatest() {
+    const env = this.statusData?.env;
+    return env && env.length ? env[env.length - 1] : null;
+  },
+
   // ── Charts (Chart.js) — perf-page lifecycle: destroyed on tab-leave ───────
   initStatusCharts() {
     this.destroyStatusCharts();
@@ -117,6 +125,14 @@ export const statusMixin = {
       { label: 'RSSI', data: sig.map(r => r.rssi), borderColor: '#00857d' },
       { label: 'SNR',  data: sig.map(r => r.snr),  borderColor: '#996607' },
     ], sig.map(r => r.ts));
+
+    // Pressure — own chart/axis (its ~1000 hPa scale would flatten temp/hum);
+    // rendered only when the sensor actually reports it (BME280, not SHTC3).
+    if (env.some(r => r.barometric_pressure != null)) {
+      mk('statusPressChart', [
+        { label: 'hPa', data: env.map(r => r.barometric_pressure), borderColor: '#8b5cf6' },
+      ], env.map(r => r.ts));
+    }
   },
 
   destroyStatusCharts() {
