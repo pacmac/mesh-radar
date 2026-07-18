@@ -37,14 +37,28 @@ const BROADCAST_NUM = 0xffffffff;
 // NULL. Applied to every numeric telemetry field at the point of capture.
 const fin = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
 
+// A reception describes a node's link ONLY when it arrived DIRECTLY. The
+// envelope's rx_rssi/rx_snr are the signal at our gateway from whoever
+// transmitted to us — for a relayed packet that is the RELAY, not the origin.
+// Attributing it to packet.from wrote other nodes' link quality into a node's
+// record: 462 of 977 stored samples (47%) were relay traffic, averaging
+// -102 dBm against a true direct average of -35 dBm. That is the reported
+// "twitching between -1XX and -33".
+//
+// Unknown hops count as NOT direct: their average (-100.1) matches the relayed
+// population, not the direct one, so recording them would repeat the error with
+// less evidence.
+const isDirect = hops => hops === 0;
+
 // Signal comes from the packet ENVELOPE, never a payload (iron rule 4).
-// Recorded for every reception that carries one, deduped by (num, packet_id) so
-// N gateway radios hearing one broadcast yield one row.
-function _captureSignal(num, packetId, rssi, snr, ts) {
+// Deduped by (num, packet_id) so N gateway radios hearing one broadcast yield
+// one row.
+function _captureSignal(num, packetId, rssi, snr, ts, hops) {
   if (!num) return;
+  if (!isDirect(hops)) return;
   if (rssi == null && snr == null) return;
   try {
-    insertSignalHistory({ ts, num, packet_id: packetId ?? null, rssi: fin(rssi), snr: fin(snr) });
+    insertSignalHistory({ ts, num, packet_id: packetId ?? null, rssi: fin(rssi), snr: fin(snr), hops });
   } catch (e) {
     console.error(`[signal] insert failed for ${num}: ${e.message}`);
   }
@@ -59,9 +73,15 @@ export function handleEvent(event) {
   const ts = Math.floor(Date.now() / 1000);
 
   // Typed AppRouter events carry the envelope alongside their payload.
+  const evHops = event.hops ?? null;
   if (event.from_num && (event.rx_rssi != null || event.rx_snr != null)) {
-    _captureSignal(event.from_num, event.packet_id ?? null, event.rx_rssi, event.rx_snr, event.rx_time || ts);
+    _captureSignal(event.from_num, event.packet_id ?? null, event.rx_rssi, event.rx_snr, event.rx_time || ts, evHops);
   }
+  // Only a direct reception may set a node's live signal. upsertNode COALESCEs,
+  // so the last DIRECT value is retained instead of being overwritten by relay
+  // traffic from a different link.
+  const evRssi = isDirect(evHops) ? (event.rx_rssi ?? null) : null;
+  const evSnr  = isDirect(evHops) ? (event.rx_snr  ?? null) : null;
 
   if (type === 'packet') {
     handlePacket(data?.packet, rxDevice, ts, !!_replay);
@@ -77,7 +97,7 @@ export function handleEvent(event) {
         num: event.from_num, node_id: data.id ?? null,
         short_name: data.short_name ?? null, long_name: data.long_name ?? null,
         hw_model: data.hw_model ?? null, role: data.role ?? null,
-        last_heard: ts, snr: event.rx_snr ?? null, rssi: event.rx_rssi ?? null,
+        last_heard: ts, snr: evSnr, rssi: evRssi,
         hops: event.hops ?? null, lat: null, lon: null, alt: null,
         battery: null, voltage: null, channel_util: null, air_util_tx: null, uptime_seconds: null,
         device: rxDevice,
@@ -92,7 +112,7 @@ export function handleEvent(event) {
       stmts.upsertNode.run({
         num: event.from_num, node_id: null, short_name: null, long_name: null,
         hw_model: null, role: null, last_heard: ts,
-        snr: event.rx_snr ?? null, rssi: event.rx_rssi ?? null, hops: event.hops ?? null,
+        snr: evSnr, rssi: evRssi, hops: event.hops ?? null,
         lat, lon, alt: data.altitude ?? null,
         battery: null, voltage: null, channel_util: null, air_util_tx: null, uptime_seconds: null,
         device: rxDevice,
@@ -188,6 +208,9 @@ function handlePrivateAppState(event, ts) {
 
 function handleTelemetryEvent(event, rxDevice) {
   const { data, from_num, rx_snr, rx_rssi, packet_id } = event;
+  // Same rule as everywhere else: only a direct reception describes this node's
+  // link, so a relayed telemetry packet must not set its signal.
+  const direct = isDirect(event.hops ?? null);
   if (!from_num || !data) return;
   const ts = Math.floor(Date.now() / 1000);
   if (data.device_metrics) {
@@ -210,8 +233,8 @@ function handleTelemetryEvent(event, rxDevice) {
       hw_model:       null,
       role:           null,
       last_heard:     data.time || ts,
-      snr:            rx_snr  ?? null,
-      rssi:           rx_rssi ?? null,
+      snr:            direct ? (rx_snr  ?? null) : null,
+      rssi:           direct ? (rx_rssi ?? null) : null,
       hops:           null,
       lat:            null,
       lon:            null,
@@ -247,10 +270,14 @@ function handleTelemetryEvent(event, rxDevice) {
 function handlePacket(packet, device, ts, replay) {
   if (!packet?.decoded) return;
 
-  // Envelope signal for EVERY packet, regardless of portnum — this is the
-  // densest and most honest source of a node's link quality over time.
+  // Envelope signal for every DIRECT packet, regardless of portnum — the
+  // densest honest source of a node's own link quality over time.
+  const pktHops = (packet.hop_start != null && packet.hop_limit != null)
+    ? Math.max(0, packet.hop_start - packet.hop_limit) : null;
   _captureSignal(packet.from, packet.id ?? null, packet.rx_rssi, packet.rx_snr,
-                 packet.rx_time || ts);
+                 packet.rx_time || ts, pktHops);
+  const pktRssi = isDirect(pktHops) ? (packet.rx_rssi ?? null) : null;
+  const pktSnr  = isDirect(pktHops) ? (packet.rx_snr  ?? null) : null;
 
   const { portnum } = packet.decoded;
 
@@ -307,8 +334,8 @@ function handlePacket(packet, device, ts, replay) {
         hw_model:      null,
         role:          null,
         last_heard:    packet.rx_time || Math.floor(Date.now() / 1000),
-        snr:           packet.rx_snr  ?? null,
-        rssi:          packet.rx_rssi ?? null,
+        snr:           pktSnr,
+        rssi:          pktRssi,
         hops:          null,
         lat:           null,
         lon:           null,
@@ -355,8 +382,8 @@ function handlePacket(packet, device, ts, replay) {
       hw_model:      u.hw_model   ?? null,
       role:          u.role       ?? null,
       last_heard:    packet.rx_time || Math.floor(Date.now() / 1000),
-      snr:           packet.rx_snr  ?? null,
-      rssi:          packet.rx_rssi ?? null,
+      snr:           pktSnr,
+      rssi:          pktRssi,
       hops:          null,
       lat:           null,
       lon:           null,
@@ -383,8 +410,8 @@ function handlePacket(packet, device, ts, replay) {
       hw_model:      null,
       role:          null,
       last_heard:    packet.rx_time || Math.floor(Date.now() / 1000),
-      snr:           packet.rx_snr  ?? null,
-      rssi:          packet.rx_rssi ?? null,
+      snr:           pktSnr,
+      rssi:          pktRssi,
       hops:          null,
       lat:           pos.latitude_i  != null ? pos.latitude_i  / 1e7 : null,
       lon:           pos.longitude_i != null ? pos.longitude_i / 1e7 : null,

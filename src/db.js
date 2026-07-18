@@ -165,10 +165,13 @@ db.exec(`
     num       INTEGER NOT NULL,
     packet_id INTEGER,
     rssi      REAL,
-    snr       REAL
+    snr       REAL,
+    hops      INTEGER
   );
 
   CREATE UNIQUE INDEX IF NOT EXISTS idx_sig_dedup  ON signal_history(num, packet_id) WHERE packet_id IS NOT NULL;
+  -- hops is recorded so the direct-only rule stays auditable rather than merely
+  -- asserted: any row with hops != 0 is a bug, and can be found.
   CREATE INDEX        IF NOT EXISTS idx_sig_num_ts ON signal_history(num, ts DESC);
 
   -- Latest-only cache for private-app state (portnum 260 config/debug/calc).
@@ -597,8 +600,8 @@ export const stmts = {
   getNodeByNum: db.prepare(`SELECT * FROM nodes WHERE num = ? LIMIT 1`),
 
   insertSignalHistory: db.prepare(`
-    INSERT OR IGNORE INTO signal_history (ts, num, packet_id, rssi, snr)
-    VALUES (@ts, @num, @packet_id, @rssi, @snr)
+    INSERT OR IGNORE INTO signal_history (ts, num, packet_id, rssi, snr, hops)
+    VALUES (@ts, @num, @packet_id, @rssi, @snr, @hops)
   `),
 
   // Reference range for a node's BME680. Returns the ordered values so the
@@ -619,9 +622,10 @@ export const stmts = {
   // One-shot backfill: messages carry the envelope rssi/snr recorded at
   // reception, so they are the same datum, not a second source.
   backfillSignalFromMessages: db.prepare(`
-    INSERT OR IGNORE INTO signal_history (ts, num, packet_id, rssi, snr)
-    SELECT ts, from_num, packet_id, rssi, snr FROM messages
+    INSERT OR IGNORE INTO signal_history (ts, num, packet_id, rssi, snr, hops)
+    SELECT ts, from_num, packet_id, rssi, snr, hops FROM messages
     WHERE (rssi IS NOT NULL OR snr IS NOT NULL) AND from_num IS NOT NULL
+      AND hops = 0
   `),
 
   upsertNodeAppState: db.prepare(`
@@ -702,7 +706,7 @@ const _finAll = (entry, keys) => {
 };
 
 export function insertSignalHistory(entry) {
-  stmts.insertSignalHistory.run(_finAll({ packet_id: null, rssi: null, snr: null, ...entry }, ['rssi', 'snr']));
+  stmts.insertSignalHistory.run(_finAll({ packet_id: null, rssi: null, snr: null, hops: null, ...entry }, ['rssi', 'snr']));
 }
 
 export function insertDetectionEvent(entry) {
