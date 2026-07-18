@@ -18,6 +18,9 @@ export const wsMixin = {
       const wasDisconnected = !this.wsConnected;
       this.wsConnected = true;
       if (wasDisconnected) this.bootstrapDevice();
+      // A deep-linked /node/!hexid may have requested before the socket was
+      // open, and a reconnect must re-sync the focused node.
+      if (this.tab === 'node' && this.nodeStatusNum) this.requestNodeStatus();
     };
     ws.onclose = () => {
       this.wsConnected = false;
@@ -27,6 +30,14 @@ export const wsMixin = {
     ws.onmessage = (msg) => {
       try { this.handleEvent(JSON.parse(msg.data)); } catch (_) {}
     };
+  },
+
+  // Client→server WS send. All page data travels over /events —
+  // BROWSER_CONTRACT §Transport makes GET form-only.
+  wsSend(payload) {
+    if (!this._ws || this._ws.readyState !== 1) return false;
+    this._ws.send(JSON.stringify(payload));
+    return true;
   },
 
   // Client→server WS RPC: geocode lookup (GET is form-submission-only).
@@ -80,6 +91,11 @@ export const wsMixin = {
       return;
     }
 
+
+    // Node focus page. The reply carries display-ready sections; the hint
+    // carries only a num, so we re-request rather than trust a pushed value.
+    if (ev.type === 'node_status')        { this.applyNodeStatus(ev); return; }
+    if (ev.type === 'node_status_update') { this.onNodeStatusUpdate(ev.num); return; }
 
     if (ev.type === 'geocode_result') {
       const pending = this._geocodePending?.[ev.num];

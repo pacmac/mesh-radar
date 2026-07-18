@@ -12,7 +12,18 @@ const _TAB_TO_PATH = {
   perf: '/performance',
 };
 
+// /node/!hexid is parameterised, so it cannot live in the static map. A route
+// (rather than transient tab state) means a focused node survives reload and is
+// linkable — which is what "focus on this node" implies.
+const _NODE_PATH_RE = /^\/node\/!([0-9a-f]+)$/i;
+
+export function nodeNumFromPath(pathname = window.location.pathname) {
+  const m = _NODE_PATH_RE.exec(pathname);
+  return m ? parseInt(m[1], 16) : null;
+}
+
 export function initTab() {
+  if (nodeNumFromPath()) return 'node';
   return _PATH_TO_TAB[window.location.pathname] ?? persistGet('activeTab', 'overview');
 }
 
@@ -21,6 +32,9 @@ export const navMixin = {
     // Tabs are lazy-mounted (x-if): destroy the perf Chart.js instances before
     // leaving perf so its canvases unmount cleanly and re-init fresh on return.
     if (this.tab === 'perf' && t !== 'perf') this.destroyPerfCharts();
+    // Same reason as perf: lazy-mounted x-if tabs must release Chart.js
+    // instances on leave or their canvases leak.
+    if (this.tab === 'node' && t !== 'node') this._destroyNodeCharts();
     this.tab = t;
     persistSet('activeTab', t);
     if (c) { this.cfgTab = c; persistSet('cfgTab', c); }

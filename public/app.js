@@ -1,7 +1,7 @@
 // mesh-gw dashboard — Alpine compose entry point.
 // State and init() only. All logic lives in the app-*.js mixin modules.
 import { uiMixin }        from './app-ui.js';
-import { navMixin, initTab } from './app-nav.js';
+import { navMixin, initTab, nodeNumFromPath } from './app-nav.js';
 import { wsMixin }        from './app-ws.js';
 import { devicesMixin }   from './app-devices.js';
 import { nodesMixin }     from './app-nodes.js';
@@ -13,6 +13,7 @@ import { perfMixin }      from './app-perf.js?v=20260627rewrite';
 import { telemetryMixin } from './app-telemetry.js';
 import { configMixin }      from './app-config.js';
 import { componentsMixin }  from './app-components.js';
+import { nodeStatusMixin }  from './app-node-status.js';
 import { fetchJSON, themeColor, svgElem } from './app-helpers.js';
 import { initPersist, persistGet, persistSet } from './app-persist.js';
 
@@ -126,6 +127,11 @@ function dashboard() {
     radarCrosshair: true,
     heatmapMaxAge:  3600,
     nodeInfo:       null,
+    // Node focus page (NODE_FOCUS_PAGE_SPEC). nodeStatus holds the last payload
+    // the server sent — a display cache, never a source of decisions.
+    nodeStatus:     null,
+    nodeStatusNum:  null,
+    _nodeCharts:    {},
     tracerouteResult:  null,
     traceroutePending: false,
     passiveTraceNum:   null,
@@ -310,12 +316,19 @@ function dashboard() {
 
       this.connectWS();
 
+      // Deep link: /node/!hexid loaded directly. The RPC is re-issued on WS
+      // open too, since the socket may not be ready at this point.
+      const bootNode = nodeNumFromPath();
+      if (bootNode) this.focusNode(bootNode);
+
       window.addEventListener('popstate', e => {
         const pathToTab = {
           '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
           '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/devices': 'devices',
           '/performance': 'perf',
         };
+        const nodeNum = nodeNumFromPath();
+        if (nodeNum) { this.setNav('node'); this.focusNode(nodeNum); return; }
         const t = e.state?.tab ?? pathToTab[window.location.pathname] ?? 'overview';
         this.setNav(t);
       });
@@ -377,7 +390,7 @@ window.dashboard = function() {
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
     rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
-    componentsMixin, perfMixin,
+    componentsMixin, perfMixin, nodeStatusMixin,
   ];
   for (const mixin of mixins) {
     Object.defineProperties(state, Object.getOwnPropertyDescriptors(mixin));
