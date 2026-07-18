@@ -45,6 +45,13 @@ function _recolourCharts() {
     c.options.scales.x.ticks.color = tick;   // axis labels too — easily missed
     c.options.scales.y.grid.color = grid;
     c.options.scales.y.ticks.color = tick;
+    if (c.options.scales.y.title) c.options.scales.y.title.color = tick;
+    // y1 exists only on dual-axis charts — omitting it here is how the x-axis
+    // labels ended up invisible after a theme switch.
+    if (c.options.scales.y1) {
+      c.options.scales.y1.ticks.color = tick;
+      if (c.options.scales.y1.title) c.options.scales.y1.title.color = tick;
+    }
     c.update('none');
   }
 }
@@ -99,8 +106,12 @@ export const nodeStatusMixin = {
 
   applyNodeStatus(msg) {
     if (!msg || Number(msg.num) !== Number(this.nodeStatusNum)) return;
-    const prevIds = (this.nodeStatus?.sections || []).map(s => s.id).join(',');
-    const nextIds = (msg.sections || []).map(s => s.id).join(',');
+    // Signature includes the axis shape: a node that only starts reporting
+    // pressure keeps the same section id, so comparing ids alone would leave a
+    // chart that can never grow its second axis.
+    const sig = secs => (secs || []).map(s => `${s.id}:${s.axes?.y1 ? 2 : 1}`).join(',');
+    const prevIds = sig(this.nodeStatus?.sections);
+    const nextIds = sig(msg.sections);
     this.nodeStatus = msg;
     // Charts are NOT destroyed on refresh. An active node hints ~1/sec, and
     // tearing a chart down mid-animation made Chart.js draw to a dead context
@@ -143,6 +154,8 @@ export const nodeStatusMixin = {
         borderColor: seriesColor(i),
         backgroundColor: seriesColor(i),
         borderWidth: 1.5, pointRadius: 0, tension: 0.25, spanGaps: true,
+        // Axis assignment is server-decided — bound, never computed here.
+        yAxisID: s.axis || 'y',
       }));
 
       // Chart internals are §2's sanctioned exception, but a theme-BLIND value
@@ -171,6 +184,7 @@ export const nodeStatusMixin = {
         existing.options.scales.x.grid.color = grid;
         existing.options.scales.y.grid.color = grid;
         existing.options.scales.y.ticks.color = tick;
+        if (existing.options.scales.y1) existing.options.scales.y1.ticks.color = tick;
         existing.update('none');
         _charts.set(section.id, existing);
         continue;
@@ -183,10 +197,19 @@ export const nodeStatusMixin = {
           // A live instrument should not re-animate every second, and this
           // closes the draw-after-teardown window entirely.
           animation: false,
-          interaction: { mode: 'nearest', intersect: false },
+          // axis:'xy' — without it proximity is judged on x alone, every series
+          // has a point at that x, so all of them tie and the tooltip lists the
+          // lot. Nearest in two dimensions reports the hovered line only.
+          interaction: { mode: 'nearest', axis: 'xy', intersect: false },
           plugins: {
             legend: { labels: { color: tick, boxWidth: 10 } },
-            tooltip: { callbacks: { title: () => '' } },   // no browser date formatting
+            tooltip: {
+              callbacks: { title: () => '' },   // no browser date formatting
+              // 'nearest' can return two adjacent points of the SAME series
+              // when they tie on distance, which renders the line twice.
+              // Keep the first entry per dataset so a hover reports exactly one.
+              filter: (item, i, arr) => arr.findIndex(a => a.datasetIndex === item.datasetIndex) === i,
+            },
           },
           scales: {
             // Visible time axis, WITHOUT browser date math.
@@ -215,7 +238,22 @@ export const nodeStatusMixin = {
                 callback: v => tickLabels.get(v) ?? '',
               },
             },
-            y: { grid: { color: grid }, ticks: { color: tick } },
+            y: {
+              position: 'left',
+              grid: { color: grid },
+              ticks: { color: tick },
+              title: { display: !!section.axes?.y?.label, text: section.axes?.y?.label || '', color: tick },
+            },
+            // Right axis exists ONLY when the server sent a y1 group, so a
+            // single-magnitude chart keeps one axis and no empty gutter.
+            ...(section.axes?.y1 ? {
+              y1: {
+                position: 'right',
+                grid: { drawOnChartArea: false },
+                ticks: { color: tick },
+                title: { display: !!section.axes.y1.label, text: section.axes.y1.label || '', color: tick },
+              },
+            } : {}),
           },
         },
       }));

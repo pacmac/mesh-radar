@@ -74,20 +74,63 @@ function axisTicks(tMin, tMax) {
   return out;
 }
 
+// Which Y axis a series belongs on is a DECISION, so the server makes it
+// (iron rule 1). Pressure (~1017 hPa) on the same scale as temperature (~26 °C)
+// flattens temperature to the baseline; voltage (~4.3 V) beside battery (~100%)
+// flattens voltage the same way from the other direction.
+//
+// Deterministic and unit-agnostic, so a new metric needs no code change:
+// split where consecutive maxima differ by >=10x, and give the LEFT axis to the
+// group with more series (the outlier goes right).
+const AXIS_SPLIT_RATIO = 10;
+
+function assignAxes(series) {
+  if (series.length < 2) return { axes: { y: axisLabel(series), y1: null } };
+  const maxOf = s => Math.max(...s.points.map(p => Math.abs(p.v)), 0);
+  const globalMax = Math.max(...series.map(maxOf), 0) || Number.EPSILON;
+
+  // Compare each series to the CHART's largest value, not to its neighbour.
+  // Voltage (4.3) sits only 6.5x below air-util (28) but 23x below battery
+  // (100) — it is the chart maximum that flattens it, so that is the
+  // comparison that matters.
+  const dominant = series.filter(s => globalMax / (maxOf(s) || Number.EPSILON) < AXIS_SPLIT_RATIO);
+  const dwarfed  = series.filter(s => !dominant.includes(s));
+
+  if (!dwarfed.length) {                   // one coherent magnitude — single axis
+    for (const s of series) s.axis = 'y';
+    return { axes: { y: axisLabel(series), y1: null } };
+  }
+
+  // More series wins the left axis; a tie gives it to the larger magnitudes.
+  const left  = dwarfed.length > dominant.length ? dwarfed : dominant;
+  const right = left === dwarfed ? dominant : dwarfed;
+  for (const s of left)  s.axis = 'y';
+  for (const s of right) s.axis = 'y1';
+  return { axes: { y: axisLabel(left), y1: axisLabel(right) } };
+}
+
+// Axis caption = the distinct units it carries, so the reader can tell the
+// scales apart ("°C · %RH" vs "hPa").
+function axisLabel(group) {
+  const units = [...new Set(group.map(s => s.unit).filter(Boolean))];
+  return { label: units.join(' · ') || null };
+}
+
 function buildSeriesSection(id, title, rows, specs) {
   if (!rows.length) return null;
   const series = compact(specs.map(({ key, label, unit }) => {
     const points = seriesFrom(rows, key);
-    return points ? { key, label, unit, points: downsample(points) } : null;
+    return points ? { key, label, unit, axis: 'y', points: downsample(points) } : null;
   }));
   if (!series.length) return null;
+  const { axes } = assignAxes(series);
   let tMin = Infinity, tMax = -Infinity;
   for (const s of series) for (const p of s.points) {
     if (p.t < tMin) tMin = p.t;
     if (p.t > tMax) tMax = p.t;
   }
   return {
-    id, kind: 'series', title, series,
+    id, kind: 'series', title, series, axes,
     t_min: tMin, t_max: tMax,
     t_min_text: fmtTimestamp(tMin), t_max_text: fmtTimestamp(tMax),
     ticks: axisTicks(tMin, tMax),
