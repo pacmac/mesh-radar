@@ -1,6 +1,7 @@
 import {
   stmts, insertEnvHistory, syncAlertedAt, getConfig, setConfig,
   insertDeviceMetricsHistory, insertDetectionEvent, upsertNodeAppState,
+  insertSignalHistory,
 } from './db.js';
 import db from './db.js';
 
@@ -30,6 +31,19 @@ function _upsertCache(num, nodeId, u, pos) {
 
 const BROADCAST_NUM = 0xffffffff;
 
+// Signal comes from the packet ENVELOPE, never a payload (iron rule 4).
+// Recorded for every reception that carries one, deduped by (num, packet_id) so
+// N gateway radios hearing one broadcast yield one row.
+function _captureSignal(num, packetId, rssi, snr, ts) {
+  if (!num) return;
+  if (rssi == null && snr == null) return;
+  try {
+    insertSignalHistory({ ts, num, packet_id: packetId ?? null, rssi: rssi ?? null, snr: snr ?? null });
+  } catch (e) {
+    console.error(`[signal] insert failed for ${num}: ${e.message}`);
+  }
+}
+
 export function handleEvent(event) {
   const { type, data, _replay } = event;
   // V2: __ble_addr (BLE MAC) is the device key on every event; `device` is
@@ -37,6 +51,11 @@ export function handleEvent(event) {
   // not a device key and would reintroduce mixed vocabulary (IDENTITY.md).
   const rxDevice = event.__ble_addr ?? event.addr ?? event.device ?? null;
   const ts = Math.floor(Date.now() / 1000);
+
+  // Typed AppRouter events carry the envelope alongside their payload.
+  if (event.from_num && (event.rx_rssi != null || event.rx_snr != null)) {
+    _captureSignal(event.from_num, event.packet_id ?? null, event.rx_rssi, event.rx_snr, event.rx_time || ts);
+  }
 
   if (type === 'packet') {
     handlePacket(data?.packet, rxDevice, ts, !!_replay);
@@ -220,6 +239,11 @@ function handleTelemetryEvent(event, rxDevice) {
 
 function handlePacket(packet, device, ts, replay) {
   if (!packet?.decoded) return;
+
+  // Envelope signal for EVERY packet, regardless of portnum — this is the
+  // densest and most honest source of a node's link quality over time.
+  _captureSignal(packet.from, packet.id ?? null, packet.rx_rssi, packet.rx_snr,
+                 packet.rx_time || ts);
 
   const { portnum } = packet.decoded;
 

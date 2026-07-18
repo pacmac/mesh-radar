@@ -156,6 +156,21 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_det_dedup  ON detection_events(num, packet_id) WHERE packet_id IS NOT NULL;
   CREATE INDEX        IF NOT EXISTS idx_det_num_ts ON detection_events(num, ts DESC);
 
+  -- Signal history from the packet ENVELOPE (iron rule 4 — never a payload).
+  -- One row per (node, packet); the partial unique index collapses the same
+  -- broadcast heard by several gateway radios.
+  CREATE TABLE IF NOT EXISTS signal_history (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        INTEGER NOT NULL,
+    num       INTEGER NOT NULL,
+    packet_id INTEGER,
+    rssi      REAL,
+    snr       REAL
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_sig_dedup  ON signal_history(num, packet_id) WHERE packet_id IS NOT NULL;
+  CREATE INDEX        IF NOT EXISTS idx_sig_num_ts ON signal_history(num, ts DESC);
+
   -- Latest-only cache for private-app state (portnum 260 config/debug/calc).
   -- Keyed by portnum as well as type so this is not a 260-specific table.
   CREATE TABLE IF NOT EXISTS node_app_state (
@@ -577,6 +592,24 @@ export const stmts = {
 
   getNodeByNum: db.prepare(`SELECT * FROM nodes WHERE num = ? LIMIT 1`),
 
+  insertSignalHistory: db.prepare(`
+    INSERT OR IGNORE INTO signal_history (ts, num, packet_id, rssi, snr)
+    VALUES (@ts, @num, @packet_id, @rssi, @snr)
+  `),
+
+  querySignalHistory: db.prepare(`
+    SELECT ts, rssi, snr FROM signal_history WHERE num = ? AND ts >= ?
+    ORDER BY ts ASC
+  `),
+
+  // One-shot backfill: messages carry the envelope rssi/snr recorded at
+  // reception, so they are the same datum, not a second source.
+  backfillSignalFromMessages: db.prepare(`
+    INSERT OR IGNORE INTO signal_history (ts, num, packet_id, rssi, snr)
+    SELECT ts, from_num, packet_id, rssi, snr FROM messages
+    WHERE (rssi IS NOT NULL OR snr IS NOT NULL) AND from_num IS NOT NULL
+  `),
+
   upsertNodeAppState: db.prepare(`
     INSERT INTO node_app_state (num, portnum, type, ts, payload)
     VALUES (@num, @portnum, @type, @ts, @payload)
@@ -640,6 +673,10 @@ export function insertTilt(entry) {
 
 export function insertDeviceMetricsHistory(entry) {
   stmts.insertDeviceMetricsHistory.run(entry);
+}
+
+export function insertSignalHistory(entry) {
+  stmts.insertSignalHistory.run({ packet_id: null, rssi: null, snr: null, ...entry });
 }
 
 export function insertDetectionEvent(entry) {

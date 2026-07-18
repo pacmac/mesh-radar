@@ -87,21 +87,38 @@ const AXIS_SPLIT_RATIO = 10;
 function assignAxes(series) {
   if (series.length < 2) return { axes: { y: axisLabel(series), y1: null } };
   const maxOf = s => Math.max(...s.points.map(p => Math.abs(p.v)), 0);
-  const globalMax = Math.max(...series.map(maxOf), 0) || Number.EPSILON;
 
-  // Compare each series to the CHART's largest value, not to its neighbour.
-  // Voltage (4.3) sits only 6.5x below air-util (28) but 23x below battery
-  // (100) — it is the chart maximum that flattens it, so that is the
-  // comparison that matters.
-  const dominant = series.filter(s => globalMax / (maxOf(s) || Number.EPSILON) < AXIS_SPLIT_RATIO);
-  const dwarfed  = series.filter(s => !dominant.includes(s));
+  // UNIT FIRST. dBm and % differ by only ~3x in magnitude but must never share
+  // a scale — a percentage on a dBm axis is meaningless. Magnitude is only the
+  // tie-breaker when there are too many units to give each its own axis.
+  const units = [...new Set(series.map(s => s.unit || ''))];
 
-  if (!dwarfed.length) {                   // one coherent magnitude — single axis
+  if (units.length === 1) {
     for (const s of series) s.axis = 'y';
     return { axes: { y: axisLabel(series), y1: null } };
   }
 
-  // More series wins the left axis; a tie gives it to the larger magnitudes.
+  if (units.length === 2) {
+    const a = series.filter(s => (s.unit || '') === units[0]);
+    const b = series.filter(s => (s.unit || '') === units[1]);
+    const left  = a.length >= b.length ? a : b;
+    const right = left === a ? b : a;
+    for (const s of left)  s.axis = 'y';
+    for (const s of right) s.axis = 'y1';
+    return { axes: { y: axisLabel(left), y1: axisLabel(right) } };
+  }
+
+  // Three or more units: fall back to magnitude. Compare each series to the
+  // CHART's largest value, not to its neighbour — voltage sits only 6.5x below
+  // air-util but 23x below battery, and it is the chart maximum that flattens it.
+  const globalMax = Math.max(...series.map(maxOf), 0) || Number.EPSILON;
+  const dominant = series.filter(s => globalMax / (maxOf(s) || Number.EPSILON) < AXIS_SPLIT_RATIO);
+  const dwarfed  = series.filter(s => !dominant.includes(s));
+
+  if (!dwarfed.length) {
+    for (const s of series) s.axis = 'y';
+    return { axes: { y: axisLabel(series), y1: null } };
+  }
   const left  = dwarfed.length > dominant.length ? dwarfed : dominant;
   const right = left === dwarfed ? dominant : dwarfed;
   for (const s of left)  s.axis = 'y';
@@ -214,6 +231,26 @@ function buildSignal(rssi, snr) {
   };
 }
 
+// RSSI / noise floor / quality. Noise is DERIVED: SNR is signal-above-noise,
+// so noise = rssi - snr. API.md publishes no noise figure, so it is labelled
+// plainly rather than passed off as a measurement. Quality reuses
+// signalQuality() from utils.js — the same function the nodes and messages
+// pages use, so the page agrees with the rest of the UI.
+function buildSignalSection(rows) {
+  if (!rows.length) return null;
+  const withNoise = rows.map(r => ({
+    ts: r.ts,
+    rssi: r.rssi,
+    noise: (r.rssi != null && r.snr != null) ? +(r.rssi - r.snr).toFixed(1) : null,
+    quality: (r.rssi != null || r.snr != null) ? signalQuality(r.rssi, r.snr) : null,
+  }));
+  return buildSeriesSection('signal', 'Signal', withNoise, [
+    { key: 'rssi',    label: 'RSSI',        unit: 'dBm' },
+    { key: 'noise',   label: 'Noise floor', unit: 'dBm' },
+    { key: 'quality', label: 'Quality',     unit: '%'   },
+  ]);
+}
+
 export function buildNodeStatus(num, windowHours) {
   const node = stmts.getNodeByNum.get(num) ?? null;
   const info = stmts.getNodeinfoByNum.get(num) ?? null;
@@ -269,6 +306,7 @@ export function buildNodeStatus(num, windowHours) {
   const dmRows  = stmts.queryDeviceMetricsHistory.all(num, since);
   const envRows = stmts.queryEnvHistory.all(num, since);
   const detRows = stmts.queryDetectionEvents.all(num, since, MAX_EVENTS);
+  const sigRows = stmts.querySignalHistory.all(num, since);
   const lat = info?.lat ?? node?.lat ?? null;
   const lon = info?.lon ?? node?.lon ?? null;
 
@@ -280,6 +318,7 @@ export function buildNodeStatus(num, windowHours) {
       { key: 'channel_utilization', label: 'Channel utilisation', unit: '%' },
       { key: 'air_util_tx',         label: 'Air util TX',        unit: '%' },
     ]),
+    buildSignalSection(sigRows),
     buildSeriesSection('environment', 'Environment', envRows, [
       { key: 'temperature',         label: 'Temperature', unit: '°C'  },
       { key: 'relative_humidity',   label: 'Humidity',    unit: '%RH' },

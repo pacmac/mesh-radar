@@ -306,6 +306,19 @@ server.listen(PORT, () => {
 });
 
 // Bridge event dispatch — node_update, packet, traceroute, rangetest
+// One-shot: seed signal_history from messages, whose rssi/snr are envelope
+// values recorded at reception — the same datum, not a second source. Idempotent
+// anyway via the (num, packet_id) dedup index, but guarded so it runs once.
+if (!getConfig('migrations.signal_history_backfill', false)) {
+  try {
+    const r = stmts.backfillSignalFromMessages.run();
+    console.log(`[migration] signal_history backfilled ${r.changes} rows from messages`);
+    setConfig('migrations.signal_history_backfill', true);
+  } catch (e) {
+    console.error('[migration] signal_history backfill failed:', e.message);
+  }
+}
+
 registerBridgeEvents(bridge);
 
 // Scanner/dashMode/rotator/passiveTracer lifecycle wiring
