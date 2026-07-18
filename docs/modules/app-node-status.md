@@ -1,7 +1,7 @@
 ---
 module: app-node-status
 source: public/app-node-status.js
-source_hash: 4c10db314ae35d6713a82d95304380327e9fe5023a6e4cb66d7b8b34fe295a8a
+source_hash: ae980623b3ed064fe32a5cb7ef7a23b88ee6c6fb3e8b79392fa2e1cbcc361f9d
 updated: 2026-07-18
 ---
 
@@ -99,3 +99,34 @@ than scrolled and the lower sections become unreachable (observed 2026-07-18:
   reachable from the modal for every node regardless
 - The 260 config EDITOR — read-only value_grid here; the editor is OpManager +
   a new MeshRunner
+
+## Chart lifecycle (revised — backlog #7)
+
+Three rules, each learned from a bug observed on 2026-07-18:
+
+1. **Chart instances live at module scope, never on `this`.** Anything on an
+   Alpine data property is wrapped in a reactive Proxy; Chart.js walks its own
+   internals during `update()` and through a Proxy that recurses until
+   "Maximum call stack size exceeded", or corrupts scale config
+   ("Cannot set properties of undefined (setting 'fullSize')").
+2. **Update in place; never destroy on refresh.** An active node hints ~1/sec,
+   so destroying and rebuilding tore charts down mid-animation and Chart.js drew
+   to a dead context ("Cannot read properties of null (reading 'save')") — the
+   reason the charts appeared blank. Assign `chart.data.datasets`, then
+   `update('none')`. `animation: false` closes the window entirely. Destroy only
+   on tab leave, or when the set of section ids changes.
+3. **Recolour on theme change via MutationObserver.** Chart.js bakes option
+   colours at draw time, so a chart built in one theme renders invisible text
+   after a switch. The data path alone is not enough — a quiet node may never
+   send another update.
+
+## Style (STYLE_GUIDE.md)
+
+Every text element maps to a §3 role; the header vitals take the **display
+value** role (`text-2xl font-mono font-bold tabular-nums`) because on a page
+answering *what is this node doing right now*, the now-values are the headline
+metric. No `px` sizes (§2), no raw colours in the partial (§4) — series colours
+come from `themeColor()`, chart grid/ticks from the theme's own `--bc`.
+
+`value_grid` columns are **bounded** (`minmax(15rem,22rem)`): unbounded
+`1fr` columns stretch at desktop width and fling each key away from its value.

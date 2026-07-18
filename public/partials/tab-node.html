@@ -1,116 +1,129 @@
 <!--
   Node focus page. Renders an ordered list of server-supplied sections.
 
-  BROWSER_CONTRACT.md + NODE_STATUS_SPEC iron rule 1: every value below is bound
-  verbatim from `text`. There is no unit string, no rounding, no date math in
-  this file, and nothing tests whether a section has content — presence and
-  order are server decisions.
--->
-<!--
-  flex-1 min-h-0 overflow-y-auto: the parent is a flex column with
-  overflow-hidden, so without min-h-0 this content is CLIPPED rather than
-  scrolled — the lower sections become unreachable. Matches the tab-perf /
-  tab-nodes root pattern.
--->
-<div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+  STYLE_GUIDE.md is canonical here: every text element maps to a §3 type role,
+  colors are DaisyUI semantic classes only (§4), and the card anatomy is §5's.
+  No px sizes, no inline styles — the 17px root knob (§2) scales everything.
 
-  <!-- Awaiting the RPC reply. The browser shows a loading state rather than
-       guessing at missing state (BROWSER_CONTRACT §What this means). -->
+  BROWSER_CONTRACT.md + NODE_STATUS_SPEC iron rule 1: every value is bound
+  verbatim from the server's `text`. No unit strings, no rounding, no date math,
+  and nothing tests whether a section has content — presence and order are
+  server decisions.
+
+  flex-1 min-h-0 overflow-y-auto: the parent is a flex column with
+  overflow-hidden, so without min-h-0 this content is clipped rather than
+  scrolled and the lower sections become unreachable.
+-->
+<div class="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-4">
+
   <template x-if="!nodeStatus">
-    <div class="flex items-center gap-3 text-sm opacity-60">
+    <div class="flex items-center gap-3">
       <span class="loading loading-spinner loading-sm"></span>
-      <span>Loading node…</span>
+      <span class="text-xs text-base-content/50">Loading node…</span>
     </div>
   </template>
 
+  <!-- Designed empty state (§8.5): an empty screen is an invitation to act. -->
   <template x-if="nodeStatus && !nodeStatus.found">
-    <div class="alert">
-      <span>No record of this node.</span>
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body py-4 gap-3 items-start">
+        <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">UNKNOWN NODE</h2>
+        <p class="text-sm">
+          Nothing has been heard from this node, so there is no telemetry to show.
+          It will appear here once it transmits.
+        </p>
+        <button class="btn btn-sm btn-primary" @click="setNav('nodes')">Back to nodes</button>
+      </div>
     </div>
   </template>
 
   <template x-if="nodeStatus && nodeStatus.found">
-    <div class="space-y-4">
+    <div class="flex flex-col gap-4">
 
       <!-- Header: identity + right now. Values, never verdicts — no health
-           pill, no battery warning. -->
-      <div class="card bg-base-100 border border-base-200">
-        <div class="card-body p-4 gap-3">
+           pill, no battery warning. The now-values are this page's headline
+           metric, so they take the §3 display-value role. -->
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body py-4 gap-3">
           <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span class="text-lg font-semibold" x-text="nodeStatus.header.long_name || nodeStatus.header.node_id"></span>
-            <span class="badge badge-sm badge-ghost font-mono" x-text="nodeStatus.header.short_name"></span>
-            <span class="font-mono text-xs opacity-60" x-text="nodeStatus.header.node_id"></span>
-            <span class="text-xs opacity-60" x-text="nodeStatus.header.hw_model"></span>
+            <span class="text-lg font-display font-bold tracking-wide"
+                  x-text="nodeStatus.header.long_name || nodeStatus.header.node_id"></span>
+            <span class="badge badge-sm" x-text="nodeStatus.header.short_name"></span>
+            <span class="text-sm font-mono tabular-nums text-base-content/70" x-text="nodeStatus.header.node_id"></span>
+            <span class="text-xs text-base-content/50" x-text="nodeStatus.header.hw_model"></span>
           </div>
 
           <template x-if="nodeStatus.header.last_heard">
-            <div class="text-xs opacity-70">
-              Last heard
-              <span x-text="nodeStatus.header.last_heard.text"></span>
-              <span class="opacity-60">(<span x-text="nodeStatus.header.last_heard.ago"></span>)</span>
+            <div class="text-xs text-base-content/50">
+              Last heard <span x-text="nodeStatus.header.last_heard.text"></span>
+              · <span x-text="nodeStatus.header.last_heard.ago"></span>
             </div>
           </template>
 
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-x-8 gap-y-3">
             <template x-for="f in nodeStatus.header.fields" :key="f.label">
-              <div class="rounded border border-base-200 px-3 py-1.5">
-                <div class="text-[10px] uppercase tracking-wide opacity-50" x-text="f.label"></div>
-                <div class="font-mono text-sm" x-text="f.text"></div>
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50"
+                      x-text="f.label"></span>
+                <span class="text-2xl font-mono font-bold tabular-nums" x-text="f.text"></span>
               </div>
             </template>
           </div>
         </div>
       </div>
 
-      <!-- Sections, rendered in the order the server gave them. -->
+      <!-- Sections, in the order the server gave them. -->
       <template x-for="section in nodeStatus.sections" :key="section.id">
-        <div class="card bg-base-100 border border-base-200">
-          <div class="card-body p-4 gap-3">
-            <div class="flex items-baseline justify-between gap-2">
-              <h3 class="font-semibold text-sm" x-text="section.title"></h3>
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body py-4 gap-3">
+            <div class="flex items-baseline justify-between gap-3">
+              <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50"
+                  x-text="section.title"></h2>
               <template x-if="section.observed_text">
-                <span class="text-[11px] opacity-50">
-                  <span x-text="section.observed_text"></span>
-                  · <span x-text="section.observed_ago"></span>
+                <span class="text-xs text-base-content/50">
+                  <span x-text="section.observed_text"></span> · <span x-text="section.observed_ago"></span>
                 </span>
               </template>
             </div>
 
-            <!-- kind: value_grid -->
+            <!-- value_grid — §5 key-value rows: caption key left, data value
+                 right. Columns are BOUNDED so a pair never stretches apart at
+                 desktop width. -->
             <template x-if="section.kind === 'value_grid'">
-              <div class="grid gap-x-6 gap-y-1" style="grid-template-columns:repeat(auto-fill,minmax(190px,1fr))">
+              <div class="grid gap-x-8 gap-y-1 justify-start"
+                   style="grid-template-columns:repeat(auto-fill,minmax(15rem,22rem))">
                 <template x-for="f in section.fields" :key="f.label">
-                  <div class="flex justify-between gap-3 text-sm border-b border-base-200/60 py-1">
-                    <span class="opacity-60 font-mono text-xs" x-text="f.label"></span>
-                    <span class="font-mono" x-text="f.text"></span>
+                  <div class="flex items-baseline justify-between gap-3 border-b border-base-200 py-1">
+                    <span class="text-xs text-base-content/50" x-text="f.label"></span>
+                    <span class="text-sm font-mono tabular-nums" x-text="f.text"></span>
                   </div>
                 </template>
               </div>
             </template>
 
-            <!-- kind: series — axis endpoints come pre-formatted from the
-                 server, so the time axis is visible without any date math -->
+            <!-- series — axis endpoints arrive pre-formatted, so the time axis
+                 is visible without any browser date math -->
             <template x-if="section.kind === 'series'">
-              <div>
-                <div style="height:190px"><canvas :id="'nodechart-' + section.id"></canvas></div>
-                <div class="flex justify-between text-[10px] opacity-50 font-mono pt-1">
+              <div class="flex flex-col gap-1">
+                <div class="h-56"><canvas :id="'nodechart-' + section.id"></canvas></div>
+                <div class="flex justify-between text-xs text-base-content/50">
                   <span x-text="section.t_min_text"></span>
                   <span x-text="section.t_max_text"></span>
                 </div>
               </div>
             </template>
 
-            <!-- kind: event_log -->
+            <!-- event_log -->
             <template x-if="section.kind === 'event_log'">
-              <div class="max-h-72 overflow-y-auto">
+              <div class="max-h-96 overflow-y-auto flex flex-col">
                 <template x-for="(e, i) in section.events" :key="i">
-                  <div class="flex gap-3 text-sm border-b border-base-200/60 py-1">
-                    <span class="font-mono text-xs opacity-50 shrink-0" x-text="e.ts_text"></span>
+                  <div class="flex items-baseline gap-3 border-b border-base-200 py-1">
+                    <span class="text-xs text-base-content/50 shrink-0" x-text="e.ts_text"></span>
                     <template x-if="e.label">
-                      <span class="badge badge-xs badge-ghost shrink-0" x-text="e.label"></span>
+                      <span class="badge badge-sm shrink-0" x-text="e.label"></span>
                     </template>
-                    <span class="grow" x-text="e.text"></span>
-                    <span class="text-xs opacity-40 shrink-0" x-text="e.ts_ago"></span>
+                    <span class="text-sm font-mono grow" x-text="e.text"></span>
+                    <span class="text-xs text-base-content/50 shrink-0" x-text="e.ts_ago"></span>
                   </div>
                 </template>
               </div>

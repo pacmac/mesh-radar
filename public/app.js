@@ -131,7 +131,6 @@ function dashboard() {
     // the server sent — a display cache, never a source of decisions.
     nodeStatus:     null,
     nodeStatusNum:  null,
-    _nodeCharts:    {},
     tracerouteResult:  null,
     traceroutePending: false,
     passiveTraceNum:   null,
