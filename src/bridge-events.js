@@ -5,6 +5,7 @@ import { scanner } from './scanner.js';
 import { traceroute } from './traceroute.js';
 import { stmts, insertRangeTestEntry, insertEnvHistory } from './db.js';
 import { broadcastMessageHistory } from './ws-relay.js';
+import { handleReply } from './node-settings.js';
 import { ownDeviceNums } from './node-filter.js';
 import { isListenerForMode } from './dash-mode.js';
 import { FF } from './feature-flags.js';
@@ -25,6 +26,20 @@ export function registerBridgeEvents(bridge) {
     // history that does not yet contain the message.
     if (ev.type === 'packet' && ev.data?.packet?.decoded?.portnum === 'TEXT_MESSAGE_APP') {
       broadcastMessageHistory();
+
+      // A device reply is threaded to its command by reply_id (API.md §3).
+      // Routed here, after persistence, for the same ordering reason as the
+      // history rebroadcast above.
+      const pkt = ev.data.packet;
+      if (pkt.decoded.reply_id) {
+        try {
+          const text = pkt.decoded.payload
+            ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8') : '';
+          handleReply(pkt.decoded.reply_id, text);
+        } catch (e) {
+          console.error('[settings] reply correlation failed:', e.message);
+        }
+      }
     }
     if (ev.type === 'node_update' || ev.type === 'node_info') {   // V2 emits node_info
       nodeList.handleNodeUpdate(ev);
