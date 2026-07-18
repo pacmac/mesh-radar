@@ -263,31 +263,93 @@ function buildSignalSection(rows) {
 // observed air — and is labelled as such. It needs days of history to mean much;
 // with a short baseline everything reads near 100%, which is honest rather than
 // falsely precise. The raw MΩ rides the second axis so nothing is hidden.
-const GAS_BASELINE_DAYS   = 7;
-const GAS_MIN_SAMPLES     = 12;   // below this the baseline is not worth quoting
+const GAS_BASELINE_DAYS = 7;
+const GAS_MIN_SAMPLES   = 12;    // below this, no percentage is quoted at all
+const GAS_MAD_K         = 6;     // reject beyond 6x MAD from the median (~4 sigma)
 
+// Robust reference range: median-absolute-deviation outlier rejection, then the
+// extremes of what survives.
+//
+// NOT percentiles — verified insufficient: with 8 samples, nearest-rank p95
+// lands on the last element, so a single spurious reading (esp3 at 1115 MΩ)
+// still defines the ceiling and flattens every real value to 0%. MAD stays
+// robust at small n, which is exactly the regime this runs in.
+function robustRange(values) {
+  if (values.length < 3) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)];
+  const devs = sorted.map(v => Math.abs(v - med)).sort((a, b) => a - b);
+  const mad = devs[Math.floor(devs.length / 2)];
+  const keep = mad > 0 ? sorted.filter(v => Math.abs(v - med) <= GAS_MAD_K * mad) : sorted;
+  if (keep.length < 2) return null;
+  return { floor: keep[0], ceiling: keep[keep.length - 1], kept: keep.length, dropped: values.length - keep.length };
+}
+
+// Air quality from the BME680.
+//
+// Raw gas resistance in MΩ means nothing to a reader, but there is NO fixed
+// resistance->quality conversion: Bosch's BSEC learns a per-sensor baseline over
+// days, resistance varies between sensor units, and it rises in clean air.
+// A hardcoded band (e.g. "50 kΩ = 100%") would be an invented number wearing a
+// unit, which is worse than the raw figure.
+//
+// So the percentage is RELATIVE to the node's own recent maximum — its cleanest
+// observed air — and is labelled as such. It needs days of history to mean much;
+// with a short baseline everything reads near 100%, which is honest rather than
+// falsely precise. The raw MΩ rides the second axis so nothing is hidden.
+const GAS_LO_PCT        = 0.05;  // floor   — dirtiest air seen, outliers excluded
+const GAS_HI_PCT        = 0.95;  // ceiling — cleanest air seen, outliers excluded
+
+// Air quality from the BME680.
+//
+// There is NO fixed resistance->quality conversion: Bosch's BSEC learns a
+// per-sensor baseline over days, resistance rises in clean air, and absolute
+// values differ wildly between units — esp3 reports 1115 MΩ where DEV1 reports
+// 0.055. So the percentage is normalised across THIS node's own observed range.
+//
+// Percentiles, not MIN()/MAX(): one spurious reading would otherwise define the
+// scale and flatten every real value to 0%.
+//
+// Burn-in is deliberately NOT filtered. DEV1's readings climb monotonically
+// while its heater stabilises, and that drift is part of the observed range.
+// Detecting burn-in needs device-side state we do not have, and silently
+// discarding early readings would be editorialising device data (iron rule 2).
+// Printing the reference range makes the effect visible instead.
 function buildAirQualitySection(num, envRows, since) {
   const gasRows = envRows.filter(r => typeof r.gas_resistance === 'number' && Number.isFinite(r.gas_resistance));
   if (!gasRows.length) return null;
 
-  const base = stmts.queryGasBaseline.get(num, Math.floor(Date.now() / 1000) - GAS_BASELINE_DAYS * 86400);
-  const baseline = (base?.samples >= GAS_MIN_SAMPLES && base.baseline > 0) ? base.baseline : null;
+  const all = stmts.queryGasValues
+    .all(num, Math.floor(Date.now() / 1000) - GAS_BASELINE_DAYS * 86400)
+    .map(r => r.v)
+    .filter(v => typeof v === 'number' && Number.isFinite(v));
+
+  const range   = robustRange(all);
+  const floor   = range?.floor ?? null;
+  const ceiling = range?.ceiling ?? null;
+  const usable  = all.length >= GAS_MIN_SAMPLES && range != null && ceiling > floor;
 
   const rows = gasRows.map(r => ({
     ts: r.ts,
     gas_resistance: r.gas_resistance,
-    air_quality: baseline ? Math.max(0, Math.min(100, +(100 * r.gas_resistance / baseline).toFixed(1))) : null,
+    air_quality: usable
+      ? Math.max(0, Math.min(100, +(100 * (r.gas_resistance - floor) / (ceiling - floor)).toFixed(1)))
+      : null,
   }));
 
   const specs = [];
-  if (baseline) specs.push({ key: 'air_quality', label: 'Air quality (rel.)', unit: '%' });
+  if (usable) specs.push({ key: 'air_quality', label: 'Air quality (rel.)', unit: '%' });
   specs.push({ key: 'gas_resistance', label: 'Gas resistance', unit: 'MΩ' });
 
   const section = buildSeriesSection('air_quality', 'Air quality', rows, specs);
   if (section) {
-    section.note = baseline
-      ? `Relative to this node's cleanest reading in the last ${GAS_BASELINE_DAYS} days (${baseline.toFixed(3)} MΩ).`
-      : `Learning baseline — ${base?.samples ?? 0} of ${GAS_MIN_SAMPLES} samples needed before a percentage is meaningful.`;
+    // Always name the reference range. A narrow range is then self-evident
+    // rather than hidden behind a confident-looking percentage.
+    section.note = usable
+      ? `0% = ${floor.toFixed(3)} MΩ · 100% = ${ceiling.toFixed(3)} MΩ `
+        + `(this node, last ${GAS_BASELINE_DAYS} days, ${all.length} samples`
+        + `${range.dropped ? `, ${range.dropped} outlier${range.dropped > 1 ? 's' : ''} excluded` : ''})`
+      : `Learning range — ${all.length} of ${GAS_MIN_SAMPLES} samples needed before a percentage is meaningful.`;
   }
   return section;
 }
