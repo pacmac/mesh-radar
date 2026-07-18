@@ -601,6 +601,16 @@ export const stmts = {
     VALUES (@ts, @num, @packet_id, @rssi, @snr)
   `),
 
+  // Clean-air reference for a node's BME680: the highest resistance it has
+  // reported recently. Gas resistance RISES in clean air, so its own maximum is
+  // the best available "clean" datum. Per-node because absolute resistance
+  // varies between sensor units — a shared constant would be meaningless.
+  queryGasBaseline: db.prepare(`
+    SELECT MAX(gas_resistance) AS baseline, COUNT(*) AS samples
+    FROM environment_history
+    WHERE num = ? AND gas_resistance IS NOT NULL AND ts >= ?
+  `),
+
   querySignalHistory: db.prepare(`
     SELECT ts, rssi, snr FROM signal_history WHERE num = ? AND ts >= ?
     ORDER BY ts ASC

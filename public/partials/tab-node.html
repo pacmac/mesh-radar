@@ -135,6 +135,12 @@
               </div>
             </template>
 
+            <!-- A derived series says what it is derived FROM, so a percentage
+                 is never mistaken for a device measurement. -->
+            <template x-if="section.note">
+              <p class="text-xs text-base-content/50" x-text="section.note"></p>
+            </template>
+
             <!-- series — axis endpoints arrive pre-formatted, so the time axis
                  is visible without any browser date math -->
             <template x-if="section.kind === 'series'">

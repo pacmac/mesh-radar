@@ -251,6 +251,47 @@ function buildSignalSection(rows) {
   ]);
 }
 
+// Air quality from the BME680.
+//
+// Raw gas resistance in MΩ means nothing to a reader, but there is NO fixed
+// resistance->quality conversion: Bosch's BSEC learns a per-sensor baseline over
+// days, resistance varies between sensor units, and it rises in clean air.
+// A hardcoded band (e.g. "50 kΩ = 100%") would be an invented number wearing a
+// unit, which is worse than the raw figure.
+//
+// So the percentage is RELATIVE to the node's own recent maximum — its cleanest
+// observed air — and is labelled as such. It needs days of history to mean much;
+// with a short baseline everything reads near 100%, which is honest rather than
+// falsely precise. The raw MΩ rides the second axis so nothing is hidden.
+const GAS_BASELINE_DAYS   = 7;
+const GAS_MIN_SAMPLES     = 12;   // below this the baseline is not worth quoting
+
+function buildAirQualitySection(num, envRows, since) {
+  const gasRows = envRows.filter(r => typeof r.gas_resistance === 'number' && Number.isFinite(r.gas_resistance));
+  if (!gasRows.length) return null;
+
+  const base = stmts.queryGasBaseline.get(num, Math.floor(Date.now() / 1000) - GAS_BASELINE_DAYS * 86400);
+  const baseline = (base?.samples >= GAS_MIN_SAMPLES && base.baseline > 0) ? base.baseline : null;
+
+  const rows = gasRows.map(r => ({
+    ts: r.ts,
+    gas_resistance: r.gas_resistance,
+    air_quality: baseline ? Math.max(0, Math.min(100, +(100 * r.gas_resistance / baseline).toFixed(1))) : null,
+  }));
+
+  const specs = [];
+  if (baseline) specs.push({ key: 'air_quality', label: 'Air quality (rel.)', unit: '%' });
+  specs.push({ key: 'gas_resistance', label: 'Gas resistance', unit: 'MΩ' });
+
+  const section = buildSeriesSection('air_quality', 'Air quality', rows, specs);
+  if (section) {
+    section.note = baseline
+      ? `Relative to this node's cleanest reading in the last ${GAS_BASELINE_DAYS} days (${baseline.toFixed(3)} MΩ).`
+      : `Learning baseline — ${base?.samples ?? 0} of ${GAS_MIN_SAMPLES} samples needed before a percentage is meaningful.`;
+  }
+  return section;
+}
+
 export function buildNodeStatus(num, windowHours) {
   const node = stmts.getNodeByNum.get(num) ?? null;
   const info = stmts.getNodeinfoByNum.get(num) ?? null;
@@ -324,12 +365,7 @@ export function buildNodeStatus(num, windowHours) {
       { key: 'relative_humidity',   label: 'Humidity',    unit: '%RH' },
       { key: 'barometric_pressure', label: 'Pressure',    unit: 'hPa' },
     ]),
-    // Gas gets its own chart rather than a fourth unit in Environment: two axes
-    // cannot serve °C, %RH, hPa AND MΩ, and the magnitude fallback would put
-    // 0.055 MΩ on the 24-44 temperature axis as a flat line at zero.
-    buildSeriesSection('air_quality', 'Air quality', envRows, [
-      { key: 'gas_resistance', label: 'Gas resistance', unit: 'MΩ' },
-    ]),
+    buildAirQualitySection(num, envRows, since),
     buildDetectionsSection(detRows),
     buildAppStateSection('alarm_config', 'Alarm config', appOf('config')),
     buildAppStateSection('diagnostics',  'Diagnostics',  appOf('debug')),
