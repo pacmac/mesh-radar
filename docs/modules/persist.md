@@ -1,8 +1,8 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: cd808f02a3ff2cedd61e69847d31a549fce41eb1a54a7bb69899aaffd2f37d49
-updated: 2026-07-17
+source_hash: 692f1bcef0252ed67739efec04639da1fb23523a0192bdffa1c812bef6f0fb38
+updated: 2026-07-18
 ---
 
 # Module: persist
@@ -27,7 +27,7 @@ own business logic such as alerting or traceroute lifecycle.
 
 ## Dependencies
 
-- `db.js` — `stmts`, `insertEnvHistory`, `syncAlertedAt`
+- `db.js` — `stmts`, `insertEnvHistory`, `syncAlertedAt`, `insertDeviceMetricsHistory`, `insertDetectionEvent`, `upsertNodeAppState`
 - No network I/O, no EventEmitter, no timers
 
 ## Public interface
@@ -73,14 +73,47 @@ _N/A_ — persist.js does not emit events.
 | `telemetry` | `handleTelemetryEvent(event)` — AppRouter-decoded telemetry |
 | `user` | `stmts.upsertNode` + `_upsertCache` — AppRouter-decoded NODEINFO_APP |
 | `position` | `stmts.upsertNode` — AppRouter-decoded POSITION_APP |
+| `detectionsensor` | `handleDetectionEvent(event, ts)` — AppRouter-decoded DETECTION_SENSOR_APP |
+| `private_app` **and `portnum === 260`** | `handlePrivateAppState(event, ts)` — PAC_ALARM_APP latest-only cache |
 | all others | silently ignored |
+
+### `detectionsensor` — DETECTION_SENSOR_APP
+
+A **standard registered portnum**, so it arrives as a typed event, not via
+`private_app`. The registry name is `detectionsensor` (meshtastic/python
+`__init__.py`), and the entry has **no `protobufFactory`**, so the payload is a
+**string**.
+
+`raw` is stored verbatim in every case. `JSON.parse` is attempted; on failure —
+or on success without a string `type` — the row is written with all typed
+columns null. **It never throws.** A stock Meshtastic detection module sends
+plain text on this port by design, so one such node anywhere in the mesh must not
+break ingestion for every other node. Unknown `type` values are stored as-is
+rather than filtered (accept what the device sends).
+
+### `private_app` portnum 260 — PAC_ALARM_APP
+
+Routed by **numeric** `event.portnum === 260`, then by the payload's `type`
+(`config`/`debug`/`calc`), into `node_app_state` keyed `(num, portnum, type)`.
+The payload is stored **verbatim** — no interpretation here; formatting belongs
+to the API layer (NODE_STATUS_SPEC iron rule 1).
+
+The numeric check matters: `'PRIVATE_APP'` is a portnum-*range* label, not an app
+identity — Meshtastic disambiguates private apps by portnum, not payload
+(mt-transport API.md §7). Portnum 256 (tilt) is handled in `ws-relay.js` and is
+never reached from here. Non-JSON payloads, or payloads without a string `type`,
+are ignored silently: 260 is additive and node-dash must not assume it is the
+only user.
+
+No packet-id dedup — `private_app` does not carry `packet_id`. The latest-only
+upsert is idempotent, so repeat deliveries from N radios are harmless.
 
 ### Packet portnum routing (inside `handlePacket`)
 
 | `portnum` | Action |
 |---|---|
 | `TEXT_MESSAGE_APP` | `stmts.insertRxMessage` (if packet_id present) or `stmts.insertMessage` (legacy); then `syncAlertedAt` |
-| `TELEMETRY_APP` → `device_metrics` | `stmts.upsertNode` |
+| `TELEMETRY_APP` → `device_metrics` | `stmts.upsertNode` + `insertDeviceMetricsHistory` |
 | `TELEMETRY_APP` → `environment_metrics` | `stmts.upsertNodeEnvMetrics` + `insertEnvHistory` |
 | `NODEINFO_APP` | `stmts.upsertNode` + `_upsertCache` |
 | `POSITION_APP` | `stmts.upsertNode` |

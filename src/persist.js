@@ -1,4 +1,7 @@
-import { stmts, insertEnvHistory, syncAlertedAt, getConfig, setConfig } from './db.js';
+import {
+  stmts, insertEnvHistory, syncAlertedAt, getConfig, setConfig,
+  insertDeviceMetricsHistory, insertDetectionEvent, upsertNodeAppState,
+} from './db.js';
 import db from './db.js';
 
 function _validCoord(lat, lon) {
@@ -70,18 +73,110 @@ export function handleEvent(event) {
         device: rxDevice,
       });
     }
+  } else if (type === 'detectionsensor') {
+    // AppRouter decoded DETECTION_SENSOR_APP. Standard registered portnum, so
+    // it arrives typed — NOT via private_app. Registry name is `detectionsensor`
+    // (meshtastic/python __init__.py), and it has no protobufFactory, so the
+    // payload is a STRING.
+    handleDetectionEvent(event, ts);
+  } else if (type === 'private_app' && event.portnum === 260) {
+    // PAC_ALARM_APP. Routed by NUMERIC portnum first, then payload `type` —
+    // never by the 'PRIVATE_APP' string, which is a portnum-range label, not an
+    // app identity. 256 (tilt) is handled in ws-relay and is untouched here.
+    handlePrivateAppState(event, ts);
   } else if (type === 'node_update') {
     // AppRouter node cache update — nodedb replay, never writes nodes.device
     handleNodeInfo(data, null);
   }
 }
 
+// DETECTION_SENSOR_APP payloads are strings. Our nodes send a JSON envelope
+// (mt-transport API.md §4); a stock Meshtastic detection module sends plain text
+// ("X detected") on the same port by design. Both are stored — `raw` always
+// holds the original. Never throws: one stock detection node anywhere in the
+// mesh must not break ingestion for every other node.
+function handleDetectionEvent(event, ts) {
+  const num = event.from_num;
+  if (!num) return;
+  const raw = typeof event.data === 'string'
+    ? event.data
+    : (event.data?.text ?? event.text ?? '');
+  if (!raw) return;
+
+  const row = {
+    ts:        event.rx_time || ts,
+    num,
+    packet_id: event.packet_id ?? null,
+    type: null, kind: null, val: null, count_num: null, msg: null, more: null,
+    raw,
+  };
+
+  let p = null;
+  try { p = JSON.parse(raw); } catch { /* plain text — stored raw, typed cols stay null */ }
+
+  if (p && typeof p.type === 'string') {
+    // Unknown types are stored verbatim in `type` with the rest null —
+    // accept what the device sends, do not filter (iron rule 2).
+    row.type = p.type;
+    row.msg  = typeof p.msg === 'string' ? p.msg : null;
+    if (p.type === 'alarm' || p.type === 'cleared') {
+      row.kind = typeof p.kind === 'string' ? p.kind : null;
+      row.val  = Number.isFinite(p.val) ? p.val : null;
+      row.more = p.more ? 1 : null;
+    } else if (p.type === 'count') {
+      row.count_num = Number.isFinite(p.num) ? p.num : null;
+    }
+  }
+
+  try {
+    insertDetectionEvent(row);
+  } catch (e) {
+    console.error(`[detection] insert failed for ${num}: ${e.message}`);
+  }
+}
+
+// Latest-only cache of a private app's state, keyed (num, portnum, type).
+// Payload is stored verbatim — no interpretation here; formatting belongs to
+// the API layer, per NODE_STATUS_SPEC iron rule 1.
+function handlePrivateAppState(event, ts) {
+  const num = event.from_num;
+  if (!num || !event.payload_b64) return;
+  let p = null;
+  try {
+    p = JSON.parse(Buffer.from(event.payload_b64, 'base64').toString('utf8'));
+  } catch {
+    return;   // not JSON — portnum 260 is additive; other users are not our concern
+  }
+  if (!p || typeof p.type !== 'string') return;
+  try {
+    upsertNodeAppState({
+      num,
+      portnum: event.portnum,
+      type:    p.type,
+      ts:      event.rx_time || ts,
+      payload: JSON.stringify(p),
+    });
+  } catch (e) {
+    console.error(`[private_app] cache failed for ${num}/${event.portnum}: ${e.message}`);
+  }
+}
+
 function handleTelemetryEvent(event, rxDevice) {
-  const { data, from_num, rx_snr, rx_rssi } = event;
+  const { data, from_num, rx_snr, rx_rssi, packet_id } = event;
   if (!from_num || !data) return;
   const ts = Math.floor(Date.now() / 1000);
   if (data.device_metrics) {
     const m = data.device_metrics;
+    insertDeviceMetricsHistory({
+      ts:                  data.time || ts,
+      num:                 from_num,
+      packet_id:           packet_id ?? null,
+      uptime_seconds:      m.uptime_seconds      ?? null,
+      voltage:             m.voltage             ?? null,
+      battery_level:       m.battery_level       ?? null,
+      channel_utilization: m.channel_utilization ?? null,
+      air_util_tx:         m.air_util_tx         ?? null,
+    });
     stmts.upsertNode.run({
       num:            from_num,
       node_id:        null,
@@ -115,6 +210,7 @@ function handleTelemetryEvent(event, rxDevice) {
     insertEnvHistory({
       ts:                  data.time || ts,
       num:                 from_num,
+      packet_id:           packet_id ?? null,
       temperature:         m.temperature         ?? null,
       relative_humidity:   m.relative_humidity   ?? null,
       barometric_pressure: m.barometric_pressure ?? null,
@@ -162,6 +258,16 @@ function handlePacket(packet, device, ts, replay) {
     const telem = packet.decoded.telemetry;
     if (telem?.device_metrics) {
       const m = telem.device_metrics;
+      insertDeviceMetricsHistory({
+        ts:                  packet.rx_time || ts,
+        num:                 packet.from || 0,
+        packet_id:           packet.id ?? null,
+        uptime_seconds:      m.uptime_seconds      ?? null,
+        voltage:             m.voltage             ?? null,
+        battery_level:       m.battery_level       ?? null,
+        channel_utilization: m.channel_utilization ?? null,
+        air_util_tx:         m.air_util_tx         ?? null,
+      });
       stmts.upsertNode.run({
         num:           packet.from || 0,
         node_id:       null,
@@ -197,6 +303,7 @@ function handlePacket(packet, device, ts, replay) {
       insertEnvHistory({
         ts,
         num,
+        packet_id:           packet.id ?? null,
         temperature:         m.temperature         ?? null,
         relative_humidity:   m.relative_humidity   ?? null,
         barometric_pressure: m.barometric_pressure ?? null,

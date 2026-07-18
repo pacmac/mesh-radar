@@ -1,8 +1,8 @@
 ---
 module: db
 source: src/db.js
-source_hash: a349fde1e5b133585fa3d6a04217ad307787e7edeb56f8d6c318abf3531b47b2
-updated: 2026-07-17
+source_hash: d6ca44e9b8714476d1d4b456111aeae22618b1c863e268989342a92e32c81a58
+updated: 2026-07-18
 ---
 
 # Module: db
@@ -85,10 +85,31 @@ saveTiltCal({ zero, north_angle })  // → void  — undefined fields are not wr
 ### Environment history
 
 ```js
-insertEnvHistory(entry)             // → void  — { ts, num, temperature, relative_humidity, barometric_pressure }
+insertEnvHistory(entry)             // → void  — { ts, num, packet_id?, temperature, relative_humidity, barometric_pressure }
 queryEnvHistory(num, sinceTs)       // → row[]
 queryAllEnvHistory(sinceTs)         // → row[]
 ```
+
+`packet_id` defaults to null in the wrapper, so callers without one (the
+bridge-events nodedb-replay writer) keep working — better-sqlite3 throws on a
+missing named parameter. A null id is never deduped.
+
+### Node focus page ingestion (INGESTION_SPEC)
+
+```js
+insertDeviceMetricsHistory(entry)   // → void  — { ts, num, packet_id, uptime_seconds, voltage, battery_level, channel_utilization, air_util_tx }
+insertDetectionEvent(entry)         // → void  — { ts, num, packet_id, type, kind, val, count_num, msg, more, raw }
+upsertNodeAppState(entry)           // → void  — { num, portnum, type, ts, payload }
+```
+
+All three history inserts are `INSERT OR IGNORE` against a **partial unique
+index on `(num, packet_id)`**: a broadcast heard by N gateway radios, or the same
+reading arriving as both a `telemetry` event and a raw `packet`, collapses to one
+row. Rows with a null `packet_id` are never deduped.
+
+`upsertNodeAppState` is a latest-only cache keyed `(num, portnum, type)` — a
+repeat delivery overwrites in place, so it is idempotent without a packet id
+(which `private_app` does not carry).
 
 ### Geocode cache
 
@@ -172,9 +193,24 @@ syncAlertedAt(packetId)             // → void  — writes alerted_at if alread
 | `queryTilt` | SELECT from tilt_history WHERE node_id AND ts >= AND ncal=0 |
 | `queryAllTilt` | SELECT from tilt_history WHERE ts >= AND ncal=0 |
 | `markNcal` | UPDATE tilt_history SET ncal=1 WHERE node_id AND ts BETWEEN |
-| `insertEnvHistory` | INSERT into environment_history |
+| `insertEnvHistory` | INSERT OR IGNORE into environment_history (dedup on num, packet_id) |
 | `queryEnvHistory` | SELECT from environment_history WHERE num AND ts >= |
 | `queryAllEnvHistory` | SELECT from environment_history WHERE ts >= |
+| `insertDeviceMetricsHistory` | INSERT OR IGNORE into device_metrics_history (dedup on num, packet_id) |
+| `insertDetectionEvent` | INSERT OR IGNORE into detection_events (dedup on num, packet_id) |
+| `upsertNodeAppState` | INSERT … ON CONFLICT(num, portnum, type) DO UPDATE — latest-only cache |
+
+### Ingestion tables (INGESTION_SPEC)
+
+| Table | Purpose |
+|---|---|
+| `device_metrics_history` | Per-node device vitals series (uptime, voltage, battery, channel/air utilisation). Partial unique index `idx_dmh_dedup` on `(num, packet_id)`. |
+| `detection_events` | DETECTION_SENSOR_APP events. `raw` always holds the original payload **string** — the meshtastic registry gives this portnum no `protobufFactory`, so it is text, not protobuf. Our nodes send a JSON envelope (`motion`/`count`/`alarm`/`cleared`); a stock Meshtastic detection module sends plain text. Typed columns are null for anything that is not our JSON. |
+| `node_app_state` | Latest-only private-app state, keyed `(num, portnum, type)`. Used for portnum 260 `config`/`debug`/`calc`. Keyed by portnum so it is **not** 260-specific — a future private app caches here with no migration. |
+
+`environment_history` gained `packet_id` via the guarded `PRAGMA table_info`
+migration, plus partial unique index `idx_env_dedup`. The index is partial so the
+~86k pre-existing rows (all null `packet_id`) are untouched.
 
 ## Schema
 

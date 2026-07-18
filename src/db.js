@@ -118,6 +118,55 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_env_history_num ON environment_history(num, ts DESC);
   CREATE INDEX IF NOT EXISTS idx_env_history_ts  ON environment_history(ts DESC);
 
+  -- Node focus page ingestion (NODE_STATUS_SPEC / INGESTION_SPEC).
+  -- A broadcast heard by N gateway radios is ONE datum: the partial unique
+  -- index on (num, packet_id) collapses it, via INSERT OR IGNORE.
+  CREATE TABLE IF NOT EXISTS device_metrics_history (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                  INTEGER NOT NULL,
+    num                 INTEGER NOT NULL,
+    packet_id           INTEGER,
+    uptime_seconds      INTEGER,
+    voltage             REAL,
+    battery_level       INTEGER,
+    channel_utilization REAL,
+    air_util_tx         REAL
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_dmh_dedup  ON device_metrics_history(num, packet_id) WHERE packet_id IS NOT NULL;
+  CREATE INDEX        IF NOT EXISTS idx_dmh_num_ts ON device_metrics_history(num, ts DESC);
+
+  -- DETECTION_SENSOR_APP. Payload is a STRING (meshtastic registry gives this
+  -- portnum no protobufFactory), so raw is always kept: our nodes send a JSON
+  -- envelope, a stock detection module sends plain text. Both are stored.
+  CREATE TABLE IF NOT EXISTS detection_events (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        INTEGER NOT NULL,
+    num       INTEGER NOT NULL,
+    packet_id INTEGER,
+    type      TEXT,
+    kind      TEXT,
+    val       REAL,
+    count_num INTEGER,
+    msg       TEXT,
+    more      INTEGER,
+    raw       TEXT NOT NULL
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_det_dedup  ON detection_events(num, packet_id) WHERE packet_id IS NOT NULL;
+  CREATE INDEX        IF NOT EXISTS idx_det_num_ts ON detection_events(num, ts DESC);
+
+  -- Latest-only cache for private-app state (portnum 260 config/debug/calc).
+  -- Keyed by portnum as well as type so this is not a 260-specific table.
+  CREATE TABLE IF NOT EXISTS node_app_state (
+    num     INTEGER NOT NULL,
+    portnum INTEGER NOT NULL,
+    type    TEXT    NOT NULL,
+    ts      INTEGER NOT NULL,
+    payload TEXT    NOT NULL,
+    PRIMARY KEY (num, portnum, type)
+  );
+
   CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup  ON messages(packet_id, device) WHERE packet_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_messages_ts     ON messages(ts DESC);
   CREATE INDEX IF NOT EXISTS idx_messages_from   ON messages(from_num);
@@ -169,6 +218,15 @@ db.exec(`
   if (!thCols.includes('tx_device'))  db.exec(`ALTER TABLE traceroute_history ADD COLUMN tx_device TEXT`);
   if (!thCols.includes('rotator_az')) db.exec(`ALTER TABLE traceroute_history ADD COLUMN rotator_az REAL`);
   if (!thCols.includes('status'))     db.exec(`ALTER TABLE traceroute_history ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'`);
+}
+// environment_history predates the (num, packet_id) dedup rule. The index is
+// PARTIAL, so the ~86k existing rows (packet_id NULL) are untouched and the
+// bridge-events replay writer — which has no packet id to give — keeps working.
+// Dedup applies only to rows that actually carry an id.
+{
+  const envCols = db.prepare(`PRAGMA table_info(environment_history)`).all().map(r => r.name);
+  if (!envCols.includes('packet_id')) db.exec(`ALTER TABLE environment_history ADD COLUMN packet_id INTEGER`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_env_dedup ON environment_history(num, packet_id) WHERE packet_id IS NOT NULL`);
 }
 const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);
 if (!existingCols.includes('reply_id')) {
@@ -477,9 +535,32 @@ export const stmts = {
     WHERE node_id = ? AND ts BETWEEN ? AND ?
   `),
 
+  // OR IGNORE + the partial unique index on (num, packet_id): the same reading
+  // arriving as both a `telemetry` event and a raw `packet`, or via N gateway
+  // radios, collapses to one row. A NULL packet_id is never deduped.
   insertEnvHistory: db.prepare(`
-    INSERT INTO environment_history (ts, num, temperature, relative_humidity, barometric_pressure)
-    VALUES (@ts, @num, @temperature, @relative_humidity, @barometric_pressure)
+    INSERT OR IGNORE INTO environment_history (ts, num, packet_id, temperature, relative_humidity, barometric_pressure)
+    VALUES (@ts, @num, @packet_id, @temperature, @relative_humidity, @barometric_pressure)
+  `),
+
+  insertDeviceMetricsHistory: db.prepare(`
+    INSERT OR IGNORE INTO device_metrics_history
+      (ts, num, packet_id, uptime_seconds, voltage, battery_level, channel_utilization, air_util_tx)
+    VALUES
+      (@ts, @num, @packet_id, @uptime_seconds, @voltage, @battery_level, @channel_utilization, @air_util_tx)
+  `),
+
+  insertDetectionEvent: db.prepare(`
+    INSERT OR IGNORE INTO detection_events
+      (ts, num, packet_id, type, kind, val, count_num, msg, more, raw)
+    VALUES
+      (@ts, @num, @packet_id, @type, @kind, @val, @count_num, @msg, @more, @raw)
+  `),
+
+  upsertNodeAppState: db.prepare(`
+    INSERT INTO node_app_state (num, portnum, type, ts, payload)
+    VALUES (@num, @portnum, @type, @ts, @payload)
+    ON CONFLICT(num, portnum, type) DO UPDATE SET ts = @ts, payload = @payload
   `),
 
   queryEnvHistory: db.prepare(`
@@ -537,8 +618,23 @@ export function insertTilt(entry) {
   stmts.insertTilt.run(entry);
 }
 
+export function insertDeviceMetricsHistory(entry) {
+  stmts.insertDeviceMetricsHistory.run(entry);
+}
+
+export function insertDetectionEvent(entry) {
+  stmts.insertDetectionEvent.run(entry);
+}
+
+export function upsertNodeAppState(entry) {
+  stmts.upsertNodeAppState.run(entry);
+}
+
+// packet_id defaults to null so callers that have no packet id (the
+// bridge-events nodedb-replay writer) keep working unchanged — better-sqlite3
+// throws on a missing named parameter. A null id is never deduped.
 export function insertEnvHistory(entry) {
-  stmts.insertEnvHistory.run(entry);
+  stmts.insertEnvHistory.run({ packet_id: null, ...entry });
 }
 
 export function queryEnvHistory(num, sinceTs) {
