@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 9ffa1138feb1b02e60c6f6043b98e08a182a619159b4d23ca10d862b83e0225d
-updated: 2026-07-17
+source_hash: 960eefab8800bc48c6ed5cea095029b5f0a244eb7aa5134bc749bbf255ae0c6c
+updated: 2026-07-18
 ---
 
 # Module: ws-relay
@@ -533,3 +533,38 @@ like `cfg`/`lora`/`auto_purge` (C2: page data is WS-only).
 - Known limitation: a channel edit refreshes the cache on the next READY
   transition, not instantly; role changes reboot the radio, so the common
   case self-refreshes.
+
+## node_status RPC + live push (NODE_STATUS_RPC_SPEC)
+
+Client→server RPC beside the geocode handler:
+
+```js
+{ type: 'node_status', num }
+→ { type: 'node_status', num, found, header, sections: [...] }
+```
+
+Works for **any** node in the mesh, not a designated subset. `ws-relay` does no
+composition — it calls `buildNodeStatus(num)` from `node-status.js` and sends the
+result. A build failure is caught and answered as `{found:false, sections:[]}`
+rather than dropping the client's request on the floor.
+
+### `node_status_update` — hint only
+
+On any bridge event carrying a node num (`ev.from_num`, else
+`ev.data.packet.from`), the relay broadcasts:
+
+```js
+{ type: 'node_status_update', num }
+```
+
+**It carries only `num` — never a value.** The browser re-requests the RPC, so
+there is exactly one code path producing displayed values and no chance of a
+pushed value disagreeing with a fetched one.
+
+Deliberately **format-blind and port-blind**: the hint does not inspect what
+changed, so a new port, `type` or field never requires a change here.
+
+Throttled per node to 1 hint/second (`_lastStatusHint`, capped at 2 000 entries)
+so a burst of packets cannot storm connected browsers. The throttle is a
+delivery concern, not a data decision — no datum is lost, since the browser
+always re-reads current state.

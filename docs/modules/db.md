@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: d6ca44e9b8714476d1d4b456111aeae22618b1c863e268989342a92e32c81a58
+source_hash: 5d4becd6f4644175e5f9dadfbcb1062ae1b35380d627669d6ffa8bf539fb277c
 updated: 2026-07-18
 ---
 
@@ -199,6 +199,10 @@ syncAlertedAt(packetId)             // → void  — writes alerted_at if alread
 | `insertDeviceMetricsHistory` | INSERT OR IGNORE into device_metrics_history (dedup on num, packet_id) |
 | `insertDetectionEvent` | INSERT OR IGNORE into detection_events (dedup on num, packet_id) |
 | `upsertNodeAppState` | INSERT … ON CONFLICT(num, portnum, type) DO UPDATE — latest-only cache |
+| `queryDeviceMetricsHistory` | SELECT from device_metrics_history WHERE num AND ts >= (ASC — chart-ready, browser never sorts) |
+| `queryDetectionEvents` | SELECT from detection_events WHERE num AND ts >= (DESC, LIMIT) |
+| `queryNodeAppState` | SELECT all cached private-app rows for a num |
+| `getNodeByNum` | SELECT * FROM nodes WHERE num = ? |
 
 ### Ingestion tables (INGESTION_SPEC)
 

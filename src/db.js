@@ -557,6 +557,26 @@ export const stmts = {
       (@ts, @num, @packet_id, @type, @kind, @val, @count_num, @msg, @more, @raw)
   `),
 
+  // node_status RPC reads (NODE_STATUS_RPC_SPEC). Read-only; ASC by ts so the
+  // series arrive chart-ready and the browser never sorts.
+  queryDeviceMetricsHistory: db.prepare(`
+    SELECT ts, uptime_seconds, voltage, battery_level, channel_utilization, air_util_tx
+    FROM device_metrics_history WHERE num = ? AND ts >= ?
+    ORDER BY ts ASC
+  `),
+
+  queryDetectionEvents: db.prepare(`
+    SELECT ts, type, kind, val, count_num, msg, raw
+    FROM detection_events WHERE num = ? AND ts >= ?
+    ORDER BY ts DESC LIMIT ?
+  `),
+
+  queryNodeAppState: db.prepare(`
+    SELECT portnum, type, ts, payload FROM node_app_state WHERE num = ?
+  `),
+
+  getNodeByNum: db.prepare(`SELECT * FROM nodes WHERE num = ? LIMIT 1`),
+
   upsertNodeAppState: db.prepare(`
     INSERT INTO node_app_state (num, portnum, type, ts, payload)
     VALUES (@num, @portnum, @type, @ts, @payload)

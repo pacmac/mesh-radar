@@ -4,6 +4,7 @@ import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
 import { insertTilt, insertEnvHistory, getTiltCal, getConfig, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts, persistNodeMac, loadNodeMacMap } from './db.js';
+import { buildNodeStatus } from './node-status.js';
 import { queryMessages } from './filters.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.js';
@@ -88,6 +89,25 @@ export function getLiveMacByNodeId(nodeId) {
 // Cleared on bridge reconnect. Prevents duplicate live events reaching the browser
 // when the same packet is heard by multiple gateway radios.
 const _seenLivePktIds = new Set();
+
+// node_status_update carries ONLY a num — never a value. The browser re-requests
+// the RPC, so there is exactly one code path producing displayed values and no
+// chance of a pushed value disagreeing with a fetched one.
+// Throttled per node: a burst of packets must not storm connected browsers.
+// This is a delivery concern, not a data decision.
+const _lastStatusHint = new Map();   // num → ms
+const STATUS_HINT_MS = 1000;
+
+function _hintNodeStatus(num, broadcast) {
+  if (!num) return;
+  const now = Date.now();
+  if (now - (_lastStatusHint.get(num) ?? 0) < STATUS_HINT_MS) return;
+  _lastStatusHint.set(num, now);
+  if (_lastStatusHint.size > 2000) {
+    _lastStatusHint.delete(_lastStatusHint.keys().next().value);
+  }
+  broadcast({ type: 'node_status_update', num });
+}
 
 // Tilt broadcasts are heard by both radios — decode each packet id once.
 const _seenTiltPktIds = new Set();
@@ -379,6 +399,12 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   _broadcastSettings = () => broadcast(settingsEvent());
 
   bridge.on('event', (ev) => {
+    // Any event carrying a node num means that node's status may have changed.
+    // Hint only — no payload, the browser re-requests. Deliberately format-blind
+    // and port-blind: no inspection of what changed, so a new port or field
+    // never needs a change here.
+    _hintNodeStatus(ev.from_num ?? ev.data?.packet?.from ?? null, broadcast);
+
     if (ev.type === 'device_snapshot') {
       for (const d of (ev.devices || [])) {
         if (!d.addr) continue;
@@ -664,6 +690,18 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       if (msg?.type === 'geocode' && msg.num) {
         const address = await lookupGeocode(msg.num).catch(() => null);
         if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'geocode_result', num: msg.num, address }));
+      }
+      // node_status: works for ANY node in the mesh, not a designated subset.
+      // Returns display-ready sections; the browser renders and decides nothing.
+      if (msg?.type === 'node_status' && msg.num) {
+        let payload;
+        try {
+          payload = buildNodeStatus(Number(msg.num));
+        } catch (e) {
+          console.error(`[node_status] build failed for ${msg.num}: ${e.message}`);
+          payload = { num: Number(msg.num), found: false, header: null, sections: [] };
+        }
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'node_status', ...payload }));
       }
     });
     // Replay last-known BLE state for each device — no HTTP

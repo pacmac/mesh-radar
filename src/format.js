@@ -1,0 +1,62 @@
+// Display formatting — single source of truth.
+//
+// NODE_STATUS_SPEC iron rule 1: every conversion, rounding and formatting
+// happens server-side, so any consumer (page, export, script) reads identical
+// strings. The browser binds `text` verbatim and computes nothing.
+//
+// NODE_STATUS_SPEC iron rule 2: VALUES, NOT VERDICTS. Nothing here grades,
+// judges or editorialises. No "healthy", no "battery low", no quality bands.
+// (utils.js signalQuality() returns a judgement — deliberately not used by the
+// node-status path.)
+//
+// Null in → null out, always. An absent value is absent: never the string
+// "null", never "n/a", never a zero standing in for missing data. Callers omit
+// the field rather than rendering a placeholder.
+
+const n = v => (typeof v === 'number' && Number.isFinite(v));
+
+export function fmtVoltage(v)   { return n(v) ? `${v.toFixed(2)} V`   : null; }
+export function fmtPercent(p)   { return n(p) ? `${Math.round(p)}%`   : null; }
+export function fmtUtil(p)      { return n(p) ? `${p.toFixed(1)}%`    : null; }
+export function fmtTemp(c)      { return n(c) ? `${c.toFixed(1)} °C`  : null; }
+export function fmtHumidity(h)  { return n(h) ? `${Math.round(h)} %RH`: null; }
+export function fmtPressure(hp) { return n(hp) ? `${Math.round(hp)} hPa` : null; }
+export function fmtGas(m)       { return n(m) ? `${m.toFixed(1)} MΩ`  : null; }
+export function fmtRssi(d)      { return n(d) ? `${Math.round(d)} dBm`: null; }
+export function fmtSnr(d)       { return n(d) ? `${d.toFixed(1)} dB`  : null; }
+export function fmtCount(c)     { return n(c) ? `${Math.round(c)}`    : null; }
+
+// Duration as the device reports it. Largest two units only — "2d 4h" reads
+// better than "2d 4h 13m 7s" and the raw value is always alongside.
+export function fmtUptime(sec) {
+  if (!n(sec) || sec < 0) return null;
+  const s = Math.floor(sec);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+
+// Absolute timestamp, local time, seconds precision.
+export function fmtTimestamp(ts) {
+  if (!n(ts) || ts <= 0) return null;
+  const d = new Date(ts * 1000);
+  const p = x => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
+       + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+// Relative age. Computed server-side and therefore correct only at emission —
+// the browser re-requests on node_status_update rather than ticking this
+// locally, because recomputing it in the browser would be the browser deciding.
+export function fmtAgo(ts, nowSec = Math.floor(Date.now() / 1000)) {
+  if (!n(ts) || ts <= 0) return null;
+  const s = Math.max(0, nowSec - ts);
+  if (s < 60)    return `${s}s ago`;
+  if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
