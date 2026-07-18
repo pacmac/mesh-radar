@@ -76,7 +76,6 @@ export const wsMixin = {
       this.packetSources  = cfg['packet_sources']   ?? [];
       if (cfg['perf.failure_epoch'] != null) this.perfFailureEpoch = cfg['perf.failure_epoch'];
       if (cfg['range_test.duration']) this.rangeDuration = cfg['range_test.duration'];
-      this.monitoredNodes = cfg['monitored_nodes'] ?? {};   // status-page nav pins
       if (this.tab === 'radar' && this.homePos) this.refreshRadar();
       return;
     }

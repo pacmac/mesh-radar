@@ -1,15 +1,15 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 2c4b23a213d03ffd783e942a8fc178c1326e3e7de6b11134b665ae681f2f604e
-updated: 2026-07-17
+source_hash: 8e22f7b426b1ec752400c665c901687ba9e62c2ba8b7b932afa379153efdf6bf
+updated: 2026-07-18
 ---
 
 # Module: config-api
 
 ## Purpose
 
-Express router for frontend display and filter configuration. Manages the 17
+Express router for frontend display and filter configuration. Manages the 19
 config keys that control what the browser shows — node filters, sort order,
 radar display, message filters, and mode timing. Triggers node-list refiltering
 when filter-relevant keys change.
@@ -70,7 +70,7 @@ All paths are relative to the mount point `/config`.
 
 ### `GET /config`
 
-Returns an object with all 18 DEFAULTS keys, each populated from `getConfig(key, default)`. No query parameters.
+Returns an object with all 19 DEFAULTS keys, each populated from `getConfig(key, default)`. No query parameters.
 
 ### `GET /config/radar`
 
@@ -156,7 +156,7 @@ Body: `{ [key]: value, ... }`. Updates multiple keys at once.
 
 ## Test notes
 
-- **GET /**: returns object with all 17 keys at defaults when DB is empty
+- **GET /**: returns object with all 19 keys at defaults when DB is empty
 - **PUT /:key — node_filter**: `PUT /config/node_filters.named_only` with `{value: true}` → `nodeList.refilter()` called
 - **PUT /:key — non-filter**: `PUT /config/radar.max_range_km` → `nodeList.refilter()` NOT called
 - **PUT /:key — unknown**: 404 `{ error: 'Unknown config key' }`
@@ -187,19 +187,3 @@ Every write path (PUT `/:key`, PUT `/`, PUT `/radar`) calls
 GET `/config` (exact path) is WS-only-blocked; `/config/:section` form
 reads remain.
 
-## monitored_nodes (NODE_STATUS_SPEC §2, task `node-status-rpc`)
-
-`GET/PUT /config/monitored_nodes` (the /modes route pattern) reads/writes the
-`monitored_nodes` config key: `{"<num>": {label, expected_heartbeat_s, mask}}`.
-`expected_heartbeat_s` stays null until the wake cadence is decided (enables
-the future verdict/alert); `mask` lists display fields the status page hides
-for this node (first use: 'battery_pct'). PUT replaces the whole object
-(validated: numeric keys, object values) and pokes no broadcast — the status
-page reads it via the node_status RPC.
-
-## monitored_nodes default (task `node-status-page`)
-
-`DEFAULTS['monitored_nodes'] = {}` so the config value rides the settings WS
-event (CONFIG_DEFAULTS = these DEFAULTS) and the browser gets its nav pins on
-connect. The explicit GET/PUT /monitored_nodes routes (registered before the
-generic /:key) own read/write.

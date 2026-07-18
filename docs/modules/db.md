@@ -321,35 +321,3 @@ same MAC vocabulary the `node_source` filter compares against.
 MACs in `traceroute_history.tx_device`, `messages.device`, and inside
 `messages.rx_devices` comma-lists (string REPLACE per registry pair).
 Unmappable ids are left as-is per IDENTITY.md §7 amnesty.
-
-## sensor_heartbeats (NODE_STATUS_SPEC §4, task `sensor-heartbeat-parse`)
-
-Structured sensor heartbeat storage — one row per heartbeat message:
-
-```sql
-CREATE TABLE sensor_heartbeats (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  ts INTEGER NOT NULL, num INTEGER NOT NULL, packet_id INTEGER,
-  raw TEXT NOT NULL,          -- full original text
-  kv  TEXT NOT NULL,          -- JSON of ALL key=value pairs, unknown keys kept
-  fw TEXT, up_s INTEGER, boot INTEGER, rst TEXT,
-  vbat_v REAL, vbat_pct INTEGER,
-  temp_c REAL, rh_pct INTEGER, env_err INTEGER NOT NULL DEFAULT 0,
-  trig INTEGER, hb_s INTEGER
-);
-CREATE UNIQUE INDEX idx_shb_pkt    ON sensor_heartbeats(packet_id) WHERE packet_id IS NOT NULL;
-CREATE INDEX        idx_shb_num_ts ON sensor_heartbeats(num, ts);
-```
-
-- The partial unique index dedups multi-radio receptions (same packet heard
-  by 2-3 gateways) via `INSERT OR IGNORE` — mirror of the messages dedup idea.
-- `stmts.insertSensorHeartbeat` — INSERT OR IGNORE with all columns.
-- `env_err=1` marks a fault-valued env reading; temp/rh are NULL in that
-  case (fault preserved for display, junk numbers kept out of charts).
-
-## Node-status query statements (task `node-status-rpc`)
-
-`stmts.getNodeByNum`, `stmts.getSensorHeartbeats` (num+limit, ts DESC),
-`stmts.getEnvHistoryBucketed` (num+since+bucket: AVG temp/rh/pressure GROUP
-BY ts/bucket), `stmts.getSignalHistory` (messages ts/snr/rssi/device for
-from_num since ts, capped 500). Read-only support for the node_status RPC.

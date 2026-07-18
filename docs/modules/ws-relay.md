@@ -533,22 +533,3 @@ like `cfg`/`lora`/`auto_purge` (C2: page data is WS-only).
 - Known limitation: a channel edit refreshes the cache on the next READY
   transition, not instantly; role changes reboot the radio, so the common
   case self-refreshes.
-
-## node_status WS RPC + wake push (NODE_STATUS_SPEC §5, task `node-status-rpc`)
-
-Client→server RPC beside the geocode handler: `{type:'node_status', num}` →
-`{type:'node_status', num, node, monitored, heartbeats, env, signal}`:
-
-- `node` — the nodes-table row + `display_name`; null if unknown.
-- `monitored` — the node's `monitored_nodes` config entry or null.
-- `heartbeats` — last 200 `sensor_heartbeats` rows (kv parsed to object).
-- `env` — 7-day `environment_history` bucketed to ≤~200 points
-  (AVG per bucket of temperature/relative_humidity/barometric_pressure).
-- `signal` — 7-day `ts/snr/rssi/device` from messages (capped 500).
-
-Wake push: when ANY text message arrives from a **monitored** node, or an
-environment `telemetry` event does, the relay broadcasts
-`{type:'node_status_update', num}` — an open status page re-requests the
-RPC. Hint-only and deliberately **format-blind** (no message parsing here —
-the sensor firmware's message format is evolving; Peter 2026-07-17): no
-payload duplication, one source of truth.

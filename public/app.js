@@ -30,7 +30,6 @@ function dashboard() {
     // (radio-config-into-devices) — a persisted 'radio' would strand the
     // user on a tab that no longer exists.
     cfgTab:        (t => t === 'radio' ? 'bridge' : t)(persistGet('cfgTab', 'bridge')),
-    monitoredNodes: {},
     drawerOpen:    false,
     sidebarPinned: persistGet('sidebarPinned', true),
 
