@@ -27,6 +27,7 @@ import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
 import geocodeRouter from './geocode.js';
 import { registerBridgeEvents } from './bridge-events.js';
 import nodesApi from './nodes-api.js';
+import settingsApi from './settings-api.js';
 import { registerStartupHandlers } from './startup.js';
 import { initLifecycle } from './lifecycle.js';
 import { startImapReceiver } from './imap-receiver.js';
@@ -150,6 +151,7 @@ app.get('/nodes', (req, res) => {
 
 app.use('/config', configRouter);
 app.use(nodesApi);
+app.use(settingsApi);
 app.use('/device-config', deviceConfigRouter);
 // The ONE device-removal operation — gw forget + local state cleanup (device-remove-op)
 app.use('/device', deviceRemoveRouter);

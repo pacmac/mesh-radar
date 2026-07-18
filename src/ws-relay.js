@@ -74,6 +74,15 @@ for (const [mac, nodeId] of loadNodeMacMap()) {
   _liveNodeIds.set(mac, nodeId);
 }
 
+// The configured channels of a gateway radio, by its !hexid. Needed server-side
+// so a command can resolve its TX channel by NAME rather than a hardcoded index
+// (NODE_SETTINGS_SSOT_SPEC — Private only, never primary).
+export function getDeviceChannelsByNodeId(nodeId) {
+  const mac = getLiveMacByNodeId(nodeId);
+  if (!mac) return null;
+  return lastDeviceChannels[mac.toUpperCase()] ?? null;
+}
+
 export function getLiveNodeIdByMac(mac) {
   return mac ? (_liveNodeIds.get(mac.toUpperCase()) ?? null) : null;
 }
@@ -96,6 +105,10 @@ const _seenLivePktIds = new Set();
 // chance of a pushed value disagreeing with a fetched one.
 // Throttled per node: a burst of packets must not storm connected browsers.
 // This is a delivery concern, not a data decision.
+// MAC -> configured channels. Module scope so getDeviceChannelsByNodeId can
+// read it outside attachWsRelay.
+const lastDeviceChannels = {};
+
 const _lastStatusHint = new Map();   // num → ms
 const STATUS_HINT_MS = 1000;
 
@@ -331,7 +344,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // browser holds zero gw knowledge, so this rides the device_list too
   // (device-channels-on-list). Refreshed on READY; channel edits that reboot
   // the radio (role changes) self-refresh via the next READY.
-  const lastDeviceChannels = {};
   async function refreshDeviceChannels(addr) {
     if (!addr) return;
     try {

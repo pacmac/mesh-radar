@@ -20,6 +20,7 @@ import {
   fmtRssi, fmtSnr, fmtCount, fmtUptime, fmtTimestamp, fmtAgo, fmtAxisTick,
 } from './format.js';
 import { numToNodeId, signalQuality } from './utils.js';
+import { settingsSchema, validateSetting } from './node-settings.js';
 
 // Window is chosen by the user (1/4/24/72 HR) and travels with the request.
 // The SERVER slices to it and computes the axis labels for it — the browser
@@ -175,14 +176,34 @@ function flattenPayload(obj, prefix = '') {
   return out;
 }
 
+// Which fields are editable, and their constraints, are DECISIONS — so the
+// server states them (iron rule 1). The browser renders the inputs it is told
+// to and never reads config-schema.json (a backend file it cannot see anyway).
+function editableMeta(label) {
+  const def = (settingsSchema().settings || []).find(s => s.path === label);
+  if (!def) return null;
+  // validateSetting is the authority on what is actually settable — it knows
+  // about readonly and unsupported multi-arg commands.
+  const probe = validateSetting(label, def.type === 'bool' ? 0 : (def.min ?? 0));
+  if (!probe.ok && /read-only|not wired|no command|unknown/.test(probe.error)) return null;
+  return { path: def.path, type: def.type, min: def.min ?? null, max: def.max ?? null,
+           unit: def.unit ?? null, name: def.label ?? def.path };
+}
+
 function buildAppStateSection(id, title, row) {
   if (!row) return null;
   let payload;
   try { payload = JSON.parse(row.payload); } catch { return null; }
-  const fields = compact(flattenPayload(payload).map(f => field(f.label, f.raw, f.text, row.ts)));
+  const fields = compact(flattenPayload(payload).map(f => {
+    const base = field(f.label, f.raw, f.text, row.ts);
+    if (!base) return null;
+    const edit = editableMeta(f.label);
+    return edit ? { ...base, edit } : base;
+  }));
   if (!fields.length) return null;
   return {
     id, kind: 'value_grid', title, fields,
+    editable: fields.some(f => f.edit),
     observed_ts: row.ts, observed_text: fmtTimestamp(row.ts), observed_ago: fmtAgo(row.ts),
   };
 }
