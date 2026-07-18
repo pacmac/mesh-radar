@@ -324,6 +324,12 @@ export function buildNodeStatus(num, windowHours) {
       { key: 'relative_humidity',   label: 'Humidity',    unit: '%RH' },
       { key: 'barometric_pressure', label: 'Pressure',    unit: 'hPa' },
     ]),
+    // Gas gets its own chart rather than a fourth unit in Environment: two axes
+    // cannot serve °C, %RH, hPa AND MΩ, and the magnitude fallback would put
+    // 0.055 MΩ on the 24-44 temperature axis as a flat line at zero.
+    buildSeriesSection('air_quality', 'Air quality', envRows, [
+      { key: 'gas_resistance', label: 'Gas resistance', unit: 'MΩ' },
+    ]),
     buildDetectionsSection(detRows),
     buildAppStateSection('alarm_config', 'Alarm config', appOf('config')),
     buildAppStateSection('diagnostics',  'Diagnostics',  appOf('debug')),

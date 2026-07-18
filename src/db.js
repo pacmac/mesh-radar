@@ -241,6 +241,10 @@ db.exec(`
 {
   const envCols = db.prepare(`PRAGMA table_info(environment_history)`).all().map(r => r.name);
   if (!envCols.includes('packet_id')) db.exec(`ALTER TABLE environment_history ADD COLUMN packet_id INTEGER`);
+  // BME680's fourth reading (API.md:52 — MΩ). Specified from the start and
+  // silently discarded until 2026-07-18; unlike a display bug the loss is
+  // unrecoverable, so history for gas begins here.
+  if (!envCols.includes('gas_resistance')) db.exec(`ALTER TABLE environment_history ADD COLUMN gas_resistance REAL`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_env_dedup ON environment_history(num, packet_id) WHERE packet_id IS NOT NULL`);
 }
 const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);
@@ -554,8 +558,8 @@ export const stmts = {
   // arriving as both a `telemetry` event and a raw `packet`, or via N gateway
   // radios, collapses to one row. A NULL packet_id is never deduped.
   insertEnvHistory: db.prepare(`
-    INSERT OR IGNORE INTO environment_history (ts, num, packet_id, temperature, relative_humidity, barometric_pressure)
-    VALUES (@ts, @num, @packet_id, @temperature, @relative_humidity, @barometric_pressure)
+    INSERT OR IGNORE INTO environment_history (ts, num, packet_id, temperature, relative_humidity, barometric_pressure, gas_resistance)
+    VALUES (@ts, @num, @packet_id, @temperature, @relative_humidity, @barometric_pressure, @gas_resistance)
   `),
 
   insertDeviceMetricsHistory: db.prepare(`
@@ -617,13 +621,13 @@ export const stmts = {
   `),
 
   queryEnvHistory: db.prepare(`
-    SELECT ts, temperature, relative_humidity, barometric_pressure
+    SELECT ts, temperature, relative_humidity, barometric_pressure, gas_resistance
     FROM environment_history WHERE num = ? AND ts >= ?
     ORDER BY ts ASC
   `),
 
   queryAllEnvHistory: db.prepare(`
-    SELECT ts, num, temperature, relative_humidity, barometric_pressure
+    SELECT ts, num, temperature, relative_humidity, barometric_pressure, gas_resistance
     FROM environment_history WHERE ts >= ?
     ORDER BY ts ASC
   `),
@@ -672,11 +676,23 @@ export function insertTilt(entry) {
 }
 
 export function insertDeviceMetricsHistory(entry) {
-  stmts.insertDeviceMetricsHistory.run(entry);
+  stmts.insertDeviceMetricsHistory.run(_finAll(entry,
+    ['uptime_seconds', 'voltage', 'battery_level', 'channel_utilization', 'air_util_tx']));
 }
 
+// NaN reaches SQLite as the TEXT string 'NaN' in a REAL column — silent type
+// pollution that reads as a present value. Sanitising in these wrappers rather
+// than at each call site protects EVERY caller, including the bridge-events
+// replay writer which bypassed the per-site guards.
+const _fin = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+const _finAll = (entry, keys) => {
+  const out = { ...entry };
+  for (const k of keys) out[k] = _fin(out[k]);
+  return out;
+};
+
 export function insertSignalHistory(entry) {
-  stmts.insertSignalHistory.run({ packet_id: null, rssi: null, snr: null, ...entry });
+  stmts.insertSignalHistory.run(_finAll({ packet_id: null, rssi: null, snr: null, ...entry }, ['rssi', 'snr']));
 }
 
 export function insertDetectionEvent(entry) {
@@ -691,7 +707,8 @@ export function upsertNodeAppState(entry) {
 // bridge-events nodedb-replay writer) keep working unchanged — better-sqlite3
 // throws on a missing named parameter. A null id is never deduped.
 export function insertEnvHistory(entry) {
-  stmts.insertEnvHistory.run({ packet_id: null, ...entry });
+  stmts.insertEnvHistory.run(_finAll({ packet_id: null, gas_resistance: null, ...entry },
+    ['temperature', 'relative_humidity', 'barometric_pressure', 'gas_resistance']));
 }
 
 export function queryEnvHistory(num, sinceTs) {

@@ -31,6 +31,12 @@ function _upsertCache(num, nodeId, u, pos) {
 
 const BROADCAST_NUM = 0xffffffff;
 
+// A device that has no sensor sends NaN, and better-sqlite3 stores JS NaN as
+// the TEXT string 'NaN' in a REAL column — silent type pollution that reads as
+// a present value to any consumer not checking typeof. An absent reading is
+// NULL. Applied to every numeric telemetry field at the point of capture.
+const fin = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+
 // Signal comes from the packet ENVELOPE, never a payload (iron rule 4).
 // Recorded for every reception that carries one, deduped by (num, packet_id) so
 // N gateway radios hearing one broadcast yield one row.
@@ -38,7 +44,7 @@ function _captureSignal(num, packetId, rssi, snr, ts) {
   if (!num) return;
   if (rssi == null && snr == null) return;
   try {
-    insertSignalHistory({ ts, num, packet_id: packetId ?? null, rssi: rssi ?? null, snr: snr ?? null });
+    insertSignalHistory({ ts, num, packet_id: packetId ?? null, rssi: fin(rssi), snr: fin(snr) });
   } catch (e) {
     console.error(`[signal] insert failed for ${num}: ${e.message}`);
   }
@@ -190,11 +196,11 @@ function handleTelemetryEvent(event, rxDevice) {
       ts:                  data.time || ts,
       num:                 from_num,
       packet_id:           packet_id ?? null,
-      uptime_seconds:      m.uptime_seconds      ?? null,
-      voltage:             m.voltage             ?? null,
-      battery_level:       m.battery_level       ?? null,
-      channel_utilization: m.channel_utilization ?? null,
-      air_util_tx:         m.air_util_tx         ?? null,
+      uptime_seconds:      fin(m.uptime_seconds),
+      voltage:             fin(m.voltage),
+      battery_level:       fin(m.battery_level),
+      channel_utilization: fin(m.channel_utilization),
+      air_util_tx:         fin(m.air_util_tx),
     });
     stmts.upsertNode.run({
       num:            from_num,
@@ -230,9 +236,10 @@ function handleTelemetryEvent(event, rxDevice) {
       ts:                  data.time || ts,
       num:                 from_num,
       packet_id:           packet_id ?? null,
-      temperature:         m.temperature         ?? null,
-      relative_humidity:   m.relative_humidity   ?? null,
-      barometric_pressure: m.barometric_pressure ?? null,
+      temperature:         fin(m.temperature),
+      relative_humidity:   fin(m.relative_humidity),
+      barometric_pressure: fin(m.barometric_pressure),
+      gas_resistance:      fin(m.gas_resistance),
     });
   }
 }
@@ -286,11 +293,11 @@ function handlePacket(packet, device, ts, replay) {
         ts:                  packet.rx_time || ts,
         num:                 packet.from || 0,
         packet_id:           packet.id ?? null,
-        uptime_seconds:      m.uptime_seconds      ?? null,
-        voltage:             m.voltage             ?? null,
-        battery_level:       m.battery_level       ?? null,
-        channel_utilization: m.channel_utilization ?? null,
-        air_util_tx:         m.air_util_tx         ?? null,
+        uptime_seconds:      fin(m.uptime_seconds),
+        voltage:             fin(m.voltage),
+        battery_level:       fin(m.battery_level),
+        channel_utilization: fin(m.channel_utilization),
+        air_util_tx:         fin(m.air_util_tx),
       });
       stmts.upsertNode.run({
         num:           packet.from || 0,
@@ -328,9 +335,10 @@ function handlePacket(packet, device, ts, replay) {
         ts,
         num,
         packet_id:           packet.id ?? null,
-        temperature:         m.temperature         ?? null,
-        relative_humidity:   m.relative_humidity   ?? null,
-        barometric_pressure: m.barometric_pressure ?? null,
+        temperature:         fin(m.temperature),
+        relative_humidity:   fin(m.relative_humidity),
+        barometric_pressure: fin(m.barometric_pressure),
+        gas_resistance:      fin(m.gas_resistance),
       });
     }
     return;
