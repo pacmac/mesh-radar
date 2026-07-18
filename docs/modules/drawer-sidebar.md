@@ -1,7 +1,7 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: a9674da7854a291a32c52c4bd08a7e49c6180812e1388d80a884744843047a1f
+source_hash: 18caf3c826aa8297e0661430369d0104bebb06c1faadcfffa5555e123c830343
 updated: 2026-07-18
 ---
 
