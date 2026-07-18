@@ -53,14 +53,20 @@
             <span class="text-xs text-base-content/50" x-text="nodeStatus.header.hw_model"></span>
           </div>
 
-          <template x-if="nodeStatus.header.last_heard">
-            <div class="text-xs text-base-content/50">
-              Last heard <span x-text="nodeStatus.header.last_heard.text"></span>
-              · <span x-text="nodeStatus.header.last_heard.ago"></span>
-            </div>
-          </template>
-
           <div class="flex flex-wrap gap-x-8 gap-y-3">
+            <!-- Last heard LEADS the row: the vitals answer "how is it", this
+                 answers "is it there at all". A battery reading from six hours
+                 ago is misleading unless the age is seen first. -->
+            <template x-if="nodeStatus.header.last_heard">
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Last heard</span>
+                <span class="text-2xl font-mono font-bold tabular-nums"
+                      x-text="nodeStatus.header.last_heard.ago"></span>
+                <span class="text-xs text-base-content/50"
+                      x-text="nodeStatus.header.last_heard.text"></span>
+              </div>
+            </template>
+
             <template x-for="f in nodeStatus.header.fields" :key="f.label">
               <div class="flex flex-col gap-1">
                 <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50"
