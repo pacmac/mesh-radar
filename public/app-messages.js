@@ -12,6 +12,9 @@ export const messagesMixin = {
         this.msgNodeCache[r.from_num] = { num: r.from_num, display_name: r.display_name || null, user: { short_name: r.short_name, long_name: r.long_name } };
       }
       return {
+        // Server-assigned stable identity — the x-for key. The browser never
+        // invents an identity (MESSAGE_PIPELINE_REWRITE_SPEC).
+        key:                r.message_key,
         pktId:              r.packet_id,
         replyId:            r.reply_id || null,
         threadRootPktId:    r.thread_root_packet_id ?? r.packet_id,
@@ -38,29 +41,6 @@ export const messagesMixin = {
   },
 
   loadMessages() { /* no-op — history arrives via WS message_history on connect */ },
-
-  // Thread a message into this.messages by its reply relationship at insert
-  // time — mirrors the backend history enrichment so live replies indent/group
-  // without a refresh (live-reply-threading). Mutates entry's thread fields.
-  _insertThreadedMessage(entry) {
-    const parent = entry.replyId ? this.messages.find(m => m.pktId === entry.replyId) : null;
-    entry.threadRootPktId = parent ? (parent.threadRootPktId ?? parent.pktId) : entry.pktId;
-    entry.replyDepth      = parent ? (parent.replyDepth ?? 0) + 1 : 0;
-    entry.isOrphan        = !!(entry.replyId && !parent);
-    entry.isReply         = !!(parent || entry.isOrphan);
-    if (parent) {
-      // Insert after the last message already in this thread so it appears inline.
-      let insertAt = -1;
-      for (let i = 0; i < this.messages.length; i++) {
-        if (this.messages[i].threadRootPktId === entry.threadRootPktId) insertAt = i;
-      }
-      if (insertAt >= 0) this.messages.splice(insertAt + 1, 0, entry);
-      else this.messages.unshift(entry);
-    } else {
-      this.messages.unshift(entry);
-    }
-    if (this.messages.length > 200) this.messages.pop();
-  },
 
   // The sending radio's configured channels (device_list dev.channels,
   // backend task device-channels-on-list). Fallback before the first fetch:
@@ -98,39 +78,10 @@ export const messagesMixin = {
     if (this.msgIsDirect) body.to = to;
     if (this.msgReplyId) body.reply_id = this.msgReplyId;
 
-    const txKey = Date.now();
-    const replyParent = this.msgReplyId ? this.messages.find(m => m.pktId === this.msgReplyId) : null;
-    const threadRootPktId = replyParent ? (replyParent.threadRootPktId ?? replyParent.pktId) : pktIdHint;
-    const txEntry = {
-      _txKey: txKey,
-      pktId: pktIdHint,
-      fromNum, to: to >>> 0,
-      fromShortName: this.deviceLabel(fromId) || null,
-      fromLongName:  this.availableDevices.find(d => d.node_id === fromId)?.long_name || null,
-      broadcast: to === 0xFFFFFFFF, channel, text,
-      ts: Math.floor(Date.now() / 1000), time, direction: 'tx',
-      src: fromId ? [fromId] : [], replyId: this.msgReplyId || null,
-      threadRootPktId, replyDepth: replyParent ? (replyParent.replyDepth ?? 0) + 1 : 0,
-      isOrphan: false, isReply: !!replyParent,
-      _localTx: true,
-    };
-    if (replyParent) {
-      // Insert after the last message in the same thread so reply appears inline.
-      let insertAt = -1;
-      for (let i = 0; i < this.messages.length; i++) {
-        if (this.messages[i].threadRootPktId === threadRootPktId) insertAt = i;
-      }
-      if (insertAt >= 0) {
-        this.messages.splice(insertAt + 1, 0, txEntry);
-      } else {
-        this.messages.unshift(txEntry);
-      }
-    } else {
-      this.messages.unshift(txEntry);
-    }
-    // 200 matches the backend message_history depth (message-tx-broadcast)
-    if (this.messages.length > 200) this.messages.pop();
-
+    // NO optimistic local row. A sent message reaches the feed by exactly the
+    // same route as a received one: the server persists it, then broadcasts the
+    // authoritative history. One writer, one identity, no reconciliation.
+    // Send feedback is transient UI (msgSent / toast), never a row in the list.
     this.msgInputHistory = [text, ...this.msgInputHistory.filter(t => t !== text)].slice(0, 50);
     persistSet('msgInputHistory', this.msgInputHistory);
     this.msgHistoryIdx = -1;
@@ -144,13 +95,10 @@ export const messagesMixin = {
       const res = await fetchJSON('/' + fromId + '/messages', 'POST', body);
       if (res?.error) throw new Error(res.error?.message || String(res.error));
       if (res?.detail) throw new Error(res.detail);
-      const m = this.messages.find(x => x._txKey === txKey);
-      if (m && res?.id) m.pktId = res.id;
+      // The feed updates when the server's message_history arrives — not here.
       this.msgSent = true;
       setTimeout(() => (this.msgSent = false), 2000);
     } catch (e) {
-      const m = this.messages.find(x => x._txKey === txKey);
-      if (m) m._sendError = e.message;
       this.showToast(e.message || 'Send failed — check gateway connection', 'error', 0);
     }
   },

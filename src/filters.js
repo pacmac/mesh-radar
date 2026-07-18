@@ -37,7 +37,15 @@ export function queryMessages(limit = 100) {
       MAX(m.replay)                                       AS replay,
       COALESCE(MIN(m.short_name), MIN(n.short_name))     AS short_name,
       COALESCE(MIN(m.long_name),  MIN(n.long_name))      AS long_name,
-      MIN(m.status)                                       AS status
+      MIN(m.status)                                       AS status,
+      -- Stable logical identity = the GROUP BY expression itself, so it cannot
+      -- change as more rows for the same message arrive. NOT MIN(message_key):
+      -- a sent message gets a 't-<id>' row, and when the second gateway hears
+      -- the transmission an 'r-<id>' row too, which would flip MIN() from
+      -- 't-' to 'r-' and change the key of an already-rendered message.
+      CASE WHEN m.packet_id IS NOT NULL
+           THEN 'k-' || m.packet_id
+           ELSE 'k-row-' || MIN(m.id) END                 AS message_key
     FROM messages m
     LEFT JOIN nodes n ON n.num = m.from_num
     ${where}

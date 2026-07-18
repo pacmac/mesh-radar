@@ -99,7 +99,7 @@
             <div class="card-body flex flex-col min-h-0">
               <h2 class="card-title shrink-0">Message Feed</h2>
               <div class="overflow-y-auto flex-1 min-h-0">
-                <template x-for="m in displayMessages()" :key="'msg_' + (m._txKey || (m.pktId != null ? m.pktId + '_' + (m.direction || 'rx') : m.fromNum + '_' + m.ts))">
+                <template x-for="m in displayMessages()" :key="m.key">
                   <div class="flex items-start gap-3 py-2"
                        :style="m.replyDepth > 0 ? `margin-left:${m.replyDepth * 2}rem` : ''"
                        :class="(m.isReply ? 'pl-2 ' : 'border-t border-base-200 ') + (m.direction === 'tx' ? 'bg-success/5 border-l-2 border-l-success' : '')"

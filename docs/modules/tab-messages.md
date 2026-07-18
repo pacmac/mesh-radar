@@ -1,7 +1,7 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: 0c0218fa37d146e8abab95f381973701793ad09e76987eb10154e0ae907058bc
+source_hash: ed033ed8afc7c9a34b3dc829176b73bdb0558a2f99214aa98b8f65e4b746b95f
 updated: 2026-07-17
 ---
 

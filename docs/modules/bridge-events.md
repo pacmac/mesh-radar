@@ -1,7 +1,7 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: f66406f5d8cc2f6830ca53da0cc2f17b42a44c0fe3cd0abf1a078102e309a397
+source_hash: 17069bef4cce181b75e5d2bf77b5145d84da1cb16ef811c87b46820d585c20b8
 updated: 2026-07-09
 ---
 

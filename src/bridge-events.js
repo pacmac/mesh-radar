@@ -4,6 +4,7 @@ import { activeTracker } from './active-tracker.js';
 import { scanner } from './scanner.js';
 import { traceroute } from './traceroute.js';
 import { stmts, insertRangeTestEntry, insertEnvHistory } from './db.js';
+import { broadcastMessageHistory } from './ws-relay.js';
 import { ownDeviceNums } from './node-filter.js';
 import { isListenerForMode } from './dash-mode.js';
 import { FF } from './feature-flags.js';
@@ -13,6 +14,18 @@ const _lastEnvTs = new Map(); // num → last inserted ts (env metrics dedup)
 export function registerBridgeEvents(bridge) {
   bridge.on('event', (ev) => {
     handleEvent(ev);
+
+    // A received text message is now authoritative-history-driven exactly like a
+    // sent one: push the enriched history so the browser never constructs a
+    // message itself (MESSAGE_PIPELINE_REWRITE_SPEC).
+    //
+    // This MUST be here, after handleEvent, and not in ws-relay's own listener:
+    // attachWsRelay registers at index.js:235 and registerBridgeEvents at :309,
+    // so ws-relay's handler runs BEFORE the row is persisted and would broadcast
+    // history that does not yet contain the message.
+    if (ev.type === 'packet' && ev.data?.packet?.decoded?.portnum === 'TEXT_MESSAGE_APP') {
+      broadcastMessageHistory();
+    }
     if (ev.type === 'node_update' || ev.type === 'node_info') {   // V2 emits node_info
       nodeList.handleNodeUpdate(ev);
       const node = ev.data;

@@ -608,47 +608,21 @@ export const wsMixin = {
       const pkt = ev.data?.packet;
       const portnum = pkt?.decoded?.portnum;
       if (portnum === 'TEXT_MESSAGE_APP' && pkt?.decoded?.payload) {
-        try {
-          const pktId = pkt.id;
-          const text = b64ToUtf8(pkt.decoded.payload);
-          const toNum = pkt.to >>> 0;
-          const fromNum = pkt.from ?? 0;
-          const injectedUser = pkt.decoded.user;
-          const fromNode = !injectedUser ? this.nodes.find(n => n.num === fromNum) : null;
-          const fromName  = ev.from_name || injectedUser?.short_name || fromNode?.display_name || fromNode?.user?.short_name || null;
-          const longName  = injectedUser?.long_name  || fromNode?.user?.long_name  || null;
-          const hops = (pkt.hop_start != null && pkt.hop_limit != null)
-            ? Math.max(0, pkt.hop_start - pkt.hop_limit) : null;
-          if (fromName || longName) {
-            this.msgNodeCache[fromNum] = { num: fromNum, display_name: fromName, user: { short_name: fromName, long_name: longName } };
-          }
-          // Dedupe: with multiple radios the same mesh packet arrives once per
-          // radio. Merge the later copy's source/signal into the existing entry —
-          // a second entry would duplicate the x-for key and freeze the feed.
-          const dupe = this.messages.find(m => m.pktId === pktId);
-          if (dupe) {
-            const srcId = ev.node_id || ev.addr || ev.device;
-            if (srcId && !dupe.src.includes(srcId)) dupe.src = [...dupe.src, srcId];
-            if (dupe.rssi == null && pkt.rx_rssi != null) dupe.rssi = pkt.rx_rssi;
-            if (dupe.snr  == null && pkt.rx_snr  != null) dupe.snr  = pkt.rx_snr;
-          } else {
-          // Thread live events at insert time (live-reply-threading) — the
-          // shared helper resolves the parent by reply_id and indents/groups
-          // the reply, so no page refresh is needed to see threading.
-          this._insertThreadedMessage({
-            pktId, fromNum, to: toNum,
-            fromShortName: fromName,
-            fromLongName:  longName,
-            hops, rssi: pkt.rx_rssi ?? null, snr: pkt.rx_snr ?? null,
-            broadcast: toNum === 0xFFFFFFFF || pkt.to == null,
-            channel: pkt.channel ?? 0,
-            replyId: pkt.decoded.reply_id || null,
-            text, ts: pkt.rx_time || Math.floor(Date.now() / 1000), time, direction: 'rx', ackStatus: null,
-            src: (ev.node_id || ev.addr || ev.device) ? [ev.node_id || ev.addr || ev.device] : [],
-          });
-          if (this.tab !== 'messages') { this.unreadMessages++; this.playMsgSound(); }
-          }
-        } catch (_) {}
+        // The browser NO LONGER builds messages. The feed is written solely by
+        // the server's message_history broadcast (MESSAGE_PIPELINE_REWRITE_SPEC),
+        // which already threads, dedupes across radios and orders the list.
+        // This branch now only drives incidental UI: the unread badge and sound.
+        //
+        // No try/catch swallow here — a failure must surface, not vanish.
+        const fromNum = pkt.from ?? 0;
+        const injectedUser = pkt.decoded.user;
+        const fromNode = !injectedUser ? this.nodes.find(n => n.num === fromNum) : null;
+        const fromName = ev.from_name || injectedUser?.short_name || fromNode?.display_name || fromNode?.user?.short_name || null;
+        const longName = injectedUser?.long_name || fromNode?.user?.long_name || null;
+        if (fromName || longName) {
+          this.msgNodeCache[fromNum] = { num: fromNum, display_name: fromName, user: { short_name: fromName, long_name: longName } };
+        }
+        if (this.tab !== 'messages') { this.unreadMessages++; this.playMsgSound(); }
       }
       if (pkt?.from != null) {
         this.lastHeardNum = pkt.from;
