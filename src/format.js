@@ -49,6 +49,21 @@ export function fmtTimestamp(ts) {
        + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+// Chart x-axis tick label. The format follows the span being rendered — clock
+// time within a day, date + clock beyond it — so a 1 HR window is not cluttered
+// with repeated dates and a 72 HR window is not ambiguous.
+//
+// This lives server-side for the same reason every other string does (iron rule
+// 1): choosing a format is a presentation decision, and the browser makes none.
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+export function fmtAxisTick(ts, spanSec = 0) {
+  if (!n(ts) || ts <= 0) return null;
+  const d = new Date(ts * 1000);
+  const p = x => String(x).padStart(2, '0');
+  const clock = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return spanSec > 86400 ? `${d.getDate()} ${MONTHS[d.getMonth()]} ${clock}` : clock;
+}
+
 // Relative age. Computed server-side and therefore correct only at emission —
 // the browser re-requests on node_status_update rather than ticking this
 // locally, because recomputing it in the browser would be the browser deciding.

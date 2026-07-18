@@ -1,7 +1,7 @@
 ---
 module: app-node-status
 source: public/app-node-status.js
-source_hash: ae980623b3ed064fe32a5cb7ef7a23b88ee6c6fb3e8b79392fa2e1cbcc361f9d
+source_hash: b74715def0ec1ee6adfd2708cc1b2160a24ed9539fd003af26e4b1dbd5438d2e
 updated: 2026-07-18
 ---
 

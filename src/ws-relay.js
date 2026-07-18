@@ -696,7 +696,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       if (msg?.type === 'node_status' && msg.num) {
         let payload;
         try {
-          payload = buildNodeStatus(Number(msg.num));
+          payload = buildNodeStatus(Number(msg.num), msg.window_h);
         } catch (e) {
           console.error(`[node_status] build failed for ${msg.num}: ${e.message}`);
           payload = { num: Number(msg.num), found: false, header: null, sections: [] };

@@ -17,11 +17,16 @@
 import { stmts } from './db.js';
 import {
   fmtVoltage, fmtPercent, fmtUtil, fmtTemp, fmtHumidity, fmtPressure,
-  fmtRssi, fmtSnr, fmtCount, fmtUptime, fmtTimestamp, fmtAgo,
+  fmtRssi, fmtSnr, fmtCount, fmtUptime, fmtTimestamp, fmtAgo, fmtAxisTick,
 } from './format.js';
 import { numToNodeId } from './utils.js';
 
-const WINDOW_SEC   = 7 * 24 * 3600;
+// Window is chosen by the user (1/4/24/72 HR) and travels with the request.
+// The SERVER slices to it and computes the axis labels for it — the browser
+// never re-filters cached points.
+const WINDOW_HOURS_ALLOWED = [1, 4, 24, 72];
+const WINDOW_HOURS_DEFAULT = 24;
+const AXIS_TICKS = 6;
 const MAX_POINTS   = 200;
 const MAX_EVENTS   = 200;
 const PAC_ALARM_APP = 260;
@@ -55,6 +60,20 @@ function seriesFrom(rows, key) {
 // A `series` section, built only from the metrics that actually have points.
 // A node reporting voltage but no humidity gets a voltage line and no humidity
 // line — not an empty humidity axis.
+// Evenly spaced axis labels across the rendered span. Emitted as {t,label} so
+// the browser positions at `t` and prints `label` verbatim — a lookup, never
+// date formatting (iron rule 1).
+function axisTicks(tMin, tMax) {
+  const span = Math.max(0, tMax - tMin);
+  if (!span) return [{ t: tMin, label: fmtAxisTick(tMin, 0) }];
+  const out = [];
+  for (let i = 0; i < AXIS_TICKS; i++) {
+    const t = Math.round(tMin + (span * i) / (AXIS_TICKS - 1));
+    out.push({ t, label: fmtAxisTick(t, span) });
+  }
+  return out;
+}
+
 function buildSeriesSection(id, title, rows, specs) {
   if (!rows.length) return null;
   const series = compact(specs.map(({ key, label, unit }) => {
@@ -71,6 +90,7 @@ function buildSeriesSection(id, title, rows, specs) {
     id, kind: 'series', title, series,
     t_min: tMin, t_max: tMax,
     t_min_text: fmtTimestamp(tMin), t_max_text: fmtTimestamp(tMax),
+    ticks: axisTicks(tMin, tMax),
   };
 }
 
@@ -132,13 +152,15 @@ function buildDetectionsSection(rows) {
   return { id: 'detections', kind: 'event_log', title: 'Detections', events };
 }
 
-export function buildNodeStatus(num) {
+export function buildNodeStatus(num, windowHours) {
   const node = stmts.getNodeByNum.get(num) ?? null;
   const info = stmts.getNodeinfoByNum.get(num) ?? null;
-  if (!node && !info) return { num, found: false, header: null, sections: [] };
+  if (!node && !info) return { num, found: false, window_h: null, header: null, sections: [] };
 
   const now   = Math.floor(Date.now() / 1000);
-  const since = now - WINDOW_SEC;
+  const hours = WINDOW_HOURS_ALLOWED.includes(Number(windowHours))
+    ? Number(windowHours) : WINDOW_HOURS_DEFAULT;
+  const since = now - hours * 3600;
   const src   = info ?? {};
   const lastHeard = node?.last_heard ?? info?.last_heard ?? null;
 
@@ -196,5 +218,5 @@ export function buildNodeStatus(num) {
     } : null,
   ]);
 
-  return { num, found: true, header, sections };
+  return { num, found: true, window_h: hours, header, sections };
 }

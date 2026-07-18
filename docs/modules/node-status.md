@@ -1,7 +1,7 @@
 ---
 module: node-status
 source: src/node-status.js
-source_hash: aa7b8cac31959ed205838c7f787659cdecfd8aedb866f48185b7c1b706f2c295
+source_hash: 38700fb20d0900bf7558fdc148b5390400fe7da38f8b0a954949873101e90c89
 updated: 2026-07-18
 ---
 

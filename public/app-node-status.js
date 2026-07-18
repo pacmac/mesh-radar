@@ -42,6 +42,7 @@ function _recolourCharts() {
   for (const c of _charts.values()) {
     c.options.plugins.legend.labels.color = tick;
     c.options.scales.x.grid.color = grid;
+    c.options.scales.x.ticks.color = tick;   // axis labels too — easily missed
     c.options.scales.y.grid.color = grid;
     c.options.scales.y.ticks.color = tick;
     c.update('none');
@@ -78,7 +79,20 @@ export const nodeStatusMixin = {
 
   requestNodeStatus() {
     if (!this.nodeStatusNum) return;
-    this.wsSend({ type: 'node_status', num: this.nodeStatusNum });
+    this.wsSend({
+      type: 'node_status',
+      num: this.nodeStatusNum,
+      window_h: this.nodeWindowHours,
+    });
+  },
+
+  // User input forwarded to the backend — BROWSER_CONTRACT permits handling raw
+  // input before sending it. The browser does NOT slice or re-bucket anything;
+  // it re-requests and renders whatever comes back.
+  setNodeWindow(hours) {
+    this.nodeWindowHours = hours;
+    window.persistSet('nodeWindowHours', hours);
+    this.requestNodeStatus();
   },
 
   // ---- WS reply ------------------------------------------------------------
@@ -142,9 +156,17 @@ export const nodeStatusMixin = {
       // Update in place when the chart already exists — no teardown, no
       // flicker, no draw-after-destroy. Chart.getChart is the authority on
       // what currently owns this canvas.
+      // Positions come from the server; labels are printed verbatim. This is a
+      // lookup of server-supplied strings, not formatting.
+      const tickVals   = (section.ticks || []).map(t => t.t * 1000);
+      const tickLabels = new Map((section.ticks || []).map(t => [t.t * 1000, t.label]));
+
       const existing = _charts.get(section.id) ?? Chart.getChart(el);
       if (existing) {
         existing.data.datasets = datasets;
+        existing.options.scales.x.afterBuildTicks = ax => { ax.ticks = tickVals.map(v => ({ value: v })); };
+        existing.options.scales.x.ticks.callback = v => tickLabels.get(v) ?? '';
+        existing.options.scales.x.ticks.color = tick;
         existing.options.plugins.legend.labels.color = tick;
         existing.options.scales.x.grid.color = grid;
         existing.options.scales.y.grid.color = grid;
@@ -181,7 +203,17 @@ export const nodeStatusMixin = {
             x: {
               type: 'linear',
               grid: { color: grid },
-              ticks: { display: false },
+              // Tick POSITIONS and LABELS both come from the server. Chart.js
+              // type:'time' would need a date adapter this app does not load,
+              // and the perf workaround formats dates in the browser — which
+              // iron rule 1 forbids here.
+              afterBuildTicks: ax => { ax.ticks = tickVals.map(v => ({ value: v })); },
+              ticks: {
+                color: tick,
+                autoSkip: false,
+                maxRotation: 0,
+                callback: v => tickLabels.get(v) ?? '',
+              },
             },
             y: { grid: { color: grid }, ticks: { color: tick } },
           },

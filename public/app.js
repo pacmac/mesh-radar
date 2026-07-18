@@ -131,6 +131,9 @@ function dashboard() {
     // the server sent — a display cache, never a source of decisions.
     nodeStatus:     null,
     nodeStatusNum:  null,
+    // Chart window (1/4/24/72 HR). User input, forwarded to the backend —
+    // the SERVER slices history and computes the axis labels for it.
+    nodeWindowHours: Number(persistGet('nodeWindowHours', 24)),
     tracerouteResult:  null,
     traceroutePending: false,
     passiveTraceNum:   null,

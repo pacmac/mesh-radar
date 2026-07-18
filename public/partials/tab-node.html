@@ -84,6 +84,18 @@
                   <span x-text="section.observed_text"></span> · <span x-text="section.observed_ago"></span>
                 </span>
               </template>
+              <!-- Window selector, matching the perf charts. User input only:
+                   the server slices history and computes the axis labels. -->
+              <template x-if="section.kind === 'series'">
+                <div class="join">
+                  <template x-for="w in [1,4,24,72]" :key="w">
+                    <button class="btn btn-xs join-item font-mono"
+                            :class="nodeWindowHours === w ? 'btn-primary' : 'btn-outline btn-neutral'"
+                            @click="setNodeWindow(w)"
+                            x-text="w + 'HR'"></button>
+                  </template>
+                </div>
+              </template>
             </div>
 
             <!-- value_grid — §5 key-value rows: caption key left, data value
