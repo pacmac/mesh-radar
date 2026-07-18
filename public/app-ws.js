@@ -353,6 +353,8 @@ export const wsMixin = {
     }
 
     if (ev.type === 'node_list') {
+      // Server-computed nav entries — the browser never scans for favourites.
+      this.favourites = ev.favourites ?? [];
       this.nodes = ev.nodes ?? [];
       this.nodeCount = this.nodes.length;
       this.nodeTotal = ev.total ?? this.nodes.length;

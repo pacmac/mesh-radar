@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { getConfig, setConfig, getMqttNode, stmts } from './db.js';
+import { getConfig, setConfig, getMqttNode, listFavourites, listFavouriteNodes, stmts } from './db.js';
 import { getRotatorAddress } from './device-config.js';
 import { passesFilter, ownDeviceNums } from './node-filter.js';
 import { haversine, bearing } from './utils.js';
@@ -34,17 +34,20 @@ function enrichFromCache(node) {
   // badge + max_hops filter start populated after a restart. A live node.hops
   // always wins — this only fills the gap.
   const hopsExtra = (node.hops == null && cached.hops_away != null) ? { hops: cached.hops_away } : {};
+  // Persisted on nodeinfo, so it survives clearNodeCache().
+  const favExtra = { favourite: !!cached.favourite };
 
   // Node already has identity — just tag _new and attach stored traceroute + warm hops
   if (node.user?.short_name || node.user?.long_name) {
     return isNew
-      ? { ...node, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra }
-      : { ...node, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra };
+      ? { ...node, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra }
+      : { ...node, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra };
   }
 
   // Backfill identity + position from cache
   return {
     ...node,
+    ...favExtra,
     user: {
       id:         node.user?.id ?? cached.node_id,
       short_name: cached.short_name,
@@ -382,6 +385,19 @@ class NodeList extends EventEmitter {
     this._scheduleEmit();
   }
 
+  // Favourites are stored on nodeinfo, but cached node objects were enriched
+  // when the node was last HEARD — so toggling a favourite leaves the cache
+  // stale and the filter bypass never fires. Sync the flag onto the cache
+  // explicitly, then emit.
+  syncFavourites() {
+    const favs = new Set(listFavourites().map(f => f.num));
+    for (const [num, node] of this._cache) {
+      const isFav = favs.has(num);
+      if (!!node.favourite !== isFav) this._cache.set(num, { ...node, favourite: isFav });
+    }
+    this._scheduleEmit();
+  }
+
   get homePos() {
     const lat = getConfig('home.lat', null);
     const lon = getConfig('home.lon', null);
@@ -408,6 +424,27 @@ class NodeList extends EventEmitter {
     const ownNums = ownDeviceNums();
     const filtered = Array.from(this._cache.values())
       .filter(n => passesFilter(n, { scanActive: this._scanActive, ownNums }));
+
+    // "Favourites are ALWAYS excluded from ALL filters" includes the implicit
+    // filter of not having been heard yet: the live cache is in-memory, so a
+    // favourite that has not transmitted since the last restart would otherwise
+    // vanish from the list it is pinned in. Seed any missing one from the
+    // persisted nodeinfo row.
+    const present = new Set(filtered.map(n => n.num));
+    for (const f of listFavouriteNodes()) {
+      if (present.has(f.num) || ownNums.has(f.num)) continue;
+      filtered.push({
+        num: f.num,
+        favourite: true,
+        _fromCache: true,          // not heard this session — identity only
+        hops: f.hops_away ?? null,
+        user: { id: f.node_id, short_name: f.short_name, long_name: f.long_name,
+                hw_model: f.hw_model, role: f.role },
+        position: (f.lat != null && f.lon != null)
+          ? { latitude_i: Math.round(f.lat * 1e7), longitude_i: Math.round(f.lon * 1e7) }
+          : undefined,
+      });
+    }
 
     const hp = this.homePos;
     if (!hp) return filtered;

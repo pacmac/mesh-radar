@@ -131,6 +131,7 @@ function dashboard() {
     // the server sent — a display cache, never a source of decisions.
     nodeStatus:     null,
     nodeStatusNum:  null,
+    favourites:     [],   // server-computed; nav entries for starred nodes
     // Chart window (1/4/24/72 HR). User input, forwarded to the backend —
     // the SERVER slices history and computes the axis labels for it.
     nodeWindowHours: Number(persistGet('nodeWindowHours', 24)),

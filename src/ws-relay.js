@@ -5,6 +5,7 @@ import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
 import { insertTilt, insertEnvHistory, getTiltCal, getConfig, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts, persistNodeMac, loadNodeMacMap } from './db.js';
 import { buildNodeStatus } from './node-status.js';
+import { listFavourites } from './db.js';
 import { queryMessages } from './filters.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.js';
@@ -258,7 +259,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // Adds pre-resolved display labels so the UI never needs to resolve names itself.
   function enrichEvent(ev) {
     if (ev.type === 'node_list') {
-      return { ...ev, nodes: (ev.nodes || []).map(n => {
+      // Favourite nav entries are computed HERE, not derived in the browser:
+      // BROWSER_CONTRACT — "if a display differs based on a condition, that
+      // condition is evaluated in Node.js".
+      return { ...ev, favourites: listFavourites(), nodes: (ev.nodes || []).map(n => {
         // First-hop relay bundle (IDENTITY.md §3) — a traceroute-context
         // fact the browser renders without resolving (task radar-list-via)
         const viaNum = n.last_traceroute?.route?.[0];

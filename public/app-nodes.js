@@ -216,6 +216,18 @@ export const nodesMixin = {
     return !!n?.hops_fresh;
   },
 
+  // Toggle only — no local mutation. The star re-renders from the re-broadcast
+  // node_list, so what you see is always what the server holds (the same rule
+  // that fixed the message feed).
+  async toggleFavourite(n) {
+    if (!n?.num) return;
+    try {
+      await fetchJSON(`/nodes/${n.num}/favourite`, 'PUT', { favourite: !n.favourite });
+    } catch (e) {
+      this.showToast(e.message || 'Could not update favourite', 'error', 0);
+    }
+  },
+
   signalQuality(rssi, snr) {
     const pct = window.signalQuality(rssi, snr);
     if (pct === 0 && rssi == null && snr == null) return { pct: 0, label: 'No signal', cls: 'text-base-content/30', badgeCls: 'badge-ghost', none: true };

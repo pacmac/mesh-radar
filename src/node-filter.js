@@ -26,6 +26,13 @@ export function passesFilter(node, { scanActive = false, ownNums = null } = {}) 
   const nums = ownNums ?? ownDeviceNums();
   if (nums.has(node.num)) return false;
 
+  // Favourites bypass EVERY filter — max_age, hops, named_only, has_pos,
+  // hide_mqtt, has_signal, has_telem, msg_only, roles, node_source.
+  // Placed AFTER the own-gateway guard: a gateway is excluded structurally
+  // (it belongs on the Devices page), not by a filter, so favouriting one must
+  // not inject it into the node list.
+  if (node.favourite) return true;
+
   const now       = Math.floor(Date.now() / 1000);
   const maxAge    = getConfig('node_filters.max_age',    0);
   const maxHops   = getConfig('node_filters.max_hops',   99);

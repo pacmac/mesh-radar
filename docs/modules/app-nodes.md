@@ -1,7 +1,7 @@
 ---
 module: app-nodes
 source: public/app-nodes.js
-source_hash: 7dba2604230e6318100cde7aad1ea8901ddc4c78131ee2c4bc6d4f144fcf1d2e
+source_hash: aac4ff8f14b7adbfa5de46a19b038f1d4785ee0ca144ff8ca067556ded8f536a
 updated: 2026-07-08
 ---
 

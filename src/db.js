@@ -250,6 +250,13 @@ db.exec(`
   if (!envCols.includes('gas_resistance')) db.exec(`ALTER TABLE environment_history ADD COLUMN gas_resistance REAL`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_env_dedup ON environment_history(num, packet_id) WHERE packet_id IS NOT NULL`);
 }
+// Favourites live on nodeinfo (persistent), NOT nodes (wiped by clearNodeCache).
+{
+  const niCols = db.prepare(`PRAGMA table_info(nodeinfo)`).all().map(r => r.name);
+  if (!niCols.includes('favourite')) {
+    db.exec(`ALTER TABLE nodeinfo ADD COLUMN favourite INTEGER NOT NULL DEFAULT 0`);
+  }
+}
 const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);
 if (!existingCols.includes('reply_id')) {
   db.exec(`ALTER TABLE messages ADD COLUMN reply_id INTEGER`);
@@ -429,6 +436,21 @@ export const stmts = {
   clearNodes:     db.prepare(`DELETE FROM nodes`),
 
   getNodeinfoByNum: db.prepare(`SELECT * FROM nodeinfo WHERE num = ? LIMIT 1`),
+
+  setFavourite: db.prepare(`UPDATE nodeinfo SET favourite = @favourite WHERE num = @num`),
+
+  queryFavourites: db.prepare(`
+    SELECT num, node_id, COALESCE(long_name, short_name, node_id) AS label
+    FROM nodeinfo WHERE favourite = 1 AND num IS NOT NULL
+    ORDER BY COALESCE(long_name, short_name, node_id)
+  `),
+
+  // Full persisted row for a favourite, so it can be shown even when it has not
+  // been heard since the last restart (the live cache is in-memory only).
+  queryFavouriteNodes: db.prepare(`
+    SELECT num, node_id, short_name, long_name, hw_model, role, lat, lon, alt, hops_away
+    FROM nodeinfo WHERE favourite = 1 AND num IS NOT NULL
+  `),
 
   upsertTraceroute: db.prepare(`
     UPDATE nodeinfo SET last_traceroute = @json, updated_at = unixepoch() WHERE num = @num
@@ -704,6 +726,18 @@ const _finAll = (entry, keys) => {
   for (const k of keys) out[k] = _fin(out[k]);
   return out;
 };
+
+export function setNodeFavourite(num, favourite) {
+  return stmts.setFavourite.run({ num, favourite: favourite ? 1 : 0 }).changes;
+}
+
+export function listFavourites() {
+  return stmts.queryFavourites.all();
+}
+
+export function listFavouriteNodes() {
+  return stmts.queryFavouriteNodes.all();
+}
 
 export function insertSignalHistory(entry) {
   stmts.insertSignalHistory.run(_finAll({ packet_id: null, rssi: null, snr: null, hops: null, ...entry }, ['rssi', 'snr']));
