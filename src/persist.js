@@ -37,6 +37,31 @@ const BROADCAST_NUM = 0xffffffff;
 // NULL. Applied to every numeric telemetry field at the point of capture.
 const fin = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
 
+// The device's own `time` is WHEN THE READING WAS TAKEN, which beats arrival
+// time for a delayed or relayed packet — but only if its clock is trustworthy.
+// Tarr Exmoor 5 Repeater (132 days uptime, no GPS) reported a time 22.7 HOURS
+// ahead, and `deviceTime(data.time, ts)` believed it: one row dated tomorrow, which
+// stretches every chart axis a day forward. The same expression put 2,607 rows
+// in 1970 when a device sent uptime instead of an epoch (backlog #3).
+//
+// So: accept the device clock only when it lands in a sane window around the
+// gateway's, otherwise fall back to arrival. 1 minute of tolerance (Peter)
+// covers ordinary drift; anything beyond that is the device being wrong, and
+// our own arrival time is the better record.
+//
+// Where WE do the stamping, the timestamp is ours to get right — arrival time
+// comes from the gateway clock and needs no allowance at all.
+const EPOCH_2001 = 1_000_000_000;
+const CLOCK_SKEW_GRACE_S = 60;
+function deviceTime(t, arrivalTs) {
+  // SYMMETRIC: drift goes both ways. A packet that just arrived cannot have
+  // been measured in 2024 any more than tomorrow — device_metrics_history was
+  // created today and still received rows dated 2024-07-03 through 2026-05-31
+  // from 13 different nodes, all of them wrong clocks rather than old data.
+  if (typeof t !== 'number' || !Number.isFinite(t) || t <= EPOCH_2001) return arrivalTs;
+  return Math.abs(t - arrivalTs) <= CLOCK_SKEW_GRACE_S ? t : arrivalTs;
+}
+
 // A reception describes a node's link ONLY when it arrived DIRECTLY. The
 // envelope's rx_rssi/rx_snr are the signal at our gateway from whoever
 // transmitted to us — for a relayed packet that is the RELAY, not the origin.
@@ -216,7 +241,7 @@ function handleTelemetryEvent(event, rxDevice) {
   if (data.device_metrics) {
     const m = data.device_metrics;
     insertDeviceMetricsHistory({
-      ts:                  data.time || ts,
+      ts:                  deviceTime(data.time, ts),
       num:                 from_num,
       packet_id:           packet_id ?? null,
       uptime_seconds:      fin(m.uptime_seconds),
@@ -232,7 +257,7 @@ function handleTelemetryEvent(event, rxDevice) {
       long_name:      null,
       hw_model:       null,
       role:           null,
-      last_heard:     data.time || ts,
+      last_heard:     deviceTime(data.time, ts),
       snr:            direct ? (rx_snr  ?? null) : null,
       rssi:           direct ? (rx_rssi ?? null) : null,
       hops:           null,
@@ -253,10 +278,10 @@ function handleTelemetryEvent(event, rxDevice) {
       temperature:         m.temperature         ?? null,
       relative_humidity:   m.relative_humidity   ?? null,
       barometric_pressure: m.barometric_pressure ?? null,
-      last_heard:          data.time || ts,
+      last_heard:          deviceTime(data.time, ts),
     });
     insertEnvHistory({
-      ts:                  data.time || ts,
+      ts:                  deviceTime(data.time, ts),
       num:                 from_num,
       packet_id:           packet_id ?? null,
       temperature:         fin(m.temperature),
