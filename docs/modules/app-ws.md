@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 13ef26fe41210327bd309f0a6cd36e738c0ea0248f971bafc768c1b610ccdb38
+source_hash: 5735206d16d695a978178e6b6d89b2b39bc9f6c0e07a7079997204a554f09bbc
 updated: 2026-07-17
 ---
 
@@ -127,12 +127,6 @@ The dismissal branch now handles success regardless of `busy`: when
 gated on `!needPairBusy` so a transient dropout during a busy retry doesn't
 kill the modal prematurely; the wrong-PIN/OFFLINE feedback in the
 `device_state` handler is unchanged.
-
-## Node status routing (NODE_STATUS_SPEC Phase C, task `node-status-page`)
-
-`node_status` → `_onNodeStatus`, `node_status_update` → `_onNodeStatusUpdate`
-(app-status.js). The settings event maps `monitored_nodes` → `this.monitoredNodes`
-(nav pins). On WS reconnect while on the status tab, `requestNodeStatus()` re-fetches.
 
 ## Live reply threading (task `live-reply-threading`, 2026-07-17)
 

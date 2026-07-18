@@ -18,7 +18,6 @@ export const wsMixin = {
       const wasDisconnected = !this.wsConnected;
       this.wsConnected = true;
       if (wasDisconnected) this.bootstrapDevice();
-      if (this.tab === 'status') this.requestNodeStatus();   // re-fetch after reconnect
     };
     ws.onclose = () => {
       this.wsConnected = false;
@@ -82,8 +81,6 @@ export const wsMixin = {
       return;
     }
 
-    if (ev.type === 'node_status')        { this._onNodeStatus(ev); return; }
-    if (ev.type === 'node_status_update') { this._onNodeStatusUpdate(ev); return; }
 
     if (ev.type === 'geocode_result') {
       const pending = this._geocodePending?.[ev.num];

@@ -1,7 +1,7 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: cbc9a685dd5389b0956d8d508748779045cf44b0964105956eb7a8bfc230dc9e
+source_hash: cd808f02a3ff2cedd61e69847d31a549fce41eb1a54a7bb69899aaffd2f37d49
 updated: 2026-07-17
 ---
 

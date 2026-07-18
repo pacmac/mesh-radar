@@ -13,7 +13,6 @@ import { perfMixin }      from './app-perf.js?v=20260627rewrite';
 import { telemetryMixin } from './app-telemetry.js';
 import { configMixin }      from './app-config.js';
 import { componentsMixin }  from './app-components.js';
-import { statusMixin }       from './app-status.js';
 import { fetchJSON, themeColor, svgElem } from './app-helpers.js';
 import { initPersist, persistGet, persistSet } from './app-persist.js';
 
@@ -31,9 +30,6 @@ function dashboard() {
     // (radio-config-into-devices) — a persisted 'radio' would strand the
     // user on a tab that no longer exists.
     cfgTab:        (t => t === 'radio' ? 'bridge' : t)(persistGet('cfgTab', 'bridge')),
-    // Node Status page (NODE_STATUS_SPEC) — statusNum seeded from /status/:id
-    statusNum:     null,
-    statusData:    null,
     monitoredNodes: {},
     drawerOpen:    false,
     sidebarPinned: persistGet('sidebarPinned', true),
@@ -285,7 +281,6 @@ function dashboard() {
     // -- Init -----------------------------------------------------------------
     async init() {
       initPersist();
-      this.initStatusNum();   // seed statusNum from /status/:id if deep-linked
       this.feedVisible = (window.feedFilterOptions || []).map(o => o.id);
 
       // One-time migration: move tilt calibration from localStorage to server DB
@@ -383,7 +378,7 @@ window.dashboard = function() {
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
     rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
-    componentsMixin, perfMixin, statusMixin,
+    componentsMixin, perfMixin,
   ];
   for (const mixin of mixins) {
     Object.defineProperties(state, Object.getOwnPropertyDescriptors(mixin));

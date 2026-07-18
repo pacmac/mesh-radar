@@ -166,25 +166,6 @@ function _ownNums() {
 
 // Pre-compute direction, thread_root_packet_id, is_orphan, reply_depth for
 // every row so the browser renders without deriving any of these itself.
-// node_status WS RPC payload (NODE_STATUS_SPEC §5) — current state plus
-// server-side downsampled histories; the browser renders as-is.
-function buildNodeStatus(num) {
-  const since = Math.floor(Date.now() / 1000) - 7 * 86400;
-  const bucket = Math.max(60, Math.floor((7 * 86400) / 200));   // ≤ ~200 env points
-  const node = stmts.getNodeByNum.get({ num }) ?? null;
-  const heartbeats = stmts.getSensorHeartbeats.all({ num, limit: 200 }).map(r => {
-    let kv = {}; try { kv = JSON.parse(r.kv); } catch { /* raw preserved */ }
-    return { ...r, kv };
-  });
-  return {
-    node: node ? { ...node, display_name: resolveNodeLabel(num) } : null,
-    monitored: getConfig('monitored_nodes', {})[String(num)] ?? null,
-    heartbeats,
-    env:    stmts.getEnvHistoryBucketed.all({ num, since, bucket }),
-    signal: stmts.getSignalHistory.all({ num, since }),
-  };
-}
-
 function _enrichMessages(rows) {
   const own = _ownNums();
   const byPktId = new Map();
@@ -502,9 +483,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
           insertEnvHistory({ ts: Math.floor(Date.now() / 1000), num: ev.from_num, temperature: em.temperature ?? null, relative_humidity: em.relative_humidity ?? null, barometric_pressure: em.barometric_pressure ?? null });
         } catch (e) { console.error('[env] insert failed:', e.message); }
         broadcast({ type: 'telemetry_update', device: ev.addr || ev.device, from_num: ev.from_num, variant: 'environment_metrics', data: em });
-        if (getConfig('monitored_nodes', {})[String(ev.from_num)]) {
-          broadcast({ type: 'node_status_update', num: ev.from_num });
-        }
       } else if (dm) {
         broadcast({ type: 'telemetry_update', device: ev.addr || ev.device, from_num: ev.from_num, variant: 'device_metrics', data: dm });
       }
@@ -544,13 +522,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       if (pktId) {
         if (_seenLivePktIds.has(pktId)) return;
         _seenLivePktIds.add(pktId);
-      }
-      // Monitored-node wake push (NODE_STATUS_SPEC §5): ANY text from a
-      // monitored node hints open status pages to re-request the RPC.
-      // Deliberately format-blind — the device's message format is evolving.
-      const _from = ev.data.packet?.from;
-      if (_from && getConfig('monitored_nodes', {})[String(_from)]) {
-        broadcast({ type: 'node_status_update', num: _from });
       }
     }
 
@@ -693,15 +664,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       if (msg?.type === 'geocode' && msg.num) {
         const address = await lookupGeocode(msg.num).catch(() => null);
         if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'geocode_result', num: msg.num, address }));
-      }
-      // node_status RPC (NODE_STATUS_SPEC §5) — page data stays WS-only
-      if (msg?.type === 'node_status' && msg.num) {
-        try {
-          const payload = buildNodeStatus(Number(msg.num));
-          if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'node_status', num: Number(msg.num), ...payload }));
-        } catch (e) {
-          if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'node_status', num: Number(msg.num), error: e.message }));
-        }
       }
     });
     // Replay last-known BLE state for each device — no HTTP
