@@ -19,7 +19,7 @@ import {
   fmtVoltage, fmtPercent, fmtUtil, fmtTemp, fmtHumidity, fmtPressure,
   fmtRssi, fmtSnr, fmtCount, fmtUptime, fmtTimestamp, fmtAgo, fmtAxisTick,
 } from './format.js';
-import { numToNodeId } from './utils.js';
+import { numToNodeId, signalQuality } from './utils.js';
 
 // Window is chosen by the user (1/4/24/72 HR) and travels with the request.
 // The SERVER slices to it and computes the axis labels for it — the browser
@@ -152,6 +152,25 @@ function buildDetectionsSection(rows) {
   return { id: 'detections', kind: 'event_log', title: 'Detections', events };
 }
 
+// Signal, rendered with the app's existing .sig-bars component. The QUALITY is
+// computed here, not in the browser: signalQuality() is exported from utils.js
+// so the server runs the same function the rest of the UI does — one algorithm,
+// no second copy to drift. Tiers mirror app-nodes.js:219-226 exactly so this
+// looks identical to every other signal indicator.
+function buildSignal(rssi, snr) {
+  if (rssi == null && snr == null) return null;
+  const pct = signalQuality(rssi, snr);
+  const label = pct >= 76 ? 'Excellent' : pct >= 51 ? 'Good' : pct >= 26 ? 'Fair' : 'Poor';
+  const cls   = pct >= 51 ? 'text-success' : pct >= 26 ? 'text-warning' : 'text-error';
+  const parts = compact([fmtRssi(rssi), fmtSnr(snr)]);
+  return {
+    rssi, snr, pct, label, cls,
+    text: parts.join(' / '),
+    // Which of the four bars are lit — a decision, so the server makes it.
+    bars: [0, 1, 2, 3].map(i => pct > i * 25),
+  };
+}
+
 export function buildNodeStatus(num, windowHours) {
   const node = stmts.getNodeByNum.get(num) ?? null;
   const info = stmts.getNodeinfoByNum.get(num) ?? null;
@@ -164,6 +183,20 @@ export function buildNodeStatus(num, windowHours) {
   const src   = info ?? {};
   const lastHeard = node?.last_heard ?? info?.last_heard ?? null;
 
+  const appRows = stmts.queryNodeAppState.all(num);
+  const appOf   = t => appRows.find(r => r.portnum === PAC_ALARM_APP && r.type === t) ?? null;
+
+  // Boot count lives in the 260 debug payload; absent for any node that does
+  // not speak 260 (every stock Meshtastic node), and then simply not shown.
+  let bootCount = null, bootTs = null;
+  const dbgRow = appOf('debug');
+  if (dbgRow) {
+    try {
+      const dbg = JSON.parse(dbgRow.payload);
+      if (Number.isFinite(dbg?.boot)) { bootCount = dbg.boot; bootTs = dbgRow.ts; }
+    } catch { /* unparseable debug payload — leave boots absent */ }
+  }
+
   const header = {
     num,
     node_id:    src.node_id ?? node?.node_id ?? numToNodeId(num),
@@ -173,22 +206,26 @@ export function buildNodeStatus(num, windowHours) {
     last_heard: lastHeard == null ? null : {
       raw: lastHeard, text: fmtTimestamp(lastHeard), ago: fmtAgo(lastHeard, now),
     },
-    // At-a-glance vitals. Values, never verdicts — no health pill lives here.
+    // Every vital we hold — nothing withheld. An absent value omits its field:
+    // API.md is explicit that channel_utilization is present only when the
+    // device is awake and ABSENCE IS NOT ZERO, so a missing value must never
+    // render as 0%.
     fields: compact([
-      field('Battery', node?.battery,        fmtPercent(node?.battery),        lastHeard),
-      field('Voltage', node?.voltage,        fmtVoltage(node?.voltage),        lastHeard),
-      field('Uptime',  node?.uptime_seconds, fmtUptime(node?.uptime_seconds),  lastHeard),
-      field('RSSI',    node?.rssi,           fmtRssi(node?.rssi),              lastHeard),
-      field('SNR',     node?.snr,            fmtSnr(node?.snr),                lastHeard),
+      field('Battery',     node?.battery,        fmtPercent(node?.battery),      lastHeard),
+      field('Voltage',     node?.voltage,        fmtVoltage(node?.voltage),      lastHeard),
+      field('Uptime',      node?.uptime_seconds, fmtUptime(node?.uptime_seconds), lastHeard),
+      // Boot count comes from the 260 debug cache — it is what makes uptime
+      // interpretable ("up 5m" reads very differently at 37 boots).
+      field('Boots',       bootCount,            fmtCount(bootCount),            bootTs),
+      field('Chan util',   node?.channel_util,   fmtUtil(node?.channel_util),    lastHeard),
+      field('Air util TX', node?.air_util_tx,    fmtUtil(node?.air_util_tx),     lastHeard),
     ]),
+    signal: buildSignal(node?.rssi ?? null, node?.snr ?? null),
   };
 
   const dmRows  = stmts.queryDeviceMetricsHistory.all(num, since);
   const envRows = stmts.queryEnvHistory.all(num, since);
   const detRows = stmts.queryDetectionEvents.all(num, since, MAX_EVENTS);
-  const appRows = stmts.queryNodeAppState.all(num);
-  const appOf   = t => appRows.find(r => r.portnum === PAC_ALARM_APP && r.type === t) ?? null;
-
   const lat = info?.lat ?? node?.lat ?? null;
   const lon = info?.lon ?? node?.lon ?? null;
 

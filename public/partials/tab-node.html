@@ -68,6 +68,28 @@
                 <span class="text-2xl font-mono font-bold tabular-nums" x-text="f.text"></span>
               </div>
             </template>
+
+            <!-- Signal uses the app's existing .sig-bars component so it looks
+                 identical to the nodes/messages/devices pages. Which bars are
+                 lit and the colour class are computed SERVER-side and bound
+                 here verbatim — the browser evaluates no thresholds. Inline
+                 height is bar geometry, the §7 runtime-geometry exception,
+                 matching app-components.js sigBars(). -->
+            <template x-if="nodeStatus.header.signal">
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Signal</span>
+                <div class="flex items-center gap-2">
+                  <span class="sig-bars" :class="nodeStatus.header.signal.cls"
+                        :title="nodeStatus.header.signal.label + ' (' + nodeStatus.header.signal.pct + '%)'">
+                    <template x-for="(lit, i) in nodeStatus.header.signal.bars" :key="i">
+                      <i :style="'height:' + [6,10,14,18][i] + 'px;opacity:' + (lit ? 1 : 0.15)"></i>
+                    </template>
+                  </span>
+                  <span class="text-2xl font-mono font-bold tabular-nums"
+                        x-text="nodeStatus.header.signal.text"></span>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
       </div>
