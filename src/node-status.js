@@ -30,6 +30,12 @@ const WINDOW_HOURS_DEFAULT = 24;
 const AXIS_TICKS = 6;
 const MAX_POINTS   = 200;
 const MAX_EVENTS   = 200;
+// Events are NOT bound to the chart window. An alarm log answers "what happened
+// recently", not "what happened inside the currently selected chart range" —
+// with a 4HR view a node whose last alarm was yesterday showed no log at all,
+// which reads as "nothing ever happened". Charts are a time series; a log is a
+// list of the most recent events.
+const EVENT_WINDOW_DAYS = 30;
 const PAC_ALARM_APP = 260;
 
 // Every displayed field carries raw + text + ts. A field whose value is absent
@@ -247,6 +253,10 @@ function buildSignal(rssi, snr) {
   return {
     rssi, snr, pct, label, cls,
     text: parts.join(' / '),
+    // Split too: the combined string overflows a stat card, and RSSI is the
+    // headline figure with SNR as its context.
+    rssi_text: fmtRssi(rssi),
+    snr_text: fmtSnr(snr),
     // Which of the four bars are lit — a decision, so the server makes it.
     bars: [0, 1, 2, 3].map(i => pct > i * 25),
   };
@@ -429,7 +439,8 @@ export function buildNodeStatus(num, windowHours) {
 
   const dmRows  = stmts.queryDeviceMetricsHistory.all(num, since);
   const envRows = stmts.queryEnvHistory.all(num, since);
-  const detRows = stmts.queryDetectionEvents.all(num, since, MAX_EVENTS);
+  const detRows = stmts.queryDetectionEvents.all(
+    num, now - EVENT_WINDOW_DAYS * 86400, MAX_EVENTS);
   const sigRows = stmts.querySignalHistory.all(num, since);
   const lat = info?.lat ?? node?.lat ?? null;
   const lon = info?.lon ?? node?.lon ?? null;

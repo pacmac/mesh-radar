@@ -53,46 +53,46 @@
             <span class="text-xs text-base-content/50" x-text="nodeStatus.header.hw_model"></span>
           </div>
 
-          <div class="flex flex-wrap gap-x-8 gap-y-3">
-            <!-- Last heard LEADS the row: the vitals answer "how is it", this
-                 answers "is it there at all". A battery reading from six hours
-                 ago is misleading unless the age is seen first. -->
+          <!-- Vitals as stat cards, matching the Performance page
+               (.perf-stats-grid + DaisyUI .stat). A flat row of eight
+               label/value pairs read as one dense block; cards give each value
+               its own frame and a place for context. -->
+          <div class="perf-stats-grid">
+            <!-- Last heard leads: the vitals answer "how is it", this answers
+                 "is it there at all". -->
             <template x-if="nodeStatus.header.last_heard">
-              <div class="flex flex-col gap-1">
-                <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Last heard</span>
-                <span class="text-2xl font-mono font-bold tabular-nums"
-                      x-text="nodeStatus.header.last_heard.ago"></span>
-                <span class="text-xs text-base-content/50"
-                      x-text="nodeStatus.header.last_heard.text"></span>
+              <div class="stat bg-base-200 rounded-box">
+                <div class="stat-title">Last heard</div>
+                <div class="stat-value text-2xl font-mono tabular-nums"
+                     x-text="nodeStatus.header.last_heard.ago"></div>
+                <div class="stat-desc" x-text="nodeStatus.header.last_heard.text"></div>
               </div>
             </template>
 
             <template x-for="f in nodeStatus.header.fields" :key="f.label">
-              <div class="flex flex-col gap-1">
-                <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50"
-                      x-text="f.label"></span>
-                <span class="text-2xl font-mono font-bold tabular-nums" x-text="f.text"></span>
+              <div class="stat bg-base-200 rounded-box">
+                <div class="stat-title" x-text="f.label"></div>
+                <div class="stat-value text-2xl font-mono tabular-nums" x-text="f.text"></div>
+                <div class="stat-desc" x-text="f.edit ? f.edit.name : ''"></div>
               </div>
             </template>
 
-            <!-- Signal uses the app's existing .sig-bars component so it looks
-                 identical to the nodes/messages/devices pages. Which bars are
-                 lit and the colour class are computed SERVER-side and bound
-                 here verbatim — the browser evaluates no thresholds. Inline
-                 height is bar geometry, the §7 runtime-geometry exception,
-                 matching app-components.js sigBars(). -->
+            <!-- Signal keeps the app's .sig-bars component; which bars are lit
+                 and the colour class are server-computed and bound verbatim. -->
             <template x-if="nodeStatus.header.signal">
-              <div class="flex flex-col gap-1">
-                <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Signal</span>
-                <div class="flex items-center gap-2">
-                  <span class="sig-bars" :class="nodeStatus.header.signal.cls"
-                        :title="nodeStatus.header.signal.label + ' (' + nodeStatus.header.signal.pct + '%)'">
+              <div class="stat bg-base-200 rounded-box">
+                <div class="stat-title">Signal</div>
+                <div class="stat-value text-2xl font-mono tabular-nums flex items-center gap-2">
+                  <span class="sig-bars shrink-0" :class="nodeStatus.header.signal.cls">
                     <template x-for="(lit, i) in nodeStatus.header.signal.bars" :key="i">
                       <i :style="'height:' + [6,10,14,18][i] + 'px;opacity:' + (lit ? 1 : 0.15)"></i>
                     </template>
                   </span>
-                  <span class="text-2xl font-mono font-bold tabular-nums"
-                        x-text="nodeStatus.header.signal.text"></span>
+                  <span class="truncate" x-text="nodeStatus.header.signal.rssi_text"></span>
+                </div>
+                <div class="stat-desc">
+                  <span x-text="nodeStatus.header.signal.label"></span>
+                  <span x-show="nodeStatus.header.signal.snr_text"> · <span x-text="nodeStatus.header.signal.snr_text"></span></span>
                 </div>
               </div>
             </template>
