@@ -100,9 +100,15 @@
         </div>
       </div>
 
-      <!-- Sections, in the order the server gave them. -->
+      <!-- Sections, in the order the server gave them.
+           Charts sit TWO PER ROW on wide screens — full width was overkill and
+           made the page needlessly long. value_grid and event_log keep the full
+           width: they already lay out in internal columns, and a log needs the
+           room. Single column below lg. -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
       <template x-for="section in nodeStatus.sections" :key="section.id">
-        <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card bg-base-100 shadow-sm border border-base-300"
+             :class="section.kind !== 'series' && 'lg:col-span-2'">
           <div class="card-body py-4 gap-3">
             <div class="flex items-baseline justify-between gap-3">
               <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50"
@@ -214,6 +220,7 @@
           </div>
         </div>
       </template>
+      </div>
 
     </div>
   </template>
