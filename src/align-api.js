@@ -29,22 +29,20 @@ const router = Router();
 const clients = new Set();
 
 // One session at a time, globally.
-let session = null;   // { num, suffix, probes, prevMode, timer, gatewayNodeId, channel, pending, misses }
+let session = null;   // { num, suffix, probes, prevMode, gatewayNodeId, channel, pending }
 
-// Loop cadence is MEASURED, not guessed. 8 pings to DEPL (2026-07-19): reply
-// rate 6/8, latency mean 16.1s (min 11.9, max 18.6). The interval must exceed the
-// mean latency so each tick is a fresh attempt rather than piling onto an
-// unanswered one; 20s does. Correlation is by reply_id, so a late reply still
-// matches its own ping.
-const ALIGN_INTERVAL_MS      = 20000;
-const ALIGN_REPLY_TIMEOUT_MS = 30000;  // a ping older than this is a miss
+// Pings are NOT continuous — the operator COMMANDS each one (Peter, 2026-07-19):
+// point the antenna, press PING, read the result, point again. So there is no
+// loop and no interval. Each press fires exactly one ping. Correlation is by
+// reply_id, so a slow reply still matches its own ping.
+//
+// Measured 2026-07-19: reply latency mean 16.1s (min 11.9, max 18.6), ~75% reply
+// rate. So a ping is given 30s before it is declared a miss.
+const ALIGN_REPLY_TIMEOUT_MS = 30000;
 // Both radios hear one pong a fraction apart, each as its own 'packet' event with
 // the same reply_id. Collect for a short window after the first, then emit ONE
 // sample carrying both radios' envelope readings.
 const ALIGN_COLLECT_MS       = 1200;
-// A ~25% miss rate is normal on this link, so a single miss is not worth a
-// warning — it would cry wolf every fourth ping. Only speak up after a run.
-const MISS_LIMIT             = 3;
 
 const round1 = (v) => (typeof v === 'number' && Number.isFinite(v))
   ? Math.round(v * 10) / 10 : null;
@@ -86,26 +84,15 @@ function clearNotice() {
   if (notice !== null) { notice = null; broadcast(statusFrame()); }
 }
 
-// ── the align loop ───────────────────────────────────────────────────────────
-async function tick() {
-  if (!session) return;
-
-  // Prune a ping that never got an answer: count it a miss, warn only after a run.
-  const now = Date.now();
-  for (const [id, p] of session.pending) {
-    if (p.emitted) continue;
-    if (now - p.sentAt > ALIGN_REPLY_TIMEOUT_MS) {
-      session.pending.delete(id);
-      session.misses += 1;
-      if (session.misses >= MISS_LIMIT) {
-        pushStatus(`No reply for ${session.misses} pings — still trying. Check the node is awake and in range.`);
-      }
-    }
-  }
+// ── one commanded ping ───────────────────────────────────────────────────────
+// Fires exactly ONE ping. Returns { ok, n } or { ok:false, error }. The reply (or
+// a miss) arrives asynchronously over the WS as a sample / miss frame.
+async function alignPing() {
+  if (!session) return { ok: false, error: 'no session' };
 
   session.probes += 1;
   const n = session.probes;
-  broadcast({ kind: 'probe', n, at: Math.floor(now / 1000) });
+  broadcast({ kind: 'probe', n, at: Math.floor(Date.now() / 1000) });
 
   let sent;
   try {
@@ -117,14 +104,26 @@ async function tick() {
     if (!r.ok) throw new Error(`gateway ${r.status}`);
     sent = await r.json();
   } catch (e) {
-    // A send that never leaves the gateway is otherwise a still screen at a mast.
-    pushStatus(`Send failed: ${e.message}`);
-    return;
+    broadcast({ kind: 'miss', n, reason: `Send failed: ${e.message}` });
+    return { ok: false, error: e.message };
   }
-  if (!sent?.id) { pushStatus('Send failed: gateway returned no packet id'); return; }
+  if (!sent?.id) {
+    broadcast({ kind: 'miss', n, reason: 'gateway returned no packet id' });
+    return { ok: false, error: 'no packet id' };
+  }
 
-  // reply_id on the pong will equal this packet id (API.md §3).
-  session.pending.set(sent.id, { sentAt: Date.now(), n, radios: new Map(), payload: null, emitted: false, collectTimer: null });
+  // reply_id on the pong will equal this packet id (API.md §3). A per-ping timer
+  // declares a miss if no pong lands — the page needs to re-enable the button
+  // and say so, rather than wait forever on a silent link.
+  const entry = { sentAt: Date.now(), n, radios: new Map(), payload: null, emitted: false, collectTimer: null };
+  entry.missTimer = setTimeout(() => {
+    if (session?.pending.get(sent.id) === entry && !entry.emitted) {
+      session.pending.delete(sent.id);
+      broadcast({ kind: 'miss', n, reason: 'No reply — try again.' });
+    }
+  }, ALIGN_REPLY_TIMEOUT_MS);
+  session.pending.set(sent.id, entry);
+  return { ok: true, n };
 }
 
 // Called from bridge-events for every TEXT_MESSAGE_APP reply carrying a
@@ -145,7 +144,7 @@ export function handleAlignPong(pkt, rxDevice) {
   if (!payload || payload.type !== 'pong') return;
 
   clearNotice();
-  session.misses = 0;                 // a reply landed — the link is alive
+  if (pending.missTimer) { clearTimeout(pending.missTimer); pending.missTimer = null; }
   pending.payload = payload;          // device's own rssi/snr (identical per radio)
   // Per-radio envelope: THIS radio's reading of the device's transmission.
   if (rxDevice && typeof pkt.rx_snr === 'number') {
@@ -211,20 +210,18 @@ export function alignStart({ num }) {
   session = {
     num, suffix: hexSuffix(num), probes: 0, prevMode,
     gatewayNodeId, channel: ch.channel,
-    pending: new Map(), misses: 0,
-    timer: setInterval(tick, ALIGN_INTERVAL_MS),
+    pending: new Map(),
   };
-  log.info('align', `started on !${(Number(num) >>> 0).toString(16)} (@${session.suffix}) via ${gatewayNodeId} ch${ch.channel}`);
-  tick();                       // first ping immediately, not after 20s
+  log.info('align', `session on !${(Number(num) >>> 0).toString(16)} (@${session.suffix}) via ${gatewayNodeId} ch${ch.channel}`);
   broadcast(statusFrame());
   return { ok: true, state: 'applied' };
 }
 
 export function alignStop() {
   if (!session) return { ok: true, state: 'applied' };
-  clearInterval(session.timer);
   for (const p of session.pending.values()) {
     if (p.collectTimer) clearTimeout(p.collectTimer);
+    if (p.missTimer)    clearTimeout(p.missTimer);
   }
 
   // Put the dashboard back the way we found it.
@@ -250,6 +247,19 @@ router.post('/align/start', (req, res) => {
   if (!Number.isFinite(num)) return res.status(400).json({ error: 'num required' });
   const result = alignStart({ num });
   res.status(result.ok ? 200 : 400).json(result);
+});
+
+// One commanded ping. Opens (or re-targets) the session first, so a single button
+// press is all the operator needs — no separate "start".
+router.post('/align/ping', async (req, res) => {
+  const num = Number(req.body?.num);
+  if (!Number.isFinite(num)) return res.status(400).json({ error: 'num required' });
+  if (!session || session.num !== num) {
+    const started = alignStart({ num });
+    if (!started.ok) return res.status(400).json(started);
+  }
+  const result = await alignPing();
+  res.status(result.ok ? 200 : 502).json(result);
 });
 
 router.post('/align/stop', (_req, res) => res.json(alignStop()));

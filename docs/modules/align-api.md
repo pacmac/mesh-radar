@@ -1,7 +1,7 @@
 ---
 module: align-api
 source: src/align-api.js
-source_hash: 47a5d1474e89b15e9409a336206d7d3fb80ca57c5ad9f4f430a8b643bf2e38f5
+source_hash: e3646f26590312ab45801cbc3119ab68586c7900583882b82a8cb5aabc75b2d1
 updated: 2026-07-19
 ---
 
@@ -112,9 +112,26 @@ Align consumes `packet` only. Consuming both double-counts every sample.
 
 - Serve `public/align.html` at `GET /align`
 - `GET /align/targets` — favourites, for the selector
-- `WS /align/events` — sample / probe / status frames, nothing else
-- Run the ping loop against one target; correlate replies by `reply_id`
-- Own start/stop, including a dead-man stop
+- `WS /align/events` — sample / probe / miss / status frames, nothing else
+- Fire **one commanded ping per request**; correlate the reply by `reply_id`
+- Own session open/stop, including a dead-man stop
+
+## Commanded, not continuous
+
+Pings are **not** on a timer. The operator points the antenna, presses PING, reads
+the result, points again (Peter, 2026-07-19). Each `POST /align/ping` fires exactly
+one ping; there is no interval loop. This matches the physics: a reply takes ~16 s,
+so a "live meter you sweep" is impossible — every reading is a deliberate spot
+measurement at one antenna position.
+
+`POST /align/ping` opens (or re-targets) the session itself, so a single button is
+the whole interaction — no separate start step. `alignStart` still exists (forces
+PASV, resolves the tx radio + channel, opens the session) but is called *by* the
+ping route rather than by the operator.
+
+A per-ping timer declares a **miss** after `ALIGN_REPLY_TIMEOUT_MS` (30 s; measured
+latency is 16 s mean, 18.6 s max). The miss is broadcast so the page can re-enable
+the button and say "no reply — try again", rather than hang on a silent link.
 
 ## Dependencies
 
@@ -129,12 +146,20 @@ Align consumes `packet` only. Consuming both double-counts every sample.
 ## Public interface
 
 ```js
-export default router                    // GET /align, /align/targets, POST /align/start|stop
+export default router                    // GET /align, /align/targets, POST /align/ping|start|stop
 export function attachAlignWs(server)    // mounts WS /align/events
-export function alignStart({ num })      // → {ok, state}
+export function alignStart({ num })      // → {ok, state} — open session, force PASV (called by /align/ping)
 export function alignStop()              // → {ok, state}
 export function handleAlignPong(pkt, rxDevice)  // called from bridge-events
 ```
+
+### Frame kinds on `WS /align/events`
+
+- `{ kind:'status', running, target, tx, channel, warning }` — on connect / change
+- `{ kind:'probe', n, at }` — a ping was sent (button press N)
+- `{ kind:'miss', n, reason }` — ping N got no reply within the timeout (or a send
+  failure); the page re-enables PING and shows the reason
+- a **sample** (no `kind`) — a reply landed; see below
 
 ### Sample frame
 
@@ -146,24 +171,17 @@ export function handleAlignPong(pkt, rxDevice)  // called from bridge-events
 SNR, null when that radio did not hear this reply. The server computes `delta`;
 the browser calculates nothing (BROWSER_CONTRACT).
 
-## Loop timing — measured, not assumed
+## Timing — measured, not assumed
 
 ```js
-ALIGN_INTERVAL_MS = 20000   // mean reply latency measured at 16.1 s
-ALIGN_REPLY_TIMEOUT_MS = 30000
+ALIGN_REPLY_TIMEOUT_MS = 30000   // a ping with no reply by now is a miss
+ALIGN_COLLECT_MS       = 1200    // window to gather both radios' copies
 ```
 
 Measured 2026-07-19, 8 pings to DEPL: **reply rate 6/8**, latency mean **16.1 s**
-(min 11.9, max 18.6, sd 2.5).
-
-Two consequences, both load-bearing:
-
-- The interval must exceed the mean latency, so 20 s — **not** the 15 s the
-  traceroute design used, and emphatically not the 14 s "a round trip is a few
-  seconds" guess, which was never measured and was wrong.
-- **A missed reply is normal, not an error.** At a 25% miss rate a UI that
-  reports every miss as a failure would cry wolf continuously. Only report
-  after `MISS_LIMIT` consecutive misses.
+(min 11.9, max 18.6, sd 2.5). So 30 s comfortably clears the slowest reply, and a
+missed reply — normal on this link — surfaces as a `miss` frame the operator can
+act on (press PING again) rather than a hang.
 
 ## Invariants
 
@@ -179,20 +197,22 @@ Two consequences, both load-bearing:
 - **The transmitting radio defines what `dev_rssi` means** — it is the device's
   reading of *that* radio's transmission. It is therefore recorded in the status
   frame, and must not change mid-session or the curve becomes meaningless.
-- **Failures are broadcast, never swallowed**, but only after `MISS_LIMIT`.
-- **START forces PASV; STOP restores the previous mode.** In ACTV the rotator is
-  driven by `active-tracker`, so the home Yagi swings while the operator turns
-  the remote one — that perturbs the secondary envelope curves.
-- **Dead-man stop.** The loop stops when the last WS client disconnects.
+- **One ping per press.** No interval loop; each `POST /align/ping` fires exactly
+  one ping. A ping with no reply emits a `miss` frame, never silence.
+- **Session opens on first ping; PASV forced there, restored on STOP.** In ACTV the
+  rotator is driven by `active-tracker`, so the home Yagi swings while the operator
+  turns the remote one — that perturbs the secondary envelope curves.
+- **Dead-man stop.** The session stops when the last WS client disconnects.
 
 ## Test notes
 
 - `/align/targets` returns only favourites
+- `POST /align/ping` with no prior session opens one, forces PASV, sends one ping
 - a pong whose `reply_id` matches no pending ping produces **no** sample
 - both radios hearing one pong produces **one** sample with two envelope values
-- a single missed reply produces no warning; `MISS_LIMIT` consecutive misses do
-- stopping sends no further pings
-- last-client-disconnect stops the loop
+- a ping with no reply within the timeout emits a `miss` frame
+- stopping clears pending timers and sends no further pings
+- last-client-disconnect stops the session
 
 **Verified 2026-07-19:** `@336b ping` on channel 2 answered first attempt;
 `reply_id` correlated to our packet id; both radios reported distinct envelope
