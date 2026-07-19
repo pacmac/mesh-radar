@@ -17,8 +17,6 @@
 <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
-  // Same font roles as the dashboard (index.html's inline tailwind.config).
-  // STYLE_GUIDE §1: Oxanium display, DM Sans body, JetBrains Mono for data.
   tailwind.config = { theme: { extend: { fontFamily: {
     display: ['Oxanium', 'system-ui', 'sans-serif'],
     body:    ['"DM Sans"', 'system-ui', 'sans-serif'],
@@ -27,19 +25,12 @@
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;700&family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script type="module" src="/app-align.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"></script>
 <style>
-  /* STYLE_GUIDE §2: no px font sizes, no new absolute sizes. The only custom
-     rules here are LAYOUT — a fixed-viewport field page — plus the Chart.js
-     containment pattern. Every colour and every type size comes from the
-     design system's own classes. */
+  /* Only layout — a fixed-viewport field page. Colour/type come from the system. */
   html, body { height: 100%; }
   body { overflow: hidden; }
-  /* Chart.js sizes its canvas from the parent; without a definite height it
-     grows and pushes the controls off screen. Absolute inside relative pins it. */
-  .chart-fill > canvas { position: absolute; inset: 0; }
 </style>
 </head>
 <body class="bg-base-200 font-body" x-data="alignPage()" x-init="init()">
@@ -47,129 +38,134 @@
 <div class="flex flex-col h-full gap-3 p-3"
      style="padding-top:calc(0.75rem + env(safe-area-inset-top));padding-bottom:calc(0.75rem + env(safe-area-inset-bottom))">
 
-  <!-- ── target + state ─────────────────────────────────────────────────── -->
-  <div class="flex items-center gap-2 shrink-0">
-    <select class="select select-bordered flex-1 font-display"
-            x-model.number="target" :disabled="running" aria-label="Node to align">
-      <template x-if="!targets.length">
-        <option value="">Star a node to align it</option>
-      </template>
+  <!-- ── target + how many pings to average ─────────────────────────────── -->
+  <div class="flex gap-2 shrink-0">
+    <select class="select select-bordered flex-1 font-display" x-model.number="target"
+            :disabled="bursting" aria-label="Node to align">
+      <template x-if="!targets.length"><option value="">Star a node to align it</option></template>
       <template x-for="t in targets" :key="t.num">
         <option :value="t.num" x-text="t.label"></option>
       </template>
     </select>
-    <span class="badge badge-lg shrink-0"
-          :class="running ? (stale ? 'badge-error' : 'badge-success') : 'badge-ghost'"
-          x-text="running ? (stale ? 'STALE' : 'LIVE') : 'IDLE'"></span>
+    <label class="join" title="Pings to average per reading">
+      <span class="join-item btn btn-disabled no-animation font-display text-xs">avg</span>
+      <!-- Static options, not x-for: an x-for list is populated after x-model
+           evaluates, so the model's value is not reflected and the control shows 1. -->
+      <select class="join-item select select-bordered font-mono" x-model.number="nBurst" :disabled="bursting">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+    </label>
   </div>
 
-  <template x-if="warning">
-    <div class="alert alert-warning py-2 text-sm shrink-0" x-text="warning"></div>
+  <template x-if="model.warning">
+    <div class="alert alert-warning py-2 text-sm shrink-0" x-text="model.warning"></div>
   </template>
 
-  <!-- ── signal: display value + peak-hold meter ────────────────────────── -->
-  <div class="card bg-base-100 shadow-sm border border-base-300 shrink-0">
-    <div class="card-body py-4 gap-3">
-      <div class="flex items-baseline justify-between">
-        <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">
-          Yagi signal
-        </h2>
-        <span class="text-sm font-mono tabular-nums text-base-content/70" x-show="cur.delta !== null">
-          <span x-text="(cur.delta > 0 ? '+' : '') + cur.delta"></span> dB vs omni
-        </span>
-      </div>
+  <!-- ── current reading — big, in plain quality ────────────────────────── -->
+  <div class="card bg-base-100 shadow-sm border-2 shrink-0"
+       :class="cur && cur.isBest ? 'border-success' : 'border-base-300'">
+    <div class="card-body py-4 gap-1 items-center text-center">
 
-      <div class="flex items-baseline gap-2">
-        <span class="text-2xl font-mono font-bold tabular-nums"
-              :class="stale && 'opacity-30'" x-text="cur.yagi ?? '—'"></span>
-        <span class="text-xs text-base-content/50">dB SNR</span>
-        <span class="ml-auto flex items-center gap-2">
-          <span class="loading loading-spinner loading-xs text-primary"
-                x-show="running && ageSec === null"></span>
-          <span class="text-xs text-base-content/50" x-text="activity"></span>
-        </span>
-      </div>
+      <template x-if="!cur">
+        <div class="py-4 text-base-content/50 text-sm">Press PING to take a reading.</div>
+      </template>
 
-      <!-- Peak-hold meter: the live level moves, the marker holds at the best
-           reading of this session. Closing the gap is the alignment task. -->
-      <div>
-        <div class="relative h-6 rounded bg-base-300 overflow-hidden">
-          <div class="absolute inset-y-0 left-0 transition-[width] duration-300"
-               :class="levelClass" :style="`width:${livePct}%`"></div>
-          <div class="absolute inset-y-0 w-1 bg-base-content" x-show="peakPct !== null"
-               :style="`left:calc(${peakPct}% - 2px)`"></div>
+      <template x-if="cur">
+        <div class="flex flex-col items-center gap-1 w-full">
+          <!-- quality % + word -->
+          <div class="flex items-baseline gap-2">
+            <span class="text-6xl font-mono font-bold tabular-nums leading-none"
+                  :class="'text-' + cur.cls" x-text="cur.quality"></span>
+            <span class="text-lg text-base-content/50">%</span>
+          </div>
+          <div class="text-2xl font-display font-semibold" :class="'text-' + cur.cls" x-text="cur.label"></div>
+
+          <!-- provenance + confidence -->
+          <div class="text-xs font-mono text-base-content/50">
+            via <span x-text="model.tx"></span>
+            · ±<span x-text="cur.spread"></span>
+            · <span x-text="cur.got"></span>/<span x-text="cur.of"></span> pings
+          </div>
+
+          <!-- Q1: better than the last? -->
+          <div class="text-lg font-display font-semibold mt-1">
+            <template x-if="cur.trendDir === null"><span class="text-base-content/50">First reading</span></template>
+            <template x-if="cur.trendDir === 'up'"><span class="text-success">▲ BETTER <span class="font-mono" x-text="'+' + cur.trendDelta"></span></span></template>
+            <template x-if="cur.trendDir === 'down'"><span class="text-error">▼ worse <span class="font-mono" x-text="cur.trendDelta"></span></span></template>
+            <template x-if="cur.trendDir === 'same'"><span class="text-base-content/60">■ same as last</span></template>
+          </div>
+
+          <!-- Q2/Q3: best, or was an earlier one better? -->
+          <div class="text-sm">
+            <template x-if="cur.isBest"><span class="badge badge-success badge-lg gap-1 font-display">★ BEST YET</span></template>
+            <template x-if="!cur.isBest">
+              <span class="text-base-content/70">
+                <span class="font-mono text-error" x-text="'−' + cur.gapToBest"></span> below best
+                — reading <span class="font-mono" x-text="'#' + cur.bestN"></span>,
+                <span x-text="cur.bestAgo === 1 ? 'the one before' : cur.bestAgo + ' readings ago'"></span>
+              </span>
+            </template>
+          </div>
+
+          <!-- both radios hearing the remote -->
+          <div class="text-xs font-mono text-base-content/40 mt-1">
+            YAGI <span x-text="cur.yagi_q ?? '—'"></span> · OMNI <span x-text="cur.omni_q ?? '—'"></span>
+            &nbsp;·&nbsp; <span x-text="cur.rssi"></span> dBm / <span x-text="cur.snr"></span> dB
+          </div>
         </div>
-        <div class="flex justify-between mt-1">
-          <span class="text-xs text-base-content/50" x-text="SCALE_MIN + ' dB'"></span>
-          <span class="text-xs" :class="fromPeak === 0 ? 'text-success' : 'text-base-content/50'"
-                x-show="fromPeak !== null"
-                x-text="fromPeak === 0 ? 'At peak' : fromPeak + ' dB below peak'"></span>
-          <span class="text-xs text-base-content/50" x-text="'+' + SCALE_MAX + ' dB'"></span>
-        </div>
-      </div>
+      </template>
     </div>
   </div>
 
-  <!-- ── readings ───────────────────────────────────────────────────────── -->
-  <!-- Three across, not .perf-stats-grid: that is minmax(11.5rem, 1fr), so on a
-       390px phone it collapses to one card per row and spends 230px of screen on
-       three numbers, starving the trace. Same .stat component, phone-appropriate
-       columns. -->
-  <div class="grid grid-cols-3 gap-2 shrink-0">
-    <div class="stat px-2 py-2 bg-base-100 rounded-box border border-base-300 place-items-center">
-      <div class="stat-title text-xs">Peak</div>
-      <div class="stat-value text-2xl font-mono tabular-nums" x-text="best ?? '—'"></div>
-    </div>
-    <div class="stat px-2 py-2 bg-base-100 rounded-box border border-base-300 place-items-center">
-      <div class="stat-title text-xs">Worst</div>
-      <div class="stat-value text-2xl font-mono tabular-nums" x-text="worst ?? '—'"></div>
-    </div>
-    <div class="stat px-2 py-2 bg-base-100 rounded-box border border-base-300 place-items-center">
-      <div class="stat-title text-xs">Age</div>
-      <div class="stat-value text-2xl font-mono tabular-nums" :class="ageClass"
-           x-text="ageSec !== null ? ageSec + 's' : '—'"></div>
-    </div>
-  </div>
-
-  <!-- ── trace ──────────────────────────────────────────────────────────── -->
+  <!-- ── every reading, tallest = best ──────────────────────────────────── -->
   <div class="card bg-base-100 shadow-sm border border-base-300 flex-1 min-h-0">
     <div class="card-body py-3 px-3 gap-2 flex flex-col min-h-0">
       <div class="flex items-baseline justify-between shrink-0">
-        <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">
-          Last 5 minutes
-        </h2>
-        <span class="text-xs text-base-content/50">
-          <span class="text-primary">━</span> yagi
-          <span class="ml-2">╌</span> omni
-        </span>
+        <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Every reading</h2>
+        <span class="text-xs text-base-content/40">tallest = strongest · ★ best</span>
       </div>
-      <div class="chart-fill relative flex-1 min-h-0"><canvas id="alignChart"></canvas></div>
+
+      <template x-if="!model.readings.length">
+        <div class="flex-1 flex items-center justify-center text-sm text-base-content/40 text-center px-4">
+          Point the antenna, then press PING. Each press averages
+          <span class="mx-1 font-mono" x-text="nBurst"></span> pings into one reading.
+        </div>
+      </template>
+
+      <div class="flex-1 min-h-0 flex items-stretch gap-1.5 overflow-x-auto pt-1" x-show="model.readings.length">
+        <template x-for="r in model.readings" :key="r.n">
+          <div class="flex flex-col items-center gap-1 shrink-0 h-full" style="width:2.25rem">
+            <div class="text-sm leading-none h-4 text-warning" x-text="r.isBest ? '★' : ''"></div>
+            <div class="flex-1 w-full flex items-end min-h-0">
+              <div class="w-full rounded-t transition-[height] duration-300"
+                   :class="r.isBest ? 'bg-success' : r.isCurrent ? 'bg-primary' : 'bg-base-content/30'"
+                   :style="`height:${r.barPct}%`"></div>
+            </div>
+            <div class="text-xs font-mono tabular-nums leading-none"
+                 :class="r.isCurrent ? 'font-bold text-primary' : 'text-base-content/60'" x-text="r.quality"></div>
+            <div class="text-[0.6rem] font-mono text-base-content/30 leading-none" x-text="'#' + r.n"></div>
+          </div>
+        </template>
+      </div>
     </div>
   </div>
 
-  <!-- ── marked positions ───────────────────────────────────────────────── -->
-  <div class="shrink-0 overflow-x-auto">
-    <div class="flex gap-2 items-center min-h-8">
-      <template x-if="!marks.length">
-        <span class="text-xs text-base-content/50">Turn, wait for a reading, then mark it.</span>
-      </template>
-      <template x-for="m in marks" :key="m.n">
-        <span class="badge badge-lg font-mono tabular-nums shrink-0 gap-1"
-              :class="m.n === bestMarkN ? 'badge-success' : 'badge-ghost'">
-          <span class="text-base-content/50" x-text="m.n"></span>
-          <span x-text="m.yagi"></span>
-        </span>
-      </template>
-    </div>
-  </div>
-
-  <!-- ── controls ───────────────────────────────────────────────────────── -->
-  <div class="grid grid-cols-2 gap-2 shrink-0">
-    <button class="btn btn-lg btn-outline font-display"
-            :disabled="!running || cur.yagi === null" @click="mark()">Mark</button>
-    <button class="btn btn-lg font-display" :class="running ? 'btn-error' : 'btn-primary'"
-            :disabled="!running && !target"
-            @click="running ? stop() : start()" x-text="running ? 'Stop' : 'Start'"></button>
+  <!-- ── controls: PING is the whole interaction ────────────────────────── -->
+  <div class="grid grid-cols-3 gap-2 shrink-0">
+    <button class="btn btn-lg col-span-2 font-display text-lg"
+            :class="bursting ? 'btn-disabled' : 'btn-primary'"
+            :disabled="bursting || !target" @click="ping()">
+      <span x-show="!bursting">PING</span>
+      <span x-show="bursting" class="flex items-center gap-2">
+        <span class="loading loading-spinner loading-sm"></span>
+        <span x-text="'GATHERING ' + (model.burst ? model.burst.got : 0) + '/' + (model.burst ? model.burst.of : 0)"></span>
+      </span>
+    </button>
+    <button class="btn btn-lg btn-outline font-display" :disabled="!model.running" @click="end()">End</button>
   </div>
 
 </div>
