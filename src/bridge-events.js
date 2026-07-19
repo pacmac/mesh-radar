@@ -6,6 +6,7 @@ import { traceroute } from './traceroute.js';
 import { stmts, insertRangeTestEntry, insertEnvHistory } from './db.js';
 import { broadcastMessageHistory } from './ws-relay.js';
 import { handleReply } from './node-settings.js';
+import { handleAlignPong } from './align-api.js';
 import { ownDeviceNums } from './node-filter.js';
 import { isListenerForMode } from './dash-mode.js';
 import { FF } from './feature-flags.js';
@@ -38,6 +39,14 @@ export function registerBridgeEvents(bridge) {
           handleReply(pkt.decoded.reply_id, text);
         } catch (e) {
           console.error('[settings] reply correlation failed:', e.message);
+        }
+        // The align ping loop needs the WHOLE packet, not just the text: the
+        // per-radio envelope (pkt.rx_snr/rx_rssi) is the receiving radio's own
+        // reading. No-op unless an align session is waiting on this reply_id.
+        try {
+          handleAlignPong(pkt, ev.addr || ev.device || null);
+        } catch (e) {
+          console.error('[align] pong correlation failed:', e.message);
         }
       }
     }

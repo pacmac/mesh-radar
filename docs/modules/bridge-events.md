@@ -1,7 +1,7 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: f87d923f4b63af81ad99145631ca66c1efa1a910b8a16b8815e3a1757d82257b
+source_hash: 2dc11d30cdc002cd4236111fb95b0538c65b390d3e68c614e89607fe21b6842d
 updated: 2026-07-09
 ---
 
@@ -59,6 +59,18 @@ _N/A_ (consumes events from bridge; other modules emit downstream)
 - Hops-away is computed here from the raw packet (`pkt.hop_start`/`pkt.hop_limit`) — the only per-reception source that carries the hop fields and reaches `nodeList`. The gw's aggregate `node_info.hops` is unguarded and stripped in `node-list.js`; see its "Hops-away ownership" section.
 - `FF.SSOT_TRACEROUTE` governs both raw-packet and typed-event traceroute paths — they must stay in sync.
 - `traceroute` typed event path is additive (parallel to raw packet) in V1; V2 routes both to `traceroute.handlePacket`.
+- **A device reply is routed to two consumers, both keyed on `reply_id`.** For a
+  `TEXT_MESSAGE_APP` packet carrying `decoded.reply_id` (a device answer to one of
+  our addressed commands, `API.md` §3), the handler routes it AFTER persistence to:
+  - `handleReply(reply_id, text)` — the node-settings SSOT (config edits).
+  - `handleAlignPong(pkt, rxDevice)` — the align ping loop. Align is passed the
+    **whole packet**, not just the text, because it needs the per-radio signal:
+    `pkt.rx_snr` / `pkt.rx_rssi` are the receiving radio's reading, and align also
+    parses the pong payload's own `rssi`/`snr`. This is the live `packet` path, so
+    `rx_snr` is genuinely present — unlike the synthetic traceroute packet, it
+    needs no fabrication. `handleAlignPong` is a no-op unless an align session is
+    active and the `reply_id` matches its pending ping, so routing every reply to
+    it is free.
 
 ## Test notes
 
@@ -66,6 +78,7 @@ _N/A_ (consumes events from bridge; other modules emit downstream)
 - **packet — yagi-only**: scanner active, packet from non-rotator device → `touchLastHeard` NOT called.
 - **rangetest**: `insertRangeTestEntry` called with correct fields extracted from typed event.
 - **traceroute V2**: `traceroute.handlePacket` called for both raw TRACEROUTE_APP packet and typed event.
+- **reply routing**: a `TEXT_MESSAGE_APP` packet with `decoded.reply_id` set calls both `handleReply(reply_id, text)` and `handleAlignPong(pkt, rxDevice)`; a packet without `reply_id` calls neither.
 - **packet — hops-away**: packet with `hop_start:3, hop_limit:1` → `setHopsAway(from, 2)`; `hop_start:0` → `setHopsAway(from, null)` (prior value preserved); scanner active + non-rotator device → `setHopsAway` NOT called.
 
 ## Out of scope
