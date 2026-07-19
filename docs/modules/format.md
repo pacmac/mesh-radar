@@ -1,7 +1,7 @@
 ---
 module: format
 source: src/format.js
-source_hash: fda551dca616e3c24813c85b7ac9f43eb3e4aac19a05c3dc09193423e321a1ab
+source_hash: c476c3a903f0da438dbe71d5ad17b7c52b058b1933f42df9742387455a52a1ed
 updated: 2026-07-18
 ---
 

@@ -105,11 +105,13 @@
            made the page needlessly long. value_grid and event_log keep the full
            width: they already lay out in internal columns, and a log needs the
            room. Single column below lg. -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <template x-for="section in nodeStatus.sections" :key="section.id">
-        <div class="card bg-base-100 shadow-sm border border-base-300"
+        <div class="card bg-base-100 shadow-sm border border-base-300 h-full"
              :class="section.kind !== 'series' && 'lg:col-span-2'">
-          <div class="card-body py-4 gap-3">
+          <!-- h-full + flex-col + the chart wrapper growing keeps two charts in
+               a row the SAME HEIGHT even when one carries an extra note line. -->
+          <div class="card-body py-4 gap-3 flex flex-col">
             <div class="flex items-baseline justify-between gap-3">
               <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50"
                   x-text="section.title"></h2>
@@ -192,8 +194,8 @@
             <!-- series — axis endpoints arrive pre-formatted, so the time axis
                  is visible without any browser date math -->
             <template x-if="section.kind === 'series'">
-              <div class="flex flex-col gap-1">
-                <div class="h-56"><canvas :id="'nodechart-' + section.id"></canvas></div>
+              <div class="flex flex-col gap-1 grow">
+                <div class="grow min-h-56"><canvas :id="'nodechart-' + section.id"></canvas></div>
                 <div class="flex justify-between text-xs text-base-content/50">
                   <span x-text="section.t_min_text"></span>
                   <span x-text="section.t_max_text"></span>

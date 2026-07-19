@@ -49,6 +49,31 @@ export function fmtTimestamp(ts) {
        + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+// Compact absolute stamp. "2026-07-19 07:08:22" is 19 characters of which the
+// reader usually needs four: the year is nearly always this year, and the date
+// is nearly always today. Drop what is implied by context, keep what is not.
+//
+//   today          -> "07:08"
+//   this year      -> "19 Jul 07:08"
+//   older          -> "19 Jul 25 07:08"
+//
+// `withSeconds` is for logs, where events seconds apart must stay
+// distinguishable (four MOTION events inside 31s would otherwise collapse to
+// the same label).
+export function fmtStamp(ts, { withSeconds = false, now = Math.floor(Date.now() / 1000) } = {}) {
+  if (!n(ts) || ts <= 0) return null;
+  const d = new Date(ts * 1000);
+  const t = new Date(now * 1000);
+  const p = x => String(x).padStart(2, '0');
+  const clock = `${p(d.getHours())}:${p(d.getMinutes())}` + (withSeconds ? `:${p(d.getSeconds())}` : '');
+  const sameDay = d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
+  if (sameDay) return clock;
+  const datePart = `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  return d.getFullYear() === t.getFullYear()
+    ? `${datePart} ${clock}`
+    : `${datePart} ${String(d.getFullYear()).slice(2)} ${clock}`;
+}
+
 // Chart x-axis tick label. The format follows the span being rendered — clock
 // time within a day, date + clock beyond it — so a 1 HR window is not cluttered
 // with repeated dates and a 72 HR window is not ambiguous.

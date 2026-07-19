@@ -17,7 +17,7 @@
 import { stmts } from './db.js';
 import {
   fmtVoltage, fmtPercent, fmtUtil, fmtTemp, fmtHumidity, fmtPressure,
-  fmtRssi, fmtSnr, fmtCount, fmtUptime, fmtTimestamp, fmtAgo, fmtAxisTick,
+  fmtRssi, fmtSnr, fmtCount, fmtUptime, fmtTimestamp, fmtStamp, fmtAgo, fmtAxisTick,
 } from './format.js';
 import { numToNodeId, signalQuality } from './utils.js';
 import { settingsSchema, validateSetting } from './node-settings.js';
@@ -156,7 +156,7 @@ function buildSeriesSection(id, title, rows, specs) {
   return {
     id, kind: 'series', title, series, axes,
     t_min: tMin, t_max: tMax,
-    t_min_text: fmtTimestamp(tMin), t_max_text: fmtTimestamp(tMax),
+    t_min_text: fmtStamp(tMin), t_max_text: fmtStamp(tMax),
     ticks: axisTicks(tMin, tMax),
   };
 }
@@ -210,7 +210,7 @@ function buildAppStateSection(id, title, row) {
   return {
     id, kind: 'value_grid', title, fields,
     editable: fields.some(f => f.edit),
-    observed_ts: row.ts, observed_text: fmtTimestamp(row.ts), observed_ago: fmtAgo(row.ts),
+    observed_ts: row.ts, observed_text: fmtStamp(row.ts), observed_ago: fmtAgo(row.ts),
   };
 }
 
@@ -232,7 +232,7 @@ function buildDetectionsSection(rows) {
       text = r.msg || r.raw;      // unknown type, or plain text from a stock node
     }
     return {
-      ts: r.ts, ts_text: fmtTimestamp(r.ts), ts_ago: fmtAgo(r.ts),
+      ts: r.ts, ts_text: fmtStamp(r.ts, { withSeconds: true }), ts_ago: fmtAgo(r.ts),
       label: r.type ?? null, text,
     };
   });
@@ -418,7 +418,7 @@ export function buildNodeStatus(num, windowHours) {
     short_name: src.short_name ?? node?.short_name ?? null,
     hw_model:   src.hw_model   ?? node?.hw_model   ?? null,
     last_heard: lastHeard == null ? null : {
-      raw: lastHeard, text: fmtTimestamp(lastHeard), ago: fmtAgo(lastHeard, now),
+      raw: lastHeard, text: fmtStamp(lastHeard), ago: fmtAgo(lastHeard, now),
     },
     // Every vital we hold — nothing withheld. An absent value omits its field:
     // API.md is explicit that channel_utilization is present only when the
