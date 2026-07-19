@@ -17,7 +17,7 @@ import { Router } from 'express';
 import { WebSocketServer } from 'ws';
 import { traceroute } from './traceroute.js';
 import { getRotatorAddress, getPrimaryMac } from './device-config.js';
-import { isListenerForMode, transmitterForMode } from './dash-mode.js';
+import { dashMode, isListenerForMode, transmitterForMode } from './dash-mode.js';
 import { listFavourites } from './db.js';
 import { log } from './log.js';
 
@@ -182,7 +182,19 @@ export function alignStart({ num }) {
   if (session) alignStop();
   notice = null;
   latest.clear();
-  session = { num, probes: 0, timer: setInterval(tick, ALIGN_INTERVAL_MS) };
+
+  // Force PASV for the duration. Alignment needs a STATIONARY home antenna: in
+  // ACTV the rotator is driven by active-tracker, so the home Yagi swings while
+  // the operator turns the remote one and the readings mean nothing. ACTV also
+  // sets rx:"primary", so the YAGI never listens and its curve stays empty.
+  // The previous mode is restored on stop.
+  const prevMode = dashMode.value;
+  if (prevMode !== 0) {
+    dashMode.set(0);
+    log.info('align', `mode ${prevMode} -> PASV for alignment`);
+  }
+
+  session = { num, probes: 0, prevMode, timer: setInterval(tick, ALIGN_INTERVAL_MS) };
   log.info('align', `started on !${Number(num).toString(16)}`);
   tick();                       // first sample immediately, not after 6 s
   broadcast(statusFrame());
@@ -192,6 +204,13 @@ export function alignStart({ num }) {
 export function alignStop() {
   if (!session) return { ok: true, state: 'applied' };
   clearInterval(session.timer);
+
+  // Put the dashboard back the way we found it.
+  if (session.prevMode !== undefined && session.prevMode !== dashMode.value) {
+    dashMode.set(session.prevMode);
+    log.info('align', `mode restored to ${session.prevMode}`);
+  }
+
   log.info('align', 'stopped');
   session = null;
   broadcast(statusFrame());

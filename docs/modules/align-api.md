@@ -1,7 +1,7 @@
 ---
 module: align-api
 source: src/align-api.js
-source_hash: 85297cd84245130e7d7566f25f69c181596c3b60c52990be0995e5563cdad49b
+source_hash: 888053378688c0e7bbbdb2baceb29cbefacc4fa686a7c242aaa7fa5447dd066e
 updated: 2026-07-19
 ---
 
@@ -118,6 +118,16 @@ set, and the `traceroute` event subscriptions. One session at a time, globally.
 - **Failures are broadcast, never swallowed.** Dispatch rejections and traceroute
   `'cancel'` push a server-side `notice` to every client, cleared when a sample
   lands. A silent failure is indistinguishable from a quiet mesh.
+- **START forces PASV; STOP restores the previous mode.** Alignment requires a
+  stationary home antenna. In ACTV the rotator is driven by `active-tracker`, so
+  the home Yagi swings while the operator turns the remote one — two variables,
+  and the readings become meaningless. ACTV also sets `rx: "primary"`, so the
+  YAGI is not a listener at all and its curve would stay permanently empty.
+  `alignStart()` records `dashMode.value` and calls `dashMode.set(0)`;
+  `alignStop()` restores what it recorded.
+- **No mode is hardcoded.** An earlier cut asked `isListenerForMode('pasv', …)`
+  while the system ran ACTV, and reported `yagi_listening: true` — a false
+  all-clear from the very check built to catch this.
 - **One align session at a time**, and it must not run concurrently with a
   competing trace of the same target — replies carry no request id, so two in
   flight cannot be attributed.
