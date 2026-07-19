@@ -211,6 +211,12 @@ function handleDetectionEvent(event, ts) {
 function handlePrivateAppState(event, ts) {
   const num = event.from_num;
   if (!num || !event.payload_b64) return;
+
+  // NOT YET routed through the transport plugin — see DECISIONS D7.
+  // The plugin's capability methods are uniformly async (they may do radio I/O),
+  // but this is the synchronous ingestion choke point: handleEvent() is
+  // `→ void` by contract. Awaiting here would make the whole persist path async,
+  // which is a change to ingestion ordering, not a refactor.
   let p = null;
   try {
     p = JSON.parse(Buffer.from(event.payload_b64, 'base64').toString('utf8'));

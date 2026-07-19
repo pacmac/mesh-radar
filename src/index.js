@@ -26,6 +26,7 @@ import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
 import geocodeRouter from './geocode.js';
 import { registerBridgeEvents } from './bridge-events.js';
+import { loadTransport } from './transport-plugin.js';
 import nodesApi from './nodes-api.js';
 import settingsApi from './settings-api.js';
 import { registerStartupHandlers } from './startup.js';
@@ -329,3 +330,9 @@ registerBridgeEvents(bridge);
 initLifecycle();
 
 registerStartupHandlers(bridge);
+
+// Optional alarm-transport plugin (portnums 256/260/261, chunked transfer).
+// Awaited so every request handler sees a settled capability set, but absence is
+// a normal state — this resolves to a null object and never rejects, so a box
+// with only stock Meshtastic nodes boots exactly as before.
+await loadTransport();
