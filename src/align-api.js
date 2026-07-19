@@ -28,13 +28,17 @@ const clients = new Set();
 // One session at a time, globally.
 let session = null;
 
-// Measured 2026-07-19: reply latency mean 16.1s, max 18.6s, ~75% land. So a ping
-// is given 30s before it is a miss; the two radios' copies of one pong are
-// gathered over a short window; burst pings fire just over that window apart so
-// each is a genuine separate attempt.
-const ALIGN_REPLY_TIMEOUT_MS = 30000;
+// Measured 2026-07-19: reply latency mean 16.1s, max 18.6s, ~75% land. The two
+// radios' copies of one pong are gathered over a short window; burst pings fire
+// just over that window apart so each is a genuine separate attempt.
+//
+// A burst resolves on ONE deadline sized to the reply latency, NOT by waiting out
+// each unanswered ping — otherwise a burst where some replies land and others
+// never do would sit "gathering" for the full per-ping timeout (~30s) before the
+// already-sufficient average is shown, and presses would 409 the whole time.
 const ALIGN_COLLECT_MS       = 1200;
 const BURST_SPACING_MS       = 1200;
+const BURST_REPLY_WINDOW_MS  = 20000;   // wait this long after the LAST send for replies
 const N_MIN = 1, N_MAX = 5, N_DEFAULT = 4;
 
 const clampN = (n) => Math.max(N_MIN, Math.min(N_MAX, Math.round(Number(n) || N_DEFAULT)));
@@ -135,8 +139,9 @@ async function sendPing(burst) {
   }
   if (!sent?.id) { burst.done += 1; maybeResolve(burst); return; }
 
-  const ping = { replyId: sent.id, payload: null, yagi: null, omni: null, collectTimer: null, missTimer: null, resolved: false };
-  ping.missTimer = setTimeout(() => finalizePing(burst, ping, /*missed*/true), ALIGN_REPLY_TIMEOUT_MS);
+  // No per-ping timeout: the burst-level deadline resolves everything at once. An
+  // unanswered ping simply never lands a sample; the deadline averages what did.
+  const ping = { replyId: sent.id, payload: null, yagi: null, omni: null, collectTimer: null, resolved: false };
   burst.pings.set(sent.id, ping);
 }
 
@@ -162,30 +167,31 @@ export function handleAlignPong(pkt, rxDevice) {
     else if (rxDevice === getPrimaryMac()) ping.omni = { rssi: pkt.rx_rssi ?? null, snr: pkt.rx_snr };
   }
   if (!ping.collectTimer) {
-    ping.collectTimer = setTimeout(() => finalizePing(session.burst, ping, false), ALIGN_COLLECT_MS);
+    ping.collectTimer = setTimeout(() => finalizePing(session.burst, ping), ALIGN_COLLECT_MS);
   }
 }
 
-function finalizePing(burst, ping, missed) {
-  if (!session || session.burst !== burst || ping.resolved) return;
+// A ping's two-radio gather window closed with a reply — record its sample.
+function finalizePing(burst, ping) {
+  if (!session || session.burst !== burst || ping.resolved || !ping.payload) return;
   ping.resolved = true;
   if (ping.collectTimer) clearTimeout(ping.collectTimer);
-  if (ping.missTimer) clearTimeout(ping.missTimer);
   burst.done += 1;
-  if (!missed && ping.payload) {
-    burst.samples.push({
-      quality: signalQuality(ping.payload.rssi, ping.payload.snr),
-      rssi: ping.payload.rssi, snr: ping.payload.snr,
-      yagi_q: ping.yagi ? signalQuality(ping.yagi.rssi, ping.yagi.snr) : null,
-      omni_q: ping.omni ? signalQuality(ping.omni.rssi, ping.omni.snr) : null,
-    });
-    burst.got = burst.samples.length;
-    session.warning = null;         // something landed — the link is alive
-  }
+  burst.samples.push({
+    quality: signalQuality(ping.payload.rssi, ping.payload.snr),
+    rssi: ping.payload.rssi, snr: ping.payload.snr,
+    yagi_q: ping.yagi ? signalQuality(ping.yagi.rssi, ping.yagi.snr) : null,
+    omni_q: ping.omni ? signalQuality(ping.omni.rssi, ping.omni.snr) : null,
+  });
+  burst.got = burst.samples.length;
+  session.warning = null;           // something landed — the link is alive
   pushView();                       // progress (got/of)
   maybeResolve(burst);
 }
 
+// Resolve early only when EVERY ping has resolved (all landed, or all sends
+// failed). The mixed case — some land, some never reply — is resolved by the
+// burst deadline instead, so it does not wait out the stragglers.
 function maybeResolve(burst) {
   if (burst.done >= burst.of) resolveBurst(burst);
 }
@@ -194,6 +200,8 @@ function maybeResolve(burst) {
 function resolveBurst(burst) {
   if (!session || session.burst !== burst) return;
   session.burst = null;
+  if (burst.deadlineTimer) clearTimeout(burst.deadlineTimer);
+  for (const p of burst.pings.values()) if (p.collectTimer) clearTimeout(p.collectTimer);
   const s = burst.samples;
 
   if (s.length === 0) {
@@ -230,9 +238,13 @@ async function alignPing(n) {
   if (session.burst) return { ok: false, error: 'burst in progress' };
   const of = clampN(n);
   session.nBurst = of;
-  const burst = { of, got: 0, done: 0, samples: [], pings: new Map() };
+  const burst = { of, got: 0, done: 0, samples: [], pings: new Map(), deadlineTimer: null };
   session.burst = burst;
   session.warning = null;
+  // One deadline covers the reply window for the LAST ping (sent (of-1) spacings
+  // in). At it, resolve with whatever landed — do not wait out unanswered pings.
+  burst.deadlineTimer = setTimeout(() => resolveBurst(burst),
+    (of - 1) * BURST_SPACING_MS + BURST_REPLY_WINDOW_MS);
   pushView();                       // button -> gathering 0/of
   // Fire the pings, spaced so each is a fresh attempt. Sends are awaited so the
   // burst can be cancelled by a stop between pings.
@@ -273,9 +285,9 @@ export function alignStart({ num }) {
 export function alignStop() {
   if (!session) return { ok: true, state: 'applied' };
   if (session.burst) {
+    if (session.burst.deadlineTimer) clearTimeout(session.burst.deadlineTimer);
     for (const p of session.burst.pings.values()) {
       if (p.collectTimer) clearTimeout(p.collectTimer);
-      if (p.missTimer) clearTimeout(p.missTimer);
     }
     session.burst = null;
   }

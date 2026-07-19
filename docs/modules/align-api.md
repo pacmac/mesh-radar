@@ -1,7 +1,7 @@
 ---
 module: align-api
 source: src/align-api.js
-source_hash: 49771e61ed71f9fd6a3c4c23655a87a5a9284eccea8ebf0bcb815adfee562c18
+source_hash: 7e3f5a7c9f169081b748f61148f316d429d65964ebef23bc3d630ca9c190a747
 updated: 2026-07-19
 ---
 
@@ -56,14 +56,23 @@ measurements, not guessed:
   request (the one thing the browser is allowed to originate).
 - The N pings fire **~1200 ms apart** (just over the collect window, so each is a
   genuine separate attempt), each correlated by `reply_id` and tagged to the burst.
-- Replies are gathered within each ping's `ALIGN_REPLY_TIMEOUT_MS` (30 s; measured
-  max latency 18.6 s). As each lands, the burst progress (`got`/`of`) is pushed so
-  the button can show "gathering 3/4".
-- When `got === of` **or** all per-ping windows have closed, the burst resolves:
-  one **averaged reading** is appended — mean quality, mean rssi/snr, **spread**
-  (max−min of the quality samples, the answer to "is a gap real or just noise"),
-  `got`/`of`, and per-radio RX quality averaged over the samples that each radio
-  heard (null when a radio heard none — an honest gap, not a zero).
+  As each lands, the progress (`got`/`of`) is pushed so the button shows "gathering 3/4".
+- **One burst-level deadline** resolves the whole burst, sized to the reply latency:
+  `(N−1)·BURST_SPACING_MS + BURST_REPLY_WINDOW_MS` (≈ 23.6 s for N=4; the reply
+  window is 20 s against a measured max latency of 18.6 s). There is **no per-ping
+  timeout** — an unanswered ping simply never lands a sample. This is deliberate:
+  a per-ping 30 s timeout made a mixed burst (some replies, some silent) sit
+  "gathering" for the full 30 s and reject presses with 409 the whole time, even
+  though the average was already available. The deadline resolves promptly with
+  whatever arrived. (Verified live 2026-07-19: a 1-of-4 burst resolved at 23.6 s,
+  not 30 s, and the next press was accepted immediately.)
+- The burst also resolves **early** the instant every ping has resolved — all
+  landed, or all sends failed (a send failure counts immediately, so an all-fail
+  burst warns fast rather than waiting the deadline).
+- On resolve, one **averaged reading** is appended — mean quality, mean rssi/snr,
+  **spread** (max−min of the quality samples, the answer to "is a gap real or just
+  noise"), `got`/`of`, and per-radio RX quality averaged over the samples each
+  radio heard (null when a radio heard none — an honest gap, not a zero).
 - `got === 0` appends no reading and sets a warning; the page re-enables PING.
 
 ## The view-model (the only thing the WS pushes)
