@@ -911,7 +911,17 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   }
 
   // -- Single upgrade router — exactly one WSS handles each request ----------
+  //
+  // Paths owned by another module are yielded, NOT 404'd. Node emits 'upgrade'
+  // to every listener, so the 404 fallthrough below would destroy a socket that
+  // a later listener is about to handle. Anything added here must be a path this
+  // relay does not serve.
+  const FOREIGN_UPGRADE = [/^\/align\/events(?:\?.*)?$/];   // align-api.js
+
   server.on('upgrade', (req, socket, head) => {
+    const rawUrl = req.url ?? '';
+    if (FOREIGN_UPGRADE.some(re => re.test(rawUrl))) return;   // not ours — leave the socket alone
+
     const deviceMatch = req.url?.match(/^\/(![0-9a-f]+)\/events(?:\?.*)?$/i);
     if (deviceMatch) {
       const nodeId = deviceMatch[1];

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- viewport-fit=cover + the safe-area padding below keeps the thumb-zone
+     controls clear of the home indicator on a notched phone. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Yagi Align</title>
+<script>
+  // Theme before paint, same rule as the dashboard — no flash on a bright mast.
+  (function () {
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', dark ? 'business' : 'corporate');
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+      document.documentElement.setAttribute('data-theme', e.matches ? 'business' : 'corporate');
+    });
+  })();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><text y=%22.9em%22 font-size=%2220%22>📡</text></svg>">
+<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script type="module" src="/app-align.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"></script>
+<style>
+  /* Field page, not a dashboard. Fixed viewport, nothing scrolls — everything
+     must be visible at a glance with one hand on an antenna. */
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .align-shell { display: flex; flex-direction: column; height: 100%; gap: .5rem; padding: .5rem; }
+  /* The headline has to be readable at arm's length in sunlight. */
+  .align-now { font-size: 3.25rem; line-height: 1; font-weight: 700; }
+  .align-chart { flex: 1 1 auto; min-height: 0; }
+  /* Thumb zone: big targets, bottom of the screen. */
+  .align-controls .btn { height: 3.5rem; font-size: 1.05rem; }
+</style>
+</head>
+<body class="bg-base-200" x-data="alignPage()" x-init="init()">
+<div class="align-shell">
+
+  <!-- ── header: target + liveness ─────────────────────────────────────── -->
+  <div class="flex items-center gap-2 shrink-0">
+    <select class="select select-sm select-bordered flex-1 font-display"
+            x-model.number="target" :disabled="running">
+      <template x-if="!targets.length">
+        <option value="">No favourites — star a node first</option>
+      </template>
+      <template x-for="t in targets" :key="t.num">
+        <option :value="t.num" x-text="t.label"></option>
+      </template>
+    </select>
+    <span class="badge badge-sm shrink-0"
+          :class="running ? (stale ? 'badge-error' : 'badge-success') : 'badge-ghost'"
+          x-text="running ? (stale ? 'STALE' : 'LIVE') : 'IDLE'"></span>
+  </div>
+
+  <!-- Server-supplied warning, e.g. PASV rx role excludes a radio. Pre-formatted
+       — the browser does not decide when this appears. -->
+  <template x-if="warning">
+    <div class="alert alert-warning py-2 text-xs shrink-0" x-text="warning"></div>
+  </template>
+
+  <!-- ── headline: current reading ─────────────────────────────────────── -->
+  <div class="card bg-base-100 shadow-sm shrink-0">
+    <div class="card-body py-3 items-center gap-0">
+      <div class="align-now font-mono tabular-nums"
+           :class="stale && 'opacity-40'"
+           x-text="cur.yagi ?? '—'"></div>
+      <div class="text-xs text-base-content/50 font-display tracking-wider uppercase">
+        YAGI dB<span x-show="cur.delta !== null"> · <span
+          class="font-mono" x-text="(cur.delta > 0 ? '+' : '') + cur.delta"></span> over omni</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── stat cards: best / worst / age ────────────────────────────────── -->
+  <div class="perf-stats-grid shrink-0">
+    <div class="stat bg-base-100 rounded-box">
+      <div class="stat-title">Best</div>
+      <div class="stat-value text-2xl font-mono tabular-nums" x-text="best ?? '—'"></div>
+      <div class="stat-desc">this session</div>
+    </div>
+    <div class="stat bg-base-100 rounded-box">
+      <div class="stat-title">Worst</div>
+      <div class="stat-value text-2xl font-mono tabular-nums" x-text="worst ?? '—'"></div>
+      <div class="stat-desc" x-text="spread !== null ? spread + ' dB spread' : 'scale'"></div>
+    </div>
+    <!-- AGE is the trust card: it is the only thing telling you the number above
+         is real. Derived from the newest SAMPLE, never from socket state. -->
+    <div class="stat bg-base-100 rounded-box">
+      <div class="stat-title">Age</div>
+      <div class="stat-value text-2xl font-mono tabular-nums"
+           :class="ageClass" x-text="ageSec !== null ? ageSec + 's' : '—'"></div>
+      <div class="stat-desc" x-text="running ? 'since last reply' : 'stopped'"></div>
+    </div>
+  </div>
+
+  <!-- ── chart: 5 min, yagi solid / omni dashed ────────────────────────── -->
+  <div class="card bg-base-100 shadow-sm align-chart">
+    <div class="card-body p-2">
+      <canvas id="alignChart"></canvas>
+    </div>
+  </div>
+
+  <!-- ── marks: time turned into numbered positions ────────────────────── -->
+  <div class="shrink-0 overflow-x-auto">
+    <div class="flex gap-1 min-h-8 items-center">
+      <template x-if="!marks.length">
+        <span class="text-xs text-base-content/40">Turn the antenna, wait for a reading, then MARK.</span>
+      </template>
+      <template x-for="m in marks" :key="m.n">
+        <span class="badge badge-lg font-mono tabular-nums shrink-0"
+              :class="m.n === bestMarkN ? 'badge-success' : 'badge-ghost'">
+          <span x-text="m.n"></span>&nbsp;<span x-text="m.yagi"></span><span
+            x-show="m.n === bestMarkN">&nbsp;★</span>
+        </span>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── controls: thumb zone ──────────────────────────────────────────── -->
+  <div class="align-controls grid grid-cols-2 gap-2 shrink-0">
+    <button class="btn btn-outline" :disabled="!running || cur.yagi === null" @click="mark()">MARK</button>
+    <button class="btn" :class="running ? 'btn-error' : 'btn-primary'"
+            :disabled="!running && !target"
+            @click="running ? stop() : start()"
+            x-text="running ? 'STOP' : 'START'"></button>
+  </div>
+
+</div>
+</body>
+</html>

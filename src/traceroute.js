@@ -202,6 +202,19 @@ class TracerouteManager extends EventEmitter {
       for (const cb of entry.callbacks) cb.resolve(result);
     }
 
+    // Per-radio attribution, added AFTER persistence so stored rows are
+    // unchanged. handlePacket() is called once per RECEIVING radio
+    // (bridge-events.js:98), so subscribers that care which antenna heard this
+    // reply — and how well — can now tell. Existing subscribers ignore the extra
+    // fields, so behaviour is unchanged for them.
+    //
+    // This is the only place the per-radio view exists: signal_history has no
+    // device column and its UNIQUE(num, packet_id) index discards the second
+    // radio's copy of the same packet.
+    result.rx_device = rxDevice ?? null;
+    result.rx_snr    = (typeof pkt.rx_snr  === 'number') ? pkt.rx_snr  : null;
+    result.rx_rssi   = (typeof pkt.rx_rssi === 'number') ? pkt.rx_rssi : null;
+
     // Notify all subscribers (ws-relay → route_discovered, passive-tracer → _busy release)
     this.emit('result', result);
   }

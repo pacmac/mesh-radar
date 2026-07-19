@@ -26,6 +26,7 @@ import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
 import geocodeRouter from './geocode.js';
 import { registerBridgeEvents } from './bridge-events.js';
+import alignRouter, { attachAlignWs } from './align-api.js';
 import { loadTransport } from './transport-plugin.js';
 import nodesApi from './nodes-api.js';
 import settingsApi from './settings-api.js';
@@ -182,6 +183,7 @@ app.get('/schema/bridge_config', (req, res) => res.json(BRIDGE_CONFIG_SCHEMA));
 app.use(createPerformanceRouter(broadcastAll));
 
 app.use('/geocode', geocodeRouter);
+app.use('/', alignRouter);   // /align/targets, /align/start, /align/stop
 
 app.use('/range_test', rangeTestRouter);
 
@@ -231,6 +233,8 @@ app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
 
 // Debug monitor — served directly, not through the SPA assembler
 app.get('/debug', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'debug.html')));
+// Mobile Yagi alignment page — standalone document, same precedent as /debug.
+app.get('/align', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'align.html')));
 
 // Catch-all: serve assembled index.html for any unrecognised path (SPA deep-links)
 app.use((req, res) => serveIndex(req, res));
@@ -238,6 +242,11 @@ app.use((req, res) => serveIndex(req, res));
 // -- server + WS relay -------------------------------------------------------
 const server = http.createServer(app);
 const wss = attachWsRelay(server, getRangeTimer);
+
+// Mobile Yagi alignment page. Same port, same server — /align and its own narrow
+// WS /align/events. Deliberately NOT on the dashboard's /events stream, which
+// pushes ~7.2 MB on connect; the alignment page needs ~11 KB for a whole session.
+attachAlignWs(server);
 
 function broadcastAll(msg) {
   const data = JSON.stringify(msg);
