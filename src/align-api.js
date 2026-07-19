@@ -1,18 +1,14 @@
 // Backend for the mobile Yagi alignment page.
 //
-// Serves /align, runs the align PING loop, and pushes a NARROW sample stream
-// over its own WebSocket. Same port, same server — just another route.
+// Serves /align and OWNS THE ENTIRE ALIGN VIEW-MODEL (docs/BROWSER_CONTRACT.md):
+// quality, labels, best, trend, bar heights, burst averaging — everything derived
+// is computed here and pushed complete over WS /align/events. The browser renders
+// it and decides nothing. Two phones on one session show identical screens.
 //
-// Why a separate feed rather than a filter on /events: the dashboard stream
-// pushes 7.2 MB on connect (measured 2026-07-19 — env_history 3.8 MB,
-// tilt_history 3.0 MB). This page needs ~150 bytes per sample. A filter would
-// not help: the bulk lands before any subscribe message could arrive.
-//
-// STIMULUS is `ping`, not traceroute (changed 2026-07-19). The alarm firmware is
-// ours and answers `@<suffix> ping` -> `pong`: upt, rssi, snr (mt-transport
-// API.md §3). The pong's payload rssi/snr is the DEVICE's reading of our ping —
-// measured at the antenna being turned — and is the primary alignment signal.
-// See docs/modules/align-api.md for the full rationale and the measurements.
+// STIMULUS is `ping` (the alarm firmware answers `@<suffix> ping` -> pong with
+// rssi/snr — the device's own reading of our ping, at the antenna being turned).
+// Each press fires a BURST of N pings that are AVERAGED into one reading, because
+// a single ping jitters at a fixed position. See docs/modules/align-api.md.
 
 import { Router } from 'express';
 import { WebSocketServer } from 'ws';
@@ -21,6 +17,7 @@ import { dashMode } from './dash-mode.js';
 import { resolveCommandChannel } from './node-settings.js';
 import { getDeviceChannelsByNodeId } from './ws-relay.js';
 import { listFavourites } from './db.js';
+import { signalQuality } from './utils.js';
 import { log } from './log.js';
 
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
@@ -29,27 +26,31 @@ const router = Router();
 const clients = new Set();
 
 // One session at a time, globally.
-let session = null;   // { num, suffix, probes, prevMode, gatewayNodeId, channel, pending }
+let session = null;
 
-// Pings are NOT continuous — the operator COMMANDS each one (Peter, 2026-07-19):
-// point the antenna, press PING, read the result, point again. So there is no
-// loop and no interval. Each press fires exactly one ping. Correlation is by
-// reply_id, so a slow reply still matches its own ping.
-//
-// Measured 2026-07-19: reply latency mean 16.1s (min 11.9, max 18.6), ~75% reply
-// rate. So a ping is given 30s before it is declared a miss.
+// Measured 2026-07-19: reply latency mean 16.1s, max 18.6s, ~75% land. So a ping
+// is given 30s before it is a miss; the two radios' copies of one pong are
+// gathered over a short window; burst pings fire just over that window apart so
+// each is a genuine separate attempt.
 const ALIGN_REPLY_TIMEOUT_MS = 30000;
-// Both radios hear one pong a fraction apart, each as its own 'packet' event with
-// the same reply_id. Collect for a short window after the first, then emit ONE
-// sample carrying both radios' envelope readings.
 const ALIGN_COLLECT_MS       = 1200;
+const BURST_SPACING_MS       = 1200;
+const N_MIN = 1, N_MAX = 5, N_DEFAULT = 4;
 
-const round1 = (v) => (typeof v === 'number' && Number.isFinite(v))
-  ? Math.round(v * 10) / 10 : null;
-
-// The 4-hex suffix of a node id is the safe command target: derived from the id,
-// it can never drift, unlike a user-editable shortName (Peter, 2026-07-19).
+const clampN = (n) => Math.max(N_MIN, Math.min(N_MAX, Math.round(Number(n) || N_DEFAULT)));
+const round1 = (v) => (typeof v === 'number' && Number.isFinite(v)) ? Math.round(v * 10) / 10 : null;
+const mean   = (a) => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+const sleep  = (ms) => new Promise(r => setTimeout(r, ms));
 const hexSuffix = (num) => (Number(num) >>> 0).toString(16).padStart(8, '0').slice(-4);
+
+// Quality band → label + semantic colour. Bands per node-status.js.
+function qualityBand(q) {
+  if (q == null)  return { label: '—',         cls: 'base-content/30' };
+  if (q >= 76)    return { label: 'Excellent', cls: 'success' };
+  if (q >= 51)    return { label: 'Good',      cls: 'success' };
+  if (q >= 26)    return { label: 'Fair',      cls: 'warning' };
+  return            { label: 'Poor',      cls: 'error' };
+}
 
 function broadcast(obj) {
   const s = JSON.stringify(obj);
@@ -58,181 +59,233 @@ function broadcast(obj) {
   }
 }
 
-// Transient problems the operator must SEE. Held on the server so every client
-// shows the same thing — a second phone must not disagree with the first.
-let notice = null;
+// ── the view-model — the ONLY thing the WS pushes ────────────────────────────
+// Built fresh on every change: all derived state (best, trend, bar height,
+// current) is computed here, never in the browser.
+function computeView() {
+  if (!session) {
+    return { kind: 'align', running: false, target: null, tx: null, channel: null,
+             nBurst: N_DEFAULT, burst: null, warning: null, best: null, readings: [] };
+  }
+  const rs = session.readings;
+  const qualities = rs.map(r => r.quality);
+  let lo = qualities.length ? Math.min(...qualities) : 0;
+  let hi = qualities.length ? Math.max(...qualities) : 100;
+  if (hi - lo < 20) { const m = (hi + lo) / 2; lo = m - 10; hi = m + 10; }  // don't flatten
+  const barPct = (q) => Math.max(8, Math.min(100, Math.round(((q - lo) / (hi - lo)) * 100)));
 
-function statusFrame() {
+  const bestN = rs.length ? rs.reduce((a, b) => (b.quality > a.quality ? b : a)).n : null;
+
+  const readings = rs.map((r, i) => {
+    const prev = i > 0 ? rs[i - 1] : null;
+    const delta = prev ? r.quality - prev.quality : null;
+    return {
+      ...r,
+      barPct: barPct(r.quality),
+      isBest: r.n === bestN,
+      isCurrent: i === rs.length - 1,
+      trendDir: delta === null ? null : delta > 1 ? 'up' : delta < -1 ? 'down' : 'same',
+      trendDelta: delta === null ? null : Math.round(delta),
+    };
+  });
+
+  // The headline: the current reading plus its relationship to the best, both
+  // computed here so the browser only prints them.
+  let current = null;
+  if (readings.length) {
+    const c = readings[readings.length - 1];
+    const bestQ = rs.reduce((a, b) => (b.quality > a.quality ? b : a)).quality;
+    // A reading that TIES the best is at the best — say "BEST YET", not "−0 below".
+    const atBest = c.quality >= bestQ;
+    current = { ...c, isBest: atBest, gapToBest: Math.max(0, bestQ - c.quality), bestN, bestAgo: c.n - bestN };
+  }
+
   return {
-    kind: 'status',
-    running: !!session,
-    target: session?.num ?? null,
-    // Which home radio transmits fixes what dev_rssi means (the device's reading
-    // of THAT radio). Surface it so the reading is never ambiguous.
-    tx: session?.gatewayNodeId ?? null,
-    channel: session?.channel ?? null,
-    warning: notice,
+    kind: 'align',
+    running: true,
+    target: session.num,
+    tx: session.txLabel,
+    channel: session.channel,
+    nBurst: session.nBurst,
+    burst: session.burst ? { active: true, got: session.burst.got, of: session.burst.of } : null,
+    warning: session.warning,
+    best: bestN === null ? null : { n: bestN },
+    current,
+    readings,
   };
 }
 
-function pushStatus(msg) {
-  notice = msg;
-  broadcast(statusFrame());
-}
+function pushView() { broadcast(computeView()); }
 
-function clearNotice() {
-  if (notice !== null) { notice = null; broadcast(statusFrame()); }
-}
-
-// ── one commanded ping ───────────────────────────────────────────────────────
-// Fires exactly ONE ping. Returns { ok, n } or { ok:false, error }. The reply (or
-// a miss) arrives asynchronously over the WS as a sample / miss frame.
-async function alignPing() {
-  if (!session) return { ok: false, error: 'no session' };
-
-  session.probes += 1;
-  const n = session.probes;
-  broadcast({ kind: 'probe', n, at: Math.floor(Date.now() / 1000) });
-
+// ── one ping within a burst ──────────────────────────────────────────────────
+async function sendPing(burst) {
+  if (!session || session.burst !== burst) return;   // burst cancelled
   let sent;
   try {
     const r = await fetch(`${BRIDGE_URL}/${session.gatewayNodeId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: `@${session.suffix} ping`, channel: session.channel }),
     });
     if (!r.ok) throw new Error(`gateway ${r.status}`);
     sent = await r.json();
   } catch (e) {
-    broadcast({ kind: 'miss', n, reason: `Send failed: ${e.message}` });
-    return { ok: false, error: e.message };
+    burst.done += 1;                 // a ping that never left counts as resolved
+    maybeResolve(burst);
+    return;
   }
-  if (!sent?.id) {
-    broadcast({ kind: 'miss', n, reason: 'gateway returned no packet id' });
-    return { ok: false, error: 'no packet id' };
-  }
+  if (!sent?.id) { burst.done += 1; maybeResolve(burst); return; }
 
-  // reply_id on the pong will equal this packet id (API.md §3). A per-ping timer
-  // declares a miss if no pong lands — the page needs to re-enable the button
-  // and say so, rather than wait forever on a silent link.
-  const entry = { sentAt: Date.now(), n, radios: new Map(), payload: null, emitted: false, collectTimer: null };
-  entry.missTimer = setTimeout(() => {
-    if (session?.pending.get(sent.id) === entry && !entry.emitted) {
-      session.pending.delete(sent.id);
-      broadcast({ kind: 'miss', n, reason: 'No reply — try again.' });
-    }
-  }, ALIGN_REPLY_TIMEOUT_MS);
-  session.pending.set(sent.id, entry);
-  return { ok: true, n };
+  const ping = { replyId: sent.id, payload: null, yagi: null, omni: null, collectTimer: null, missTimer: null, resolved: false };
+  ping.missTimer = setTimeout(() => finalizePing(burst, ping, /*missed*/true), ALIGN_REPLY_TIMEOUT_MS);
+  burst.pings.set(sent.id, ping);
 }
 
-// Called from bridge-events for every TEXT_MESSAGE_APP reply carrying a
-// reply_id. No-op unless it matches a pending ping of the active session, so
-// routing every reply here is free.
+// A pong arrives once per RECEIVING radio; gather both copies of one ping over a
+// short window, then finalize it into the burst.
 export function handleAlignPong(pkt, rxDevice) {
-  if (!session) return;
+  if (!session?.burst) return;
   const replyId = pkt?.decoded?.reply_id;
   if (!replyId) return;
-  const pending = session.pending.get(replyId);
-  if (!pending) return;   // not ours, or already resolved
+  const ping = session.burst.pings.get(replyId);
+  if (!ping || ping.resolved) return;
 
   let payload = null;
   try {
     const text = pkt.decoded.payload ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8') : '';
     payload = JSON.parse(text);
-  } catch { /* not JSON — ignore */ }
+  } catch { /* not JSON */ }
   if (!payload || payload.type !== 'pong') return;
 
-  clearNotice();
-  if (pending.missTimer) { clearTimeout(pending.missTimer); pending.missTimer = null; }
-  pending.payload = payload;          // device's own rssi/snr (identical per radio)
-  // Per-radio envelope: THIS radio's reading of the device's transmission.
-  if (rxDevice && typeof pkt.rx_snr === 'number') {
-    pending.radios.set(rxDevice, { snr: pkt.rx_snr, rssi: pkt.rx_rssi ?? null });
+  ping.payload = payload;
+  if (typeof pkt.rx_snr === 'number') {
+    if (rxDevice === getRotatorAddress()) ping.yagi = { rssi: pkt.rx_rssi ?? null, snr: pkt.rx_snr };
+    else if (rxDevice === getPrimaryMac()) ping.omni = { rssi: pkt.rx_rssi ?? null, snr: pkt.rx_snr };
   }
-
-  // First matching event opens a short collection window for the other radio.
-  if (!pending.collectTimer) {
-    pending.collectTimer = setTimeout(() => emitSample(replyId), ALIGN_COLLECT_MS);
+  if (!ping.collectTimer) {
+    ping.collectTimer = setTimeout(() => finalizePing(session.burst, ping, false), ALIGN_COLLECT_MS);
   }
 }
 
-function emitSample(replyId) {
-  if (!session) return;
-  const p = session.pending.get(replyId);
-  if (!p || p.emitted) return;
-  p.emitted = true;
-  session.pending.delete(replyId);
+function finalizePing(burst, ping, missed) {
+  if (!session || session.burst !== burst || ping.resolved) return;
+  ping.resolved = true;
+  if (ping.collectTimer) clearTimeout(ping.collectTimer);
+  if (ping.missTimer) clearTimeout(ping.missTimer);
+  burst.done += 1;
+  if (!missed && ping.payload) {
+    burst.samples.push({
+      quality: signalQuality(ping.payload.rssi, ping.payload.snr),
+      rssi: ping.payload.rssi, snr: ping.payload.snr,
+      yagi_q: ping.yagi ? signalQuality(ping.yagi.rssi, ping.yagi.snr) : null,
+      omni_q: ping.omni ? signalQuality(ping.omni.rssi, ping.omni.snr) : null,
+    });
+    burst.got = burst.samples.length;
+    session.warning = null;         // something landed — the link is alive
+  }
+  pushView();                       // progress (got/of)
+  maybeResolve(burst);
+}
 
-  const envSnr = (mac) => {
-    const e = mac ? p.radios.get(mac) : null;
-    return e ? round1(e.snr) : null;
-  };
-  const yagi = envSnr(getRotatorAddress());
-  const omni = envSnr(getPrimaryMac());
+function maybeResolve(burst) {
+  if (burst.done >= burst.of) resolveBurst(burst);
+}
 
-  broadcast({
-    t: Math.floor(p.sentAt / 1000),
-    n: p.n,
-    // PRIMARY: the device's reading of our ping, at the antenna being turned.
-    dev_rssi: round1(p.payload?.rssi),
-    dev_snr:  round1(p.payload?.snr),
-    // SECONDARY: our radios' reading of the device (per-radio envelope).
-    yagi, omni,
-    delta: (yagi !== null && omni !== null) ? round1(yagi - omni) : null,
+// Average the landed samples into ONE reading.
+function resolveBurst(burst) {
+  if (!session || session.burst !== burst) return;
+  session.burst = null;
+  const s = burst.samples;
+
+  if (s.length === 0) {
+    session.warning = 'No replies — try again.';
+    pushView();
+    return;
+  }
+
+  const qs = s.map(x => x.quality);
+  const yq = s.map(x => x.yagi_q).filter(v => v != null);
+  const oq = s.map(x => x.omni_q).filter(v => v != null);
+  const q = Math.round(mean(qs));
+  const band = qualityBand(q);
+
+  session.readings.push({
+    n: ++session.readingCount,
+    quality: q,
+    label: band.label,
+    cls: band.cls,
+    spread: Math.round(Math.max(...qs) - Math.min(...qs)),
+    got: s.length,
+    of: burst.of,
+    rssi: Math.round(mean(s.map(x => x.rssi))),
+    snr: round1(mean(s.map(x => x.snr))),
+    yagi_q: yq.length ? Math.round(mean(yq)) : null,
+    omni_q: oq.length ? Math.round(mean(oq)) : null,
   });
+  pushView();
+}
+
+// ── commanded burst ──────────────────────────────────────────────────────────
+async function alignPing(n) {
+  if (!session) return { ok: false, error: 'no session' };
+  if (session.burst) return { ok: false, error: 'burst in progress' };
+  const of = clampN(n);
+  session.nBurst = of;
+  const burst = { of, got: 0, done: 0, samples: [], pings: new Map() };
+  session.burst = burst;
+  session.warning = null;
+  pushView();                       // button -> gathering 0/of
+  // Fire the pings, spaced so each is a fresh attempt. Sends are awaited so the
+  // burst can be cancelled by a stop between pings.
+  for (let i = 0; i < of; i++) {
+    if (session?.burst !== burst) return { ok: true, of };   // cancelled
+    await sendPing(burst);
+    if (i < of - 1) await sleep(BURST_SPACING_MS);
+  }
+  return { ok: true, of };
 }
 
 export function alignStart({ num }) {
   if (session) alignStop();
-  notice = null;
 
-  // Send from the primary radio (OMNI). It is the reliable transmitter, and it
-  // fixes what dev_rssi means for the whole session — it must not change
-  // mid-session or the curve loses its meaning.
   const gatewayNodeId = resolvePrimaryNodeId();
   if (!gatewayNodeId) return { ok: false, state: 'invalid', error: 'no gateway radio available to send from' };
-
-  // Channel resolution is the node-settings SSOT: it refuses index 0 (PRIMARY)
-  // by construction and resolves "Private" by name. Never reimplemented here.
   const ch = resolveCommandChannel(getDeviceChannelsByNodeId(gatewayNodeId));
   if (!ch.ok) return { ok: false, state: 'invalid', error: ch.error };
 
-  // Force PASV for the duration. In ACTV the rotator is driven by active-tracker,
-  // so the home Yagi swings while the operator turns the remote one — that
-  // perturbs the secondary envelope curves. Previous mode restored on stop.
+  // Label the TX radio for the view. Primary is the OMNI; the YAGI is unreliable
+  // since its WiFi→BLE swap, so it is not used to transmit.
+  const primaryMac = getPrimaryMac();
+  const txLabel = (primaryMac && primaryMac === getRotatorAddress()) ? 'YAGI' : 'OMNI';
+
+  // Force PASV for the session (restored on stop): ACTV swings the home Yagi.
   const prevMode = dashMode.value;
-  if (prevMode !== 0) {
-    dashMode.set(0);
-    log.info('align', `mode ${prevMode} -> PASV for alignment`);
-  }
+  if (prevMode !== 0) { dashMode.set(0); log.info('align', `mode ${prevMode} -> PASV for alignment`); }
 
   session = {
-    num, suffix: hexSuffix(num), probes: 0, prevMode,
-    gatewayNodeId, channel: ch.channel,
-    pending: new Map(),
+    num, suffix: hexSuffix(num), gatewayNodeId, channel: ch.channel, txLabel,
+    prevMode, nBurst: N_DEFAULT, readingCount: 0, readings: [], burst: null, warning: null,
   };
-  log.info('align', `session on !${(Number(num) >>> 0).toString(16)} (@${session.suffix}) via ${gatewayNodeId} ch${ch.channel}`);
-  broadcast(statusFrame());
+  log.info('align', `session on !${(Number(num) >>> 0).toString(16)} (@${session.suffix}) via ${gatewayNodeId} (${txLabel}) ch${ch.channel}`);
+  pushView();
   return { ok: true, state: 'applied' };
 }
 
 export function alignStop() {
   if (!session) return { ok: true, state: 'applied' };
-  for (const p of session.pending.values()) {
-    if (p.collectTimer) clearTimeout(p.collectTimer);
-    if (p.missTimer)    clearTimeout(p.missTimer);
+  if (session.burst) {
+    for (const p of session.burst.pings.values()) {
+      if (p.collectTimer) clearTimeout(p.collectTimer);
+      if (p.missTimer) clearTimeout(p.missTimer);
+    }
+    session.burst = null;
   }
-
-  // Put the dashboard back the way we found it.
   if (session.prevMode !== undefined && session.prevMode !== dashMode.value) {
     dashMode.set(session.prevMode);
     log.info('align', `mode restored to ${session.prevMode}`);
   }
-
   log.info('align', 'stopped');
   session = null;
-  broadcast(statusFrame());
+  broadcast(computeView());   // running:false to everyone
   return { ok: true, state: 'applied' };
 }
 
@@ -242,24 +295,17 @@ router.get('/align/targets', (_req, res) => {
   res.json(rows.map(r => ({ num: r.num, label: r.label })));
 });
 
-router.post('/align/start', (req, res) => {
-  const num = Number(req.body?.num);
-  if (!Number.isFinite(num)) return res.status(400).json({ error: 'num required' });
-  const result = alignStart({ num });
-  res.status(result.ok ? 200 : 400).json(result);
-});
-
-// One commanded ping. Opens (or re-targets) the session first, so a single button
-// press is all the operator needs — no separate "start".
+// One press = one burst. Opens/re-targets the session, then fires N pings.
 router.post('/align/ping', async (req, res) => {
   const num = Number(req.body?.num);
+  const n = req.body?.n;
   if (!Number.isFinite(num)) return res.status(400).json({ error: 'num required' });
   if (!session || session.num !== num) {
     const started = alignStart({ num });
     if (!started.ok) return res.status(400).json(started);
   }
-  const result = await alignPing();
-  res.status(result.ok ? 200 : 502).json(result);
+  const result = await alignPing(n);
+  res.status(result.ok ? 200 : 409).json(result);
 });
 
 router.post('/align/stop', (_req, res) => res.json(alignStop()));
@@ -271,11 +317,9 @@ export function attachAlignWs(server) {
     if (!req.url?.startsWith('/align/events')) return;   // /events is not ours
     wss.handleUpgrade(req, socket, head, (ws) => {
       clients.add(ws);
-      ws.send(JSON.stringify(statusFrame()));
+      ws.send(JSON.stringify(computeView()));            // full state on connect
       ws.on('close', () => {
         clients.delete(ws);
-        // Dead-man stop. A phone that locks, loses signal or navigates away must
-        // not leave the mesh transmitting indefinitely on a shared channel.
         if (clients.size === 0 && session) {
           log.info('align', 'last client gone — stopping');
           alignStop();

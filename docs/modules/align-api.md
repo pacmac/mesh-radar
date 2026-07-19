@@ -1,7 +1,7 @@
 ---
 module: align-api
 source: src/align-api.js
-source_hash: e3646f26590312ab45801cbc3119ab68586c7900583882b82a8cb5aabc75b2d1
+source_hash: 49771e61ed71f9fd6a3c4c23655a87a5a9284eccea8ebf0bcb815adfee562c18
 updated: 2026-07-19
 ---
 
@@ -9,218 +9,155 @@ updated: 2026-07-19
 
 ## Purpose
 
-Backend for the mobile Yagi alignment page: serves `/align`, runs the align
-**ping** loop, and pushes a **narrow** sample stream over its own WebSocket.
+Backend for the mobile Yagi alignment page. Serves `/align`, runs the align
+**ping** flow, and — per `docs/BROWSER_CONTRACT.md` — **owns the entire align
+session view-model**, pushing it complete over its own WebSocket. The browser
+renders it and computes nothing.
 
-Exists as a separate surface because the dashboard's `/events` pushes **7.2 MB**
-on connect (measured 2026-07-19: `env_history` 3.8 MB, `tilt_history` 3.0 MB).
-The alignment page needs ~150 bytes per sample. A subscription filter on
-`/events` would not help: the bulk lands before any subscribe message arrives.
+Separate surface because the dashboard `/events` pushes 7.2 MB on connect; this
+page needs a few hundred bytes per update.
 
-## Stimulus: `ping`, not traceroute (changed 2026-07-19)
+## Stimulus: `ping` (see history below)
 
-The alarm firmware is ours, so it answers a direct command. `docs/mt-transport/API.md`
-§3: `ping` → `pong`: `upt, rssi, snr`. This replaces traceroute entirely.
+The alarm firmware is ours and answers `@<4-hex-suffix> ping` → `pong`: `upt,
+rssi, snr` (`docs/mt-transport/API.md` §3). Addressing is mandatory (a bare
+`@verb` is silently ignored); the target is always the node-id **hex suffix**,
+never the editable shortName (Peter). `@*` is forbidden; never channel 0 —
+`resolveCommandChannel()` (node-settings) resolves "Private" and refuses 0.
 
-Traceroute was abandoned because it is strictly worse for this job:
+The pong **payload** `rssi`/`snr` is the DEVICE's reading of our ping, measured at
+the antenna being turned — the primary signal, and the most stable source
+(sd 0.16 dB). The per-radio **envelope** (`pkt.rx_snr`/`rx_rssi`, one event per
+receiving radio) is OUR antennas hearing the device back — the secondary readout.
+Per-radio data exists only on the live event path (`signal_history` is
+`UNIQUE(num, packet_id)` with no device column, so it discards the second radio's
+copy). The pong arrives as two events; align consumes `type:'packet'` only (it
+alone carries both `reply_id` and per-radio signal).
 
-| | traceroute | `ping` |
-|---|---|---|
-| reply correlation | **none** — no request id | `reply_id` = our packet id |
-| concurrent sessions | impossible (positional attribution only) | safe |
-| signal at the far end | not available | `rssi`/`snr` in the payload |
-| depends on dash-mode tx roles | yes | no |
+## Reading = signal QUALITY, not raw dB
 
-The missing request id is why the old design needed "one session at a time".
-That constraint is gone.
+Raw rssi/snr are meaningless to the operator (Peter). The displayed value is
+**`signalQuality(rssi, snr)`** — the same 0–100 used across the node cards,
+messages and node-status — computed **here**, never in the browser. The band
+**label** (Excellent ≥76 / Good ≥51 / Fair ≥26 / Poor) and its semantic colour
+class are computed here too (bands per `node-status.js`). Raw dB rides along in the
+view-model for the record but the page leads with quality.
 
-### Command grammar — addressing is MANDATORY
+## Commanded bursts, not a timer
 
+Pings are commanded — the operator points the antenna, presses PING. A reply takes
+~16 s, so this is a discrete spot measurement, not a swept meter.
+
+**Each press fires a BURST of N pings** because a single ping jitters at a fixed
+position (~0.7 dB measurement noise); averaging N cuts it by √N. Decided from the
+measurements, not guessed:
+
+- **N** is a page control, **1–5, default 4** — raw user input, sent with the
+  request (the one thing the browser is allowed to originate).
+- The N pings fire **~1200 ms apart** (just over the collect window, so each is a
+  genuine separate attempt), each correlated by `reply_id` and tagged to the burst.
+- Replies are gathered within each ping's `ALIGN_REPLY_TIMEOUT_MS` (30 s; measured
+  max latency 18.6 s). As each lands, the burst progress (`got`/`of`) is pushed so
+  the button can show "gathering 3/4".
+- When `got === of` **or** all per-ping windows have closed, the burst resolves:
+  one **averaged reading** is appended — mean quality, mean rssi/snr, **spread**
+  (max−min of the quality samples, the answer to "is a gap real or just noise"),
+  `got`/`of`, and per-radio RX quality averaged over the samples that each radio
+  heard (null when a radio heard none — an honest gap, not a zero).
+- `got === 0` appends no reading and sets a warning; the page re-enables PING.
+
+## The view-model (the only thing the WS pushes)
+
+One frame, broadcast complete on every change (connect, burst start, each reply,
+burst resolve, stop). The browser holds only the last one it was told.
+
+```js
+{
+  kind: 'align',
+  running, target, channel,
+  tx: 'OMNI',                       // which home radio transmits (label)
+  nBurst: 4,                        // configured burst size (echo of the control)
+  burst: { active: true, got: 2, of: 4 } | null,   // in-flight progress
+  warning: null,
+  best: { n: 8 } | null,
+  current: { ...currentReading, gapToBest, bestN, bestAgo } | null,  // the headline,
+                                    // last reading + its relationship to the best
+  readings: [ {
+    n,                              // reading index + on-screen label
+    quality, label, cls,           // averaged 0–100, band label, semantic class
+    spread,                        // ± quality points across the burst
+    got, of,                       // samples averaged / attempted
+    rssi, snr,                     // averaged raw, small/for the record
+    yagi_q, omni_q,                // per-radio RX quality, null if not heard
+    barPct,                        // session-relative bar height 0–100
+    isBest, isCurrent,
+    trendDir: 'up'|'down'|'same',  // vs the previous reading
+    trendDelta                     // signed quality points vs previous
+  } ]
+}
 ```
-@<target> ping        target = <shortName> | <4-hex suffix> | *
-```
 
-`API.md` §3: there is **no** unaddressed form — a bare `@verb` is **silently
-ignored**. Silent is the hazard: an unaddressed ping is indistinguishable from a
-dead link.
+- **`barPct` is computed here** — session-relative scaling (min…max of the
+  readings, padded, floored at 8) is a decision, not formatting, so it belongs to
+  Node. The browser only sets a height from the number it is given.
+- **`isBest` / `isCurrent` / `trend*` are computed here.** Recomputed across the
+  whole list whenever a reading is appended (a new best re-flags the old one, new
+  min/max rescale every bar).
 
-**The target is always the 4-hex suffix of the node id, never the shortName.**
-Peter, 2026-07-19: *"hex suffix is safer, it will never change."* A shortName is
-user-editable and a rename would silently break every command.
+## Session lifecycle
 
-    HOME !987ab80f → "@b80f ping"        DEPL !8cee336b → "@336b ping"
-
-`@*` is forbidden here — it would make every unit reply to a repeating loop.
-These units are `trial-fw-v3` (post-addressing); the legacy bare-`@verb`
-fallback does not apply.
-
-## The two signal sources — semantics determined empirically
-
-One ping, both radios heard the reply (2026-07-19):
-
-```
-OMNI envelope : rx_snr 5.25  rx_rssi -81
-YAGI envelope : rx_snr 0.75  rx_rssi -108
-payload       : {"type":"pong","upt":1912,"rssi":-85,"snr":5.5}   ← IDENTICAL in both
-```
-
-The payload is **byte-identical in both receiving radios' events**, which proves
-it is carried inside the message: it is the **device's** reading of **our** ping
-(downlink). The envelope differs per radio: **our** reading of the **device**
-(uplink).
-
-### PRIMARY SIGNAL = the pong payload
-
-Measured over 8 pings to DEPL via the OMNI:
-
-| source | stability |
-|---|---|
-| **device `rssi`** | mean −85.2, **sd 0.37 dB** |
-| **device `snr`** | mean 6.0, **sd 0.16 dB** |
-
-Chosen because:
-
-1. It is the most stable source measured, by a wide margin.
-2. It is measured **at the antenna being turned** — the direct measure of
-   whether the remote Yagi is aimed at us. The envelope measures the far end.
-3. It is **immune to the YAGI brownout**, which currently corrupts our own RX
-   readings — the 27 dB envelope gap above is not trustworthy while that radio
-   faults.
-4. One number per ping: no per-radio attribution problem at all.
-
-**Why not read it from the existing capture path** (`signal_history`): that path
-cannot supply a per-radio view and never could. `db.js:172` is
-`UNIQUE(num, packet_id)` with **no `device` column**, so when both radios hear
-one packet the second row is **discarded** — reading it back yields one
-arbitrary radio with no way to know which. Per-radio data exists **only** on the
-live event path.
-
-The per-radio envelope remains a secondary curve, taken from the live `packet`
-event, **never from storage**.
-
-## The pong arrives as TWO events — consume exactly one
-
-| event | `reply_id` | signal location |
-|---|---|---|
-| `type: 'packet'` | **present** | `ev.data.packet.rx_snr` / `.rx_rssi` |
-| `type: 'text'` | `null` | envelope `ev.rx_snr` / `.rx_rssi` |
-
-`packet` is the only event carrying **both** correlation and per-radio signal.
-Align consumes `packet` only. Consuming both double-counts every sample.
-
-## Responsibilities
-
-- Serve `public/align.html` at `GET /align`
-- `GET /align/targets` — favourites, for the selector
-- `WS /align/events` — sample / probe / miss / status frames, nothing else
-- Fire **one commanded ping per request**; correlate the reply by `reply_id`
-- Own session open/stop, including a dead-man stop
-
-## Commanded, not continuous
-
-Pings are **not** on a timer. The operator points the antenna, presses PING, reads
-the result, points again (Peter, 2026-07-19). Each `POST /align/ping` fires exactly
-one ping; there is no interval loop. This matches the physics: a reply takes ~16 s,
-so a "live meter you sweep" is impossible — every reading is a deliberate spot
-measurement at one antenna position.
-
-`POST /align/ping` opens (or re-targets) the session itself, so a single button is
-the whole interaction — no separate start step. `alignStart` still exists (forces
-PASV, resolves the tx radio + channel, opens the session) but is called *by* the
-ping route rather than by the operator.
-
-A per-ping timer declares a **miss** after `ALIGN_REPLY_TIMEOUT_MS` (30 s; measured
-latency is 16 s mean, 18.6 s max). The miss is broadcast so the page can re-enable
-the button and say "no reply — try again", rather than hang on a silent link.
+- `POST /align/ping { num, n }` opens/re-targets the session (forces PASV, resolves
+  tx radio + Private channel), then fires a burst of `n`. One button, no separate
+  start.
+- `alignStart` forces PASV (restored on stop); ACTV would swing the home Yagi and
+  perturb the per-radio readout.
+- Dead-man stop when the last WS client disconnects.
+- **Known foot-gun (bug backlog #29):** the session is in-memory; a process
+  reload/crash mid-session strands dash mode at PASV. Out of scope here.
 
 ## Dependencies
 
-- `node-settings.js` — `resolveCommandChannel()`. **Reused, not reimplemented**:
-  it refuses index 0 by construction and resolves "Private" by name.
+- `utils.js` — `signalQuality()` (the shared 0–100)
+- `node-settings.js` — `resolveCommandChannel()` (refuses 0, resolves "Private")
 - `ws-relay.js` — `getDeviceChannelsByNodeId()`
-- `device-config.js` — `resolvePrimaryNodeId()`, `getRotatorAddress()`,
-  `getPrimaryMac()`
-- `dash-mode.js` — PASV forcing on start
+- `device-config.js` — `resolvePrimaryNodeId()`, `getRotatorAddress()`, `getPrimaryMac()`
+- `dash-mode.js` — PASV forcing
 - `db.js` — favourites only
 
 ## Public interface
 
 ```js
-export default router                    // GET /align, /align/targets, POST /align/ping|start|stop
-export function attachAlignWs(server)    // mounts WS /align/events
-export function alignStart({ num })      // → {ok, state} — open session, force PASV (called by /align/ping)
+export default router                    // GET /align, /align/targets; POST /align/ping|stop
+export function attachAlignWs(server)    // mounts WS /align/events; pushes the view-model
 export function alignStop()              // → {ok, state}
 export function handleAlignPong(pkt, rxDevice)  // called from bridge-events
 ```
 
-### Frame kinds on `WS /align/events`
-
-- `{ kind:'status', running, target, tx, channel, warning }` — on connect / change
-- `{ kind:'probe', n, at }` — a ping was sent (button press N)
-- `{ kind:'miss', n, reason }` — ping N got no reply within the timeout (or a send
-  failure); the page re-enables PING and shows the reason
-- a **sample** (no `kind`) — a reply landed; see below
-
-### Sample frame
-
-```js
-{ t: 1721400000, dev_rssi: -85, dev_snr: 6.0, yagi: 0.8, omni: 5.3, delta: -4.5 }
-```
-
-`dev_*` is the primary signal. `yagi`/`omni` are the secondary per-radio envelope
-SNR, null when that radio did not hear this reply. The server computes `delta`;
-the browser calculates nothing (BROWSER_CONTRACT).
-
-## Timing — measured, not assumed
-
-```js
-ALIGN_REPLY_TIMEOUT_MS = 30000   // a ping with no reply by now is a miss
-ALIGN_COLLECT_MS       = 1200    // window to gather both radios' copies
-```
-
-Measured 2026-07-19, 8 pings to DEPL: **reply rate 6/8**, latency mean **16.1 s**
-(min 11.9, max 18.6, sd 2.5). So 30 s comfortably clears the slowest reply, and a
-missed reply — normal on this link — surfaces as a `miss` frame the operator can
-act on (press PING again) rather than a hang.
-
 ## Invariants
 
-- **Never channel 0.** Commands are channel broadcasts, not DMs (Meshtastic 2.8
-  rejects PSK direct texts). `channel` defaults to 0, so it is **always** passed
-  explicitly, and `resolveCommandChannel()` refuses 0 by construction.
-  Confirmed live: index 2, name `"Private"`.
-- **Target is the hex suffix**, never the shortName. Never `@*`.
-- **Consume `type:'packet'` only** — see the two-event table.
-- **Correlate on `reply_id`.** An uncorrelated pong is another operator's or a
-  stale reply; it must not become a sample.
-- **Per-radio attribution comes from live events, never from storage.**
-- **The transmitting radio defines what `dev_rssi` means** — it is the device's
-  reading of *that* radio's transmission. It is therefore recorded in the status
-  frame, and must not change mid-session or the curve becomes meaningless.
-- **One ping per press.** No interval loop; each `POST /align/ping` fires exactly
-  one ping. A ping with no reply emits a `miss` frame, never silence.
-- **Session opens on first ping; PASV forced there, restored on STOP.** In ACTV the
-  rotator is driven by `active-tracker`, so the home Yagi swings while the operator
-  turns the remote one — that perturbs the secondary envelope curves.
-- **Dead-man stop.** The session stops when the last WS client disconnects.
+- **Browser renders, never decides.** Every derived value — quality, label,
+  colour, best, trend, gap, bar height, burst progress — is computed here and
+  pushed. `docs/BROWSER_CONTRACT.md`. The only browser-originated value is the N
+  control (raw input).
+- **Never channel 0**; target is the hex suffix; never `@*`.
+- **Consume `type:'packet'` only** — the two-event pong; the text copy would
+  double-count.
+- **Per-radio attribution from live events, never storage.**
+- **TX radio is fixed for the session** (OMNI — the YAGI is unreliable since its
+  WiFi→BLE swap and cannot transmit dependably); it defines what the quality means.
+- One session at a time; dead-man stop.
 
 ## Test notes
 
-- `/align/targets` returns only favourites
-- `POST /align/ping` with no prior session opens one, forces PASV, sends one ping
-- a pong whose `reply_id` matches no pending ping produces **no** sample
-- both radios hearing one pong produces **one** sample with two envelope values
-- a ping with no reply within the timeout emits a `miss` frame
-- stopping clears pending timers and sends no further pings
-- last-client-disconnect stops the session
-
-**Verified 2026-07-19:** `@336b ping` on channel 2 answered first attempt;
-`reply_id` correlated to our packet id; both radios reported distinct envelope
-readings; payload identical across both.
+- a burst of N against DEPL yields ONE reading whose `quality` is the mean and
+  `spread` the max−min of the landed samples; `got/of` reflects real losses
+- both radios hearing a pong populate `yagi_q` and `omni_q`; a radio that missed
+  is null, not 0
+- two WS clients receive byte-identical view-models
+- `got === 0` yields a warning and no reading
+- appending a new best re-flags `isBest` and rescales every `barPct`
 
 ## Out of scope
 
-- `public/align.html` / `app-align.js` — Domain 2. The frame gains `dev_rssi` /
-  `dev_snr` **additively**, so the existing page keeps rendering; leading the
-  chart with the device reading is a separate browser task.
-- Dashboard `/events` — untouched.
+- `public/*` — Domain 2, its own step; renders this view-model only.
+- Dashboard `/events`; rotator control.
