@@ -2,12 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- viewport-fit=cover + the safe-area padding below keeps the thumb-zone
-     controls clear of the home indicator on a notched phone. -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Yagi Align</title>
 <script>
-  // Theme before paint, same rule as the dashboard — no flash on a bright mast.
   (function () {
     const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     document.documentElement.setAttribute('data-theme', dark ? 'business' : 'corporate');
@@ -24,108 +21,149 @@
 <script type="module" src="/app-align.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"></script>
 <style>
-  /* Field page, not a dashboard. Fixed viewport, nothing scrolls — everything
-     must be visible at a glance with one hand on an antenna. */
+  /* ── A field instrument, not a dashboard page ────────────────────────────
+     Read at arm's length, in sunlight, one-handed, while turning an antenna.
+     So: one enormous primary readout, everything else deliberately quiet, and
+     a peak-hold marker borrowed from field-strength meters — the live level
+     moves, the marker sticks at the session best. You aim to close the gap. */
+
   html, body { height: 100%; overflow: hidden; }
-  body {
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
+
+  /* Explicit grid rows are what stop the chart overflowing its neighbours.
+     A flex:1 chart with no definite height lets Chart.js size the canvas from
+     content and push the controls off-screen — which is exactly what happened. */
+  .rig {
+    display: grid;
+    grid-template-rows: auto auto auto 1fr auto auto;
+    gap: .45rem;
+    height: 100%;
+    padding: .5rem;
+    padding-top:    calc(.5rem + env(safe-area-inset-top));
+    padding-bottom: calc(.5rem + env(safe-area-inset-bottom));
   }
-  .align-shell { display: flex; flex-direction: column; height: 100%; gap: .5rem; padding: .5rem; }
-  /* The headline has to be readable at arm's length in sunlight. */
-  .align-now { font-size: 3.25rem; line-height: 1; font-weight: 700; }
-  .align-chart { flex: 1 1 auto; min-height: 0; }
-  /* Thumb zone: big targets, bottom of the screen. */
-  .align-controls .btn { height: 3.5rem; font-size: 1.05rem; }
+
+  /* ── the readout — the one loud thing on the page ─────────────────────── */
+  .readout      { display: flex; align-items: baseline; gap: .5rem; line-height: 1; }
+  .readout-num  { font-size: clamp(3.5rem, 22vw, 5.5rem); font-weight: 700;
+                  letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+  .readout-unit { font-size: .8rem; letter-spacing: .18em; text-transform: uppercase; }
+  .readout.is-stale { opacity: .35; }
+
+  /* ── peak-hold bar: the signature ─────────────────────────────────────── */
+  .meter        { position: relative; height: 1.6rem; border-radius: .2rem;
+                  overflow: hidden; background: hsl(var(--bc) / .09); }
+  .meter-live   { position: absolute; inset-block: 0; left: 0;
+                  transition: width .35s ease-out; }
+  /* The peak marker does NOT animate away — it holds, which is the point. */
+  .meter-peak   { position: absolute; inset-block: 0; width: 3px;
+                  background: hsl(var(--bc) / .85); }
+  .meter-scale  { display: flex; justify-content: space-between;
+                  font-size: .625rem; letter-spacing: .1em; opacity: .45; }
+
+  /* ── chart: contained, cannot overflow ───────────────────────────────── */
+  .trace          { position: relative; min-height: 0; }
+  .trace > canvas { position: absolute; inset: 0; }
+
+  /* ── marks: numbered antenna positions ───────────────────────────────── */
+  .marks     { display: flex; gap: .3rem; overflow-x: auto; min-height: 2rem;
+               align-items: center; scrollbar-width: none; }
+  .marks::-webkit-scrollbar { display: none; }
+  .mark      { flex: 0 0 auto; display: flex; align-items: baseline; gap: .3rem;
+               padding: .2rem .5rem; border-radius: .25rem;
+               background: hsl(var(--bc) / .08); font-variant-numeric: tabular-nums; }
+  .mark-n    { font-size: .625rem; opacity: .55; }
+  .mark.is-peak { background: hsl(var(--su) / .22); }
+
+  /* ── controls: thumb zone, deliberately large ────────────────────────── */
+  .rig-controls { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .rig-controls .btn { height: 3.4rem; font-size: 1rem; letter-spacing: .08em; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .meter-live { transition: none; }
+  }
 </style>
 </head>
 <body class="bg-base-200" x-data="alignPage()" x-init="init()">
-<div class="align-shell">
+<div class="rig">
 
-  <!-- ── header: target + liveness ─────────────────────────────────────── -->
-  <div class="flex items-center gap-2 shrink-0">
-    <select class="select select-sm select-bordered flex-1 font-display"
+  <!-- ── target + state ───────────────────────────────────────────────── -->
+  <div class="flex items-center gap-2">
+    <select class="select select-sm select-bordered flex-1 font-display text-sm"
             x-model.number="target" :disabled="running">
       <template x-if="!targets.length">
-        <option value="">No favourites — star a node first</option>
+        <option value="">No favourites yet — star a node to align it</option>
       </template>
       <template x-for="t in targets" :key="t.num">
         <option :value="t.num" x-text="t.label"></option>
       </template>
     </select>
-    <span class="badge badge-sm shrink-0"
+    <span class="badge badge-sm shrink-0 font-display tracking-wider"
           :class="running ? (stale ? 'badge-error' : 'badge-success') : 'badge-ghost'"
           x-text="running ? (stale ? 'STALE' : 'LIVE') : 'IDLE'"></span>
   </div>
 
-  <!-- Server-supplied warning, e.g. PASV rx role excludes a radio. Pre-formatted
-       — the browser does not decide when this appears. -->
   <template x-if="warning">
-    <div class="alert alert-warning py-2 text-xs shrink-0" x-text="warning"></div>
+    <div class="alert alert-warning py-1.5 px-2 text-xs" x-text="warning"></div>
   </template>
 
-  <!-- ── headline: current reading ─────────────────────────────────────── -->
-  <div class="card bg-base-100 shadow-sm shrink-0">
-    <div class="card-body py-3 items-center gap-0">
-      <div class="align-now font-mono tabular-nums"
-           :class="stale && 'opacity-40'"
-           x-text="cur.yagi ?? '—'"></div>
-      <div class="text-xs text-base-content/50 font-display tracking-wider uppercase">
-        YAGI dB<span x-show="cur.delta !== null"> · <span
-          class="font-mono" x-text="(cur.delta > 0 ? '+' : '') + cur.delta"></span> over omni</span>
-      </div>
+  <!-- ── readout + peak-hold meter ────────────────────────────────────── -->
+  <div>
+    <div class="readout font-mono" :class="stale && 'is-stale'">
+      <span class="readout-num" x-text="cur.yagi ?? '––'"></span>
+      <span class="readout-unit font-display opacity-50">dB SNR</span>
+      <span class="ml-auto text-sm font-mono opacity-60" x-show="cur.delta !== null">
+        <span x-text="(cur.delta > 0 ? '+' : '') + cur.delta"></span> vs omni
+      </span>
+    </div>
+
+    <div class="meter mt-1.5">
+      <div class="meter-live" :class="levelClass" :style="`width:${livePct}%`"></div>
+      <div class="meter-peak" x-show="peakPct !== null" :style="`left:calc(${peakPct}% - 1.5px)`"></div>
+    </div>
+    <div class="meter-scale font-mono mt-0.5">
+      <span x-text="SCALE_MIN + ' dB'"></span>
+      <span x-show="best !== null">PEAK <span x-text="best"></span></span>
+      <span x-text="SCALE_MAX + ' dB'"></span>
     </div>
   </div>
 
-  <!-- ── stat cards: best / worst / age ────────────────────────────────── -->
-  <div class="perf-stats-grid shrink-0">
-    <div class="stat bg-base-100 rounded-box">
-      <div class="stat-title">Best</div>
-      <div class="stat-value text-2xl font-mono tabular-nums" x-text="best ?? '—'"></div>
-      <div class="stat-desc">this session</div>
+  <!-- ── worst / spread / age — quiet supporting figures ──────────────── -->
+  <div class="grid grid-cols-3 gap-2 text-center">
+    <div>
+      <div class="text-[.625rem] tracking-widest opacity-45 font-display">WORST</div>
+      <div class="font-mono tabular-nums text-lg" x-text="worst ?? '––'"></div>
     </div>
-    <div class="stat bg-base-100 rounded-box">
-      <div class="stat-title">Worst</div>
-      <div class="stat-value text-2xl font-mono tabular-nums" x-text="worst ?? '—'"></div>
-      <div class="stat-desc" x-text="spread !== null ? spread + ' dB spread' : 'scale'"></div>
+    <div>
+      <div class="text-[.625rem] tracking-widest opacity-45 font-display">SPREAD</div>
+      <div class="font-mono tabular-nums text-lg" x-text="spread ?? '––'"></div>
     </div>
-    <!-- AGE is the trust card: it is the only thing telling you the number above
-         is real. Derived from the newest SAMPLE, never from socket state. -->
-    <div class="stat bg-base-100 rounded-box">
-      <div class="stat-title">Age</div>
-      <div class="stat-value text-2xl font-mono tabular-nums"
-           :class="ageClass" x-text="ageSec !== null ? ageSec + 's' : '—'"></div>
-      <div class="stat-desc" x-text="running ? 'since last reply' : 'stopped'"></div>
+    <div>
+      <div class="text-[.625rem] tracking-widest opacity-45 font-display">AGE</div>
+      <div class="font-mono tabular-nums text-lg" :class="ageClass"
+           x-text="ageSec !== null ? ageSec + 's' : '––'"></div>
     </div>
   </div>
 
-  <!-- ── chart: 5 min, yagi solid / omni dashed ────────────────────────── -->
-  <div class="card bg-base-100 shadow-sm align-chart">
-    <div class="card-body p-2">
-      <canvas id="alignChart"></canvas>
-    </div>
+  <!-- ── trace ────────────────────────────────────────────────────────── -->
+  <div class="trace"><canvas id="alignChart"></canvas></div>
+
+  <!-- ── marks ────────────────────────────────────────────────────────── -->
+  <div class="marks font-mono">
+    <template x-if="!marks.length">
+      <span class="text-xs opacity-40 font-sans">Turn, wait for a reading, then mark the position.</span>
+    </template>
+    <template x-for="m in marks" :key="m.n">
+      <span class="mark" :class="m.n === bestMarkN && 'is-peak'">
+        <span class="mark-n" x-text="m.n"></span><span x-text="m.yagi"></span>
+      </span>
+    </template>
   </div>
 
-  <!-- ── marks: time turned into numbered positions ────────────────────── -->
-  <div class="shrink-0 overflow-x-auto">
-    <div class="flex gap-1 min-h-8 items-center">
-      <template x-if="!marks.length">
-        <span class="text-xs text-base-content/40">Turn the antenna, wait for a reading, then MARK.</span>
-      </template>
-      <template x-for="m in marks" :key="m.n">
-        <span class="badge badge-lg font-mono tabular-nums shrink-0"
-              :class="m.n === bestMarkN ? 'badge-success' : 'badge-ghost'">
-          <span x-text="m.n"></span>&nbsp;<span x-text="m.yagi"></span><span
-            x-show="m.n === bestMarkN">&nbsp;★</span>
-        </span>
-      </template>
-    </div>
-  </div>
-
-  <!-- ── controls: thumb zone ──────────────────────────────────────────── -->
-  <div class="align-controls grid grid-cols-2 gap-2 shrink-0">
-    <button class="btn btn-outline" :disabled="!running || cur.yagi === null" @click="mark()">MARK</button>
-    <button class="btn" :class="running ? 'btn-error' : 'btn-primary'"
+  <!-- ── controls ─────────────────────────────────────────────────────── -->
+  <div class="rig-controls">
+    <button class="btn btn-outline font-display" :disabled="!running || cur.yagi === null"
+            @click="mark()">MARK</button>
+    <button class="btn font-display" :class="running ? 'btn-error' : 'btn-primary'"
             :disabled="!running && !target"
             @click="running ? stop() : start()"
             x-text="running ? 'STOP' : 'START'"></button>

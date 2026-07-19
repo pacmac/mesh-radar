@@ -19,6 +19,13 @@ const WINDOW_MS = 5 * 60 * 1000;   // 5 minutes of history
 const STALE_SEC = 15;              // amber
 const DEAD_SEC  = 30;              // red
 
+// Meter scale in dB SNR. Fixed rather than auto-ranging: an auto-scaling meter
+// re-maps itself as you turn, so the bar moves even when the signal does not —
+// which destroys the one thing the operator is reading it for. LoRa SNR runs
+// roughly -20 (floor) to +12 (very strong).
+const SCALE_MIN = -20;
+const SCALE_MAX = 12;
+
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 // DaisyUI exposes theme colours as space-separated HSL parts.
 const themeColor = (v, alpha = 1) => `hsl(${css(v)} / ${alpha})`;
@@ -125,6 +132,27 @@ window.alignPage = function alignPage() {
     },
 
     get stale()  { return this.running && this.ageSec !== null && this.ageSec >= STALE_SEC; },
+
+    // ── peak-hold meter ────────────────────────────────────────────────────
+    // Borrowed from field-strength meters: the live level moves, the peak marker
+    // holds at the session best. Closing the gap IS the alignment task, which is
+    // why this and not another number.
+    SCALE_MIN, SCALE_MAX,
+    _pct(v) {
+      if (v === null || v === undefined) return 0;
+      const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, v));
+      return Math.round(((clamped - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)) * 100);
+    },
+    get livePct() { return this._pct(this.cur.yagi); },
+    get peakPct() { return this.best === null ? null : this._pct(this.best); },
+    // Signal-coded, not decorative: the colour states how good the link is.
+    get levelClass() {
+      const v = this.cur.yagi;
+      if (v === null) return 'bg-base-content/20';
+      if (v >= 5)  return 'bg-success';
+      if (v >= -5) return 'bg-warning';
+      return 'bg-error';
+    },
     get spread() { return (this.best !== null && this.worst !== null)
                           ? Math.round((this.best - this.worst) * 10) / 10 : null; },
     get ageClass() {
