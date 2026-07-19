@@ -41,9 +41,39 @@ const PAC_ALARM_APP = 260;
 // Every displayed field carries raw + text + ts. A field whose value is absent
 // returns null and is dropped by the caller — an absent value is absent, not a
 // placeholder.
-function field(label, raw, text, ts = null) {
+function field(label, raw, text, ts = null, desc = null) {
   if (raw == null || text == null || text === '') return null;
-  return { label, raw, text, ts };
+  return { label, raw, text, ts, ...(desc ? { desc } : {}) };
+}
+
+// Hops has TWO meanings in this codebase and they disagree.
+//
+//   REPORTED — derived live from hop_start - hop_limit. Sparse and unreliable:
+//              hop_start is often absent, and the value describes the packet
+//              that happened to arrive, not the node's usual path.
+//   VERIFIED — the route from an actual traceroute. Authoritative.
+//
+// DEV1 currently reports 1 while its traceroute shows route:[] — direct. So the
+// card must say WHICH it is quoting rather than printing a bare number that is
+// right half the time. Verified wins when present.
+function hopsField(node, info) {
+  let verified = null, verifiedTs = null;
+  if (info?.last_traceroute) {
+    try {
+      const tr = JSON.parse(info.last_traceroute);
+      if (Array.isArray(tr?.route)) {
+        verified = tr.route.length;
+        verifiedTs = tr.ts ? Math.floor(tr.ts / 1000) : null;
+      }
+    } catch { /* unparseable — fall back to reported */ }
+  }
+  if (verified != null) {
+    return field('Hops', verified, fmtCount(verified), verifiedTs,
+                 verifiedTs ? `verified ${fmtStamp(verifiedTs)}` : 'verified by traceroute');
+  }
+  const reported = node?.hops ?? info?.hops_away ?? null;
+  if (reported == null) return null;
+  return field('Hops', reported, fmtCount(reported), null, 'reported — not verified');
 }
 
 const compact = arr => arr.filter(Boolean);
@@ -430,6 +460,7 @@ export function buildNodeStatus(num, windowHours) {
       field('Uptime',      node?.uptime_seconds, fmtUptime(node?.uptime_seconds), lastHeard),
       // Boot count comes from the 260 debug cache — it is what makes uptime
       // interpretable ("up 5m" reads very differently at 37 boots).
+      hopsField(node, info),
       field('Boots',       bootCount,            fmtCount(bootCount),            bootTs),
       field('Chan util',   node?.channel_util,   fmtUtil(node?.channel_util),    lastHeard),
       field('Air util TX', node?.air_util_tx,    fmtUtil(node?.air_util_tx),     lastHeard),

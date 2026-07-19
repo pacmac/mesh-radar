@@ -73,7 +73,9 @@
               <div class="stat bg-base-200 rounded-box">
                 <div class="stat-title" x-text="f.label"></div>
                 <div class="stat-value text-2xl font-mono tabular-nums" x-text="f.text"></div>
-                <div class="stat-desc" x-text="f.edit ? f.edit.name : ''"></div>
+                <!-- desc carries provenance where a value has more than one
+                     possible source (hops: verified vs reported). -->
+                <div class="stat-desc" x-text="f.desc || (f.edit ? f.edit.name : '')"></div>
               </div>
             </template>
 
