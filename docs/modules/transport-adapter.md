@@ -1,7 +1,7 @@
 ---
 module: transport-adapter
 source: src/transport-adapter.js
-source_hash: fe4520a789f3cb07a535a6b11f122b262886a66133a75095ea9cb348fbf46711
+source_hash: 8c65e9534fe343cce8542ac1448ad1bfba87e74611ecd8128dd37ea05eabcca0
 updated: 2026-07-19
 ---
 
@@ -91,6 +91,13 @@ _N/A_
   successfully without doing anything.
 - No `Client` construction at adapt time — only on first `chunkFetch`.
 - One `Client` per `(host, gatewayId, channel)`; never one per fetch.
+- **`batch` defaults to 4, not mt-transport's 16.** 16 does not merely run slowly
+  on real hardware — it *never completes*. A 16-chunk batch is ~35 s of
+  transmission during which the device is deaf (half-duplex) while the Omni
+  rebroadcasts; re-issuing a pull inside that window makes the device restart
+  from the first gap. Measured by mt-transport against DEV1 2026-07-19; batch 4
+  completed a 32-chunk image in 173 s. Overridable, but the default must be the
+  value that works.
 
 ## Test notes
 

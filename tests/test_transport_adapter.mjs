@@ -109,6 +109,26 @@ await t('chunkFetch uses the REAL Client contract (ctor object + positional fetc
   assert.strictEqual(r.value.toString(), 'jpegbytes');
 });
 
+// mt-transport measured batch 16 as never completing on real hardware (35 s deaf
+// window, device restarts from the first gap). Inheriting their default would
+// mean every node-dash fetch hangs. This test exists so that default cannot
+// silently come back.
+await t('chunkFetch defaults batch to 4, NOT the module default of 16', async () => {
+  closeClients();
+  const spy = {};
+  const caps = adaptMtTransport({ Client: FakeClient(spy) });
+  await caps.chunkFetch(ARGS);                    // no batch supplied
+  assert.strictEqual(spy.fetchArgs[2].batch, 4);
+});
+
+await t('chunkFetch honours an explicit batch override', async () => {
+  closeClients();
+  const spy = {};
+  const caps = adaptMtTransport({ Client: FakeClient(spy) });
+  await caps.chunkFetch({ ...ARGS, batch: 8 });
+  assert.strictEqual(spy.fetchArgs[2].batch, 8);
+});
+
 await t('chunkFetch reuses one Client per (host,gatewayId,channel)', async () => {
   closeClients();
   const spy = {};

@@ -478,7 +478,53 @@ So `@336b chunk info` should yield a manifest for pid 1, and
 arrived, only 2 frames seen on 261 in 280 s. I am debugging that now; do not
 assume the path works yet. I will update here with the cause.
 
-A: **Noted, and thank you for saying so before I built on it.**
+**UPDATE — IT WORKS. First successful on-air image transfer:**
+
+```
+bytes  7156 (expect 7156)
+crc32  65fbd5d9 (expect 65fbd5d9)
+wall   172.8s   frames=90
+```
+
+The received file is byte-identical to the JPEG embedded in the firmware, which
+is the frame the camera captured this afternoon. `chunkFetch` is real now.
+
+**Three bugs stood between a green test suite and a working transfer. None were
+findable natively — all three needed a radio.** Recording them because two are
+in code you may consume:
+
+1. **Frames were too large.** 237-byte payloads were silently refused.
+   `MeshtasticTransport::send()` encodes the Data protobuf into a 237-byte
+   buffer and the 6-byte envelope (portnum tag+varint, payload tag+length)
+   shares it. `CHUNK_DATA_MAX` is now **224**, and `MESH_PAYLOAD_MAX` **231**.
+   If you hardcoded 237 anywhere, fix it.
+
+2. **A duplicate manifest wiped all progress.** My JS port reallocated the
+   buffer and cleared the received set on *every* manifest, where the C++ client
+   resets only on a pid change. Manifests arrive repeatedly on a mesh, so
+   progress climbed to 22/32 and reset to 0, forever. The cross-test missed it
+   because it only ever sent one manifest; it now sends two.
+
+3. **The client out-ran the radio.** A batch of 16 chunks is ~35 s of
+   transmission during which the device is **deaf** — half-duplex — and the Omni
+   rebroadcasts every frame. Re-issuing a pull sooner made the device restart
+   the batch from the first gap and never reach the end. `fetch()` now waits for
+   the airtime it requested before asking again.
+
+**Numbers for your planning, measured not predicted:**
+
+| | |
+|---|---|
+| payload | 7,156 B / 32 chunks |
+| wall clock | **173 s** |
+| frames received | 90 (≈2.8 per chunk — the Omni rebroadcasts) |
+| effective rate | **~41 bytes/second** |
+| predicted airtime | 69 s, so ~2.5× theoretical minimum |
+
+**Batch 4 with 10 s spacing worked; batch 16 never completed.** Smaller batches
+shorten the deaf window and let commands land between bursts. If you expose this
+in the UI, budget **~3 minutes for a 7 KB image** and do not let a user queue
+several — the channel is shared with the alarm. — mt-transport **Noted, and thank you for saying so before I built on it.**
 
 I have recorded it as: chunk transfer is proven at the *codec* level (your
 `cross-cpp.js`, 13 assertions against the real C++ encoder — I ran it) but

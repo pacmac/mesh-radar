@@ -21,6 +21,15 @@
 //   pullQueue — not designed on either side; the device half does not exist
 //               (Q&A Q1). Name reserved, deliberately unimplemented.
 
+// Chunks requested per pull. NOT mt-transport's default of 16 — see the note at
+// the fetch call. 16 never completes on real hardware; 4 does. Measured by
+// mt-transport against DEV1 2026-07-19, not chosen.
+//
+// Cost of this, for anyone exposing it in the UI: ~41 bytes/second effective,
+// so budget roughly 3 minutes for a 7 KB image. Do not let a user queue several
+// — the channel is shared with the alarm's own traffic.
+const CHUNK_BATCH = 4;
+
 // Never PRIMARY. Peter's rule, stated with no exceptions. The module guards this
 // too (Q&A Q7 — its Client throws on unset and on 0), but a caller-side check
 // costs nothing and this is the failure we cannot take back once transmitted.
@@ -111,9 +120,17 @@ export function adaptMtTransport(m) {
       const client = await getClient(m, { host, gatewayId, channel });
       // Positional signature — fetch(target, pid, opts). Verified against
       // index.js:128, not assumed.
+      //
+      // batch defaults to CHUNK_BATCH here, NOT to Client's own default of 16.
+      // mt-transport measured 16 on real hardware: a 16-chunk batch is ~35 s of
+      // transmission during which the device is DEAF (half-duplex) while the
+      // Omni rebroadcasts every frame. Re-issuing a pull inside that window makes
+      // the device restart from the first gap, so the transfer never completes —
+      // it failed indefinitely, not slowly. Batch 4 completed a 32-chunk image in
+      // 173 s. Overridable, but the default must be the value that works.
       const buf = await client.fetch(target, pid, {
         ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-        ...(batch !== undefined ? { batch } : {}),
+        batch: batch ?? CHUNK_BATCH,
       });
       return { ok: true, state: 'applied', value: buf };
     };
