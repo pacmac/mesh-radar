@@ -1,7 +1,7 @@
 ---
 module: align-api
 source: src/align-api.js
-source_hash: 125077ee3c7544c88929542cfa6c3c07e6093f1721582d7d4fbd6cd682353efd
+source_hash: 85297cd84245130e7d7566f25f69c181596c3b60c52990be0995e5563cdad49b
 updated: 2026-07-19
 ---
 
@@ -11,6 +11,14 @@ updated: 2026-07-19
 
 Backend for the mobile Yagi alignment page: serves `/align`, runs the align
 traceroute loop, and pushes a **narrow** sample stream over its own WebSocket.
+
+> **Status: NOT PROVEN TO WORK.** The loop dispatches and the WS delivers status
+> frames, but **no traceroute reply has ever produced a sample**. The one live run
+> (2026-07-19) failed twice over: sends were rejected 503 because the rotator radio
+> was NEED_PAIR/OFFLINE, and the tick interval was shorter than the traceroute
+> timeout so every tick JOINED the pending dispatch instead of making a new
+> attempt — one request per minute, then a timeout. Both are addressed below;
+> neither fix has been observed working.
 
 Exists as a separate surface because the dashboard's `/events` pushes **7.2 MB**
 on connect (measured 2026-07-19: `env_history` 3.8 MB, `tilt_history` 3.0 MB).
@@ -23,7 +31,8 @@ lands before any subscribe message could arrive.
 - Serve `public/align.html` at `GET /align`
 - `GET /align/targets` — favourites, for the selector
 - `WS /align/events` — one JSON frame per sample, nothing else
-- Run the align loop: repeatedly dispatch a traceroute at one target
+- Run the align loop: repeatedly dispatch a traceroute at one target, via the
+  radio `transmitterForMode('pasv')` names — NOT a hardcoded rotator
 - Attribute each reception to the radio that heard it, **in flight**
 - Own start/stop, including a dead-man stop
 
@@ -55,6 +64,16 @@ export function alignStop()             // → {ok, state}
 `yagi`/`omni` are SNR in dB, null when that radio did not hear this reply.
 `delta` is null unless both are present. Server computes `delta` and `direct` —
 the browser calculates nothing (BROWSER_CONTRACT).
+
+### Probe frame (one per dispatch attempt)
+
+```js
+{ kind: 'probe', n: 7, at: 1721400000 }
+```
+
+Emitted when a traceroute is sent. Without it the page shows a LIVE badge, no
+number and no reason — indistinguishable from a broken page while standing at a
+mast. The browser turns this into "Probe 7 sent — waiting for reply".
 
 ### Status frame (on connect and on state change)
 
@@ -88,6 +107,17 @@ set, and the `traceroute` event subscriptions. One session at a time, globally.
 - **`traceroute.js` is not modified.** Align passes `cooldownMs: 0` and
   `cooldownKey: 'align'` to the existing `dispatch()`. No second dispatcher, no
   duplicated lifecycle, no change to existing behaviour.
+- **Timeout must be SHORTER than the tick interval.** `traceroute.dispatch()`
+  dedupes by target, so a second dispatch while one is pending merely JOINS it.
+  With the 60 s discovery default and a 6 s tick that produced one real attempt
+  per minute. Align uses `ALIGN_TIMEOUT_MS 14000` with `ALIGN_INTERVAL_MS 15000`
+  so every tick is a genuine new attempt.
+- **The transmitting radio is a mode role**, resolved through
+  `transmitterForMode('pasv')` (mode-dispatch-ssot). Hardcoding the rotator sent
+  every probe into an offline radio while the primary sat READY.
+- **Failures are broadcast, never swallowed.** Dispatch rejections and traceroute
+  `'cancel'` push a server-side `notice` to every client, cleared when a sample
+  lands. A silent failure is indistinguishable from a quiet mesh.
 - **One align session at a time**, and it must not run concurrently with a
   competing trace of the same target — replies carry no request id, so two in
   flight cannot be attributed.
@@ -106,7 +136,15 @@ set, and the `traceroute` event subscriptions. One session at a time, globally.
 - stopping disconnects cleanly and dispatches no further traceroutes
 - last-client-disconnect stops the loop (dead-man)
 - `warning` is populated when PASV `rx` excludes the rotator radio
-- the WS emits nothing but `sample` and `status` frames — asserted by type
+- the WS emits only `sample`, `probe` and `status` frames — asserted by type
+
+**Verified so far:** `/align` 200, `/align/targets` returns favourites with real
+labels, WS delivers identical status frames to two clients, `/events` unaffected,
+both radios report `*_listening: true`.
+
+**NOT verified:** a sample has never been produced. The dead-man stop, the notice
+path, `direct:false` rejection and the 15 s retry cadence are all unobserved on
+real traffic.
 
 ## Out of scope
 

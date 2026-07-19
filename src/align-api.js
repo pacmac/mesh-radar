@@ -29,8 +29,16 @@ const clients = new Set();
 // positional. This is the same constraint mt-transport's queue enforces.
 let session = null;   // { num, timer }
 
-const ALIGN_INTERVAL_MS = 6000;   // a traceroute round trip is several seconds
-                                  // at SF11; faster than this just queues.
+// Tick faster than the timeout and every extra dispatch merely JOINS the pending
+// one (traceroute.js dedupes by target) — which is what made the first live run
+// look dead: one request, ten joins, then a 60s timeout. One attempt per minute.
+//
+// So the align timeout is short and deliberate. A traceroute round trip at SF11
+// is a few seconds; if no reply has come back in 14s it is lost, and asking
+// again beats waiting out the discovery-length default.
+const ALIGN_TIMEOUT_MS  = 14000;
+const ALIGN_INTERVAL_MS = 15000;  // just past the timeout, so each tick is a
+                                  // genuine new attempt rather than a join
 
 const round1 = (v) => (typeof v === 'number' && Number.isFinite(v))
   ? Math.round(v * 10) / 10 : null;
@@ -92,9 +100,15 @@ function tick() {
     return;
   }
 
+  // Tell the page a request is in the air. Without this the operator sees a LIVE
+  // badge, no number, and no reason — indistinguishable from a broken page.
+  session.probes += 1;
+  broadcast({ kind: 'probe', n: session.probes, at: Math.floor(Date.now() / 1000) });
+
   traceroute.dispatch({
     to: session.num,
     device,
+    timeoutMs: ALIGN_TIMEOUT_MS,
     cooldownMs: 0,
     cooldownKey: 'align',
   }).catch((e) => {
@@ -166,7 +180,9 @@ function clearNotice() {
 
 export function alignStart({ num }) {
   if (session) alignStop();
-  session = { num, timer: setInterval(tick, ALIGN_INTERVAL_MS) };
+  notice = null;
+  latest.clear();
+  session = { num, probes: 0, timer: setInterval(tick, ALIGN_INTERVAL_MS) };
   log.info('align', `started on !${Number(num).toString(16)}`);
   tick();                       // first sample immediately, not after 6 s
   broadcast(statusFrame());

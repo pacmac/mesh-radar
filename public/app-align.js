@@ -97,6 +97,7 @@ window.alignPage = function alignPage() {
     samples: [], marks: [],
     cur: { yagi: null, omni: null, delta: null },
     best: null, worst: null,
+    probes: 0, probeAt: null,
     _now: Date.now(),
     _ws: null, _wake: null, _tick: null,
 
@@ -136,6 +137,15 @@ window.alignPage = function alignPage() {
       return Math.max(0, Math.round((this._now - last.t * 1000) / 1000));
     },
 
+    // What the operator is actually owed: is this thing doing anything?
+    get activity() {
+      if (!this.running) return 'Stopped';
+      if (this.probeAt && this._now - this.probeAt < 14000 && this.ageSec === null)
+        return `Probe ${this.probes} sent — waiting for reply`;
+      if (this.ageSec === null) return `Probe ${this.probes} — no reply yet`;
+      return `${this.probes} probes · reply ${this.ageSec}s ago`;
+    },
+
     get stale()  { return this.running && this.ageSec !== null && this.ageSec >= STALE_SEC; },
 
     // ── peak-hold meter ────────────────────────────────────────────────────
@@ -147,6 +157,13 @@ window.alignPage = function alignPage() {
       if (v === null || v === undefined) return 0;
       const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, v));
       return Math.round(((clamped - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)) * 100);
+    },
+    // The actionable number while turning: how far below your best you are.
+    // "3.2 dB below peak" tells you to keep going; the raw SNR does not.
+    get fromPeak() {
+      if (this.best === null || this.cur.yagi === null) return null;
+      const d = Math.round((this.best - this.cur.yagi) * 10) / 10;
+      return d <= 0 ? 0 : d;
     },
     get livePct() { return this._pct(this.cur.yagi); },
     get peakPct() { return this.best === null ? null : this._pct(this.best); },
@@ -217,6 +234,14 @@ window.alignPage = function alignPage() {
           this.running = f.running;
           this.warning = f.warning ?? null;
           if (f.target !== null && f.target !== undefined) this.target = f.target;
+          return;
+        }
+        if (f.kind === 'probe') {
+          // A request went out. Shows the operator the loop is alive even when
+          // no reply comes back — the difference between "working, waiting" and
+          // "broken", which is the whole question at the top of a mast.
+          this.probes = f.n;
+          this.probeAt = f.at * 1000;
           return;
         }
         this._onSample(f);
