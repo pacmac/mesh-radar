@@ -21,75 +21,165 @@
 <script type="module" src="/app-align.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"></script>
 <style>
-  /* ── A field instrument, not a dashboard page ────────────────────────────
-     Read at arm's length, in sunlight, one-handed, while turning an antenna.
-     So: one enormous primary readout, everything else deliberately quiet, and
-     a peak-hold marker borrowed from field-strength meters — the live level
-     moves, the marker sticks at the session best. You aim to close the gap. */
+/* ═══ Yagi Align — an instrument face, not a web page ════════════════════════
+   Held at arm's length, in daylight, one-handed, while turning an antenna.
+   The visual language is test equipment: a recessed display well, silkscreen
+   micro-labels, graduated scales, hairline rules, near-square corners. Colour
+   is reserved for meaning — signal quality and state — never decoration.      */
 
-  html, body { height: 100%; overflow: hidden; }
+:root {
+  --hair:    hsl(var(--bc) / .14);   /* panel rules            */
+  --silk:    hsl(var(--bc) / .42);   /* silkscreen labels      */
+  --well:    hsl(var(--bc) / .07);   /* recessed display well  */
+  --r:       3px;                    /* instruments aren't pill-shaped */
+}
 
-  /* Explicit grid rows are what stop the chart overflowing its neighbours.
-     A flex:1 chart with no definite height lets Chart.js size the canvas from
-     content and push the controls off-screen — which is exactly what happened. */
-  .rig {
-    display: grid;
-    grid-template-rows: auto auto auto 1fr auto auto;
-    gap: .45rem;
-    height: 100%;
-    padding: .5rem;
-    padding-top:    calc(.5rem + env(safe-area-inset-top));
-    padding-bottom: calc(.5rem + env(safe-area-inset-bottom));
-  }
+html, body { height: 100%; overflow: hidden; }
+body { background: hsl(var(--b3)); }
 
-  /* ── the readout — the one loud thing on the page ─────────────────────── */
-  .readout      { display: flex; align-items: baseline; gap: .5rem; line-height: 1; }
-  .readout-num  { font-size: clamp(3.5rem, 22vw, 5.5rem); font-weight: 700;
-                  letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-  .readout-unit { font-size: .8rem; letter-spacing: .18em; text-transform: uppercase; }
-  .readout.is-stale { opacity: .35; }
+/* Explicit rows: the trace takes what is left and CANNOT push the controls off
+   screen. A flex:1 chart with no definite height let Chart.js size the canvas
+   from content — that was the overlap. */
+.rig {
+  display: grid;
+  grid-template-rows: auto auto auto auto 1fr auto auto;
+  gap: .4rem;
+  height: 100%;
+  padding: .55rem;
+  padding-top:    calc(.55rem + env(safe-area-inset-top));
+  padding-bottom: calc(.55rem + env(safe-area-inset-bottom));
+}
 
-  /* ── peak-hold bar: the signature ─────────────────────────────────────── */
-  .meter        { position: relative; height: 1.6rem; border-radius: .2rem;
-                  overflow: hidden; background: hsl(var(--bc) / .09); }
-  .meter-live   { position: absolute; inset-block: 0; left: 0;
-                  transition: width .35s ease-out; }
-  /* The peak marker does NOT animate away — it holds, which is the point. */
-  .meter-peak   { position: absolute; inset-block: 0; width: 3px;
-                  background: hsl(var(--bc) / .85); }
-  .meter-scale  { display: flex; justify-content: space-between;
-                  font-size: .625rem; letter-spacing: .1em; opacity: .45; }
+.panel {
+  background: hsl(var(--b1));
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+}
 
-  /* ── chart: contained, cannot overflow ───────────────────────────────── */
-  .trace          { position: relative; min-height: 0; }
-  .trace > canvas { position: absolute; inset: 0; }
+/* Silkscreen label — the small stencilled text on a real instrument panel. */
+.silk {
+  font-family: Oxanium, system-ui, sans-serif;
+  font-size: .5625rem;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--silk);
+  line-height: 1;
+}
 
-  /* ── marks: numbered antenna positions ───────────────────────────────── */
-  .marks     { display: flex; gap: .3rem; overflow-x: auto; min-height: 2rem;
-               align-items: center; scrollbar-width: none; }
-  .marks::-webkit-scrollbar { display: none; }
-  .mark      { flex: 0 0 auto; display: flex; align-items: baseline; gap: .3rem;
-               padding: .2rem .5rem; border-radius: .25rem;
-               background: hsl(var(--bc) / .08); font-variant-numeric: tabular-nums; }
-  .mark-n    { font-size: .625rem; opacity: .55; }
-  .mark.is-peak { background: hsl(var(--su) / .22); }
+/* ── target row ───────────────────────────────────────────────────────── */
+.tgt {
+  display: flex; align-items: stretch; gap: .4rem;
+}
+.tgt select {
+  flex: 1; min-width: 0;
+  background: hsl(var(--b1));
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  padding: .45rem .55rem;
+  font-family: Oxanium, system-ui, sans-serif;
+  font-size: .8125rem; letter-spacing: .02em;
+  color: hsl(var(--bc));
+  appearance: none;
+}
+.lamp {
+  display: flex; align-items: center; gap: .35rem;
+  padding: 0 .6rem;
+  border: 1px solid var(--hair); border-radius: var(--r);
+  background: hsl(var(--b1));
+}
+.lamp i { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.lamp.is-live  { color: hsl(var(--su)); }
+.lamp.is-stale { color: hsl(var(--er)); }
+.lamp.is-idle  { color: hsl(var(--bc) / .3); }
 
-  /* ── controls: thumb zone, deliberately large ────────────────────────── */
-  .rig-controls { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
-  .rig-controls .btn { height: 3.4rem; font-size: 1rem; letter-spacing: .08em; }
+/* ── the display well — the one loud element ──────────────────────────── */
+.well {
+  background: var(--well);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  padding: .5rem .7rem .55rem;
+}
+.well-top { display: flex; align-items: baseline; justify-content: space-between; }
+.value {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: clamp(3.25rem, 21vw, 5rem);
+  font-weight: 700; line-height: .92;
+  letter-spacing: -.045em;
+  font-variant-numeric: tabular-nums;
+}
+.value.is-stale { opacity: .3; }
+.value-unit { font-size: .5625rem; letter-spacing: .22em; color: var(--silk); }
+.vs-omni    { font-family: 'JetBrains Mono', monospace; font-size: .8125rem;
+              font-variant-numeric: tabular-nums; color: hsl(var(--bc) / .62); }
 
-  @media (prefers-reduced-motion: reduce) {
-    .meter-live { transition: none; }
-  }
+/* ── meter: graduated scale + peak hold ───────────────────────────────── */
+.meter { position: relative; height: 1.1rem; margin-top: .5rem;
+         background: hsl(var(--bc) / .1); border-radius: 1px; overflow: hidden; }
+.meter-live { position: absolute; inset-block: 0; left: 0; transition: width .3s ease-out; }
+/* Graduations sit ON TOP of the fill, like a printed scale over a moving needle. */
+.meter-ticks {
+  position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg,
+    hsl(var(--b1) / .55) 0 1px, transparent 1px 12.5%);
+}
+.meter-peak {
+  position: absolute; inset-block: -2px; width: 2px;
+  background: hsl(var(--bc)); box-shadow: 0 0 0 1px hsl(var(--b1) / .7);
+}
+.meter-scale { display: flex; justify-content: space-between; margin-top: .25rem; }
+
+/* ── readings row ─────────────────────────────────────────────────────── */
+.reads { display: grid; grid-template-columns: repeat(3, 1fr); }
+.read  { padding: .4rem .2rem; text-align: center; border-right: 1px solid var(--hair); }
+.read:last-child { border-right: 0; }
+.read-v { font-family: 'JetBrains Mono', monospace; font-size: 1.0625rem;
+          font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: .15rem; }
+
+/* ── trace ────────────────────────────────────────────────────────────── */
+.trace { position: relative; min-height: 0; padding: .3rem; }
+.trace > canvas { position: absolute; inset: .3rem; }
+.trace-key { position: absolute; top: .45rem; right: .55rem; display: flex; gap: .6rem; }
+.trace-key span { display: flex; align-items: center; gap: .25rem; }
+.trace-key b { display: block; width: .85rem; height: 0; border-top: 2px solid currentColor; }
+
+/* ── marks ────────────────────────────────────────────────────────────── */
+.marks { display: flex; gap: .25rem; overflow-x: auto; align-items: stretch;
+         min-height: 1.9rem; scrollbar-width: none; }
+.marks::-webkit-scrollbar { display: none; }
+.mark { flex: 0 0 auto; display: flex; align-items: center; gap: .35rem;
+        padding: .25rem .5rem; border: 1px solid var(--hair); border-radius: var(--r);
+        background: hsl(var(--b1)); font-family: 'JetBrains Mono', monospace;
+        font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.mark-n { font-size: .5625rem; letter-spacing: .1em; color: var(--silk); }
+.mark.is-peak { border-color: hsl(var(--su) / .7); background: hsl(var(--su) / .13); }
+
+/* ── controls: panel switches, thumb zone ─────────────────────────────── */
+.sw { display: grid; grid-template-columns: 1fr 1.4fr; gap: .45rem; }
+.sw button {
+  height: 3.35rem; border-radius: var(--r); border: 1px solid var(--hair);
+  font-family: Oxanium, system-ui, sans-serif;
+  font-size: .875rem; letter-spacing: .16em; text-transform: uppercase;
+  background: hsl(var(--b1)); color: hsl(var(--bc));
+  transition: background .12s, border-color .12s;
+}
+.sw button:active:not(:disabled) { background: hsl(var(--bc) / .1); }
+.sw button:disabled { opacity: .35; }
+.sw .go   { background: hsl(var(--p)); border-color: hsl(var(--p)); color: hsl(var(--pc)); }
+.sw .halt { background: hsl(var(--er)); border-color: hsl(var(--er)); color: hsl(var(--erc)); }
+.sw button:focus-visible { outline: 2px solid hsl(var(--bc)); outline-offset: 2px; }
+
+.note { border-left: 2px solid hsl(var(--wa)); background: hsl(var(--wa) / .12);
+        padding: .35rem .5rem; font-size: .6875rem; line-height: 1.35; border-radius: 0 var(--r) var(--r) 0; }
+
+@media (prefers-reduced-motion: reduce) { .meter-live { transition: none; } }
 </style>
 </head>
-<body class="bg-base-200" x-data="alignPage()" x-init="init()">
+<body x-data="alignPage()" x-init="init()">
 <div class="rig">
 
-  <!-- ── target + state ───────────────────────────────────────────────── -->
-  <div class="flex items-center gap-2">
-    <select class="select select-sm select-bordered flex-1 font-display text-sm"
-            x-model.number="target" :disabled="running">
+  <!-- ── target + state lamp ──────────────────────────────────────────── -->
+  <div class="tgt">
+    <select x-model.number="target" :disabled="running" aria-label="Node to align">
       <template x-if="!targets.length">
         <option value="">No favourites yet — star a node to align it</option>
       </template>
@@ -97,60 +187,68 @@
         <option :value="t.num" x-text="t.label"></option>
       </template>
     </select>
-    <span class="badge badge-sm shrink-0 font-display tracking-wider"
-          :class="running ? (stale ? 'badge-error' : 'badge-success') : 'badge-ghost'"
-          x-text="running ? (stale ? 'STALE' : 'LIVE') : 'IDLE'"></span>
+    <div class="lamp" :class="running ? (stale ? 'is-stale' : 'is-live') : 'is-idle'">
+      <i></i><span class="silk" x-text="running ? (stale ? 'stale' : 'live') : 'idle'"></span>
+    </div>
   </div>
 
+  <!-- ── server notice: why nothing is happening ──────────────────────── -->
   <template x-if="warning">
-    <div class="alert alert-warning py-1.5 px-2 text-xs" x-text="warning"></div>
+    <div class="note" x-text="warning"></div>
   </template>
 
-  <!-- ── readout + peak-hold meter ────────────────────────────────────── -->
-  <div>
-    <div class="readout font-mono" :class="stale && 'is-stale'">
-      <span class="readout-num" x-text="cur.yagi ?? '––'"></span>
-      <span class="readout-unit font-display opacity-50">dB SNR</span>
-      <span class="ml-auto text-sm font-mono opacity-60" x-show="cur.delta !== null">
-        <span x-text="(cur.delta > 0 ? '+' : '') + cur.delta"></span> vs omni
+  <!-- ── display well ─────────────────────────────────────────────────── -->
+  <div class="well">
+    <div class="well-top">
+      <span class="silk">Yagi SNR</span>
+      <span class="vs-omni" x-show="cur.delta !== null">
+        <span x-text="(cur.delta > 0 ? '+' : '') + cur.delta"></span>
+        <span class="silk" style="margin-left:.15rem">vs omni</span>
       </span>
     </div>
 
-    <div class="meter mt-1.5">
-      <div class="meter-live" :class="levelClass" :style="`width:${livePct}%`"></div>
-      <div class="meter-peak" x-show="peakPct !== null" :style="`left:calc(${peakPct}% - 1.5px)`"></div>
+    <div class="flex items-baseline gap-2">
+      <span class="value" :class="stale && 'is-stale'" x-text="cur.yagi ?? '––'"></span>
+      <span class="value-unit">dB</span>
     </div>
-    <div class="meter-scale font-mono mt-0.5">
-      <span x-text="SCALE_MIN + ' dB'"></span>
-      <span x-show="best !== null">PEAK <span x-text="best"></span></span>
-      <span x-text="SCALE_MAX + ' dB'"></span>
+
+    <div class="meter">
+      <div class="meter-live" :class="levelClass" :style="`width:${livePct}%`"></div>
+      <div class="meter-ticks"></div>
+      <div class="meter-peak" x-show="peakPct !== null" :style="`left:calc(${peakPct}% - 1px)`"></div>
+    </div>
+    <div class="meter-scale">
+      <span class="silk" x-text="SCALE_MIN"></span>
+      <span class="silk" x-show="best !== null">peak <span x-text="best"></span></span>
+      <span class="silk" x-text="'+' + SCALE_MAX"></span>
     </div>
   </div>
 
-  <!-- ── worst / spread / age — quiet supporting figures ──────────────── -->
-  <div class="grid grid-cols-3 gap-2 text-center">
-    <div>
-      <div class="text-[.625rem] tracking-widest opacity-45 font-display">WORST</div>
-      <div class="font-mono tabular-nums text-lg" x-text="worst ?? '––'"></div>
-    </div>
-    <div>
-      <div class="text-[.625rem] tracking-widest opacity-45 font-display">SPREAD</div>
-      <div class="font-mono tabular-nums text-lg" x-text="spread ?? '––'"></div>
-    </div>
-    <div>
-      <div class="text-[.625rem] tracking-widest opacity-45 font-display">AGE</div>
-      <div class="font-mono tabular-nums text-lg" :class="ageClass"
-           x-text="ageSec !== null ? ageSec + 's' : '––'"></div>
-    </div>
+  <!-- ── supporting readings ──────────────────────────────────────────── -->
+  <div class="panel reads">
+    <div class="read"><div class="silk">Worst</div>
+      <div class="read-v" x-text="worst ?? '––'"></div></div>
+    <div class="read"><div class="silk">Spread</div>
+      <div class="read-v" x-text="spread ?? '––'"></div></div>
+    <div class="read"><div class="silk">Age</div>
+      <div class="read-v" :class="ageClass" x-text="ageSec !== null ? ageSec + 's' : '––'"></div></div>
   </div>
 
   <!-- ── trace ────────────────────────────────────────────────────────── -->
-  <div class="trace"><canvas id="alignChart"></canvas></div>
+  <div class="panel trace">
+    <canvas id="alignChart"></canvas>
+    <div class="trace-key silk">
+      <span style="color:hsl(var(--p))"><b></b>yagi</span>
+      <span style="color:hsl(var(--bc)/.5)"><b style="border-top-style:dashed"></b>omni</span>
+    </div>
+  </div>
 
   <!-- ── marks ────────────────────────────────────────────────────────── -->
-  <div class="marks font-mono">
+  <div class="marks">
     <template x-if="!marks.length">
-      <span class="text-xs opacity-40 font-sans">Turn, wait for a reading, then mark the position.</span>
+      <span class="silk" style="letter-spacing:.08em; text-transform:none; align-self:center">
+        Turn, wait for a reading, then mark the position.
+      </span>
     </template>
     <template x-for="m in marks" :key="m.n">
       <span class="mark" :class="m.n === bestMarkN && 'is-peak'">
@@ -159,14 +257,11 @@
     </template>
   </div>
 
-  <!-- ── controls ─────────────────────────────────────────────────────── -->
-  <div class="rig-controls">
-    <button class="btn btn-outline font-display" :disabled="!running || cur.yagi === null"
-            @click="mark()">MARK</button>
-    <button class="btn font-display" :class="running ? 'btn-error' : 'btn-primary'"
-            :disabled="!running && !target"
-            @click="running ? stop() : start()"
-            x-text="running ? 'STOP' : 'START'"></button>
+  <!-- ── switches ─────────────────────────────────────────────────────── -->
+  <div class="sw">
+    <button :disabled="!running || cur.yagi === null" @click="mark()">Mark</button>
+    <button :class="running ? 'halt' : 'go'" :disabled="!running && !target"
+            @click="running ? stop() : start()" x-text="running ? 'Stop' : 'Start'"></button>
   </div>
 
 </div>

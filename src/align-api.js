@@ -17,7 +17,7 @@ import { Router } from 'express';
 import { WebSocketServer } from 'ws';
 import { traceroute } from './traceroute.js';
 import { getRotatorAddress, getPrimaryMac } from './device-config.js';
-import { isListenerForMode } from './dash-mode.js';
+import { isListenerForMode, transmitterForMode } from './dash-mode.js';
 import { listFavourites } from './db.js';
 import { log } from './log.js';
 
@@ -60,8 +60,18 @@ function statusFrame() {
     target: session?.num ?? null,
     yagi_listening: yagi,
     omni_listening: omni,
-    warning,
+    // A live send failure outranks a config warning: it is why nothing is
+    // happening RIGHT NOW, which is the question the operator is asking.
+    warning: notice ?? warning,
   };
+}
+
+// Transient problems the operator must SEE. Held on the server so every client
+// shows the same thing — a second phone must not disagree with the first.
+let notice = null;
+function pushStatus(msg) {
+  notice = msg;
+  broadcast(statusFrame());
 }
 
 // ── the align loop ───────────────────────────────────────────────────────────
@@ -70,12 +80,30 @@ function statusFrame() {
 // during discovery — during alignment repeated traces of ONE node are the point.
 function tick() {
   if (!session) return;
-  const mac = getRotatorAddress();
+
+  // The transmitting radio is a MODE ROLE, not a fixed choice. dash-mode is the
+  // SSOT for it (mode-dispatch-ssot). Hardcoding the rotator here was wrong twice
+  // over: it ignores the configured PASV tx role, and it dispatches through a
+  // radio that may be OFFLINE while another is READY — which is exactly what
+  // happened on the first live test (503 NEED_PAIR / RECONNECTING, every send).
+  const device = transmitterForMode('pasv');
+  if (!device) {
+    pushStatus('No transmitting radio available for PASV — check Config → Modes.');
+    return;
+  }
+
   traceroute.dispatch({
     to: session.num,
-    device: mac,
+    device,
     cooldownMs: 0,
     cooldownKey: 'align',
+  }).catch((e) => {
+    // A dispatch that never leaves the gateway produced NOTHING on the page
+    // before this: no sample, no error, just a still screen. Standing at a mast
+    // that is indistinguishable from "the mesh is quiet". Say it out loud.
+    const msg = String(e?.message ?? e);
+    if (/cooldown/i.test(msg)) return;              // benign, self-resolving
+    pushStatus(`Send failed: ${msg}`);
   });
 }
 
@@ -96,6 +124,7 @@ function onResult(r) {
   if (!session || r.from !== session.num) return;
   if (!r.rx_device || r.rx_snr === null || r.rx_snr === undefined) return;
 
+  clearNotice();                      // something arrived — the link is alive
   latest.set(r.rx_device, { snr: r.rx_snr, at: Date.now() });
 
   const fresh = (mac) => {
@@ -120,6 +149,20 @@ function onResult(r) {
 }
 
 traceroute.on('result', onResult);
+
+// A traceroute that times out or fails to send emits 'cancel'. Silence is the
+// normal failure mode on an unacked broadcast link, so an unreported timeout
+// looks identical to a page that is simply not working.
+traceroute.on('cancel', (c) => {
+  if (!session || c.to !== session.num) return;
+  pushStatus(`No reply from the node (${c.reason ?? 'timeout'}) — still trying.`);
+});
+
+// Clear a stale notice as soon as anything succeeds, so a one-off blip does not
+// leave a warning sitting on screen contradicting live data.
+function clearNotice() {
+  if (notice !== null) { notice = null; broadcast(statusFrame()); }
+}
 
 export function alignStart({ num }) {
   if (session) alignStop();

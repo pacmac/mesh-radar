@@ -1,7 +1,7 @@
 ---
 module: align-api
 source: src/align-api.js
-source_hash: e912d253fb0aff0c4a472500695bd6a5955fa4f830affb690cda1eb7fb442a60
+source_hash: 125077ee3c7544c88929542cfa6c3c07e6093f1721582d7d4fbd6cd682353efd
 updated: 2026-07-19
 ---
 

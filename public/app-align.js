@@ -112,6 +112,11 @@ window.alignPage = function alignPage() {
         if (this.targets.length) this.target = this.targets[0].num;
       } catch { this.targets = []; }
 
+      // Connect on LOAD, not on START. A second phone opening the page while a
+      // session is already running must show that session — it cannot learn the
+      // state without a socket, and the server sends a status frame on connect.
+      this._open();
+
       // AGE ticks locally so it keeps counting when samples STOP arriving —
       // that is the whole point of the card.
       this._tick = setInterval(() => { this._now = Date.now(); }, 1000);
@@ -174,24 +179,24 @@ window.alignPage = function alignPage() {
       this.cur = { yagi: null, omni: null, delta: null };
       this._redraw();
 
+      if (!this._ws) this._open();   // reconnect if the socket dropped
       await fetch('/align/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ num: this.target }),
       });
-      this._open();
-      this.running = true;
+      // `running` is NOT set here — it arrives on the server's status frame.
       try { this._wake = await navigator.wakeLock?.request('screen'); } catch { /* not fatal */ }
     },
 
     async stop() {
-      if (!this.running) return;
-      this.running = false;
+      // Tell the server first; it broadcasts the new state to every client.
+      await fetch('/align/stop', { method: 'POST' }).catch(() => {});
       try { this._ws?.close(); } catch {}
       this._ws = null;
+      this.running = false;   // the socket is gone, so no status frame will arrive
       // Released deliberately — holding it after stop drains the phone in a pocket.
       try { await this._wake?.release(); } catch {}
       this._wake = null;
-      fetch('/align/stop', { method: 'POST' }).catch(() => {});
     },
 
     mark() {
@@ -204,7 +209,16 @@ window.alignPage = function alignPage() {
       const ws = new WebSocket(`${proto}://${location.host}/align/events`);
       ws.onmessage = (e) => {
         let f; try { f = JSON.parse(e.data); } catch { return; }
-        if (f.kind === 'status') { this.warning = f.warning ?? null; return; }
+        if (f.kind === 'status') {
+          // The SERVER owns the session. The browser reflects it and decides
+          // nothing (BROWSER_CONTRACT). Setting `running` locally made two
+          // phones disagree: one showed STOP while the other showed START for
+          // the same single server-side session.
+          this.running = f.running;
+          this.warning = f.warning ?? null;
+          if (f.target !== null && f.target !== undefined) this.target = f.target;
+          return;
+        }
         this._onSample(f);
       };
       ws.onclose = () => { if (this.running) this._ws = null; };
