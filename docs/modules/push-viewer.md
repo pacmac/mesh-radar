@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: 15636bb80994cec4fd8c5d3941c548f4fdc4e1fce36fe37df4c824cb90fedde8
+source_hash: c0a38dbf2e9e27bc999b8ea301039e363e43ba57fe4dab7b3c9def202b32125a
 updated: 2026-07-20
 ---
 
@@ -369,3 +369,29 @@ string, which express ignores, so the real file was served and nothing was prove
 
 Server side, per Peter's suggestion: the periodic re-announce is skipped unless a partial
 has actually GROWN, so viewers never re-fetch identical bytes.
+
+## The live frame is a CANVAS, not an `<img>` (2026-07-20)
+
+Third attempt at the flicker, after two that failed:
+
+1. `x-for` keyed on the URL — which changes every announce (mtime cache-buster) — so
+   Alpine destroyed and rebuilt the element each time. Blank until load.
+2. Stable key plus preload-and-swap-`src`. Still blanked, because `.part` is served
+   `no-store`: assigning `src` triggers a SECOND fetch, and that fetch can land while the
+   client is rewriting the file (`writeFileSync` of the whole prefix), yielding a
+   truncated body.
+
+A canvas removes the refetch entirely. The candidate is decoded ONCE off-screen via
+`new Image()`, and on success blitted with `drawImage`. Nothing ever clears the canvas, so
+a failed or partial load simply leaves the last good frame — the picture can only move
+forwards. Before the first successful decode a placeholder is shown instead
+("waiting for the first decodable chunk…"), so an empty canvas is never mistaken for a
+blank image.
+
+Peter's steer — *"if alpine can't handle it use js instead"* — was the right call; the
+mistake was trying two more declarative variants first.
+
+**NOT yet verified during live streaming.** The canvas painted (`livePainted` true) but the
+transfer reached 32/32 before the streaming phase could be sampled, and the `.part` is
+removed on success. Confirm on the next transfer: sample the canvas while chunks arrive
+and check for blank frames.

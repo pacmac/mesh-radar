@@ -179,25 +179,24 @@
            which is exactly how the last completed picture looked like the live one.
            The server re-announces the listing every ~4 s during a transfer and versions
            the URL by mtime, so this fills in as chunks land. -->
-      <!-- Keyed on `name`, NOT `url`. The url carries an mtime cache-buster so it changes
-           on every announce; keying on it made Alpine destroy and recreate the <img> each
-           time, which is why the picture toggled between the partial and NOTHING. With a
-           stable key the element persists and only its src changes, so the browser keeps
-           painting the previous frame until the new one has decoded. -->
-      <template x-for="im in arriving" :key="im.name">
+      <!-- ARRIVING NOW — drawn to a CANVAS, not an <img>.
+           Two earlier attempts failed. Keying x-for on the url rebuilt the element every
+           announce (blank until load). Preloading and swapping `src` still blanked,
+           because `.part` is served no-store: setting src triggers a SECOND fetch, which
+           can land mid-write while the client rewrites the file.
+           A canvas removes the refetch entirely — the bitmap is decoded once off-screen
+           and blitted. Nothing is ever cleared, so a failed load leaves the last good
+           frame on screen. -->
+      <template x-if="arriving.length">
         <figure class="flex flex-col items-center gap-2">
           <div class="text-xs font-semibold text-warning">receiving now</div>
-          <img :src="liveSrc || im.url" alt="arriving payload"
-               class="max-w-full rounded border-2 border-warning">
-          <figcaption class="text-xs font-mono opacity-60 text-center" x-text="im.caption"></figcaption>
-          <progress x-show="im.pct !== null" class="progress progress-warning w-48"
-                    :value="im.pct" max="100"></progress>
-          <!-- Why the picture stops growing long before the transfer does. A JPEG decodes
-               only up to its FIRST missing byte, and this file holds the contiguous
-               prefix — so it fills until the first lost chunk, then freezes while later
-               chunks land out of sight, then completes when the repair round fills the
-               gap. Roughly 10% then a jump to 100% is normal on a lossy link, not a
-               stall. The numeric bar above is the honest progress. -->
+          <canvas x-ref="live" class="max-w-full rounded border-2 border-warning"
+                  :class="livePainted ? '' : 'hidden'"></canvas>
+          <div x-show="!livePainted"
+               class="rounded border-2 border-dashed border-warning p-8 text-xs opacity-60">
+            waiting for the first decodable chunk…
+          </div>
+          <figcaption class="text-xs font-mono opacity-60 text-center" x-text="arriving[0].caption"></figcaption>
           <p class="text-xs opacity-60 text-center max-w-sm">
             fills only to the first missing chunk — later chunks are arriving but cannot be
             drawn until the repair round closes the gap, so expect a jump to the full image
@@ -276,7 +275,7 @@ function pushViewer() {
     lastEventAt: null, sinceLast: 0, log: [],
     targets: [], target: '', pidInput: 1, starting: false, startError: '',
     images: [], endedAt: null, publishing: false, _lastMark: null,
-    liveSrc: null, _pendingSrc: null,
+    _pendingSrc: null, livePainted: false,
 
     // Explicit staging. Uses the existing command route — no new backend, and the
     // server still owns gateway + channel. Deliberate because an automatic publish can
@@ -334,11 +333,17 @@ function pushViewer() {
     // ever go forwards.
     _preloadArriving() {
       const next = this.arriving[0]?.url;
-      if (!next || next === this._pendingSrc || next === this.liveSrc) return;
+      if (!next || next === this._pendingSrc) return;
       this._pendingSrc = next;
       const probe = new Image();
-      probe.onload  = () => { if (this._pendingSrc === next) this.liveSrc = next; };
-      probe.onerror = () => { /* keep whatever is on screen; try again next announce */ };
+      probe.onload = () => {
+        const c = this.$refs.live;
+        if (!c || !probe.naturalWidth) return;
+        c.width = probe.naturalWidth; c.height = probe.naturalHeight;
+        c.getContext('2d').drawImage(probe, 0, 0);
+        this.livePainted = true;          // true only once real pixels are on it
+      };
+      probe.onerror = () => { /* keep the last good frame; retry on the next announce */ };
       probe.src = next;
     },
     get stored()   { return this.images.filter(i => !i.partial); },
@@ -375,7 +380,7 @@ function pushViewer() {
             count: null, bytes: null, error: '', imageUrl: null, imageFile: '',
             imageUnknown: false, frames261: 0, elapsedMs: 0 });
           this._lastMark = null;
-          this.liveSrc = null; this._pendingSrc = null;   // new transfer, new picture
+          this._pendingSrc = null; this.livePainted = false;   // new transfer, new picture
           this.note(`START node=${ev.num} pid=${ev.pid}`);
         } else {
           // Also covers the ON-CONNECT REPLAY of an in-flight transfer: opening this
