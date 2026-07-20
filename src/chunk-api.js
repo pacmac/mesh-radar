@@ -10,6 +10,7 @@ import { transport } from './transport-plugin.js';
 import { resolvePrimaryNodeId } from './device-config.js';
 import { resolveCommandChannel } from './node-settings.js';
 import { getDeviceChannelsByNodeId, broadcastChunkProgress, setChunkImagesProvider } from './ws-relay.js';
+import { sendMeshText } from './mesh-send.js';
 import { log } from './log.js';
 
 const router = Router();
@@ -116,6 +117,24 @@ function _newestPayloadSince(sinceMs) {
   return { url, file: path.basename(best.abs) };
 }
 
+// The device answers a START in text on the command channel. `{"start":N,"ok":0}` is a
+// REFUSAL — it will not send this pid — and mt-transport's client retries the START
+// rather than failing fast, so without this the browser shows a blank progress bar while
+// the device says "no" every 35 seconds. A flat refusal must not look like a dead radio.
+//
+// Read-only observation of a reply we already receive; it transmits nothing.
+export function notePushReply(fromNum, text) {
+  if (!_inFlight || !text || !text.startsWith('{')) return;
+  if (Number(fromNum) !== Number(_inFlight.num)) return;   // a different node's reply
+  let msg; try { msg = JSON.parse(text); } catch { return; }
+  if (msg?.type !== 'push' || msg.start === undefined) return;
+  if (msg.ok === 0 || msg.ok === false) {
+    const detail = `device refused the transfer (start ok:0, cnt:${msg.cnt ?? '?'}) — it will not send pid ${_inFlight.pid}`;
+    log.warn('chunk', `${detail} [node ${_inFlight.num}]`);
+    broadcastChunkProgress({ type: 'chunk_error', num: _inFlight.num, pid: _inFlight.pid, error: detail });
+  }
+}
+
 // POST /nodes/:num/chunk-fetch  { pid }
 // The browser sends only num + pid. The gateway and the channel are SERVER
 // decisions (BROWSER_CONTRACT) — channel is resolved BY NAME to Private, never a
@@ -153,6 +172,24 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
   res.status(202).json({ ok: true, state: 'started', num, pid });
 
   try {
+    // PUBLISH FIRST. The JPEG lives permanently in the device's flash — there is no
+    // capture step — but the UPLOAD must be published into the pending state before a
+    // START can be served. COMPLETE (`push done`) clears that pending state, so after
+    // any successful transfer the next START is refused with {"start":N,"ok":0,"cnt":0}
+    // until the payload is re-published. That is precisely why mt-transport added
+    // `push pub`, and omitting it is why a fresh Start returned ok:0 five times while
+    // the UI showed a blank bar.
+    //
+    // Cheap and safe to send every time: it re-publishes from flash, costs one small
+    // text frame, and leaves the device pending (up:1, upst:1). START is still
+    // mt-transport's to send — we only stage.
+    await sendMeshText({
+      gatewayNodeId, text: `@${target} push pub`, channel: ch.channel, category: 'command',
+    });
+    log.info('chunk', `published pid ${pid} on node ${num} (@${target} push pub) before START`);
+    // Let the device settle and answer before the client's START goes out.
+    await new Promise(r => setTimeout(r, 4000));
+
     // PUSH only. Pull was removed entirely — its follow-up requests were the failure
     // (stall at 16/32, the device never received the pull for first=16).
     const r = await t.chunkPush({

@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: 0ef8ccc47288b7cfb4a680201e299642c046ac50764971a2f13a7413c1863d1f
+source_hash: 7a8ebe979e307dc6c6a369fbb2e1e8aee75c7320b11cceb8f861d4ffb870d837
 updated: 2026-07-20
 ---
 
@@ -260,3 +260,32 @@ Live capability line after the purge:
 
 Also gone with it: `batch`, and every `MSG_BUSY (0x06)` reference describing pacing as
 current — under push the device paces itself and that frame does not exist.
+
+## Publish before START, and surface a refusal (task `push-publish-first`, 2026-07-20)
+
+**The bug:** a fresh Start returned `{"start":1,"ok":0,"cnt":0}` five times and the UI
+showed a blank progress bar. The device was refusing deliberately — its `bs` (badStarts)
+counter reached 5 — because the pid was not published.
+
+**Why the device was empty.** The JPEG lives permanently in flash (no capture step), but
+the UPLOAD must be published into a pending state before a START can be served. COMPLETE
+(`push done`) clears that pending state — correctly: the receiver is the only party that
+can assert a transfer is finished. The device then republishes only at boot or on
+`push pub`. So after ANY successful transfer, the next START is refused until republished.
+mt-transport: *"This is going to happen in production and it is the thing to fix, not the
+symptom."*
+
+**Fix 1 — publish first.** The route sends `@<suffix> push pub`, waits 4 s, then lets
+mt-transport's client send START. One small text frame; it re-publishes from flash and
+leaves the device pending (`up:1, upst:1`). Staging only — START remains mt-transport's to
+send and node-dash sends nothing else (two STARTs restart the pass).
+
+**Fix 2 — a refusal is no longer silent.** `notePushReply()` inspects device replies
+already arriving on the command channel and converts `{"start":N,"ok":0}` into a
+`chunk_error` carrying the device's own `cnt`. Read-only: it transmits nothing.
+
+**Why this could not be diagnosed from the dashboard.** `up`/`upst` are NOT in the
+device's periodic status frame (mt-transport, pending), and polling `push stat` during a
+transfer is forbidden because control is TEXT at hop 3 and gets rebroadcast. So a device
+with nothing published was indistinguishable from a dead radio. Until the status frame
+carries them: treat a refused START as "nothing published", never as a device fault.
