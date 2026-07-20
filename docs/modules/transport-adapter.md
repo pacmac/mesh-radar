@@ -1,8 +1,8 @@
 ---
 module: transport-adapter
 source: src/transport-adapter.js
-source_hash: 8c65e9534fe343cce8542ac1448ad1bfba87e74611ecd8128dd37ea05eabcca0
-updated: 2026-07-19
+source_hash: 3b4d84943e6cb54271adcea26b872d6b0a259a46b0fdc82cdfe5b920ac92db8d
+updated: 2026-07-20
 ---
 
 # Module: transport-adapter
@@ -91,13 +91,21 @@ _N/A_
   successfully without doing anything.
 - No `Client` construction at adapt time — only on first `chunkFetch`.
 - One `Client` per `(host, gatewayId, channel)`; never one per fetch.
-- **`batch` defaults to 4, not mt-transport's 16.** 16 does not merely run slowly
-  on real hardware — it *never completes*. A 16-chunk batch is ~35 s of
-  transmission during which the device is deaf (half-duplex) while the Omni
-  rebroadcasts; re-issuing a pull inside that window makes the device restart
-  from the first gap. Measured by mt-transport against DEV1 2026-07-19; batch 4
-  completed a 32-chunk image in 173 s. Overridable, but the default must be the
-  value that works.
+- **No client-side pacing. The device owns the pace.** As of the async firmware
+  (`chunk-flow-control`, 2026-07-20) the device drives flow control via a
+  `MSG_BUSY` (0x06) frame — "not ready, retry after N ms" — which `Client.fetch`
+  obeys internally. mt-transport's explicit design instruction: node-dash must add
+  **no** batch/interval heuristics; `chunkFetch` is a thin wrapper. So the adapter
+  **imposes no `batch` default** — it passes `batch` through only when the caller
+  supplies one, and otherwise lets `Client.fetch` use its own (device-derived)
+  default. The old `batch:4` default is gone: it was a workaround for the pre-async
+  blocking cadence (16 never completed in a 35 s deaf window), which no longer
+  exists. `MSG_BUSY` needs no node-dash change — node-dash decodes no 261 frames.
+- **Progress + deadline pass straight through.** `chunkFetch` forwards
+  `onProgress({received,count,batch,elapsedMs})` and `deadlineMs` to `Client.fetch`
+  untouched when given. The adapter neither fires progress nor enforces the
+  deadline itself — the client owns both; the adapter only relays. `deadlineMs`
+  replaces the old `timeoutMs` opt.
 
 ## Test notes
 
@@ -119,8 +127,16 @@ stays green on a box with only stock Meshtastic); 11 passed with
 `index.js:21-66,128` and re-checked by constructing a real `Client` (construction
 only — no `connect()`, no socket, no transmit):
 `new Client({host, gatewayId, channel})`, `await connect()`, then
-**positional** `fetch(target, pid, {timeoutMs, batch})`. The real ctor refuses
-channel 0 and an unset channel; both confirmed.
+**positional** `fetch(target, pid, {deadlineMs, batch, onProgress})` (the stable
+signature mt-transport committed 2026-07-20; `onProgress`/`deadlineMs` added,
+`timeoutMs` retired). The real ctor refuses channel 0 and an unset channel; both
+confirmed.
+
+Test note update (2026-07-20): the former "defaults batch to 4" test becomes
+"imposes no batch default" — `chunkFetch` with no `batch` must forward opts with
+`batch` **absent**, letting the client's device-derived default apply. The
+explicit-override test stays. New: `onProgress`/`deadlineMs` are forwarded when
+given.
 
 An earlier version of this adapter assumed `{channel, gatewayNodeId, send}` and
 `fetch({target, pid})` — wrong on every count — and every test passed because the

@@ -14,7 +14,7 @@ import { adaptMtTransport, looksLikeMtTransport, closeClients } from '../src/tra
 // mt-transport/clients/node/index.js:21-66,128:
 //   constructor({host, gatewayId, channel, ...})   — channel 0/unset throws
 //   async connect()
-//   async fetch(target, pid, {timeoutMs, batch})   — POSITIONAL
+//   async fetch(target, pid, {deadlineMs, batch, onProgress})   — POSITIONAL
 //   close()
 //
 // The first version of this fake took `{channel, gatewayNodeId, send}` and
@@ -109,16 +109,17 @@ await t('chunkFetch uses the REAL Client contract (ctor object + positional fetc
   assert.strictEqual(r.value.toString(), 'jpegbytes');
 });
 
-// mt-transport measured batch 16 as never completing on real hardware (35 s deaf
-// window, device restarts from the first gap). Inheriting their default would
-// mean every node-dash fetch hangs. This test exists so that default cannot
-// silently come back.
-await t('chunkFetch defaults batch to 4, NOT the module default of 16', async () => {
+// Since the async firmware (chunk-flow-control, 2026-07-20) the DEVICE paces via
+// MSG_BUSY and the client obeys it. mt-transport's design: node-dash adds no
+// pacing. So the adapter must impose NO batch default — it forwards batch only
+// when a caller gives one, letting the client's device-derived default apply.
+// This test exists so a client-side batch heuristic cannot silently come back.
+await t('chunkFetch imposes NO batch default — device owns pacing', async () => {
   closeClients();
   const spy = {};
   const caps = adaptMtTransport({ Client: FakeClient(spy) });
   await caps.chunkFetch(ARGS);                    // no batch supplied
-  assert.strictEqual(spy.fetchArgs[2].batch, 4);
+  assert.strictEqual(spy.fetchArgs[2].batch, undefined, 'no batch heuristic on our side');
 });
 
 await t('chunkFetch honours an explicit batch override', async () => {
@@ -127,6 +128,20 @@ await t('chunkFetch honours an explicit batch override', async () => {
   const caps = adaptMtTransport({ Client: FakeClient(spy) });
   await caps.chunkFetch({ ...ARGS, batch: 8 });
   assert.strictEqual(spy.fetchArgs[2].batch, 8);
+});
+
+// The stable API (2026-07-20): progress + hard deadline pass straight through to
+// Client.fetch. The adapter relays them; it fires no progress and enforces no
+// deadline itself.
+await t('chunkFetch forwards onProgress + deadlineMs when given', async () => {
+  closeClients();
+  const spy = {};
+  const caps = adaptMtTransport({ Client: FakeClient(spy) });
+  const onProgress = () => {};
+  await caps.chunkFetch({ ...ARGS, deadlineMs: 240000, onProgress });
+  assert.strictEqual(spy.fetchArgs[2].deadlineMs, 240000, 'deadlineMs forwarded');
+  assert.strictEqual(spy.fetchArgs[2].onProgress, onProgress, 'onProgress forwarded');
+  assert.strictEqual(spy.fetchArgs[2].timeoutMs, undefined, 'timeoutMs retired');
 });
 
 await t('chunkFetch reuses one Client per (host,gatewayId,channel)', async () => {
