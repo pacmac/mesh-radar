@@ -1,7 +1,7 @@
 ---
 module: align-api
 source: src/align-api.js
-source_hash: bf2a4b6ffc9b3939503f4d690c277a7039ad304f45c99338bb97991b6f73b24d
+source_hash: 35bf429cb99a82cf3da50b5e605ac3fb8c016cea7fb293aaa5aa067481a567de
 updated: 2026-07-19
 ---
 
@@ -57,18 +57,25 @@ measurements, not guessed:
 - The N pings fire **~1200 ms apart** (just over the collect window, so each is a
   genuine separate attempt), each correlated by `reply_id` and tagged to the burst.
   As each lands, the progress (`got`/`of`) is pushed so the button shows "gathering 3/4".
-- **One burst-level deadline** resolves the whole burst, sized to the reply latency:
-  `(N−1)·BURST_SPACING_MS + BURST_REPLY_WINDOW_MS` (≈ 23.6 s for N=4; the reply
-  window is 20 s against a measured max latency of 18.6 s). There is **no per-ping
-  timeout** — an unanswered ping simply never lands a sample. This is deliberate:
-  a per-ping 30 s timeout made a mixed burst (some replies, some silent) sit
-  "gathering" for the full 30 s and reject presses with 409 the whole time, even
-  though the average was already available. The deadline resolves promptly with
-  whatever arrived. (Verified live 2026-07-19: a 1-of-4 burst resolved at 23.6 s,
-  not 30 s, and the next press was accepted immediately.)
-- The burst also resolves **early** the instant every ping has resolved — all
-  landed, or all sends failed (a send failure counts immediately, so an all-fail
-  burst warns fast rather than waiting the deadline).
+- **One burst-level deadline** resolves the whole burst, sized to the reply window:
+  `(N−1)·BURST_SPACING_MS + replyWindowMs`. There is **no per-ping timeout** — an
+  unanswered ping simply never lands a sample. This is deliberate: a per-ping
+  timeout made a mixed burst (some replies, some silent) sit "gathering" for the
+  full timeout and reject presses with 409 the whole time, even though the average
+  was already available.
+- **The reply window is a PERSISTED, operator-set value** (config key
+  `align.reply_window_sec`, **default 30 s**, clamped 5–120). It is the "period to
+  wait for a reply" field on the page. It matters because a weak node (HOME, −116
+  dBm) can answer at **18–43 s** — longer than the old fixed 20 s window, which
+  discarded those replies as "too late" (the "align never gets a reply" bug). A
+  larger window catches them. `alignStart`/`alignPing` read the config at burst
+  creation, so a change takes effect on the next press.
+- **The window NEVER blocks a completed burst.** The burst also resolves **early**
+  the instant every ping has resolved — all landed, or all sends failed
+  (`maybeResolve` on `done >= of`). So if all replies are already in, the reading
+  appears at ~reply time, NOT at the window. Only a *partial* burst (some silent)
+  runs to the deadline. This is the load-bearing invariant to verify: set the
+  window to 30 s, land all replies at ~16 s → resolves at ~16 s.
 - On resolve, one **averaged reading** is appended — mean quality, mean rssi/snr,
   **spread** (max−min of the quality samples, the answer to "is a gap real or just
   noise"), `got`/`of`, and per-radio RX quality averaged over the samples each
@@ -86,6 +93,7 @@ burst resolve, stop). The browser holds only the last one it was told.
   running, target, channel,
   tx: 'OMNI',                       // which home radio transmits (label)
   nBurst: 4,                        // configured burst size (echo of the control)
+  replyWindowSec: 30,               // persisted reply-wait period (the page field)
   burst: { active: true, got: 2, of: 4 } | null,   // in-flight progress
   warning: null,
   best: { n: 8 } | null,
@@ -140,11 +148,15 @@ burst resolve, stop). The browser holds only the last one it was told.
 ## Public interface
 
 ```js
-export default router                    // GET /align, /align/targets; POST /align/ping|stop
+export default router                    // GET /align, /align/targets; POST /align/ping|stop|reply-window
 export function attachAlignWs(server)    // mounts WS /align/events; pushes the view-model
 export function alignStop()              // → {ok, state}
 export function handleAlignPong(pkt, rxDevice)  // called from bridge-events
 ```
+
+`POST /align/reply-window { sec }` clamps 5–120, `setConfig('align.reply_window_sec', sec)`,
+pushes the updated view-model, returns `{ ok, sec }`. The value is server-owned and
+persisted; the browser field is raw input that calls this (BROWSER_CONTRACT).
 
 ## Invariants
 

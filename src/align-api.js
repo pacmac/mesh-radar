@@ -16,7 +16,7 @@ import { getRotatorAddress, getPrimaryMac, resolvePrimaryNodeId } from './device
 import { dashMode } from './dash-mode.js';
 import { resolveCommandChannel } from './node-settings.js';
 import { getDeviceChannelsByNodeId } from './ws-relay.js';
-import { listFavourites } from './db.js';
+import { listFavourites, getConfig, setConfig } from './db.js';
 import { signalQuality } from './utils.js';
 import { sendMeshText } from './mesh-send.js';
 import { log } from './log.js';
@@ -37,8 +37,14 @@ let session = null;
 // already-sufficient average is shown, and presses would 409 the whole time.
 const ALIGN_COLLECT_MS       = 1200;
 const BURST_SPACING_MS       = 1200;
-const BURST_REPLY_WINDOW_MS  = 20000;   // wait this long after the LAST send for replies
 const N_MIN = 1, N_MAX = 5, N_DEFAULT = 4;
+
+// The reply-wait window is operator-set and PERSISTED (the page field). A weak
+// node can answer at 18–43 s, longer than the old fixed 20 s window that
+// discarded those replies. Default 30 s; clamped 5–120. Read at burst creation.
+const REPLY_WINDOW_DEFAULT_SEC = 30, REPLY_WINDOW_MIN = 5, REPLY_WINDOW_MAX = 120;
+const clampWindow = (s) => Math.max(REPLY_WINDOW_MIN, Math.min(REPLY_WINDOW_MAX, Math.round(Number(s) || REPLY_WINDOW_DEFAULT_SEC)));
+const replyWindowSec = () => clampWindow(getConfig('align.reply_window_sec', REPLY_WINDOW_DEFAULT_SEC));
 
 const clampN = (n) => Math.max(N_MIN, Math.min(N_MAX, Math.round(Number(n) || N_DEFAULT)));
 const round1 = (v) => (typeof v === 'number' && Number.isFinite(v)) ? Math.round(v * 10) / 10 : null;
@@ -68,7 +74,8 @@ function broadcast(obj) {
 function computeView() {
   if (!session) {
     return { kind: 'align', running: false, target: null, tx: null, channel: null,
-             nBurst: N_DEFAULT, burst: null, warning: null, best: null, readings: [] };
+             nBurst: N_DEFAULT, replyWindowSec: replyWindowSec(),
+             burst: null, warning: null, best: null, readings: [] };
   }
   const rs = session.readings;
   const qualities = rs.map(r => r.quality);
@@ -110,6 +117,7 @@ function computeView() {
     tx: session.txLabel,
     channel: session.channel,
     nBurst: session.nBurst,
+    replyWindowSec: replyWindowSec(),
     burst: session.burst ? { active: true, got: session.burst.got, of: session.burst.of } : null,
     warning: session.warning,
     best: bestN === null ? null : { n: bestN },
@@ -244,8 +252,9 @@ async function alignPing(n) {
   session.warning = null;
   // One deadline covers the reply window for the LAST ping (sent (of-1) spacings
   // in). At it, resolve with whatever landed — do not wait out unanswered pings.
+  // The window is the persisted operator setting, read now at burst creation.
   burst.deadlineTimer = setTimeout(() => resolveBurst(burst),
-    (of - 1) * BURST_SPACING_MS + BURST_REPLY_WINDOW_MS);
+    (of - 1) * BURST_SPACING_MS + replyWindowSec() * 1000);
   pushView();                       // button -> gathering 0/of
   // Fire the pings, spaced so each is a fresh attempt. Sends are awaited so the
   // burst can be cancelled by a stop between pings.
@@ -322,6 +331,15 @@ router.post('/align/ping', async (req, res) => {
 });
 
 router.post('/align/stop', (_req, res) => res.json(alignStop()));
+
+// Persist the operator's reply-wait period (the page field). Server-owned value;
+// the browser field is raw input that calls this, then renders the pushed model.
+router.post('/align/reply-window', (req, res) => {
+  const sec = clampWindow(req.body?.sec);
+  setConfig('align.reply_window_sec', sec);
+  broadcast(computeView());          // every client sees the new value
+  res.json({ ok: true, sec });
+});
 
 // ── WS /align/events ─────────────────────────────────────────────────────────
 export function attachAlignWs(server) {
