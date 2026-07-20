@@ -77,8 +77,9 @@
         <span class="text-xs opacity-60" x-show="targets.length === 0">no PAC alarm nodes in the node list yet</span>
       </div>
       <p class="text-xs opacity-60">
-        Starts a real transfer — this puts frames on air on the Private channel and takes
-        ~3 minutes. One at a time; the server refuses a second.
+        Starts a real transfer — this puts frames on air on the Private channel. A clean
+        run is ~3½ minutes; with lost chunks a repair round takes longer, so the wall is
+        10 minutes. One at a time; the server refuses a second.
         <br>
         <strong>Publish</strong> re-stages the image from the device's flash. Needed after a
         completed transfer, because COMPLETE clears the device's pending upload. It is
@@ -238,7 +239,7 @@ function pushViewer() {
     imageUrl: null, imageFile: '', imageUnknown: false,
     lastEventAt: null, sinceLast: 0, log: [],
     targets: [], target: '', pidInput: 1, starting: false, startError: '',
-    images: [], endedAt: null, publishing: false,
+    images: [], endedAt: null, publishing: false, _lastMark: null,
 
     // Explicit staging. Uses the existing command route — no new backend, and the
     // server still owns gateway + channel. Deliberate because an automatic publish can
@@ -311,6 +312,7 @@ function pushViewer() {
           Object.assign(this, { state: 'running', num: ev.num, pid: ev.pid, received: 0,
             count: null, bytes: null, error: '', imageUrl: null, imageFile: '',
             imageUnknown: false, frames261: 0, elapsedMs: 0 });
+          this._lastMark = null;
           this.note(`START node=${ev.num} pid=${ev.pid}`);
         } else {
           // Also covers the ON-CONNECT REPLAY of an in-flight transfer: opening this
@@ -324,7 +326,17 @@ function pushViewer() {
           if (ev.count != null) this.count = ev.count;
           this.elapsedMs = ev.elapsedMs ?? this.elapsedMs;
           if (firstCount) this.note(`MANIFEST count=${ev.count}`);
-          this.note(`progress ${this.received}/${this.count ?? '?'}`);
+          // Log only on CHANGE. onProgress fires ~1/second, so logging every event
+          // filled the window with identical "progress 31/32" lines and buried the
+          // START, MANIFEST and error entries that actually matter. The live numbers
+          // above still update every tick; the log records transitions.
+          const mark = `${this.received}/${this.count ?? '?'}`;
+          if (mark !== this._lastMark) {
+            this._lastMark = mark;
+            this.note(`progress ${mark}`);
+          } else {
+            this.lastEventAt = Date.now();   // still counts as liveness
+          }
         }
       } else if (ev.type === 'chunk_done') {
         this.state = 'done';

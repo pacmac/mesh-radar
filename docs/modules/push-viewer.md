@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: 2ea70810c822e9b20f4c11a7fd8ad4c73f308b3ad8acecfee365297991aab5d5
+source_hash: abcb492b33e365e58b41598062d6067770e7def0df5495b1d2c8151edd4c78e1
 updated: 2026-07-20
 ---
 
@@ -265,3 +265,16 @@ with a confirm that says exactly that, and the conditional version lives in
 `Client.push()` where `upst` is already known.
 
 Disabled while a transfer is running, and while publishing.
+
+## Progress log records TRANSITIONS, not ticks (2026-07-20)
+
+`onProgress` fires about once per second, and the event log called `note()` on every one —
+so a transfer waiting out its tail produced fifty identical `progress 31/32` lines and
+buried START, MANIFEST and every error. Peter saw exactly that.
+
+The log now records a line only when `received/count` CHANGES. The numeric readouts above
+it still update every tick, and an unchanged tick still counts toward liveness (it feeds
+"last event: N s ago"), so nothing is lost except the repetition.
+
+Verified: 40 identical ticks now produce ONE line, and the surviving log reads
+`progress 32/32 · progress 31/32 · progress 30/32 · MANIFEST count=32 · START …`.
