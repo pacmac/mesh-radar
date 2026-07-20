@@ -193,7 +193,10 @@
         stored — location unknown (the server could not resolve the file)
       </div>
 
-      <template x-if="imageUrl">
+      <!-- Only when the stored listing does NOT already carry it. chunk_done's url and
+           the chunk_images entry point at the same file, so rendering both showed the
+           picture twice after every successful transfer. -->
+      <template x-if="imageUrl && !images.some(i => i.url === imageUrl)">
         <!-- flex-col: daisyUI styles `.card figure` as a centred flex ROW, which put
              the caption beside the image instead of under it. -->
         <figure class="flex flex-col items-center gap-2">

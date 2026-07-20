@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: 13e8c6b65967747fc02dd87bf6df67feb6c75aa8c23e9214bd60c94d822dace6
+source_hash: de2c9b439afb7263f9dc6b0cd3db3ac57751e148ef02216a9d1bf54b5202eea5
 updated: 2026-07-20
 ---
 
@@ -399,3 +399,14 @@ second attempt rather than appearing to hang on the first.
 
 The explicit **Publish** control stays — it is still the right tool for republishing
 deliberately, and it is the only option if a retry ever needs to be avoided.
+
+## Completed images carry their age too (2026-07-20)
+
+Partials got `abandoned 11 min ago` while completed images showed only
+`336b · pid-1.jpg · 7156 bytes` — no time at all. So a picture fetched an hour earlier
+looked identical to one fetched ten seconds earlier, and the stored image read as "why is
+there always an old image". Completed captions now end `· fetched <age>`.
+
+The image itself is kept deliberately: `<PAYLOAD_DIR>/<node>/pid-<N>.jpg` persists and is
+announced on every connect, because it is the only gallery that exists. It is replaced when
+the same pid is fetched again.

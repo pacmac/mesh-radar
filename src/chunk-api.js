@@ -86,7 +86,7 @@ function listStoredPayloads() {
           e.name,
           partial
             ? `incomplete${pct != null ? ` ${have}/${count} chunks (${pct}%)` : ''} · abandoned ${_ageText(st.mtimeMs)}`
-            : `${st.size} bytes`,
+            : `${st.size} bytes · fetched ${_ageText(st.mtimeMs)}`,
         ].filter(Boolean).join(' · '),
       });
     }

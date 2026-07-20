@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: 5732c12ca960fe965fd02dced4177a7735d13772deddba848780fa3dd5200000
+source_hash: c9892ad2fb260070d08829b9abf34196dbe674e567fd2dea052b1cf12b63c028
 updated: 2026-07-20
 ---
 
@@ -307,3 +307,10 @@ The caption also no longer prints `?` for the node — push writes to the payloa
 there is no node directory and the placeholder invented an unknown that was not one — and
 now carries age, so a stale partial reads as `pid-1.jpg.part · incomplete · abandoned
 11 min ago`.
+
+## One image, not two (2026-07-20)
+
+`chunk_done.url` and the `chunk_images` entry point at the SAME file once the route saves
+it, so a successful transfer rendered the picture twice. The standalone render is now
+suppressed when the stored listing already contains that URL — verified: a `chunk_done`
+naming an already-listed file leaves the count at one.
