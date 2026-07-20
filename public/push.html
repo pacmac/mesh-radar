@@ -71,11 +71,20 @@
         <button class="btn btn-primary btn-sm" @click="start()"
                 :disabled="!target || state === 'running' || starting"
                 x-text="state === 'running' ? 'transfer in progress' : (starting ? 'starting…' : 'Start transfer')"></button>
+        <button class="btn btn-outline btn-sm" @click="publish()"
+                :disabled="!target || state === 'running' || publishing"
+                x-text="publishing ? 'publishing…' : 'Publish'"></button>
         <span class="text-xs opacity-60" x-show="targets.length === 0">no PAC alarm nodes in the node list yet</span>
       </div>
       <p class="text-xs opacity-60">
         Starts a real transfer — this puts frames on air on the Private channel and takes
         ~3 minutes. One at a time; the server refuses a second.
+        <br>
+        <strong>Publish</strong> re-stages the image from the device's flash. Needed after a
+        completed transfer, because COMPLETE clears the device's pending upload. It is
+        deliberate and not automatic: publishing during a live transfer would reset the
+        cursor under it, and at <span class="font-mono">upst=3</span> it discards a finished
+        pass and re-sends all 32 chunks.
       </p>
       <p class="text-sm text-error" x-show="startError" x-text="startError"></p>
     </div>
@@ -229,7 +238,25 @@ function pushViewer() {
     imageUrl: null, imageFile: '', imageUnknown: false,
     lastEventAt: null, sinceLast: 0, log: [],
     targets: [], target: '', pidInput: 1, starting: false, startError: '',
-    images: [], endedAt: null,
+    images: [], endedAt: null, publishing: false,
+
+    // Explicit staging. Uses the existing command route — no new backend, and the
+    // server still owns gateway + channel. Deliberate because an automatic publish can
+    // reset a running transfer's cursor (mt-transport, 2026-07-20).
+    async publish() {
+      if (!confirm(`Re-publish the image on node ${this.target}?\n\nThis TRANSMITS. Do not use it while a transfer is running — it resets the device's pending upload.`)) return;
+      this.publishing = true; this.startError = '';
+      try {
+        const r = await fetch(`/nodes/${this.target}/command`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ command: 'push pub' }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) this.startError = `publish ${r.status}: ${body.error || 'refused'}`;
+        else this.note(`PUBLISH requested on ${this.target} (watch for pub:1, cnt:N)`);
+      } catch (e) { this.startError = e.message; }
+      finally { this.publishing = false; }
+    },
 
     // Submission workflow (BROWSER_CONTRACT sanctions POST for this). The browser sends
     // only num + pid — gateway and channel are server decisions.

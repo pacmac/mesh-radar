@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: 18cb42c7d65da3372b10a9ed825f3f8dda4210deed16fa9ea9d6ea03e6937315
+source_hash: 2ea70810c822e9b20f4c11a7fd8ad4c73f308b3ad8acecfee365297991aab5d5
 updated: 2026-07-20
 ---
 
@@ -250,3 +250,18 @@ callers inside OUR server, not against the device.
 
 **`.part` naming confirmed:** `<final name>.part` beside the final file in `payloadDir`,
 removed on success. Predictable, so progressive render needs no new API from them.
+
+## The Publish control (2026-07-20)
+
+Sits beside Start. POSTs `{command: 'push pub'}` to the existing `/nodes/:num/command`
+route — no new backend, and the server still owns gateway and channel.
+
+**Deliberate, never automatic.** COMPLETE clears the device's pending upload, so after a
+successful transfer the next START is refused until the image is re-published from flash
+(the JPEG never leaves flash; it is the pending *upload* that is cleared). But publishing
+blindly is unsafe: during a live transfer it resets the cursor under the stream, and at
+`upst=3` it discards a finished pass and re-sends all 32 chunks. So the operator decides,
+with a confirm that says exactly that, and the conditional version lives in
+`Client.push()` where `upst` is already known.
+
+Disabled while a transfer is running, and while publishing.
