@@ -206,6 +206,12 @@ function pushViewer() {
             imageUnknown: false, frames261: 0, elapsedMs: 0 });
           this.note(`START node=${ev.num} pid=${ev.pid}`);
         } else {
+          // Also covers the ON-CONNECT REPLAY of an in-flight transfer: opening this
+          // page mid-transfer must show "running", not "idle". Without this the page
+          // looked idle and any start control would have appeared available while the
+          // server would refuse it with a 409.
+          this.state = 'running';
+          if (ev.num != null) { this.num = ev.num; this.pid = ev.pid; }
           const firstCount = this.count === null && ev.count != null;
           this.received = ev.received ?? this.received;
           if (ev.count != null) this.count = ev.count;
