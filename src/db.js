@@ -46,7 +46,10 @@ db.exec(`
     air_util_tx     REAL,
     uptime_seconds  INTEGER,
     device          TEXT,
-    updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
+    updated_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+    -- CORE SSOT: our own "is this ours / what kind", generated from the MT role
+    -- (interim: SENSOR marks our custom nodes). Mirrors client-role.js clientRole.
+    client_role     TEXT GENERATED ALWAYS AS (CASE WHEN role = 'SENSOR' THEN role END) VIRTUAL
   );
 
   CREATE TABLE IF NOT EXISTS events (
@@ -255,6 +258,18 @@ db.exec(`
   const niCols = db.prepare(`PRAGMA table_info(nodeinfo)`).all().map(r => r.name);
   if (!niCols.includes('favourite')) {
     db.exec(`ALTER TABLE nodeinfo ADD COLUMN favourite INTEGER NOT NULL DEFAULT 0`);
+  }
+}
+// client_role: CORE SSOT — node-dash's own "is this ours / what kind", generated
+// from the MT role (interim: SENSOR marks our custom nodes). Auto-syncs with role,
+// no ingest change, queryable like role. Mirrors client-role.js clientRole.
+// GUARD USES table_xinfo, NOT table_info: PRAGMA table_info OMITS generated
+// columns, so a table_info guard never sees the column it added and re-ALTERs on
+// every boot -> "duplicate column" crash loop. table_xinfo lists generated columns.
+{
+  const nodeCols = db.prepare(`PRAGMA table_xinfo(nodes)`).all().map(r => r.name);
+  if (!nodeCols.includes('client_role')) {
+    db.exec(`ALTER TABLE nodes ADD COLUMN client_role TEXT GENERATED ALWAYS AS (CASE WHEN role = 'SENSOR' THEN role END) VIRTUAL`);
   }
 }
 const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);

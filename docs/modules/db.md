@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 637d466c91b553a4c13d51b7e374f427839049a816fb6cacbb365f4f6c32b794
+source_hash: a905259e511e0314c02f64e47153598b02238f8399a2705da5bd6f1dbdd95b49
 updated: 2026-07-18
 ---
 
@@ -362,3 +362,7 @@ same MAC vocabulary the `node_source` filter compares against.
 MACs in `traceroute_history.tx_device`, `messages.device`, and inside
 `messages.rx_devices` comma-lists (string REPLACE per registry pair).
 Unmappable ids are left as-is per IDENTITY.md §7 amnesty.
+
+## client_role generated column (task client-role-ssot, 2026-07-20)
+
+`nodes` gains a **generated** `client_role TEXT` column — `CASE WHEN role='SENSOR' THEN role END` (VIRTUAL, added via guarded `ALTER TABLE` for existing DBs, and in `CREATE TABLE` for fresh). Auto-derived from `role`, so no ingest change; queryable/filterable like `role`. Mirrors `client-role.js` `clientRole` (the two change together). CORE node data — see `client-role.md`.

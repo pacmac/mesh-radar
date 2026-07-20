@@ -3,6 +3,7 @@ import { getConfig, setConfig, getMqttNode, listFavourites, listFavouriteNodes, 
 import { getRotatorAddress } from './device-config.js';
 import { passesFilter, ownDeviceNums } from './node-filter.js';
 import { haversine, bearing } from './utils.js';
+import { clientRole } from './client-role.js';
 
 const NEW_NODE_TTL = 86400; // 24 hours
 
@@ -24,7 +25,10 @@ export function hopsAway(hopStart, hopLimit) {
 
 function enrichFromCache(node) {
   const cached = getMqttNode(node.num);
-  if (!cached) return node;
+  // CORE SSOT: our own "is this ours / what kind", server-derived so the browser
+  // never classifies (BROWSER_CONTRACT). null for regular nodes. See client-role.md.
+  const client_role = clientRole(node.user?.role ?? cached?.role ?? null);
+  if (!cached) return { ...node, client_role };
 
   const now   = Math.floor(Date.now() / 1000);
   const isNew = cached.first_heard != null && (now - cached.first_heard) < NEW_NODE_TTL;
@@ -40,13 +44,14 @@ function enrichFromCache(node) {
   // Node already has identity — just tag _new and attach stored traceroute + warm hops
   if (node.user?.short_name || node.user?.long_name) {
     return isNew
-      ? { ...node, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra }
-      : { ...node, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra };
+      ? { ...node, client_role, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra }
+      : { ...node, client_role, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra };
   }
 
   // Backfill identity + position from cache
   return {
     ...node,
+    client_role,
     ...favExtra,
     user: {
       id:         node.user?.id ?? cached.node_id,

@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 4c70f716f1b176f7dc139113a6ff4bef8f9aa132dcc6d0a819273e2af58c3c38
+source_hash: 8aaa326c05aa2ec87a990ddcc38d5cb11e7a454052e2bc7a6e2e50cc174faf00
 updated: 2026-07-08
 ---
 
@@ -311,3 +311,7 @@ ev.node_id`), matching `_cache._device` — audit violation B8.
 ## Phase C1
 
 `setTraceroute` returns the inserted history row id (for WS row keying).
+
+## client_role on the WS feed (task client-role-ssot, 2026-07-20)
+
+`enrichFromCache` adds `client_role` to every emitted node via `clientRole(node.user?.role ?? cached.role)` (`client-role.js`) — the server-side value the browser renders (Control picker, badges) and never re-derives. `null` for regular nodes. See `client-role.md`.
