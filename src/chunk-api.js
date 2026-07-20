@@ -38,6 +38,14 @@ export const PAYLOAD_DIR = path.join(process.cwd(), 'data', 'payloads');
 //
 // Everything here is computed server-side (URL, caption, percentage) — the browser
 // renders it and decides nothing (BROWSER_CONTRACT).
+function _ageText(mtimeMs) {
+  const mins = Math.round((Date.now() - mtimeMs) / 60000);
+  if (mins < 1)  return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  return hrs < 24 ? `${hrs} h ago` : `${Math.round(hrs / 24)} d ago`;
+}
+
 function listStoredPayloads() {
   const out = [];
   const walk = (dir, rel) => {
@@ -68,9 +76,17 @@ function listStoredPayloads() {
         modified: new Date(st.mtimeMs).toISOString(),
         partial,
         have, count, pct,
-        caption: partial
-          ? `${rel || '?'} · ${e.name} · incomplete${pct != null ? ` ${have}/${count} chunks (${pct}%)` : ''}`
-          : `${rel || '?'} · ${e.name} · ${st.size} bytes`,
+        // No '?' placeholder: push writes to the payload ROOT (no node directory), so
+        // `rel` is legitimately empty and printing '?' invented an unknown that isn't one.
+        // Age matters more than the path here — a leftover partial from hours ago must not
+        // read like a live one.
+        caption: [
+          rel || null,
+          e.name,
+          partial
+            ? `incomplete${pct != null ? ` ${have}/${count} chunks (${pct}%)` : ''} · abandoned ${_ageText(st.mtimeMs)}`
+            : `${st.size} bytes`,
+        ].filter(Boolean).join(' · '),
       });
     }
   };
@@ -140,6 +156,27 @@ export function notePushReply(fromNum, text) {
   }
 }
 
+// Every stored partial belonging to a pid, across BOTH layouts — push writes
+// `pid-<N>.jpg.part` at the root, pull wrote `<node>/pid<N>.part` with a `.json` sidecar,
+// and mt-transport has flagged the push path as not yet stable. So match on the filename
+// containing the pid and ending `.part`, never on a fixed path.
+function _partialsForPid(pid) {
+  const out = [];
+  const walk = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(abs); continue; }
+      if (!/\.part(\.json)?$/.test(e.name)) continue;
+      if (!new RegExp(`(^|[^0-9])${pid}([^0-9]|$)`).test(e.name)) continue;
+      out.push(abs);
+    }
+  };
+  walk(PAYLOAD_DIR);
+  return out;
+}
+
 // POST /nodes/:num/chunk-fetch  { pid }
 // The browser sends only num + pid. The gateway and the channel are SERVER
 // decisions (BROWSER_CONTRACT) — channel is resolved BY NAME to Private, never a
@@ -168,6 +205,22 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
   if (!ch.ok) return res.status(409).json({ error: ch.error });
 
   const target = hexSuffix(num);
+
+  // Clear any ABANDONED partial for this pid before starting. A .part left by a failed
+  // transfer cannot be resumed across a restart — the receiver's chunk map lives in the
+  // client's memory, and repair is driven from that, not from the file — so it is dead
+  // weight that was being announced to every new session as though it were live. Peter
+  // opened a fresh session hours later and was still shown "pid-1.jpg.part · incomplete".
+  //
+  // Cleared HERE rather than on failure, deliberately: immediately after a failure the
+  // partial is genuinely useful (it renders as half a picture, which is how the 16/32
+  // stall was diagnosed). It only becomes clutter once superseded, and starting a new
+  // transfer for the same pid is exactly that moment.
+  for (const stale of _partialsForPid(pid)) {
+    try { fs.unlinkSync(stale); log.info('chunk', `cleared abandoned partial ${path.basename(stale)}`); }
+    catch (e) { log.warn('chunk', `could not clear ${stale}: ${e.message}`); }
+  }
+
   _inFlight = { num, pid };
   const startedAt = Date.now();
   broadcastChunkProgress({ type: 'chunk_progress', num, pid, received: 0, count: null, state: 'started' });

@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: 1cea00db14baeb8965c2d844c91ec10e9b9034c2aecbed1186ee93d368fefce1
+source_hash: ef3ce488c3001c9aa1ea8199f48002371cf531c3ef971734871559df58e5398f
 updated: 2026-07-20
 ---
 

@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: c2d5dc5397411aab875883e1a111d43443d14179b12a35648ab79d37bf221254
+source_hash: bafe6b9ce28b523364a254bd4810f8faba4b38cf888e11c6f3ca3effe2afe7a6
 updated: 2026-07-20
 ---
 
@@ -629,3 +629,17 @@ is correct — a restart kills the transfer too.
 which means transmitting, which is Peter's call alone. Static review only. The test when
 authorised: start a transfer, open `/push.html` fresh mid-transfer, confirm it shows
 `running` with the correct node/pid rather than `idle`.
+
+## `chunk_idle` — an explicit "no transfer" on connect (2026-07-20)
+
+Both chunk caches (`lastChunkProgress`, `lastChunkTerminal`) are IN MEMORY, so a process
+restart empties them. A browser that was watching a transfer then reconnects, is told
+nothing, and keeps rendering its last frame forever — indistinguishable from a live
+transfer that froze.
+
+That is exactly how a pm2 restart mid-transfer presented: a log that simply stopped at
+20/32 and a page reported as "crashed / stalled". The transfer was genuinely gone (the
+receiver's chunk map lives in the client's memory), but nothing said so.
+
+Connect now always yields exactly one of three: the in-flight `chunk_progress`, the last
+terminal outcome, or `{type:'chunk_idle'}`. Silence is never one of the options.

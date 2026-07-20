@@ -873,6 +873,13 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       // ...or the last outcome, so a failure that happened while nobody was looking is
       // still visible, with the time it ended.
       else if (lastChunkTerminal) ws.send(JSON.stringify(lastChunkTerminal));
+      // ...or an explicit "nothing here". A browser that was watching a transfer when the
+      // process restarted reconnects to a server with no memory of it — and both caches
+      // above are in-memory, so both are empty. Without this it keeps rendering its last
+      // frame forever and reads as a live transfer that froze. That is exactly how a pm2
+      // restart mid-transfer presented on 2026-07-20: "crashed / stalled" with a log that
+      // simply stopped. Silence again, and stating it costs one small event.
+      else ws.send(JSON.stringify({ type: 'chunk_idle' }));
 
       // Everything already on disk — finished images and resumable partials alike.
       ws.send(JSON.stringify({ type: 'chunk_images', images: _chunkImagesProvider() }));
