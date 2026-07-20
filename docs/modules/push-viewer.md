@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: 9a310869c90bb2dbb391acec9ac606aacde27f6f62255509776d102ec958438e
+source_hash: 15636bb80994cec4fd8c5d3941c548f4fdc4e1fce36fe37df4c824cb90fedde8
 updated: 2026-07-20
 ---
 
@@ -343,3 +343,29 @@ at the corrupt byte. mt-transport predicted exactly this ("the image must NOT be
 progress indicator") and the design already follows it — numeric bar for truth, picture
 for satisfaction. The missing piece was simply telling the viewer, so the caption under an
 arriving image now explains it.
+
+## The live image toggled between the picture and nothing (2026-07-20)
+
+Peter: *"it toggles between the dynamic image and nothing … it should only update if the
+new size > last size?"* Right on both counts, and there were two causes.
+
+**1. The `x-for` key was the URL, which changes on every announce** (it carries an mtime
+cache-buster). Alpine therefore destroyed the `<img>` and built a new one each time — a
+guaranteed blank until the bytes arrived. Keyed on `name` instead, the element persists.
+
+**2. A stable key still cannot survive a mid-write fetch.** The client rewrites the
+`.part` wholesale (`writeFileSync` of the concatenated prefix), so a fetch landing inside
+that window gets a truncated or empty body. Alpine cannot help with that, so the swap is
+done in plain JS: the candidate is loaded off-screen with `new Image()` and promoted to
+`liveSrc` ONLY on a successful decode. A failed or partial fetch keeps whatever is on
+screen and retries on the next announce.
+
+Net effect: **the picture can only ever go forwards.**
+
+Verified: 13 samples across 4 growing announces — zero blank frames; and an announce
+pointing at a genuine 404 leaves `liveSrc` unchanged with the previous frame still
+painted. (The first attempt at that negative test was invalid — it used a bogus query
+string, which express ignores, so the real file was served and nothing was proven.)
+
+Server side, per Peter's suggestion: the periodic re-announce is skipped unless a partial
+has actually GROWN, so viewers never re-fetch identical bytes.

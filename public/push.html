@@ -179,10 +179,15 @@
            which is exactly how the last completed picture looked like the live one.
            The server re-announces the listing every ~4 s during a transfer and versions
            the URL by mtime, so this fills in as chunks land. -->
-      <template x-for="im in arriving" :key="im.url">
+      <!-- Keyed on `name`, NOT `url`. The url carries an mtime cache-buster so it changes
+           on every announce; keying on it made Alpine destroy and recreate the <img> each
+           time, which is why the picture toggled between the partial and NOTHING. With a
+           stable key the element persists and only its src changes, so the browser keeps
+           painting the previous frame until the new one has decoded. -->
+      <template x-for="im in arriving" :key="im.name">
         <figure class="flex flex-col items-center gap-2">
           <div class="text-xs font-semibold text-warning">receiving now</div>
-          <img :src="im.url" alt="arriving payload"
+          <img :src="liveSrc || im.url" alt="arriving payload"
                class="max-w-full rounded border-2 border-warning">
           <figcaption class="text-xs font-mono opacity-60 text-center" x-text="im.caption"></figcaption>
           <progress x-show="im.pct !== null" class="progress progress-warning w-48"
@@ -206,7 +211,7 @@
            is announced rather than being a one-shot event. -->
       <div x-show="stored.length && state === 'running'"
            class="text-xs opacity-50 border-t border-base-200 pt-2">previously fetched</div>
-      <template x-for="im in stored" :key="im.url">
+      <template x-for="im in stored" :key="im.name">
         <figure class="flex flex-col items-center gap-2 border-t border-base-200 pt-3 first:border-0">
           <img :src="im.url" alt="stored payload"
                class="max-w-full rounded border" :class="im.partial ? 'border-warning' : 'border-base-300'">
@@ -271,6 +276,7 @@ function pushViewer() {
     lastEventAt: null, sinceLast: 0, log: [],
     targets: [], target: '', pidInput: 1, starting: false, startError: '',
     images: [], endedAt: null, publishing: false, _lastMark: null,
+    liveSrc: null, _pendingSrc: null,
 
     // Explicit staging. Uses the existing command route — no new backend, and the
     // server still owns gateway + channel. Deliberate because an automatic publish can
@@ -314,6 +320,27 @@ function pushViewer() {
 
     // Split by what the SERVER said each file is, never by guessing from the name.
     get arriving() { return this.images.filter(i => i.partial); },
+
+    // The displayed partial is swapped ONLY once the new bytes have decoded.
+    //
+    // A stable x-for key stops Alpine tearing the <img> down, but it cannot stop a blank
+    // frame when the fetched file is mid-write — the client rewrites the .part wholesale
+    // (writeFileSync of the concatenated prefix), so a fetch landing inside that window
+    // gets a truncated or empty body and the element renders nothing. Peter saw it
+    // toggling between the image and nothing.
+    //
+    // So: load the candidate off-screen, and only promote it on a successful decode. A
+    // failed or partial fetch simply keeps the previous frame — the picture can then only
+    // ever go forwards.
+    _preloadArriving() {
+      const next = this.arriving[0]?.url;
+      if (!next || next === this._pendingSrc || next === this.liveSrc) return;
+      this._pendingSrc = next;
+      const probe = new Image();
+      probe.onload  = () => { if (this._pendingSrc === next) this.liveSrc = next; };
+      probe.onerror = () => { /* keep whatever is on screen; try again next announce */ };
+      probe.src = next;
+    },
     get stored()   { return this.images.filter(i => !i.partial); },
 
     get endedAtLocal() {
@@ -348,6 +375,7 @@ function pushViewer() {
             count: null, bytes: null, error: '', imageUrl: null, imageFile: '',
             imageUnknown: false, frames261: 0, elapsedMs: 0 });
           this._lastMark = null;
+          this.liveSrc = null; this._pendingSrc = null;   // new transfer, new picture
           this.note(`START node=${ev.num} pid=${ev.pid}`);
         } else {
           // Also covers the ON-CONNECT REPLAY of an in-flight transfer: opening this
@@ -406,6 +434,7 @@ function pushViewer() {
         // browser opened after the transfer ended) still shows the result. Captions and
         // percentages are server-computed; this renders them.
         this.images = ev.images || [];
+        this._preloadArriving();
       } else if (ev.type === 'node_list') {
         // client_role is server-computed (src/client-role.js). Selecting which rows to
         // OFFER is display filtering, not classification.

@@ -307,6 +307,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // finished. A finished-and-failed transfer must look different from a running one.
   let lastChunkTerminal = null;
   let _lastImagesPush = 0;
+  let _lastImagesSig = '';
 
   // Last-known device list — replayed to new frontend clients on connect.
   // Composed from lastDeviceState in memory — no HTTP calls after startup.
@@ -446,7 +447,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // about once a second, so 4 s gives a visible fill without re-walking constantly.
     else if (ev?.type === 'chunk_progress' && Date.now() - _lastImagesPush > 4000) {
       _lastImagesPush = Date.now();
-      try { _broadcastChunkImagesEvent(); } catch { /* relay not attached */ }
+      // Only announce if a partial actually GREW. Re-sending an unchanged listing makes
+      // every viewer re-fetch a file whose bytes are identical, for no gain — and the
+      // re-fetch is what exposed the flicker in the first place.
+      try {
+        const sig = _chunkImagesProvider()
+          .filter(i => i.partial).map(i => `${i.name}:${i.bytes}`).join('|');
+        if (sig !== _lastImagesSig) { _lastImagesSig = sig; _broadcastChunkImagesEvent(); }
+      } catch { /* relay not attached */ }
     }
     if (ev?.type === 'chunk_progress') { lastChunkProgress = ev; lastChunkTerminal = null; }
     else if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error') {
