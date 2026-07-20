@@ -32,7 +32,9 @@ const say = (...a) => console.log(`[${ts()}]`, ...a);
 
 // ---- state ---------------------------------------------------------------
 let active = null;            // {num, pid, count, received, startedAt}
-let frames261 = 0;            // raw + typed frames seen for the current transfer
+let frames261 = 0;            // DISTINCT packet ids on 261 (not frames on air)
+let receptions = 0;           // raw 261 events seen (inflated by extra radios + rebroadcasts)
+const seenFrameIds = new Set();
 let lastFrameAt = 0;
 let manifestSeen = false;
 let tiltDuringTransfer = 0;
@@ -68,8 +70,8 @@ function newestPayload() {
 
 function finish(kind, detail) {
   const secs = active ? ((Date.now() - active.startedAt) / 1000).toFixed(1) : '?';
-  const ratio = active?.count ? (frames261 / active.count).toFixed(2) : '?';
-  say(`${kind} ${detail} elapsed=${secs}s frames261=${frames261} ratio=${ratio}/chunk`);
+  const ratio = active?.count ? (receptions / active.count).toFixed(2) : '?';
+  say(`${kind} ${detail} elapsed=${secs}s frames=${frames261} receptions=${receptions} receptions/chunk=${ratio} (NOT frames-on-air)`);
 
   if (kind === 'DONE') {
     const f = newestPayload();
@@ -90,7 +92,8 @@ function finish(kind, detail) {
   } else if (frames261 > 0) {
     say('TILT-GATE-OK no tilt_update fired during 261 traffic');
   }
-  active = null; frames261 = 0; manifestSeen = false; tiltDuringTransfer = 0; stalled = false;
+  active = null; frames261 = 0; receptions = 0; seenFrameIds.clear();
+  manifestSeen = false; tiltDuringTransfer = 0; stalled = false;
 }
 
 // ---- stall + idle reporting ---------------------------------------------
@@ -117,7 +120,8 @@ function connect() {
     if (ev.type === 'chunk_progress') {
       if (ev.state === 'started') {
         active = { num: ev.num, pid: ev.pid, count: null, received: 0, startedAt: Date.now() };
-        frames261 = 0; manifestSeen = false; tiltDuringTransfer = 0; stalled = false;
+        frames261 = 0; receptions = 0; seenFrameIds.clear();
+        manifestSeen = false; tiltDuringTransfer = 0; stalled = false;
         lastFrameAt = Date.now();
         say(`START num=${ev.num} pid=${ev.pid}`);
       } else if (active) {
@@ -135,11 +139,22 @@ function connect() {
     if (ev.type === 'chunk_done')  { finish('DONE',  `bytes=${ev.bytes}`); return; }
     if (ev.type === 'chunk_error') { exitCode = 1; finish('ERROR', `msg="${ev.error}"`); return; }
 
-    // Raw + typed 261 frames. Counting only — decoding is mt-transport's job.
+    // 261 frames — RAW SHAPE ONLY. Every physical frame also arrives as a typed
+    // `private_app` event; counting both double-counted it (proven live: 3 raw / 3
+    // typed, same sender and length, 2 ms apart). The raw shape carries pkt.id.
+    //
+    // `frames261` = distinct packet ids. NOT frames on air: a mesh rebroadcast reuses
+    // the id, so it cannot be separated from the same frame heard by a second radio.
+    // Never quote either figure as an independent check of mt-transport's ~2.8x.
     const rawPort = ev?.data?.packet?.decoded?.portnum;
-    if ((ev.type === 'packet' && Number(rawPort) === 261) ||
-        (ev.type === 'private_app' && Number(ev.portnum) === 261)) {
-      frames261++; lastFrameAt = Date.now();
+    if (ev.type === 'packet' && Number(rawPort) === 261) {
+      const id = ev.data.packet.id;
+      receptions++;
+      if (id == null || !seenFrameIds.has(id)) {
+        if (id != null) seenFrameIds.add(id);
+        frames261++;
+      }
+      lastFrameAt = Date.now();
       if (stalled) { stalled = false; say('RECOVERED 261 frames resumed after a stall'); }
       return;
     }

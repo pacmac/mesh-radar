@@ -1,7 +1,7 @@
 ---
 module: push-observer
 source: scripts/push-observer.mjs
-source_hash: a3544079f25f8a6ccb9048e4ff9f93c7bf27e5f12a093076392f562b5278520e
+source_hash: 3fbeb1e8ae2987f83a73f805c9dcaf8615765f3735340ac2a56b9df550d8fafc
 updated: 2026-07-20
 ---
 
@@ -99,3 +99,40 @@ mechanism that explained an absence, and a watcher that could only match the ben
   pair it with the numeric `received/count` bar.
 - Triggering the fetch (deliberate, manual, transmits).
 - Any `src/` or `public/` change — none required.
+
+## 261 frame counting — corrected (task `push-viewer-frame-dedupe`, 2026-07-20)
+
+**Bug as shipped:** every physical 261 frame reaches `/events` in BOTH shapes — a raw
+`packet` AND a typed `private_app`. Counting both **doubled** the figure. Proven live:
+in one sample `raw:261 = 3`, `typed:261 = 3`, and 3/3 raw frames had a typed twin with
+the same `from` and the same 231-byte length within 2 ms. Peter saw "22 frames" for ~11.
+
+**Fix:** count the RAW shape only (it is the one carrying `pkt.id`) and additionally
+dedupe by that id, because several gateway radios each report the same transmission.
+
+**What the number can honestly claim — this is narrower than first specced.** A mesh
+REBROADCAST preserves the packet id, so deduping by id also collapses the gateway's
+rebroadcasts. A receiver cannot separate "one transmission heard by two radios" from
+"the same frame rebroadcast". Therefore:
+
+- `frames` = DISTINCT packet ids seen on 261 — logical frames, NOT frames on air.
+- `receptions` = raw events seen — inflated by both extra radios and rebroadcasts.
+
+Neither is an independent measurement of mt-transport's ~2.8x frames-per-chunk, and the
+page must not imply that it is. The earlier claim that node-dash could supply a
+"receiver-side ratio" was wrong and has been withdrawn to them. The frames/chunk figure
+is therefore labelled `receptions/chunk` and carries the caveat in the UI.
+
+## Observing a transfer we did NOT initiate
+
+`count`, `elapsed` and `bytes` all originate in `chunk-api`'s `onProgress`, which only
+runs for a fetch triggered through `POST /nodes/:num/chunk-fetch`. When mt-transport
+drives the device directly (the normal case during their bring-up — they own DEV1), 261
+frames flow but no `chunk_*` event ever arrives. As shipped the page showed a ticking
+frame counter beside blank fields, which reads as broken.
+
+The page now states the distinction explicitly: with 261 frames seen but no `chunk_*`
+event, it shows **"observing external 261 traffic — this transfer was not started here,
+so there is no manifest, progress or byte count"**. That is reporting the ABSENCE of
+received data (contract: missing state renders as an unknown indicator), not a deduction
+about who is transmitting.

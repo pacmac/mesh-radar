@@ -60,6 +60,15 @@
         </span>
       </div>
       <p class="text-sm text-error" x-show="error" x-text="error"></p>
+
+      <!-- Frames arriving with no transfer of ours: say so, rather than showing a
+           ticking counter beside blanks and looking broken. -->
+      <p class="text-sm text-warning" x-show="external">
+        observing external 261 traffic — this transfer was not started here, so there is
+        no manifest, progress or byte count
+        (<span class="font-mono" x-text="frames261"></span> frames,
+        <span class="font-mono" x-text="receptions"></span> receptions)
+      </p>
     </div>
   </div>
 
@@ -158,8 +167,14 @@ function pushViewer() {
     wsState: 'connecting…',
     state: 'idle', num: null, pid: null, error: '',
     received: 0, count: null, elapsedMs: 0, bytes: null,
-    frames261: 0, imageUrl: null, imageFile: '', imageUnknown: false,
+    frames261: 0, receptions: 0, _seen: new Set(),
+    imageUrl: null, imageFile: '', imageUnknown: false,
     lastEventAt: null, sinceLast: 0, log: [],
+
+    // 261 frames but no chunk_* event = someone else is driving the device (normally
+    // mt-transport, who own DEV1). Reporting the ABSENCE of our own progress data,
+    // not deducing who is transmitting.
+    get external() { return this.frames261 > 0 && this.state === 'idle'; },
 
     get pct() { return this.count ? Math.round((this.received / this.count) * 100) : 0; },
     get badgeClass() {
@@ -171,7 +186,9 @@ function pushViewer() {
         { k: 'elapsed',      v: this.elapsedMs ? (this.elapsedMs / 1000).toFixed(0) + 's' : '—' },
         { k: 'bytes',        v: this.bytes ?? '—' },
         { k: '261 frames',   v: this.frames261 || '—' },
-        { k: 'frames/chunk', v: this.count && this.frames261 ? (this.frames261 / this.count).toFixed(2) : '—' },
+        // NOT "frames on air": a rebroadcast reuses the packet id, so this cannot be
+        // separated from multi-radio reception. Never quote it as mt-transport's ~2.8x.
+        { k: 'receptions/chunk', v: this.count && this.receptions ? (this.receptions / this.count).toFixed(2) : '—' },
       ];
     },
     note(m) {
@@ -208,10 +225,19 @@ function pushViewer() {
         this.error = ev.error || 'transfer failed';
         this.note(`ERROR ${this.error}`);
       } else if (ev.type === 'packet' && Number(ev?.data?.packet?.decoded?.portnum) === 261) {
-        this.frames261++; this.lastEventAt = Date.now();
-      } else if (ev.type === 'private_app' && Number(ev.portnum) === 261) {
-        this.frames261++; this.lastEventAt = Date.now();
+        // RAW SHAPE ONLY. Every physical frame also arrives as a typed `private_app`
+        // event; counting both double-counted it (proven: 3 raw / 3 typed, same sender
+        // and length, 2 ms apart). The raw shape is the one carrying pkt.id.
+        const id = ev.data.packet.id;
+        this.receptions++;
+        if (id == null || !this._seen.has(id)) {
+          if (id != null) this._seen.add(id);
+          this.frames261++;
+        }
+        this.lastEventAt = Date.now();
       }
+      // The typed `private_app` 261 event is deliberately ignored — it is the same
+      // frame without an id, and counting it is what produced the doubled figure.
     },
 
     connect() {
