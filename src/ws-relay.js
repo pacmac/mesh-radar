@@ -69,6 +69,12 @@ export function pruneDevice(mac, nodeId = null) {
 // after every config write so all tabs see filter/radar changes immediately.
 let _broadcastSettings = () => {};
 export function broadcastSettings() { _broadcastSettings(); }
+
+// chunk-fetch progress: chunk-api.js pushes chunk_progress/done/error here so the
+// browser renders a progress bar + result. Wired to broadcast inside attachWsRelay;
+// a no-op before the relay exists.
+let _broadcastChunkProgress = () => {};
+export function broadcastChunkProgress(ev) { _broadcastChunkProgress(ev); }
 // Seed from persisted mapping so ownDeviceNums() is correct immediately on cold start.
 for (const [mac, nodeId] of loadNodeMacMap()) {
   _liveNodeIds.set(mac, nodeId);
@@ -393,6 +399,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     broadcast(lastDeviceList);
   }
   _pokeDeviceList = broadcastDeviceList;
+  _broadcastChunkProgress = (ev) => broadcast(ev);
 
   // Enriched message history — used for the on-connect replay and rebroadcast
   // to all clients after a dash send (message-tx-broadcast). 200 rows: bot

@@ -30,6 +30,7 @@ import alignRouter, { attachAlignWs } from './align-api.js';
 import { loadTransport } from './transport-plugin.js';
 import nodesApi from './nodes-api.js';
 import settingsApi from './settings-api.js';
+import chunkRouter, { PAYLOAD_DIR as CHUNK_PAYLOAD_DIR } from './chunk-api.js';
 import { registerStartupHandlers } from './startup.js';
 import { initLifecycle } from './lifecycle.js';
 import { startImapReceiver } from './imap-receiver.js';
@@ -193,6 +194,8 @@ app.use(autoPurgeRouter);
 
 app.use(messagesRouter);
 
+app.use(chunkRouter);   // POST /nodes/:num/chunk-fetch (alarm-transport plugin)
+
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 
 async function proxyToBridge(req, res) {
@@ -230,6 +233,10 @@ app.use('/ops', opManager.router);  // POST /ops, GET /ops/manifest, GET /ops/:o
 
 // -- static files -----------------------------------------------------------
 app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
+
+// Fetched chunk payloads (images pulled off nodes) — read-only. The mt-transport
+// Client writes them here; node-dash serves them for the node-page gallery.
+app.use('/chunk-images', express.static(CHUNK_PAYLOAD_DIR, { etag: true, maxAge: 0, index: false }));
 
 // Debug monitor — served directly, not through the SPA assembler
 app.get('/debug', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'debug.html')));

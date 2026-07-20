@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: e892110a889f57907101f71fbcee4dbc817e1e2d81f045150f22798fc3c9c0d5
+source_hash: fadd78b76a018aab51b0bbf80c483747821bb743b2c3679cc86c5a46c069ddcd
 updated: 2026-07-20
 ---
 
@@ -66,6 +66,9 @@ It ends with a top-level `await loadTransport()`.
    **only** when `Accept: text/html` (a navigation); an XHR/`fetch()` falls through
    to the API. Registered **before** conflicting API routes (e.g. `/messages`,
    `/config`, `/devices`) so the browser gets the SPA while XHR hits the API.
+4b. **chunk-api** — `chunkRouter` (`POST /nodes/:num/chunk-fetch`) mounted among
+   the node-dash routers; and `express.static(chunkPayloadDir)` at `/chunk-images`
+   serves the stored images read-only. Both precede the SPA catch-all.
 5. node-dash APIs: `GET /status`, `GET /messages`, `GET|DELETE /nodes`, then the
    mounted routers, `GET|PUT /home_pos`, `/rotator`, the node-dash-owned schema
    endpoints (`/schema/rotator_config`, `/schema/bridge_config`) **before** the

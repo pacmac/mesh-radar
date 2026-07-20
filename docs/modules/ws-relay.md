@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: d073eae0f97e25c3d28eb5383216323dbd0f0b67b767b982060ce25b1de80214
+source_hash: 0593061441e729ddfd75b9742092f770f108313fec6d3c6195a9130c0f075d3f
 updated: 2026-07-20
 ---
 
@@ -52,8 +52,17 @@ export function getLiveNodeIdByMac(mac)     // → !hexid | null
 export function getLiveMacByNodeId(nodeId)  // → MAC | null
 export function getDeviceChannelsByNodeId(nodeId)      // → [{index,name,role}] | null
 export function getChannelNameByMac(mac, index)        // → channel name | null
+export function broadcastChunkProgress(ev)             // push chunk_progress/done/error to dashboard clients
 export function attachWsRelay(server, getRangeTimer?)  // → WebSocketServer (main wss)
 ```
+
+### `broadcastChunkProgress(ev)`
+
+Forward-ref export (same pattern as `broadcastMessageHistory` / `pokeDeviceList`):
+a module-scope `_broadcastChunkProgress` is wired to the internal `broadcast` once
+`attachWsRelay` runs, so `chunk-api.js` can push chunk-fetch progress
+(`chunk_progress` / `chunk_done` / `chunk_error`) to every dashboard client without
+importing the WSS. No-op before the relay is attached.
 
 ### `getChannelNameByMac(mac, index)`
 

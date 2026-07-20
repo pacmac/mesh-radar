@@ -1,7 +1,7 @@
 ---
 module: transport-adapter
 source: src/transport-adapter.js
-source_hash: 3b4d84943e6cb54271adcea26b872d6b0a259a46b0fdc82cdfe5b920ac92db8d
+source_hash: b0783daed4ac53fab8274b839512606bec43b6f040aa74c8a4b5d0fba0340635
 updated: 2026-07-20
 ---
 
@@ -106,6 +106,11 @@ _N/A_
   untouched when given. The adapter neither fires progress nor enforces the
   deadline itself — the client owns both; the adapter only relays. `deadlineMs`
   replaces the old `timeoutMs` opt.
+- **`payloadDir` passes to the `Client` constructor.** When `chunkFetch` is given a
+  `payloadDir`, `getClient` forwards it to `new Client({host, gatewayId, channel,
+  payloadDir})` so node-dash owns where images are stored, instead of the
+  `Client`'s cwd-relative `./payloads` default. Constant per deployment, so it is
+  not part of the client cache key.
 
 ## Test notes
 

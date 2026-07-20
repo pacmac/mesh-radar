@@ -55,11 +55,11 @@ function assertChannel(channel) {
 // gateway is a silent wrong answer, not an error.
 const _clients = new Map();
 
-function getClient(m, { host, gatewayId, channel }) {
+function getClient(m, { host, gatewayId, channel, payloadDir }) {
   const key = `${host}|${gatewayId}|${channel}`;
   let entry = _clients.get(key);
   if (!entry) {
-    const client = new m.Client({ host, gatewayId, channel });
+    const client = new m.Client({ host, gatewayId, channel, ...(payloadDir ? { payloadDir } : {}) });
     // connect() starts the event subscription. Kept as a promise so concurrent
     // first-fetches await the same connect instead of racing two of them.
     entry = { client, ready: client.connect() };
@@ -115,12 +115,12 @@ export function adaptMtTransport(m) {
   // gateway radio can change at runtime (mode roles), and a captured one goes
   // stale silently.
   if (typeof m.Client === 'function') {
-    caps.chunkFetch = async ({ target, pid, channel, host, gatewayId, deadlineMs, batch, onProgress }) => {
+    caps.chunkFetch = async ({ target, pid, channel, host, gatewayId, deadlineMs, batch, onProgress, payloadDir }) => {
       assertChannel(channel);
       if (!host || !gatewayId) {
         throw new Error('chunkFetch needs host and gatewayId — node-dash supplies both');
       }
-      const client = await getClient(m, { host, gatewayId, channel });
+      const client = await getClient(m, { host, gatewayId, channel, payloadDir });
       // Positional signature — fetch(target, pid, opts). Stable API committed by
       // mt-transport 2026-07-20: opts carries onProgress + deadlineMs.
       //
