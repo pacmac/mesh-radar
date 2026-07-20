@@ -36,8 +36,9 @@
   call — a stall judgement belongs to the server, which owns deadlineMs and the
   in-flight record. Follow-up: node-dash emits chunk_stalled, this page renders it.
 
-  Read-only: it never triggers a fetch. That stays a deliberate manual act because it
-  puts frames on air and the bench unit is shared with mt-transport.
+  It DOES start transfers (the control at the top). That is a submission workflow, not
+  page data — everything it renders still arrives over the WS. Starting transmits, so
+  the button confirms first, and the server owns the one-in-flight refusal (409).
 -->
 <body class="bg-base-200 font-body" x-data="pushViewer()" x-init="connect()">
 <div class="max-w-3xl mx-auto p-4 sm:p-6 space-y-4">
@@ -45,6 +46,39 @@
   <div class="flex items-baseline justify-between gap-3">
     <h1 class="font-display text-xl font-bold">Push Transfer</h1>
     <span class="text-xs font-mono opacity-60" x-text="wsState"></span>
+  </div>
+
+  <!-- 0. start control. Targets come from the server's node_list (client_role is a
+       server-computed field — the browser filters for display, it classifies nothing).
+       Disabled while a transfer runs, including one replayed on connect that this
+       browser never saw start. THIS TRANSMITS, hence the explicit confirm. -->
+  <div class="card bg-base-100 shadow">
+    <div class="card-body p-4 gap-3">
+      <div class="flex flex-wrap items-end gap-3">
+        <label class="form-control">
+          <span class="label-text text-xs opacity-60">Alarm node</span>
+          <select class="select select-sm select-bordered font-mono" x-model="target">
+            <option value="">select…</option>
+            <template x-for="t in targets" :key="t.num">
+              <option :value="t.num" x-text="`${t.label} (${t.num})`"></option>
+            </template>
+          </select>
+        </label>
+        <label class="form-control w-24">
+          <span class="label-text text-xs opacity-60">pid</span>
+          <input type="number" min="1" class="input input-sm input-bordered font-mono" x-model.number="pidInput">
+        </label>
+        <button class="btn btn-primary btn-sm" @click="start()"
+                :disabled="!target || state === 'running' || starting"
+                x-text="state === 'running' ? 'transfer in progress' : (starting ? 'starting…' : 'Start transfer')"></button>
+        <span class="text-xs opacity-60" x-show="targets.length === 0">no PAC alarm nodes in the node list yet</span>
+      </div>
+      <p class="text-xs opacity-60">
+        Starts a real transfer — this puts frames on air on the Private channel and takes
+        ~3 minutes. One at a time; the server refuses a second.
+      </p>
+      <p class="text-sm text-error" x-show="startError" x-text="startError"></p>
+    </div>
   </div>
 
   <!-- 1. status: every field server-stated -->
@@ -77,7 +111,9 @@
        `received`, so a bar left running would show e.g. 84% beside a DONE badge and
        misreport a completed transfer. Setting received = count to "finish" it would be
        the browser inventing state, so the bar is retired instead of falsified. -->
-  <div class="card bg-base-100 shadow" x-show="state !== 'done'">
+  <!-- Only while a transfer is actually running. It previously showed whenever the
+       state was not 'done', so an IDLE page sat on "waiting for manifest…" forever. -->
+  <div class="card bg-base-100 shadow" x-show="state === 'running'">
     <div class="card-body p-4 gap-2">
       <div class="flex justify-between text-sm">
         <span x-text="count === null ? 'waiting for manifest…' : `${received} / ${count} chunks`"></span>
@@ -150,14 +186,14 @@
             <span class="ml-2" x-text="l.m"></span>
           </div>
         </template>
-        <p class="text-xs opacity-50" x-show="log.length === 0">nothing yet — this page is read-only and waits for a transfer</p>
+        <p class="text-xs opacity-50" x-show="log.length === 0">nothing yet — start a transfer above, or watch one started elsewhere</p>
       </div>
     </div>
   </div>
 
   <p class="text-xs opacity-50 text-center">
-    Read-only. To start a transfer:
-    <code class="font-mono">POST /nodes/&lt;num&gt;/chunk-fetch {"pid":1}</code>
+    One transfer at a time. A transfer cannot be cancelled once started — the
+    <span class="font-mono">deadlineMs</span> wall (4 min) is the only stop.
   </p>
 </div>
 
@@ -170,6 +206,24 @@ function pushViewer() {
     frames261: 0, receptions: 0, _seen: new Set(),
     imageUrl: null, imageFile: '', imageUnknown: false,
     lastEventAt: null, sinceLast: 0, log: [],
+    targets: [], target: '', pidInput: 1, starting: false, startError: '',
+
+    // Submission workflow (BROWSER_CONTRACT sanctions POST for this). The browser sends
+    // only num + pid — gateway and channel are server decisions.
+    async start() {
+      if (!confirm(`Start a transfer from node ${this.target}?\n\nThis TRANSMITS on the Private channel and takes about 3 minutes.`)) return;
+      this.starting = true; this.startError = '';
+      try {
+        const r = await fetch(`/nodes/${this.target}/chunk-fetch`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ pid: this.pidInput }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) this.startError = `${r.status}: ${body.error || 'refused'}`;
+        else this.note(`REQUESTED node=${this.target} pid=${this.pidInput}`);
+      } catch (e) { this.startError = e.message; }
+      finally { this.starting = false; }
+    },
 
     // 261 frames but no chunk_* event = someone else is driving the device (normally
     // mt-transport, who own DEV1). Reporting the ABSENCE of our own progress data,
@@ -230,6 +284,12 @@ function pushViewer() {
         this.state = 'error';
         this.error = ev.error || 'transfer failed';
         this.note(`ERROR ${this.error}`);
+      } else if (ev.type === 'node_list') {
+        // client_role is server-computed (src/client-role.js). Selecting which rows to
+        // OFFER is display filtering, not classification.
+        const rows = ev.nodes || ev.data || [];
+        this.targets = rows.filter(n => n.client_role === 'PAC_ALARM')
+          .map(n => ({ num: n.num, label: n.user?.short_name || n.user?.long_name || String(n.num) }));
       } else if (ev.type === 'packet' && Number(ev?.data?.packet?.decoded?.portnum) === 261) {
         // RAW SHAPE ONLY. Every physical frame also arrives as a typed `private_app`
         // event; counting both double-counted it (proven: 3 raw / 3 typed, same sender

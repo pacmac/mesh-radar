@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: 90900c6f815c333f87358c1fa278403def4371fdd4417d150d312339fc0be857
+source_hash: a2f264dd6987e4bf5fae677f165838cb81fad5093d21512b9de53f1b03c04118
 updated: 2026-07-20
 ---
 
@@ -177,3 +177,37 @@ is explicitly out of scope). The wiring on our side already exists — `POST
 so the route handler IS the long-lived process the loop runs inside. The missing piece is
 their single `push` entry point on `Client`, same `{onProgress, deadlineMs}` shape as
 `fetch`. When it lands, the button is one call and nothing else moves.
+
+## The START control (task `push-start-button`, 2026-07-20)
+
+Peter: *"I still see no start button and the waiting for manifest just keeps on running."*
+Both were real.
+
+**Bug: the idle page claimed to be mid-transfer.** The progress card was `x-show`n
+whenever `state !== 'done'`, so a page with no transfer sat on "waiting for manifest…"
+with an animated indeterminate bar, forever. It is now shown only while
+`state === 'running'`. This was visible in a screenshot I had already looked at.
+
+**The start control.** The page is no longer read-only. It carries a target select, a pid
+field and a Start button, POSTing `/nodes/:num/chunk-fetch` — a submission workflow,
+which BROWSER_CONTRACT sanctions; everything the page *renders* still arrives over the WS.
+
+- **Targets** come from the server's `node_list`, filtered to `client_role === 'PAC_ALARM'`.
+  `client_role` is server-computed (`src/client-role.js`); choosing which rows to offer is
+  display filtering, not classification. The browser sends only `num` + `pid` — gateway
+  and channel remain server decisions.
+- **Disabled** when no target is chosen, while `starting`, and whenever
+  `state === 'running'` — including a transfer replayed on connect that this browser never
+  saw begin (`chunk-inflight-replay`). The server's one-in-flight `409` remains the real
+  guard; the disabled button is presentation of server-stated state, not an alternative to it.
+- **Confirms before firing**, because it transmits on the Private channel for ~3 minutes.
+- **No cancel**, and the footer says so: `deadlineMs` (4 min) is the only stop. That is a
+  property of `Client.fetch`, not a UI omission.
+
+**It drives the pull path today.** `chunk-api` calls `chunkFetch`, which is still
+`Client.fetch`. When mt-transport ships the single `push` entry point the route swaps to it
+and this control does not change.
+
+Verified in the browser: targets populate from the live feed (`U33B` / 2364420971);
+button disabled with no target, enabled once chosen, and reading "transfer in progress"
+while a transfer runs.
