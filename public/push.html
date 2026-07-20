@@ -187,6 +187,17 @@
           <figcaption class="text-xs font-mono opacity-60 text-center" x-text="im.caption"></figcaption>
           <progress x-show="im.pct !== null" class="progress progress-warning w-48"
                     :value="im.pct" max="100"></progress>
+          <!-- Why the picture stops growing long before the transfer does. A JPEG decodes
+               only up to its FIRST missing byte, and this file holds the contiguous
+               prefix — so it fills until the first lost chunk, then freezes while later
+               chunks land out of sight, then completes when the repair round fills the
+               gap. Roughly 10% then a jump to 100% is normal on a lossy link, not a
+               stall. The numeric bar above is the honest progress. -->
+          <p class="text-xs opacity-60 text-center max-w-sm">
+            fills only to the first missing chunk — later chunks are arriving but cannot be
+            drawn until the repair round closes the gap, so expect a jump to the full image
+            at the end. Watch the chunk count above for real progress.
+          </p>
         </figure>
       </template>
 

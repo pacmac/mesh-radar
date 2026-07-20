@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: fcad5976e52271350f5c290da0f2077a597a862c3e4284f7426b5cc9ab0b9dc5
+source_hash: 9a310869c90bb2dbb391acec9ac606aacde27f6f62255509776d102ec958438e
 updated: 2026-07-20
 ---
 
@@ -326,3 +326,20 @@ what the SERVER labelled each file:
 
 History is kept (Peter is fine with that); it simply cannot occupy the current slot. The
 split is on the server's `partial` flag — the browser classifies nothing.
+
+## Why the live image stops growing at ~10% (2026-07-20)
+
+Peter: *"the dynamic render only happens in the first approx 10% of the transfer, the
+remaining 90% only renders at the end."* That is inherent, and worth stating in the UI
+rather than leaving it to look like a stall.
+
+A JPEG decodes only up to its FIRST missing byte, and the `.part` holds the CONTIGUOUS
+PREFIX. So the picture fills until the first lost chunk — chunk 3 of 32 gives ~10% — then
+freezes while later chunks land where they cannot be drawn, then jumps to the full image
+when the repair round closes the gap. At ~17% loss, an early gap is the norm.
+
+Nothing fixes this: zero-filling the hole does not help, because the decoder still stops
+at the corrupt byte. mt-transport predicted exactly this ("the image must NOT be the
+progress indicator") and the design already follows it — numeric bar for truth, picture
+for satisfaction. The missing piece was simply telling the viewer, so the caption under an
+arriving image now explains it.
