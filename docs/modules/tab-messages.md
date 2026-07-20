@@ -1,7 +1,7 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: f598423023b3c45ec8ac92715c6db69fdedbc2bc138cf78ccd53e970583e8250
+source_hash: 3bbd1ecc92667e97b637a381349b439687546d943aad737a54d553bf9c3753c0
 updated: 2026-07-20
 ---
 
@@ -133,3 +133,8 @@ input + presentation. Files: `public/partials/tab-messages.html` (toolbar +
 empty-state), `public/app-messages.js` (bucket field, filter methods,
 `displayMessages` filtering), `public/app.js` (3 persisted state fields — unspecced
 aggregate root).
+
+## Filter toolbar removed (task messages-chat-only, 2026-07-20)
+
+The type/device/channel button groups are gone; the feed is chat-only server-side.
+Empty state is a single case again ("No messages yet…").

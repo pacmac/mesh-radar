@@ -4,10 +4,12 @@ import { persistSet } from './app-persist.js';
 
 export const messagesMixin = {
   // Called by WS message_history event — no HTTP fetch.
-  _applyMessageRows(rows) {
-    if (!Array.isArray(rows)) return;
-    if (!rows.length) { this.messages = []; return; }
-    this.messages = rows.map(r => {
+  // ONE mapper, TWO feeds. The server splits chat (message_history) from control
+  // (command_history) and both carry the same row shape, so the browser maps them
+  // identically and classifies nothing.
+  _mapMessageRows(rows) {
+    if (!Array.isArray(rows)) return [];
+    return rows.map(r => {
       if (r.from_num) {
         this.msgNodeCache[r.from_num] = { num: r.from_num, display_name: r.display_name || null, user: { short_name: r.short_name, long_name: r.long_name } };
       }
@@ -43,6 +45,9 @@ export const messagesMixin = {
     });
   },
 
+  _applyMessageRows(rows) { this.messages        = this._mapMessageRows(rows); },
+  _applyCommandRows(rows) { this.commandMessages = this._mapMessageRows(rows); },
+
   loadMessages() { /* no-op — history arrives via WS message_history on connect */ },
 
   // The sending radio's configured channels (device_list dev.channels,
@@ -54,44 +59,9 @@ export const messagesMixin = {
   },
 
   displayMessages() {
-    // Order and thread structure are pre-computed by node-dash. The browser
-    // never sorts or classifies — it only hides rows the viewer filtered out.
-    const t = this.msgFilterType, d = this.msgFilterDevice, c = this.msgFilterChannel;
-    if (!t.length && !d.length && !c.length) return this.messages;   // All
-    return this.messages.filter(m =>
-      (t.length === 0 || t.includes(m.bucket)) &&
-      (c.length === 0 || c.includes(m.channel)) &&
-      (d.length === 0 || (Array.isArray(m.src) && m.src.some(x => d.includes(x))))
-    );
-  },
-
-  // -- Per-viewer feed filter (task message-feed-filters) --------------------
-  // Options are derived from the loaded feed so a control never offers a value
-  // that would match nothing. Type is the fixed 5-bucket vocabulary.
-  msgTypeOptions() {
-    return ['chat', 'command', 'alarm', 'camera', 'diagnostics'];
-  },
-  msgDeviceOptions() {
-    const s = new Set();
-    for (const m of this.messages) for (const x of (m.src || [])) if (x) s.add(x);
-    return [...s].sort();
-  },
-  msgChannelOptions() {
-    const s = new Set();
-    for (const m of this.messages) if (m.channel != null) s.add(m.channel);
-    return [...s].sort((a, b) => a - b);
-  },
-  msgFilterActive(dim, val) {
-    return this['msgFilter' + dim].includes(val);
-  },
-  toggleMsgFilter(dim, val) {
-    const key = 'msgFilter' + dim, arr = this[key];
-    this[key] = arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val];
-    persistSet(key, this[key]);
-  },
-  clearMsgFilter(dim) {
-    this['msgFilter' + dim] = [];
-    persistSet('msgFilter' + dim, []);
+    // No filtering. The server sends the chat feed only (control has its own
+    // feed), and order/threading are pre-computed — the browser renders as-is.
+    return this.messages;
   },
 
   async sendMessage() {

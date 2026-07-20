@@ -1,8 +1,8 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: 18caf3c826aa8297e0661430369d0104bebb06c1faadcfffa5555e123c830343
-updated: 2026-07-18
+source_hash: 5f3396525ef91d8c26fcdf4a7c1c5d17606d1c007860ac3f13475e357e263dd7
+updated: 2026-07-20
 ---
 
 # Module: drawer-sidebar
@@ -89,3 +89,9 @@ The device selector binds `x-model="activeDevice"`; options carry
 `:value="d.addr"` and are keyed by `d.addr` (node_id can be null
 pre-sync — keying on it produced duplicate-null Alpine keys). Labels
 still render via deviceLabel until C3c bundles.
+
+## Control nav item (task `command-response-route`, 2026-07-20)
+
+A `Control` entry sits above Messages (`@click="setNav('control')"`, active when
+`tab==='control'`) — the command/response console page. Same `<li><a>` idiom as
+the Messages/Devices items. Command traffic lives here; Messages is chat-only.

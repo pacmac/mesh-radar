@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 9d1651136b48eef0c8ec5a5340e330cde742f200c1cf2c1d03b1fd7e46c3d063
+source_hash: 6c42f1ab636734e4fb571065ea501633c84a94e826b2bb184459804e78b407ed
 updated: 2026-07-20
 ---
 
@@ -600,3 +600,10 @@ always re-reads current state.
 A **server-computed control feed** on `/events`: `{type:'command_history', messages}` carrying only the **command-bucket** subset of the 200-row window (sent commands + their responses), classified server-side via `type_bucket`. Pushed on connect (beside `message_history`, from one shared `buildMessageFeedRows()` query) and re-pushed by `_broadcastMessageHistory` on every new message (a command is a message). 
 
 Purpose: the mt-transport Client (DEV1) and the browser Control page **subscribe to it directly** for control + monitoring — no consumer filters `message_history` itself (BROWSER_CONTRACT; and DEV1 gets a ready-made control stream). `message_history` is unchanged.
+
+## message_history is CHAT-ONLY (task messages-chat-only, 2026-07-20)
+
+Both feeds are now server-split from the one `buildMessageFeedRows()` query:
+`message_history` carries only `type_bucket === 'chat'`, `command_history` only
+`'command'`. The messages page is a chat page and needs no client-side filtering to
+keep control traffic out; the Control page renders `command_history` directly.

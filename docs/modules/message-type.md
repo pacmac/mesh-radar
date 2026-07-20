@@ -1,7 +1,7 @@
 ---
 module: message-type
 source: src/message-type.js
-source_hash: efd17e01d2f9b193226e644c6a2de24185088f16005daaed33a163463748db1e
+source_hash: f680537b9dcf44cd152d81ea6b49c33ca17e1623510a3173de418cd450c6bd21
 updated: 2026-07-20
 ---
 
@@ -68,3 +68,13 @@ _N/A_ — pure function.
 - The filter UI and per-viewer preference — Domain 2 (browser), a later step.
 - Device/channel dimensions — already exposed by `filters.js` (`rx_devices`,
   `channel`); only the type bucket needs computing.
+
+## Addressed-command grammar wins over the tag (2026-07-20)
+
+`^@<4-hex>\s+\S` (`ADDRESSED_CMD`) is classified **command before any category
+check**. Rationale from live data: 322 rows predate the `category` column (untagged
+-> read as chat) and 47 more were typed into the chat box and tagged `'chat'` — so
+59 of 62 rows on the chat-only page were actually commands. In this system
+`@<suffix> <verb>` IS a command by construction, so content wins over the stored
+tag. Trade-off: a human chatting `@336b are you there?` also reads as a command;
+name mentions (`@PUCK hello`) do NOT — only the 4-hex form matches.

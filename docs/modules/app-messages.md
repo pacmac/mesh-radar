@@ -1,7 +1,7 @@
 ---
 module: app-messages
 source: public/app-messages.js
-source_hash: 134f4db175bbc08514ea385b8114b5c73c27d1ac889d9c74df2d6d738d836fc0
+source_hash: ec861482f2e3065534c5aa48105a4f4d421e15adf0e4a2d2b7672d013aaf004a
 updated: 2026-07-20
 ---
 
@@ -9,10 +9,10 @@ updated: 2026-07-20
 
 ## Purpose
 
-The browser **messaging mixin** — send, receive-render, and now **per-viewer feed
-filtering**. Presentation only (BROWSER_CONTRACT): it renders the server-pushed
-`message_history` array and handles raw user input. It classifies nothing, orders
-nothing, and owns no message state that the server owns.
+The browser **messaging mixin** — send and receive-render for the **chat** feed.
+Presentation only (BROWSER_CONTRACT): it renders the server-pushed
+`message_history` array and handles raw user input. It classifies nothing, filters
+nothing, orders nothing, and owns no message state that the server owns.
 
 Does **not**: fetch history over HTTP (arrives via WS `message_history`), sort or
 thread messages (pre-computed by node-dash), or derive a message's type/device/
@@ -22,19 +22,18 @@ channel (all three are server-computed fields on each row — see `filters.js` a
 ## Public interface (methods on the Alpine component)
 
 ```js
-_applyMessageRows(rows)        // map WS message_history rows → this.messages[]
-displayMessages()              // → filtered view of this.messages for the feed x-for
+_mapMessageRows(rows)          // pure mapper: WS rows → view rows (used by BOTH feeds)
+_applyMessageRows(rows)        // message_history (chat)    → this.messages[]
+_applyCommandRows(rows)        // command_history (control) → this.commandMessages[]
+displayMessages()              // → this.messages, unfiltered (server sends chat only)
 sendMessage()                  // POST /:fromId/messages (no optimistic row)
 // … compose/mention/history helpers (unchanged) …
-
-// Per-viewer feed filter (task message-feed-filters, step 3):
-msgTypeOptions()               // → the 5 fixed buckets
-msgDeviceOptions()             // → distinct device MACs present in the feed
-msgChannelOptions()            // → distinct raw channel values present in the feed
-msgFilterActive(dim, val)      // → is `val` selected in msgFilter<dim>?
-toggleMsgFilter(dim, val)      // toggle `val` in msgFilter<dim>, persist
-clearMsgFilter(dim)            // reset msgFilter<dim> to [] (= "All"), persist
 ```
+
+> The per-viewer type/device/channel filter documented in the sections below was
+> **removed** (task `messages-chat-only`) once the server split chat from control.
+> Those sections are retained as history; see the final section for current
+> behaviour.
 
 `dim` is one of the strings `'Type' | 'Device' | 'Channel'`, naming the state key
 `msgFilter<dim>` (`msgFilterType` / `msgFilterDevice` / `msgFilterChannel`).
@@ -119,3 +118,13 @@ current feed, so the control never offers a filter that would match nothing.
 - The classifier itself — `src/message-type.js` / `message-type.md` (Domain 1, done).
 - Query-time row shape (`type_bucket`, `rx_devices`, `channel`) — `filters.js`.
 - The feed markup / toolbar — `tab-messages.md` (the view partial).
+
+## Filters removed; one mapper, two feeds (task messages-chat-only, 2026-07-20)
+
+The per-viewer type/device/channel filter is **gone** — state, helpers and UI. The
+server now sends chat-only on `message_history`, so there is nothing to filter and
+`displayMessages()` returns `this.messages` as-is.
+
+`_mapMessageRows(rows)` is the single row mapper; `_applyMessageRows` fills
+`this.messages` (chat) and `_applyCommandRows` fills `this.commandMessages`
+(control). Same shape, two server-split feeds, no browser classification.

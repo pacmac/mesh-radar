@@ -8,6 +8,7 @@ import { nodesMixin }     from './app-nodes.js';
 import { rotatorMixin }   from './app-rotator.js';
 import { radarMixin }     from './app-radar.js';
 import { messagesMixin }  from './app-messages.js';
+import { controlMixin }   from './app-control.js';
 import { rangeMixin }     from './app-range.js';
 import { perfMixin }      from './app-perf.js?v=20260627rewrite';
 import { telemetryMixin } from './app-telemetry.js';
@@ -146,13 +147,14 @@ function dashboard() {
     _radarLabelAngles: null,   // Map num→arm angle — per-node label placement memory
     lastHeardNum:   null,
 
+    // -- Control (command/response console) -----------------------------------
+    commandMessages: [],    // server-pushed control feed (command_history)
+    controlTarget:  null,   // selected node num
+    controlCommand: '',     // free-text command verb
+    controlSending: false,
+
     // -- Messages -------------------------------------------------------------
     msgFrom:    persistGet('msgFrom', ''),
-    // Per-viewer feed filter (task message-feed-filters). Empty array = "All".
-    // localStorage-backed → per viewer, not server config (see app-messages.md).
-    msgFilterType:    persistGet('msgFilterType',    []),
-    msgFilterDevice:  persistGet('msgFilterDevice',  []),
-    msgFilterChannel: persistGet('msgFilterChannel', []),
     msgIsDirect: false,
     msgDirectTo: '',
     msgReplyId:  null,
@@ -335,7 +337,7 @@ function dashboard() {
       window.addEventListener('popstate', e => {
         const pathToTab = {
           '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
-          '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/devices': 'devices',
+          '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/control': 'control', '/devices': 'devices',
           '/performance': 'perf',
         };
         const nodeNum = nodeNumFromPath();
@@ -401,7 +403,7 @@ window.dashboard = function() {
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
     rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
-    componentsMixin, perfMixin, nodeStatusMixin,
+    componentsMixin, perfMixin, nodeStatusMixin, controlMixin,
   ];
   for (const mixin of mixins) {
     Object.defineProperties(state, Object.getOwnPropertyDescriptors(mixin));

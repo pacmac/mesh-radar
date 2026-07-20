@@ -407,8 +407,12 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   function buildMessageFeedRows() {
     return _enrichMessages(queryMessages(200).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) })));
   }
-  function buildMessageHistoryEvent() {
-    return { type: 'message_history', messages: buildMessageFeedRows() };
+  // The chat feed. Since control/command traffic has its own feed (below), the
+  // messages page is a CHAT page: only chat-bucket rows reach it, server-side, so
+  // the browser needs no type/channel filtering to keep commands out.
+  function buildMessageHistoryEvent(rows) {
+    const msgRows = (rows ?? buildMessageFeedRows()).filter(m => m.type_bucket === 'chat');
+    return { type: 'message_history', messages: msgRows };
   }
   // Control feed: the command/response subset, SERVER-computed (type_bucket) so no
   // consumer filters. Its own WS event on /events so the mt-transport Client (DEV1)
@@ -424,8 +428,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   _broadcastMessageHistory = () => {
     try {
       const rows = buildMessageFeedRows();
-      broadcast({ type: 'message_history', messages: rows });
-      broadcast(buildCommandHistoryEvent(rows));
+      broadcast(buildMessageHistoryEvent(rows));   // chat only
+      broadcast(buildCommandHistoryEvent(rows));   // control only
     } catch (e) { console.error('[ws-relay] message/command history rebroadcast failed:', e.message); }
   };
 
@@ -813,7 +817,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const since24h = Math.floor(Date.now() / 1000) - 86400;
 
       const feedRows = buildMessageFeedRows();
-      ws.send(JSON.stringify({ type: 'message_history', messages: feedRows }));
+      ws.send(JSON.stringify(buildMessageHistoryEvent(feedRows)));   // chat feed replay
       ws.send(JSON.stringify(buildCommandHistoryEvent(feedRows)));   // control feed replay
 
       const tiltRows = queryAllTiltHistory(since24h);
