@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: c9892ad2fb260070d08829b9abf34196dbe674e567fd2dea052b1cf12b63c028
+source_hash: fcad5976e52271350f5c290da0f2077a597a862c3e4284f7426b5cc9ab0b9dc5
 updated: 2026-07-20
 ---
 
@@ -314,3 +314,15 @@ now carries age, so a stale partial reads as `pid-1.jpg.part · incomplete · ab
 it, so a successful transfer rendered the picture twice. The standalone render is now
 suppressed when the stored listing already contains that URL — verified: a `chunk_done`
 naming an already-listed file leaves the count at one.
+
+## Arriving vs stored (2026-07-20)
+
+Peter: *"the current image must not show the last download."* The image panel now splits on
+what the SERVER labelled each file:
+
+- `arriving` = `partial` — rendered FIRST, warning border, "receiving now", filling as the
+  server re-announces the growing `.part` every ~4 s with an mtime-versioned URL.
+- `stored` = completed — below, under "previously fetched" while a transfer runs.
+
+History is kept (Peter is fine with that); it simply cannot occupy the current slot. The
+split is on the server's `partial` flag — the browser classifies nothing.

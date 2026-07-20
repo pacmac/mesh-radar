@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: de2c9b439afb7263f9dc6b0cd3db3ac57751e148ef02216a9d1bf54b5202eea5
+source_hash: 09c7a0534f742a89bbbac0de0caf3cc9d0756fdbca8fedd55bdea3b389aa1429
 updated: 2026-07-20
 ---
 
@@ -410,3 +410,24 @@ there always an old image". Completed captions now end `· fetched <age>`.
 The image itself is kept deliberately: `<PAYLOAD_DIR>/<node>/pid-<N>.jpg` persists and is
 announced on every connect, because it is the only gallery that exists. It is replaced when
 the same pid is fetched again.
+
+## Progressive render: re-announce the growing `.part` (2026-07-20)
+
+Two faults Peter named: the previously-fetched image sat in the "current" slot while a
+download ran, and the picture never filled in as chunks landed.
+
+Both were fixable here, and I had wrongly recorded progressive render as BLOCKED on
+mt-transport. That was true under pull; the push client writes a growing `<name>.part`
+throughout the transfer, so the bytes have been available since the protocol switched. The
+block expired and my note did not.
+
+- **`chunk_images` is re-announced every ~4 s while a transfer runs** (throttled in
+  ws-relay: the listing is a directory walk and `onProgress` fires ~1/s). That is what
+  makes the image fill in live rather than appearing only at the end.
+- **Partial URLs are versioned by mtime** (`?t=<mtimeMs>`) — a growing file at a fixed URL
+  renders from cache forever. Versioned SERVER-side; the browser must not assemble URLs.
+- **A live partial is captioned "receiving now", not "abandoned"** — `_inFlight` says which,
+  and calling a filling file abandoned was simply wrong.
+
+The viewer separates them: partials render first under "receiving now", completed images
+below under "previously fetched", so a finished image can never occupy the current slot.

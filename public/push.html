@@ -174,11 +174,28 @@
         no image yet — it appears when the transfer completes
       </div>
 
+      <!-- ARRIVING NOW: the growing `.part`. Shown FIRST and labelled, so a previously
+           fetched image can never sit in the "current" slot while a transfer is running —
+           which is exactly how the last completed picture looked like the live one.
+           The server re-announces the listing every ~4 s during a transfer and versions
+           the URL by mtime, so this fills in as chunks land. -->
+      <template x-for="im in arriving" :key="im.url">
+        <figure class="flex flex-col items-center gap-2">
+          <div class="text-xs font-semibold text-warning">receiving now</div>
+          <img :src="im.url" alt="arriving payload"
+               class="max-w-full rounded border-2 border-warning">
+          <figcaption class="text-xs font-mono opacity-60 text-center" x-text="im.caption"></figcaption>
+          <progress x-show="im.pct !== null" class="progress progress-warning w-48"
+                    :value="im.pct" max="100"></progress>
+        </figure>
+      </template>
+
       <!-- STORED ON DISK, announced by the server on every connect. This is what makes a
            browser reload non-destructive: the transfer runs server-side, and its result
-           (finished OR partial) is announced rather than being a one-shot event.
-           A `.part` is a valid truncated JPEG — half a picture beats none. -->
-      <template x-for="im in images" :key="im.url">
+           is announced rather than being a one-shot event. -->
+      <div x-show="stored.length && state === 'running'"
+           class="text-xs opacity-50 border-t border-base-200 pt-2">previously fetched</div>
+      <template x-for="im in stored" :key="im.url">
         <figure class="flex flex-col items-center gap-2 border-t border-base-200 pt-3 first:border-0">
           <img :src="im.url" alt="stored payload"
                class="max-w-full rounded border" :class="im.partial ? 'border-warning' : 'border-base-300'">
@@ -283,6 +300,10 @@ function pushViewer() {
     // mt-transport, who own DEV1). Reporting the ABSENCE of our own progress data,
     // not deducing who is transmitting.
     get external() { return this.frames261 > 0 && this.state === 'idle'; },
+
+    // Split by what the SERVER said each file is, never by guessing from the name.
+    get arriving() { return this.images.filter(i => i.partial); },
+    get stored()   { return this.images.filter(i => !i.partial); },
 
     get endedAtLocal() {
       return this.endedAt ? new Date(this.endedAt).toLocaleTimeString() : '';

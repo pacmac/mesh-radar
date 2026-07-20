@@ -306,6 +306,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // frame counter and no explanation, which reads as "hung" when the transfer actually
   // finished. A finished-and-failed transfer must look different from a running one.
   let lastChunkTerminal = null;
+  let _lastImagesPush = 0;
 
   // Last-known device list — replayed to new frontend clients on connect.
   // Composed from lastDeviceState in memory — no HTTP calls after startup.
@@ -438,6 +439,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // A terminal event changes what is on disk, so re-announce the stored set.
     if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error') {
       setTimeout(() => { try { _broadcastChunkImagesEvent(); } catch {} }, 250);
+    }
+    // DURING a transfer, re-announce the listing periodically so the growing `.part` is
+    // re-rendered — that is what makes the picture fill in live rather than appearing
+    // only at the end. Throttled: the listing is a directory walk and onProgress fires
+    // about once a second, so 4 s gives a visible fill without re-walking constantly.
+    else if (ev?.type === 'chunk_progress' && Date.now() - _lastImagesPush > 4000) {
+      _lastImagesPush = Date.now();
+      try { _broadcastChunkImagesEvent(); } catch { /* relay not attached */ }
     }
     if (ev?.type === 'chunk_progress') { lastChunkProgress = ev; lastChunkTerminal = null; }
     else if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error') {

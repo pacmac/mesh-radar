@@ -69,8 +69,12 @@ function listStoredPayloads() {
           if (have != null && count) pct = Math.round((have / count) * 100);
         } catch { /* no sidecar — still listable, just without progress */ }
       }
+      const href = '/chunk-images/' + relPath.split('/').map(encodeURIComponent).join('/');
       out.push({
-        url: '/chunk-images/' + relPath.split('/').map(encodeURIComponent).join('/'),
+        // A `.part` GROWS while the transfer runs, so the URL must change or the browser
+        // renders its cached copy forever. Versioned server-side by mtime — the browser
+        // must not be assembling URLs (BROWSER_CONTRACT).
+        url: partial ? `${href}?t=${Math.round(st.mtimeMs)}` : href,
         name: e.name,
         node: rel || null,
         bytes: st.size,
@@ -84,8 +88,13 @@ function listStoredPayloads() {
         caption: [
           rel || null,
           e.name,
+          // "abandoned" only if it is NOT the transfer currently running. The server
+          // knows which via _inFlight; calling a live, filling file abandoned was simply
+          // wrong, and the browser must not be the one deciding.
           partial
-            ? `incomplete${pct != null ? ` ${have}/${count} chunks (${pct}%)` : ''} · abandoned ${_ageText(st.mtimeMs)}`
+            ? `incomplete${pct != null ? ` ${have}/${count} chunks (${pct}%)` : ''} · ${
+                _inFlight && new RegExp(`(^|[^0-9])${_inFlight.pid}([^0-9]|$)`).test(e.name)
+                  ? 'receiving now' : `abandoned ${_ageText(st.mtimeMs)}`}`
             : `${st.size} bytes · fetched ${_ageText(st.mtimeMs)}`,
         ].filter(Boolean).join(' · '),
       });
