@@ -93,7 +93,13 @@
           last event: <span class="font-mono" x-text="sinceLast"></span>s ago
         </span>
       </div>
-      <p class="text-sm text-error" x-show="error" x-text="error"></p>
+      <p class="text-sm text-error" x-show="error">
+        <span x-text="error"></span>
+        <span class="opacity-70" x-show="endedAt"> — ended <span x-text="endedAtLocal"></span></span>
+      </p>
+      <p class="text-xs opacity-60" x-show="state === 'error' || state === 'done'">
+        Counters above belong to that finished transfer; nothing is running now.
+      </p>
 
       <!-- Frames arriving with no transfer of ours: say so, rather than showing a
            ticking counter beside blanks and looking broken. -->
@@ -153,10 +159,24 @@
     <div class="card-body p-4 gap-2">
       <h2 class="font-display font-semibold text-sm">Image</h2>
 
-      <div x-show="!imageUrl && !imageUnknown"
+      <div x-show="!imageUrl && !imageUnknown && images.length === 0"
            class="rounded border border-dashed border-base-300 p-10 text-center text-sm opacity-60">
         no image yet — it appears when the transfer completes
       </div>
+
+      <!-- STORED ON DISK, announced by the server on every connect. This is what makes a
+           browser reload non-destructive: the transfer runs server-side, and its result
+           (finished OR partial) is announced rather than being a one-shot event.
+           A `.part` is a valid truncated JPEG — half a picture beats none. -->
+      <template x-for="im in images" :key="im.url">
+        <figure class="flex flex-col items-center gap-2 border-t border-base-200 pt-3 first:border-0">
+          <img :src="im.url" alt="stored payload"
+               class="max-w-full rounded border" :class="im.partial ? 'border-warning' : 'border-base-300'">
+          <figcaption class="text-xs font-mono opacity-60 text-center" x-text="im.caption"></figcaption>
+          <progress x-show="im.partial && im.pct !== null" class="progress progress-warning w-48"
+                    :value="im.pct" max="100"></progress>
+        </figure>
+      </template>
 
       <div x-show="imageUnknown"
            class="rounded border border-dashed border-warning p-6 text-center text-sm">
@@ -209,6 +229,7 @@ function pushViewer() {
     imageUrl: null, imageFile: '', imageUnknown: false,
     lastEventAt: null, sinceLast: 0, log: [],
     targets: [], target: '', pidInput: 1, starting: false, startError: '',
+    images: [], endedAt: null,
 
     // Submission workflow (BROWSER_CONTRACT sanctions POST for this). The browser sends
     // only num + pid — gateway and channel are server decisions.
@@ -232,6 +253,9 @@ function pushViewer() {
     // not deducing who is transmitting.
     get external() { return this.frames261 > 0 && this.state === 'idle'; },
 
+    get endedAtLocal() {
+      return this.endedAt ? new Date(this.endedAt).toLocaleTimeString() : '';
+    },
     get pct() { return this.count ? Math.round((this.received / this.count) * 100) : 0; },
     get badgeClass() {
       return { running: 'badge-primary', done: 'badge-success',
@@ -277,6 +301,7 @@ function pushViewer() {
         }
       } else if (ev.type === 'chunk_done') {
         this.state = 'done';
+        this.endedAt = ev.endedAt || null;
         this.bytes = ev.bytes ?? null;
         this.elapsedMs = ev.elapsedMs ?? this.elapsedMs;
         if (ev.url) { this.imageUrl = ev.url; this.imageFile = ev.file || ''; }
@@ -284,8 +309,16 @@ function pushViewer() {
         this.note(`DONE bytes=${ev.bytes} ${ev.url ? 'url=' + ev.url : 'url=null'}`);
       } else if (ev.type === 'chunk_error') {
         this.state = 'error';
+        // endedAt is present on a REPLAYED outcome (the server stamps it). Without it a
+        // failure that happened while nobody was watching looked like a live stall.
+        this.endedAt = ev.endedAt || null;
         this.error = ev.error || 'transfer failed';
         this.note(`ERROR ${this.error}`);
+      } else if (ev.type === 'chunk_images') {
+        // Everything the SERVER says is on disk — replayed on connect, so a reload (or a
+        // browser opened after the transfer ended) still shows the result. Captions and
+        // percentages are server-computed; this renders them.
+        this.images = ev.images || [];
       } else if (ev.type === 'node_list') {
         // client_role is server-computed (src/client-role.js). Selecting which rows to
         // OFFER is display filtering, not classification.

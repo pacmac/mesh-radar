@@ -75,6 +75,21 @@ export function broadcastSettings() { _broadcastSettings(); }
 // a no-op before the relay exists.
 let _broadcastChunkProgress = () => {};
 export function broadcastChunkProgress(ev) { _broadcastChunkProgress(ev); }
+
+// Stored payloads (finished images AND resumable .part files) are announced to every
+// new connection, so a browser that reloads — or opens for the first time after a
+// transfer ended — is told what exists. Without this, chunk_done was fire-and-forget:
+// the result lived on disk and no client could ever learn of it (a directory GET is
+// barred by the WS-only transport rule).
+//
+// chunk-api registers the scanner because it owns PAYLOAD_DIR; a direct import here
+// would be circular (chunk-api already imports this module).
+let _chunkImagesProvider = () => [];
+export function setChunkImagesProvider(fn) { _chunkImagesProvider = fn; }
+export function broadcastChunkImages() {
+  try { _broadcastChunkImagesEvent(); } catch { /* relay not attached yet */ }
+}
+let _broadcastChunkImagesEvent = () => {};
 // Seed from persisted mapping so ownDeviceNums() is correct immediately on cold start.
 for (const [mac, nodeId] of loadNodeMacMap()) {
   _liveNodeIds.set(mac, nodeId);
@@ -286,6 +301,11 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   const lastDeviceState = {};
   // The in-flight chunk transfer, replayed to every new connection. null = none.
   let lastChunkProgress = null;
+  // The last TERMINAL outcome (done/error) and when it happened. Replayed too: without
+  // it, a page that reloads — or simply sits there — after a failure shows a stale
+  // frame counter and no explanation, which reads as "hung" when the transfer actually
+  // finished. A finished-and-failed transfer must look different from a running one.
+  let lastChunkTerminal = null;
 
   // Last-known device list — replayed to new frontend clients on connect.
   // Composed from lastDeviceState in memory — no HTTP calls after startup.
@@ -411,9 +431,19 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // (chunk-api already imports this module). Cleared on any terminal event, so a
   // stale "running" cannot outlive the transfer. A process restart also clears it,
   // which is correct: a restart kills the transfer too.
+  _broadcastChunkImagesEvent = () =>
+    broadcast({ type: 'chunk_images', images: _chunkImagesProvider() });
+
   _broadcastChunkProgress = (ev) => {
-    if (ev?.type === 'chunk_progress')                                 lastChunkProgress = ev;
-    else if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error')  lastChunkProgress = null;
+    // A terminal event changes what is on disk, so re-announce the stored set.
+    if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error') {
+      setTimeout(() => { try { _broadcastChunkImagesEvent(); } catch {} }, 250);
+    }
+    if (ev?.type === 'chunk_progress') { lastChunkProgress = ev; lastChunkTerminal = null; }
+    else if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error') {
+      lastChunkProgress = null;
+      lastChunkTerminal = { ...ev, endedAt: new Date().toISOString() };
+    }
     broadcast(ev);
   };
 
@@ -840,6 +870,12 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       // absence means "no transfer", not "unknown". A viewer opened mid-transfer
       // renders it as running and its start control as unavailable.
       if (lastChunkProgress) ws.send(JSON.stringify(lastChunkProgress));
+      // ...or the last outcome, so a failure that happened while nobody was looking is
+      // still visible, with the time it ended.
+      else if (lastChunkTerminal) ws.send(JSON.stringify(lastChunkTerminal));
+
+      // Everything already on disk — finished images and resumable partials alike.
+      ws.send(JSON.stringify({ type: 'chunk_images', images: _chunkImagesProvider() }));
 
       const tiltRows = queryAllTiltHistory(since24h);
       ws.send(JSON.stringify({ type: 'tilt_history', rows: tiltRows }));

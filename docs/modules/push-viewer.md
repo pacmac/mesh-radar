@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: 33a1ca534213421b73aa1b08a6df0303f7b814411b21c75b70f4a9784b3c20c2
+source_hash: 18cb42c7d65da3372b10a9ed825f3f8dda4210deed16fa9ea9d6ea03e6937315
 updated: 2026-07-20
 ---
 

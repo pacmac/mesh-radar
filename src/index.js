@@ -238,7 +238,18 @@ app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
 
 // Fetched chunk payloads (images pulled off nodes) — read-only. The mt-transport
 // Client writes them here; node-dash serves them for the node-page gallery.
-app.use('/chunk-images', express.static(CHUNK_PAYLOAD_DIR, { etag: true, maxAge: 0, index: false }));
+app.use('/chunk-images', express.static(CHUNK_PAYLOAD_DIR, {
+  etag: true, maxAge: 0, index: false,
+  // A `.part` is a preallocated JPEG whose received prefix is valid and renderable, but
+  // by extension it would be served as application/octet-stream and no <img> would draw
+  // it. Serve it as the image it is — and never cache it, since it grows as chunks land.
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.part')) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  },
+}));
 
 // Debug monitor — served directly, not through the SPA assembler
 app.get('/debug', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'debug.html')));
