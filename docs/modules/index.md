@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: fadd78b76a018aab51b0bbf80c483747821bb743b2c3679cc86c5a46c069ddcd
+source_hash: 90ba83643ee37656f2f6eaa67c07bf522b8ef095a96a51771f354b5bbfa70f8d
 updated: 2026-07-20
 ---
 
@@ -69,6 +69,9 @@ It ends with a top-level `await loadTransport()`.
 4b. **chunk-api** — `chunkRouter` (`POST /nodes/:num/chunk-fetch`) mounted among
    the node-dash routers; and `express.static(chunkPayloadDir)` at `/chunk-images`
    serves the stored images read-only. Both precede the SPA catch-all.
+4c. **command-api** — `commandRouter` (`POST /nodes/:num/command`) mounted among
+   the routers: the addressed command/response send on the Private channel (chat
+   stays on `messages-api` → Primary). Precedes the SPA catch-all.
 5. node-dash APIs: `GET /status`, `GET /messages`, `GET|DELETE /nodes`, then the
    mounted routers, `GET|PUT /home_pos`, `/rotator`, the node-dash-owned schema
    endpoints (`/schema/rotator_config`, `/schema/bridge_config`) **before** the
