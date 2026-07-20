@@ -1,7 +1,7 @@
 ---
 module: app-align
 source: public/app-align.js
-source_hash: 751b1a7b03415b2346ac5bda888f0d28947eef4df1fc224cf6f1213e19f914a1
+source_hash: de71e4f75f1f7ff22ab50e64b18dacd6ba1f8cc9d5237c475ea3c82239a44171
 updated: 2026-07-19
 ---
 
@@ -47,6 +47,11 @@ Every element answers one of these, and the **backend** works out the answer:
 - Hold the **N selector** value (1–5) — raw user input — and send it with
   `POST /align/ping { num, n }`. This is the one value the browser originates
   (BROWSER_CONTRACT §"handle raw user input"); it decides nothing about display.
+- Show and edit the **reply-wait period** field. Unlike N, this value is
+  **server-persisted** — it is displayed from the pushed `model.replyWindowSec`,
+  and a change POSTs `/align/reply-window { sec }`; the server persists it and
+  pushes the new model back. The browser holds only the raw input; the authoritative
+  value is the model's.
 - Open the WS on load and re-render on each `kind:'align'` frame.
 
 It holds **no derived state**: no best, no trend, no averaging, no bar maths, no

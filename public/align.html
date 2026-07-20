@@ -59,6 +59,14 @@
         <option value="5">5</option>
       </select>
     </label>
+    <!-- Reply-wait period (seconds). Server-persisted; @change commits + persists.
+         5–120s; a weak node can answer at 30–43s so this must be raisable. -->
+    <label class="join" title="Seconds to wait for a reply (persisted)">
+      <span class="join-item btn btn-disabled no-animation font-display text-xs">wait s</span>
+      <input type="number" min="5" max="120" step="5" inputmode="numeric"
+             class="join-item input input-bordered font-mono w-16"
+             x-model.number="replyWinSec" @change="setReplyWindow()" :disabled="bursting">
+    </label>
   </div>
 
   <template x-if="model.warning">

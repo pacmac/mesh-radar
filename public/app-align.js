@@ -14,8 +14,9 @@ window.alignPage = function alignPage() {
   return {
     // last view-model we were told; never derived from
     model: { running: false, readings: [], burst: null, best: null, current: null,
-             warning: null, tx: null, nBurst: 4 },
+             warning: null, tx: null, nBurst: 4, replyWindowSec: 30 },
     nBurst: 4,               // N selector — the only browser-held input
+    replyWinSec: 30,         // reply-wait field; server-PERSISTED (adopted from model)
     target: '', targets: [],
     _ws: null, _wake: null,
 
@@ -44,6 +45,15 @@ window.alignPage = function alignPage() {
       try { this._wake = this._wake || await navigator.wakeLock?.request('screen'); } catch { /* not fatal */ }
     },
 
+    // Persist the reply-wait period. Server owns/persists it; we send the raw
+    // input and render whatever the pushed model reports back.
+    async setReplyWindow() {
+      await fetch('/align/reply-window', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sec: this.replyWinSec }),
+      }).catch(() => {});
+    },
+
     async end() {
       await fetch('/align/stop', { method: 'POST' }).catch(() => {});
       try { this._ws?.close(); } catch {}
@@ -62,6 +72,8 @@ window.alignPage = function alignPage() {
         if (f.kind !== 'align') return;
         this.model = f;                          // render what we are told, nothing else
         if (f.target != null) this.target = f.target;
+        // Adopt the server's persisted reply-window (also reflects clamping on set).
+        if (typeof f.replyWindowSec === 'number') this.replyWinSec = f.replyWindowSec;
       };
       ws.onclose = () => { this._ws = null; };
       this._ws = ws;
