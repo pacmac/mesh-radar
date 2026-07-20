@@ -1,8 +1,8 @@
 ---
 module: filters
 source: src/filters.js
-source_hash: f2519df9adc6210f16aa4041f3afdfdb896d25fee74cfcb443e145e6f85a2ab3
-updated: 2026-06-30
+source_hash: d7fa8b764add8ea42ac86b59882012603ab8307412d5055c23c03380c69e9b3c
+updated: 2026-07-20
 ---
 
 # Module: filters
@@ -89,6 +89,35 @@ Each returned row gains `type_bucket` — one of `chat` / `command` / `alarm` /
 (`message-type.js`), not in SQL. Server-side so the browser only renders it
 (BROWSER_CONTRACT). The row's `rx_devices` and `channel` already cover the other
 two filter dimensions.
+
+### `channel_name` (post-query, resolved per-row before aggregation)
+
+Each returned row gains `channel_name` — the **logical channel name** (Primary /
+Private / mqtt / …), resolved from the raw per-gateway index that `channel` holds.
+The stored `channel` is a per-gateway INDEX in both directions, and the *same number
+is a different channel on different radios* (`(OMNI,1)=mqtt` vs `(YAGI,1)=Private`),
+so resolution must be per-device and must happen **before** the `packet_id`
+collapse — a packet heard by OMNI(idx2) and YAGI(idx1) must resolve each row to
+`Private` and then agree.
+
+Mechanism: the SELECT emits `GROUP_CONCAT(DISTINCT m.device || '@' || m.channel) AS
+_dev_chans` (`@` separator — a MAC already contains `:`). Post-query, JS splits the
+pairs and calls `getChannelNameByMac(mac, index)` (`ws-relay.js`) for each, taking
+the first non-null name. `_dev_chans` is stripped from the output; `channel_name`
+is added alongside `type_bucket`. Resolution is a pure read of the in-memory
+`lastDeviceChannels` cache — no network, no new table, no migration. If no pair
+resolves (gateway not cached yet, or an unconfigured overhearing radio),
+`channel_name` is `null` and the browser falls back to the raw `channel`.
+
+The raw `channel` int is still emitted unchanged (the interim raw-number filter,
+commit e774fac, keeps working); `channel_name` is purely additive.
+
+### Import cycle note
+
+`filters.js` imports `getChannelNameByMac` from `ws-relay.js`, which imports
+`queryMessages` from `filters.js`. This ESM cycle is **call-time only** — neither
+binding is used during module initialisation, only when a query runs — so live
+bindings resolve correctly. Not an init-order hazard.
 
 ### Limit
 

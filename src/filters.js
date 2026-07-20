@@ -1,5 +1,6 @@
 import db, { getConfig } from './db.js';
 import { messageBucket } from './message-type.js';
+import { getChannelNameByMac } from './ws-relay.js';
 
 export function queryMessages(limit = 100) {
   const channels = getConfig('message_filter.channels', []);
@@ -35,6 +36,9 @@ export function queryMessages(limit = 100) {
       MAX(m.hops)                                         AS hops,
       m.packet_id, m.reply_id,
       COALESCE(MAX(m.rx_devices), GROUP_CONCAT(m.device)) AS rx_devices,
+      -- (device MAC, channel index) pairs for per-row channel-name resolution.
+      -- '@' separator: a MAC already contains ':'. Resolved in JS below.
+      GROUP_CONCAT(DISTINCT m.device || '@' || m.channel) AS _dev_chans,
       MAX(m.replay)                                       AS replay,
       MAX(m.category)                                     AS category,
       COALESCE(MIN(m.short_name), MIN(n.short_name))     AS short_name,
@@ -56,7 +60,19 @@ export function queryMessages(limit = 100) {
   `).all(...params)
     // type_bucket for the feed's type filter — computed here so the browser only
     // renders it (message-type.md). rx_devices + channel are already selected.
-    .map(r => ({ ...r, type_bucket: messageBucket(r.category, r.text) }));
+    // channel_name resolves the raw per-gateway index -> logical channel name via
+    // (device,index)->name; the first pair that resolves wins (all pairs of one
+    // packet agree). _dev_chans is internal — stripped from the output.
+    .map(({ _dev_chans, ...r }) => {
+      let channel_name = null;
+      for (const pair of (_dev_chans || '').split(',')) {
+        const at = pair.lastIndexOf('@');
+        if (at < 0) continue;
+        const name = getChannelNameByMac(pair.slice(0, at), pair.slice(at + 1));
+        if (name) { channel_name = name; break; }
+      }
+      return { ...r, type_bucket: messageBucket(r.category, r.text), channel_name };
+    });
 }
 
 export function queryNodes() {

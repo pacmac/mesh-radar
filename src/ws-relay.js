@@ -83,6 +83,21 @@ export function getDeviceChannelsByNodeId(nodeId) {
   return lastDeviceChannels[mac.toUpperCase()] ?? null;
 }
 
+// Resolve a stored message's (device MAC, channel INDEX) to the LOGICAL channel
+// name. The stored `channel` is the per-gateway index in both directions, and the
+// same number is a different channel on different radios ((OMNI,1)=mqtt vs
+// (YAGI,1)=Private) — so resolution MUST be per-device. Pure read of the
+// already-maintained lastDeviceChannels cache; no network call. Unnamed PRIMARY
+// resolves to 'Primary' (its identity by role); unknown/uncached → null.
+export function getChannelNameByMac(mac, index) {
+  if (!mac) return null;
+  const chans = lastDeviceChannels[mac.toUpperCase()];
+  if (!Array.isArray(chans)) return null;
+  const c = chans.find(c => c.index === Number(index));
+  if (!c) return null;
+  return c.name || (c.role === 'PRIMARY' ? 'Primary' : null);
+}
+
 export function getLiveNodeIdByMac(mac) {
   return mac ? (_liveNodeIds.get(mac.toUpperCase()) ?? null) : null;
 }

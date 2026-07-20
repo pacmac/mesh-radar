@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 8eb36ab50f29eb44a5d15ce531b9ff43519e9ad89f7950527413982554a605de
-updated: 2026-07-19
+source_hash: d073eae0f97e25c3d28eb5383216323dbd0f0b67b767b982060ce25b1de80214
+updated: 2026-07-20
 ---
 
 # Module: ws-relay
@@ -50,8 +50,25 @@ to every newly connected client so the browser is immediately consistent.
 ```js
 export function getLiveNodeIdByMac(mac)     // → !hexid | null
 export function getLiveMacByNodeId(nodeId)  // → MAC | null
+export function getDeviceChannelsByNodeId(nodeId)      // → [{index,name,role}] | null
+export function getChannelNameByMac(mac, index)        // → channel name | null
 export function attachWsRelay(server, getRangeTimer?)  // → WebSocketServer (main wss)
 ```
+
+### `getChannelNameByMac(mac, index)`
+
+Resolves the **logical channel name** for a stored message's `(device, channel)`
+pair. The stored `channel` is the **per-gateway channel INDEX** (both tx and rx —
+the receiving radio resolves the on-air hash to *its own* local index before the gw
+sees it; proven on live data — see task `channel-identity-table`). The same number
+is a different channel on different radios (e.g. `(OMNI,1)=mqtt` but
+`(YAGI,1)=Private`), so resolution **must** be per-device.
+
+Reads the already-maintained `lastDeviceChannels[MAC.toUpperCase()]` cache (populated
+by `refreshDeviceChannels` on device READY). Returns the configured `name` for the
+slot; for an unnamed `PRIMARY`-role slot returns `'Primary'` (its identity by role);
+otherwise `null` (unknown gateway, slot not cached yet, or unnamed secondary). No
+network call — pure read of the in-memory cache.
 
 ### `getLiveNodeIdByMac(mac)`
 
