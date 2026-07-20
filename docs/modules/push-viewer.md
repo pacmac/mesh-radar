@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: a2f264dd6987e4bf5fae677f165838cb81fad5093d21512b9de53f1b03c04118
+source_hash: 33a1ca534213421b73aa1b08a6df0303f7b814411b21c75b70f4a9784b3c20c2
 updated: 2026-07-20
 ---
 
@@ -211,3 +211,42 @@ and this control does not change.
 Verified in the browser: targets populate from the live feed (`U33B` / 2364420971);
 button disabled with no target, enabled once chosen, and reading "transfer in progress"
 while a transfer runs.
+
+## Corrections from mt-transport 2026-07-20 (bench now fw 260720-11)
+
+**Cancel copy withdrawn.** The footer said a transfer "cannot be cancelled". mt-transport
+is shipping `signal` (AbortSignal) on the push entry point and asked explicitly that the
+copy not go out. It now reads "cancel is not available yet", which is true today and does
+not contradict what is coming. When `signal` lands: add a cancel control and a route to
+abort the in-flight transfer.
+
+**DISCOVERY IS NOT AVAILABLE — do not build on `up`/`upst` yet.** An earlier note in this
+repo recorded them as arriving in the device's periodic status frame. They are NOT. Today
+they exist ONLY in the on-demand `push stat` reply. Combined with the rule that we must
+not poll while `upst = 2`, discovery of "an image is waiting" is genuinely BLOCKED until
+mt-transport ships the status-frame half. Treat it as pending, not working — a UI built
+on it now would query a frame that is never sent.
+
+**`push q` and `push rep` are now SILENT (fw 260720-11).** Neither returns a text ack any
+more: the binary PROGRESS frame on 261 is the answer to `q`, and the resent chunks are the
+answer to `rep`. Anything waiting for a text reply to either will hang. `push` (start),
+`push done` and `push stat` still reply in text. The acks were removed because each was a
+second transmission at hop 3, rebroadcast mesh-wide, landing in the middle of the transfer
+it was asking about.
+
+**Push entry point, confirmed signature:**
+`push(target, pid, { onProgress, deadlineMs, payloadDir, signal })` — positional
+`target, pid` exactly as `fetch`; resolves with the assembled Buffer; rejects on
+deadline/abort/CRC failure; `onProgress({received, count, elapsedMs})`, no `batch`.
+
+**mt-transport owns START — node-dash must not also send `push <pid>`.** Two STARTs
+restart the pass and waste ~2 minutes of air.
+
+**No "device busy" UI state is needed.** If the device is already sending (`upst=2`) or
+awaiting COMPLETE (`upst=3`), their client ADOPTS the transfer rather than rejecting —
+and adopting at `upst=3` is a fast resume (query + one repair round instead of
+re-streaming 32 chunks). Our one-in-flight `409` still matters, but it guards against two
+callers inside OUR server, not against the device.
+
+**`.part` naming confirmed:** `<final name>.part` beside the final file in `payloadDir`,
+removed on success. Predictable, so progressive render needs no new API from them.
