@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: ba3de032f82070b14d4c02ac69429394d80aa71b6ee8a768ed4ae22ed868801c
+source_hash: 1cea00db14baeb8965c2d844c91ec10e9b9034c2aecbed1186ee93d368fefce1
 updated: 2026-07-20
 ---
 
@@ -311,3 +311,32 @@ What remains here instead:
 - a refused START is surfaced, not swallowed (`notePushReply`);
 - the viewer offers an explicit **Publish** control, so an operator can stage deliberately
   after a completed transfer — which is the case that actually needs it.
+
+## Deadline raised 240 s -> 600 s (2026-07-20)
+
+A real transfer died at **31/32** — one chunk short — hitting our deadline. The wall was
+the cause, not the radio:
+
+    mt-transport's verified CLEAN run   222 s
+    our DEADLINE_MS                     240 s     <- 18 s of headroom
+    their Client's own default          600 s
+
+With ~17% loss the EXPECTED operating condition, a transfer needing a repair round cannot
+finish inside 240 s. A clean run barely fit; a lossy one was guaranteed to fail. We had
+imposed a wall shorter than the work takes and then read the result as a device problem.
+
+Now 600 s, matching their client's default rather than second-guessing it. The tail is
+~90 s of the 222 s today (the receiver waits out an idle timer instead of acting on the
+`{cursor, done}` the device already sends); when mt-transport lands that fix, runs get
+shorter — so 600 s does not need revisiting downward, it simply stops truncating.
+
+**Not a licence to hide stalls:** the deadline is the outer bound, not the progress
+indicator. A genuinely dead transfer still shows its last `received/count` and, once
+mt-transport ships fail-fast on a refused START, errors early rather than waiting this out.
+
+**Observed while fixing this — the stored layout changed under push** and cost us nothing:
+files now appear as `pid-<N>.jpg.part` at the payload root, where pull wrote
+`<node>/pid<N>.part` with a `.json` sidecar. `listStoredPayloads()` walks the tree and
+keys off the `.part` suffix rather than a documented path, so it kept working; the sidecar
+being absent degrades to a caption without a percentage, which is the designed fallback.
+That is the layout-agnostic decision paying for itself.

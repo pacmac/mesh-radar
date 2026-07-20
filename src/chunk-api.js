@@ -16,7 +16,13 @@ const router = Router();
 
 const PORT = process.env.PORT || 8000;
 const HOST = `localhost:${PORT}`;          // the Client loopbacks through us
-const DEADLINE_MS = 240000;                // mt-transport's suggested hard wall
+// 240 s was too tight and killed a transfer at 31/32. mt-transport's verified CLEAN run
+// is 222 s, so that left 18 s of headroom — and with ~17% loss as the EXPECTED operating
+// condition, any transfer needing a repair round cannot finish inside it. Their client's
+// own default is 600 s; match it rather than impose a wall shorter than the work.
+// The tail is ~90 s of the 222 s today (the receiver waits out an idle timer instead of
+// acting on {cursor, done}); when mt-transport lands that, runs get shorter, not longer.
+const DEADLINE_MS = 600000;
 
 // node-dash owns the storage location (not the Client's cwd-relative ./payloads).
 export const PAYLOAD_DIR = path.join(process.cwd(), 'data', 'payloads');
