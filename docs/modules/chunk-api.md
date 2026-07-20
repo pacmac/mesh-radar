@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: 131004d1cf976fd0153abff139e4bb93319c1d0dc1e9f4f9890ecf54fe9eaebe
+source_hash: 38f0874699040ce2e052d7e2828232b5668f92b5ad5dfda7c1939cbf680995c0
 updated: 2026-07-20
 ---
 
@@ -116,8 +116,65 @@ export const PAYLOAD_DIR;               // absolute; index.js static-serves it a
 - Channel resolves by name to Private's index for the chosen gateway (2 on OMNI),
   never 0.
 
+## `chunk_done.url` — the server owns the image location (task `chunk-done-image-url`)
+
+`chunk_done` previously carried `{num, pid, bytes, elapsedMs}` — no path. A viewer was
+therefore told an image existed but not where, and both ways it could bridge that are
+BROWSER_CONTRACT violations: deriving the filename in the browser is the browser deciding
+state, and `GET`ing a directory listing breaks the absolute transport rule (all page data
+over the WS). So the server resolves it and pushes it.
+
+`chunk_done` gains two fields:
+
+| field | value |
+|---|---|
+| `url` | `/chunk-images/<relative path>`, each segment `encodeURIComponent`-escaped — or `null` |
+| `file` | the resolved basename, for logs/captions — or `null` |
+
+An `<img src>` pointing at a server-supplied URL is an ASSET fetch (same class as
+`app.js`), not page data, so it does not breach the transport rule. What matters is that
+the URL is *computed server-side and pushed*, never assembled by the browser.
+
+**Resolution is LAYOUT-AGNOSTIC and this is deliberate.** `chunkFetch` returns
+`{ok, state, value: buf}` — the buffer only, no path (`transport-adapter.js:130`) — and
+`PayloadStore` names the file itself. mt-transport documents the layout as
+`<payloadDir>/<node>/<when>_pid<N>.jpg`, but **that has never been observed here**
+(`data/payloads` is empty; no fetch has completed on this host). Constructing that
+filename would be building on an unverified claim. Instead `_newestPayloadSince(startedAt)`
+walks `PAYLOAD_DIR` and returns the newest regular file with `mtimeMs >= startedAt - 2000`
+(2 s slack for clock/filesystem granularity). If the layout changes, this keeps working.
+
+**Degradation is explicit, never a guess.** If no file matches, `url` and `file` are
+`null` and a warning is logged. The viewer then shows a server-stated "stored, location
+unknown" — the contract requires an unknown indicator, not a guessed path.
+
+Nothing else changes: this module still writes no files, and the `Client` still owns
+storage.
+
+### Files changed
+
+`src/chunk-api.js` only:
+1. `import fs from 'fs'` alongside the existing `path` import.
+2. New helper `_newestPayloadSince(sinceMs)` — recursive walk of `PAYLOAD_DIR`, newest
+   qualifying file, `null` on none/unreadable.
+3. In the success path, resolve the file and include `url` + `file` in the `chunk_done`
+   broadcast; log the resolved basename, and warn when unresolved.
+
+NOT changed: `transport-adapter.js` (the adapter stays a thin wrapper — adding path
+plumbing there would push node-dash into the Client's storage contract);
+`ws-relay.js` (`_broadcastChunkProgress` is a verbatim passthrough, so the new fields
+reach the browser with no relay change); `index.js` (`/chunk-images` already serves
+`PAYLOAD_DIR`).
+
+### Future: `partUrl`
+
+When mt-transport exposes the contiguous prefix (channel item `[partial-render]`), the
+same resolution adds `partUrl` to `chunk_progress` for progressive rendering. Out of scope
+here — no partial file exists to point at yet.
+
 ## Out of scope
 
 - Listing/serving the gallery — `node-status.js` `image_grid` section (later pass)
   + the `/chunk-images` static mount (index.js).
 - The transfer/codec/pacing — mt-transport's `Client` (another repo).
+- The viewer page itself — Domain 2, separate task (`public/push.html`).

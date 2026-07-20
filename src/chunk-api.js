@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { transport } from './transport-plugin.js';
 import { resolvePrimaryNodeId } from './device-config.js';
 import { resolveCommandChannel } from './node-settings.js';
@@ -25,6 +26,38 @@ export const PAYLOAD_DIR = path.join(process.cwd(), 'data', 'payloads');
 let _inFlight = null;   // { num, pid } | null
 
 const numToNodeId = (num) => '!' + ((num >>> 0).toString(16).padStart(8, '0'));
+
+// The browser must never derive the image's path: assembling it there is the browser
+// deciding state, and GETting a listing breaks the WS-only transport rule. So the
+// server resolves it and pushes the URL on chunk_done (BROWSER_CONTRACT).
+//
+// LAYOUT-AGNOSTIC on purpose. chunkFetch returns the buffer only — no path — and the
+// Client's PayloadStore names the file. mt-transport documents
+// <payloadDir>/<node>/<when>_pid<N>.jpg, but that has never been observed here, so we
+// find the newest file written since the fetch began rather than build a filename from
+// an unverified claim. 2 s slack covers clock/mtime granularity.
+function _newestPayloadSince(sinceMs) {
+  const cutoff = sinceMs - 2000;
+  let best = null;
+  const walk = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      let st; try { st = fs.statSync(p); } catch { continue; }
+      if (st.mtimeMs >= cutoff && (!best || st.mtimeMs > best.mtimeMs)) {
+        best = { abs: p, mtimeMs: st.mtimeMs };
+      }
+    }
+  };
+  walk(PAYLOAD_DIR);
+  if (!best) return { url: null, file: null };
+  const rel = path.relative(PAYLOAD_DIR, best.abs);
+  // Escape each segment; the separator stays a real '/' so the static mount resolves it.
+  const url = '/chunk-images/' + rel.split(path.sep).map(encodeURIComponent).join('/');
+  return { url, file: path.basename(best.abs) };
+}
 
 // POST /nodes/:num/chunk-fetch  { pid }
 // The browser sends only num + pid. The gateway and the channel are SERVER
@@ -76,8 +109,13 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
     });
     if (r && r.ok === false) throw new Error(r.error || 'fetch failed');
     const bytes = r?.value?.length ?? null;
-    broadcastChunkProgress({ type: 'chunk_done', num, pid, bytes, elapsedMs: Date.now() - startedAt });
-    log.info('chunk', `fetch ok node ${num} pid ${pid} via ${gatewayNodeId} ch${ch.channel} (${bytes ?? '?'} B)`);
+    // Server-owned location — the browser renders this, never builds it.
+    const { url, file } = _newestPayloadSince(startedAt);
+    broadcastChunkProgress({ type: 'chunk_done', num, pid, bytes, url, file, elapsedMs: Date.now() - startedAt });
+    if (!url) {
+      log.warn('chunk', `stored image not found under ${PAYLOAD_DIR} for node ${num} pid ${pid} — viewer will show "location unknown"`);
+    }
+    log.info('chunk', `fetch ok node ${num} pid ${pid} via ${gatewayNodeId} ch${ch.channel} (${bytes ?? '?'} B)${file ? ` -> ${file}` : ''}`);
   } catch (e) {
     broadcastChunkProgress({ type: 'chunk_error', num, pid, error: e.message });
     log.warn('chunk', `fetch failed node ${num} pid ${pid}: ${e.message}`);
