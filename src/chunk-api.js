@@ -10,7 +10,6 @@ import { transport } from './transport-plugin.js';
 import { resolvePrimaryNodeId } from './device-config.js';
 import { resolveCommandChannel } from './node-settings.js';
 import { getDeviceChannelsByNodeId, broadcastChunkProgress, setChunkImagesProvider } from './ws-relay.js';
-import { sendMeshText } from './mesh-send.js';
 import { log } from './log.js';
 
 const router = Router();
@@ -172,24 +171,19 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
   res.status(202).json({ ok: true, state: 'started', num, pid });
 
   try {
-    // PUBLISH FIRST. The JPEG lives permanently in the device's flash — there is no
-    // capture step — but the UPLOAD must be published into the pending state before a
-    // START can be served. COMPLETE (`push done`) clears that pending state, so after
-    // any successful transfer the next START is refused with {"start":N,"ok":0,"cnt":0}
-    // until the payload is re-published. That is precisely why mt-transport added
-    // `push pub`, and omitting it is why a fresh Start returned ok:0 five times while
-    // the UI showed a blank bar.
+    // NO automatic publish here — deliberately, after mt-transport pushed back.
+    // An UNCONDITIONAL `push pub` is unsafe: at upst=3 the device is holding a
+    // completed pass and publishing discards it, re-sending 32 chunks at ~2 s of
+    // airtime each; at upst=2 it resets the cursor UNDER A RUNNING STREAM — and that
+    // stream may be mt-transport's, which our one-in-flight guard cannot see.
     //
-    // Cheap and safe to send every time: it re-publishes from flash, costs one small
-    // text frame, and leaves the device pending (up:1, upst:1). START is still
-    // mt-transport's to send — we only stage.
-    await sendMeshText({
-      gatewayNodeId, text: `@${target} push pub`, channel: ch.channel, category: 'command',
-    });
-    log.info('chunk', `published pid ${pid} on node ${num} (@${target} push pub) before START`);
-    // Let the device settle and answer before the client's START goes out.
-    await new Promise(r => setTimeout(r, 4000));
-
+    // The decision needs `upst`, which means asking the device, and `Client.push()`
+    // already calls `push stat` for its adoption decision. So publishing belongs
+    // THERE — one place that decides, rather than two that are each correct alone and
+    // combine badly. mt-transport is implementing it.
+    //
+    // Meanwhile a refused START is no longer silent (notePushReply), and the page
+    // offers an explicit Publish control so the operator can stage deliberately.
     // PUSH only. Pull was removed entirely — its follow-up requests were the failure
     // (stall at 16/32, the device never received the pull for first=16).
     const r = await t.chunkPush({

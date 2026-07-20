@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: 7a8ebe979e307dc6c6a369fbb2e1e8aee75c7320b11cceb8f861d4ffb870d837
+source_hash: ba3de032f82070b14d4c02ac69429394d80aa71b6ee8a768ed4ae22ed868801c
 updated: 2026-07-20
 ---
 
@@ -289,3 +289,25 @@ device's periodic status frame (mt-transport, pending), and polling `push stat` 
 transfer is forbidden because control is TEXT at hop 3 and gets rebroadcast. So a device
 with nothing published was indistinguishable from a dead radio. Until the status frame
 carries them: treat a refused START as "nothing published", never as a device fault.
+
+## Automatic publish REMOVED — conditional staging belongs in `Client.push()` (2026-07-20)
+
+The publish-before-START added earlier is **withdrawn**, after mt-transport pushed back with
+two objections that both hold:
+
+- **It discards a resume.** At `upst=3` the device is holding a COMPLETED pass awaiting
+  COMPLETE. Publishing throws that away and re-sends 32 chunks at ~2 s of airtime each,
+  when a query plus one repair round would have finished it.
+- **It is a correctness bug at `upst=2`.** Publishing mid-transfer resets the cursor UNDER
+  a running stream — and that stream may be mt-transport's, which our one-in-flight guard
+  cannot see (it guards concurrent callers inside THIS server, not the device).
+
+Deciding correctly needs `upst`, which means asking the device — and `Client.push()`
+already calls `push stat` for its adoption decision. So staging belongs there: **one place
+that decides, rather than two that are each correct alone and combine badly.**
+mt-transport is implementing it.
+
+What remains here instead:
+- a refused START is surfaced, not swallowed (`notePushReply`);
+- the viewer offers an explicit **Publish** control, so an operator can stage deliberately
+  after a completed transfer — which is the case that actually needs it.
