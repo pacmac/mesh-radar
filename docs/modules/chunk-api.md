@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: 38f0874699040ce2e052d7e2828232b5668f92b5ad5dfda7c1939cbf680995c0
+source_hash: 34a0cc2c0a6d604612e5b81235bdd33ee8ff2bf7782341fc6067d972a8a43243
 updated: 2026-07-20
 ---
 
@@ -178,3 +178,24 @@ here — no partial file exists to point at yet.
   + the `/chunk-images` static mount (index.js).
 - The transfer/codec/pacing — mt-transport's `Client` (another repo).
 - The viewer page itself — Domain 2, separate task (`public/push.html`).
+
+## `batch` removed from `chunk_progress`; the no-poll rule (task `push-agreed-cleanup`)
+
+**`batch` is gone.** Under push there is no client batch size — the device streams at its
+own pace — so mt-transport spec'd `onProgress` as `{received, count, elapsedMs}`
+(their `specs/chunk-push.md` §4b, which cites this file's line for exactly this reason).
+Keeping the destructure would have emitted `batch: undefined` on every event once push
+lands. Removed from both the destructure and the broadcast.
+
+## HARD CONSTRAINT — never poll `push stat` while `upst = 2`
+
+Recorded here because it is counter-intuitive and a future session WILL be tempted.
+Control traffic is TEXT at hop 3 and gets rebroadcast; chunk frames are hop 0 and are
+not. So polling the device *during* a transfer measurably SLOWS the transfer being
+watched. This inverts the normal instinct for a progress UI (poll harder while busy).
+
+- Discovery polling (`push stat`, "is an image waiting") only at `upst` 0 / 1 / 3.
+- During a transfer, progress comes ENTIRELY from `onProgress`. Add no polling.
+- `upst`: 0 idle · 1 pending · 2 sending · 3 awaiting COMPLETE.
+
+Source: mt-transport, measured on the bench 2026-07-20.

@@ -104,8 +104,12 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
       gatewayId: gatewayNodeId,
       deadlineMs: DEADLINE_MS,
       payloadDir: PAYLOAD_DIR,
-      onProgress: ({ received, count, batch, elapsedMs }) =>
-        broadcastChunkProgress({ type: 'chunk_progress', num, pid, received, count, batch, elapsedMs, state: 'running' }),
+      // No `batch`: under push the device streams at its own pace, so there is no
+      // client batch size. mt-transport spec'd onProgress as {received, count,
+      // elapsedMs} (specs/chunk-push.md §4b, citing this line). Keeping it would emit
+      // `batch: undefined` to every browser once push lands.
+      onProgress: ({ received, count, elapsedMs }) =>
+        broadcastChunkProgress({ type: 'chunk_progress', num, pid, received, count, elapsedMs, state: 'running' }),
     });
     if (r && r.ok === false) throw new Error(r.error || 'fetch failed');
     const bytes = r?.value?.length ?? null;

@@ -150,3 +150,30 @@ event, it shows **"observing external 261 traffic — this transfer was not star
 so there is no manifest, progress or byte count"**. That is reporting the ABSENCE of
 received data (contract: missing state renders as an unknown indicator), not a deduction
 about who is transmitting.
+
+## HARD CONSTRAINT — never poll `push stat` while `upst = 2`
+
+This page does not poll and must not start. Control traffic is TEXT at hop 3 and gets
+rebroadcast; chunk frames are hop 0 and are not — so polling the device *during* a
+transfer measurably SLOWS the transfer being watched. That inverts the usual instinct
+(poll harder while busy), which is why it is written here rather than left in a task note.
+
+Progress during a transfer comes ENTIRELY from the `chunk_progress` events already on the
+WS. Any future "is an image waiting" discovery probe polls only at `upst` 0 / 1 / 3.
+
+Source: mt-transport, measured on the bench 2026-07-20.
+
+## Why there is no START button here (yet)
+
+The page is read-only, and that is not merely conservatism. A push transfer is NOT
+fire-and-forget: something must run the receiver for the whole ~3 minutes — hold
+`store[seq]`, then drive PROGRESS_Q, REPAIR (explicit id list) and COMPLETE. A button
+that only fires START gets 32 chunks into the void AND leaves the device holding its
+buffer.
+
+That loop is mt-transport's to own (it needs their binary 261 codec; duplicating it here
+is explicitly out of scope). The wiring on our side already exists — `POST
+/nodes/:num/chunk-fetch` answers 202 and then awaits the transfer for its full duration,
+so the route handler IS the long-lived process the loop runs inside. The missing piece is
+their single `push` entry point on `Client`, same `{onProgress, deadlineMs}` shape as
+`fetch`. When it lands, the button is one call and nothing else moves.
