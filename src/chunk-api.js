@@ -9,7 +9,7 @@ import fs from 'fs';
 import { transport } from './transport-plugin.js';
 import { resolvePrimaryNodeId } from './device-config.js';
 import { resolveCommandChannel } from './node-settings.js';
-import { getDeviceChannelsByNodeId, broadcastChunkProgress, setChunkImagesProvider } from './ws-relay.js';
+import { getDeviceChannelsByNodeId, broadcastChunkProgress, setChunkImagesProvider, broadcastChunkImages } from './ws-relay.js';
 import { log } from './log.js';
 
 const router = Router();
@@ -221,6 +221,12 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
     catch (e) { log.warn('chunk', `could not clear ${stale}: ${e.message}`); }
   }
 
+  // Tell every browser the listing changed. Clearing the old partial above was
+  // invisible otherwise: chunk_images is only pushed on connect and after a terminal
+  // event, so a page kept rendering the deleted partial — "abandoned 18 min ago" —
+  // while a fresh transfer was already running.
+  broadcastChunkImages();
+
   _inFlight = { num, pid };
   const startedAt = Date.now();
   broadcastChunkProgress({ type: 'chunk_progress', num, pid, received: 0, count: null, state: 'started' });
@@ -262,6 +268,26 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
     });
     if (r && r.ok === false) throw new Error(r.error || 'fetch failed');
     const bytes = r?.value?.length ?? null;
+
+    // PERSIST THE BYTES OURSELVES. `Client.push()` resolves with VERIFIED bytes but does
+    // NOT write them — only `fetchAndSave()` calls store.save(). Under pull the client
+    // stored the image, so this route was written to just locate the file afterwards;
+    // that assumption silently stopped holding at the protocol switch and a completed
+    // 7156-byte transfer was discarded, leaving the viewer to report "location unknown"
+    // for an image that had arrived intact.
+    //
+    // Written before the terminal broadcast so the listing that follows includes it.
+    if (Buffer.isBuffer(r?.value) && r.value.length) {
+      try {
+        const dir = path.join(PAYLOAD_DIR, target);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, `pid-${pid}.jpg`), r.value);
+        log.info('chunk', `saved ${r.value.length} B to ${target}/pid-${pid}.jpg`);
+      } catch (e) {
+        log.warn('chunk', `could not save payload: ${e.message}`);
+      }
+    }
+
     // Server-owned location — the browser renders this, never builds it.
     const { url, file } = _newestPayloadSince(startedAt);
     broadcastChunkProgress({ type: 'chunk_done', num, pid, bytes, url, file, elapsedMs: Date.now() - startedAt });

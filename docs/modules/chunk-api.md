@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: ef3ce488c3001c9aa1ea8199f48002371cf531c3ef971734871559df58e5398f
+source_hash: 5f0da35d9fe50dd1df1ce1b846e79bc3b6f176c7d9b480604b2d3e2e2fc8f54c
 updated: 2026-07-20
 ---
 
@@ -340,3 +340,35 @@ files now appear as `pid-<N>.jpg.part` at the payload root, where pull wrote
 keys off the `.part` suffix rather than a documented path, so it kept working; the sidecar
 being absent degrades to a caption without a percentage, which is the designed fallback.
 That is the layout-agnostic decision paying for itself.
+
+## The completed image was DISCARDED — `push()` does not save (2026-07-20)
+
+A transfer completed successfully — `fetch ok node 2364420971 pid 1 (7156 B)`, the exact
+size of the known-good image — and the viewer reported **"stored — location unknown"**,
+because `data/payloads` was empty. The image arrived intact and this route threw it away.
+
+**Cause: an assumption that silently stopped holding at the protocol switch.** Under PULL,
+`Client.fetch()` stored the image itself (`PayloadStore.save`), so this route was written
+to merely LOCATE the file afterwards. Under PUSH, `Client.push()` **resolves with verified
+bytes but does not write them** — only `fetchAndSave()` calls `store.save()`. The route
+read `r.value.length` for the log line and dropped the buffer.
+
+Nothing errored. The transfer genuinely succeeded, the bytes were genuinely verified, and
+the only trace was a warning about a file that was never going to exist.
+
+**Fix:** write `r.value` to `<PAYLOAD_DIR>/<target>/pid-<pid>.jpg` before the terminal
+broadcast, so the listing that follows includes it. Guarded on `Buffer.isBuffer` and a
+non-zero length — if the client ever starts saving again, the newest-file resolution still
+finds whichever file exists, since it was always layout-agnostic.
+
+**Lesson worth keeping:** "the other side stores it" was true when written and untrue three
+commits later, and nothing in either codebase failed when it changed. A cross-repo
+assumption needs re-checking at every protocol change, not just at the seam where it was
+first agreed.
+
+## `chunk_images` re-announced when a transfer starts
+
+Clearing an abandoned partial was invisible to browsers: `chunk_images` was only pushed on
+connect and after a terminal event, so a page kept rendering the deleted partial —
+"abandoned 18 min ago" — while a fresh transfer was already running. The route now
+broadcasts the listing immediately after the clear.
