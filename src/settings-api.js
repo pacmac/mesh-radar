@@ -12,8 +12,7 @@ import { Router } from 'express';
 import { saveNodeSetting } from './node-settings.js';
 import { getDeviceChannelsByNodeId } from './ws-relay.js';
 import { resolvePrimaryNodeId } from './device-config.js';
-
-const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
+import { sendMeshText } from './mesh-send.js';
 const router = Router();
 
 router.put('/nodes/:num/settings', async (req, res) => {
@@ -31,15 +30,9 @@ router.put('/nodes/:num/settings', async (req, res) => {
 
   const result = await saveNodeSetting({
     num, path: settingPath, value, gatewayNodeId, gatewayChannels,
-    send: async ({ text, channel }) => {
-      const r = await fetch(`${BRIDGE_URL}/${gatewayNodeId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, channel }),
-      });
-      if (!r.ok) throw new Error(`gateway ${r.status}`);
-      return r.json();
-    },
+    // Addressed device command — recorded as 'command' via the shared send path.
+    send: async ({ text, channel }) =>
+      sendMeshText({ gatewayNodeId, text, channel, category: 'command' }),
   });
 
   // invalid  -> 400 (never transmitted)

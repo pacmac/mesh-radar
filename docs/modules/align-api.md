@@ -1,7 +1,7 @@
 ---
 module: align-api
 source: src/align-api.js
-source_hash: 7e3f5a7c9f169081b748f61148f316d429d65964ebef23bc3d630ca9c190a747
+source_hash: bf2a4b6ffc9b3939503f4d690c277a7039ad304f45c99338bb97991b6f73b24d
 updated: 2026-07-19
 ---
 
@@ -126,6 +126,10 @@ burst resolve, stop). The browser holds only the last one it was told.
 
 ## Dependencies
 
+- `mesh-send.js` — `sendMeshText()`. Each ping is sent through the shared record-on-send
+  path (`category: 'ping'`), not a raw `fetch` — so every probe lands in the message
+  feed. `sendMeshText` throws on a gateway error, which `sendPing` treats as a
+  resolved (missed) ping.
 - `utils.js` — `signalQuality()` (the shared 0–100)
 - `node-settings.js` — `resolveCommandChannel()` (refuses 0, resolves "Private")
 - `ws-relay.js` — `getDeviceChannelsByNodeId()`

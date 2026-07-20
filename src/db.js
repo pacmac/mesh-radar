@@ -269,6 +269,9 @@ if (!existingCols.includes('alerted_at')) db.exec(`ALTER TABLE messages ADD COLU
 if (!existingCols.includes('status'))      db.exec(`ALTER TABLE messages ADD COLUMN status TEXT`);
 if (!existingCols.includes('message_key')) db.exec(`ALTER TABLE messages ADD COLUMN message_key TEXT`);
 if (!existingCols.includes('rx_devices'))  db.exec(`ALTER TABLE messages ADD COLUMN rx_devices TEXT`);
+// Traffic class for the message feed filter: 'chat' | 'command' | 'ping' on
+// outbound; NULL on received rows until the filter task types those too.
+if (!existingCols.includes('category'))    db.exec(`ALTER TABLE messages ADD COLUMN category TEXT`);
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_key ON messages(message_key) WHERE message_key IS NOT NULL`);
 const tiltCols = db.prepare(`PRAGMA table_info(tilt_history)`).all().map(r => r.name);
 if (!tiltCols.includes('ncal')) {
@@ -363,10 +366,10 @@ export const stmts = {
   insertTxMessage: db.prepare(`
     INSERT OR IGNORE INTO messages
       (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi,
-       packet_id, reply_id, device, replay, hops, short_name, long_name, message_key)
+       packet_id, reply_id, device, replay, hops, short_name, long_name, message_key, category)
     VALUES
       (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi,
-       @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name, @message_key)
+       @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name, @message_key, @category)
   `),
 
   updateMessageStatus: db.prepare(`

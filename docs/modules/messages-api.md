@@ -1,82 +1,62 @@
 ---
 module: messages-api
 source: src/messages-api.js
-source_hash: ac0ed8400f2819fa6c6abf818845dd30a5ed0a1b0ea16318b4a6a105d0672daf
-updated: 2026-07-17
+source_hash: cbc71f8f7e4c119111f1fb7b204435fc159bde5f647bccd8813000dbb1485cc7
+updated: 2026-07-20
 ---
 
 # Module: messages-api
 
 ## Purpose
 
-Express Router for `POST /:nodeId/messages`. Extracted from `index.js`. Proxies
-outbound text messages to mesh-gw and then persists the sent message in SQLite
-so reply threading survives page reload.
+Express Router for `POST /:nodeId/messages` — the browser's **human chat** send.
+It delegates the transmit-and-record to the shared `sendMeshText()` (see
+`mesh-send.md`), tagging the traffic `category: 'chat'`.
+
+Extracted from `index.js`. Previously it inlined the POST-to-gateway and
+`insertTxMessage` recording; that logic now lives in `mesh-send.js` so **every**
+sender records through one path, not just this one.
 
 ## Responsibilities
 
-- Proxy `POST /:nodeId/messages` to bridge REST (`BRIDGE_URL`)
-- Resolve BLE MAC nodeIds to live `!hexid` before forwarding
-- On successful bridge response: persist the TX message via `stmts.insertTxMessage`
-- Call `syncAlertedAt` after insert to prevent spurious outbound-message alerts
-- Log persistence errors without failing the response (message was already sent)
+- Accept `POST /:nodeId/messages` and call `sendMeshText({ gatewayNodeId: nodeId,
+  text, channel, to, reply_id, category: 'chat' })`
+- Return the gateway result JSON (`{ id, to }`) on success
+- Map a gateway error (`sendMeshText` throws `gateway <status>`) back to that HTTP
+  status; other failures → 502
 
 ## Dependencies
 
-- `db.js` — `stmts.insertTxMessage`, `syncAlertedAt`
-- `node-list.js` — `nodeList._cache` (to look up short/long name for TX record)
-- `ws-relay.js` — `getLiveNodeIdByMac` (resolve MAC → live `!hexid`)
-- `process.env.BRIDGE_URL` — `'http://localhost:8001'` default; read at module load
+- `mesh-send.js` — `sendMeshText` (does the POST, the `insertTxMessage` record,
+  `syncAlertedAt`, and `broadcastMessageHistory`)
 
 ## Public interface
 
 ```js
-export default router  // Express Router — app.use(messagesRouter) in index.js (no prefix; route is POST /:nodeId/messages)
+export default router  // Express Router — app.use(messagesRouter) in index.js
+                       // (no prefix; route is POST /:nodeId/messages)
 ```
-
-## State
-
-_N/A_
-
-## Events emitted
-
-_N/A_
 
 ## Invariants
 
-- If `nodeId` does not start with `!`, it is treated as a BLE MAC and resolved via `getLiveNodeIdByMac`. Falls back to the raw value if not found.
-- The bridge request is made with the ORIGINAL `nodeId` (not the resolved one) to preserve the gw routing.
-- Persist is attempted only if bridge response is OK and `result.id` is present.
-- Persist failure is logged but does not change the HTTP response — the client already received the bridge result.
-- `message_key` is always `'t-' + result.id` for TX messages.
-- `replay: 0` and `hops: 0` are set for all TX records.
-- `is_dm: 1` when `to_num !== 0xffffffff`; `is_dm: 0` for broadcast.
+- **The record path is `mesh-send`, not inline.** This router no longer touches
+  `insertTxMessage`, `BRIDGE_URL`, or `nodeList` — a direct POST or inline persist
+  here would reintroduce the bypass this refactor removed.
+- A failed gateway send returns its status and records nothing (enforced by
+  `sendMeshText`).
+- Device vocabulary, `message_key = 't-<id>'`, broadcast-after-send, and the
+  MAC-vs-node_id resolution are all `mesh-send`'s responsibility now — see that spec.
 
 ## Test notes
 
-- **Success**: bridge 200 → response forwarded → `stmts.insertTxMessage` called with correct fields.
-- **Bridge error**: bridge 4xx/5xx → response forwarded → no persist call.
-- **Bridge unreachable**: 502 returned; no persist.
-- **Persist throws**: response already sent; error logged; no crash.
-- **MAC nodeId**: `getLiveNodeIdByMac` resolves to `!hexid`; `fromNum` computed from resolved id.
+- **Success**: gateway 200 → `sendMeshText` records a `t-<id>` row `category='chat'`
+  and the route returns `{ id, to }`.
+- **Gateway error**: `sendMeshText` throws `gateway 4xx/5xx` → route responds with
+  that status; nothing recorded.
 
 ## Out of scope
 
-- Message retrieval — `GET /messages` stays in `index.js` (thin, uses `queryMessages` directly).
-- Reply threading logic — `ws-relay.js` enrichment owns that.
-- Alert evaluation on received messages — `alerts.js` owns that.
-
-## Identity Phase B
-
-The TX message row stores `device` as the radio's **BLE MAC** (resolved
-from the `:nodeId` path param via the live registry when it arrives as
-`!hex`), matching the RX path — one vocabulary in the dedup index.
-
-## Broadcast after send (task `message-tx-broadcast`, 2026-07-17)
-
-After `insertTxMessage` + `syncAlertedAt`, the route calls
-`broadcastMessageHistory()` (ws-relay) so every connected session receives
-the fresh enriched history containing the just-sent message. Before this,
-TX messages were invisible to all sessions except the sender's optimistic
-entry until their next WS reconnect. On persist failure the broadcast is
-skipped with the existing error log — the gw send itself already succeeded.
+- Message retrieval — `GET /messages` stays in `index.js`.
+- Reply threading / enrichment — `ws-relay.js`.
+- Alert evaluation on received messages — `alerts.js`.
+- The transmit + record mechanics — `mesh-send.js`.

@@ -18,9 +18,8 @@ import { resolveCommandChannel } from './node-settings.js';
 import { getDeviceChannelsByNodeId } from './ws-relay.js';
 import { listFavourites } from './db.js';
 import { signalQuality } from './utils.js';
+import { sendMeshText } from './mesh-send.js';
 import { log } from './log.js';
-
-const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
 
 const router = Router();
 const clients = new Set();
@@ -126,12 +125,14 @@ async function sendPing(burst) {
   if (!session || session.burst !== burst) return;   // burst cancelled
   let sent;
   try {
-    const r = await fetch(`${BRIDGE_URL}/${session.gatewayNodeId}/messages`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: `@${session.suffix} ping`, channel: session.channel }),
+    // Broadcast on the Private channel, @suffix addressing; recorded as a 'ping'
+    // via the shared send path so every probe lands in the feed.
+    sent = await sendMeshText({
+      gatewayNodeId: session.gatewayNodeId,
+      text: `@${session.suffix} ping`,
+      channel: session.channel,
+      category: 'ping',
     });
-    if (!r.ok) throw new Error(`gateway ${r.status}`);
-    sent = await r.json();
   } catch (e) {
     burst.done += 1;                 // a ping that never left counts as resolved
     maybeResolve(burst);

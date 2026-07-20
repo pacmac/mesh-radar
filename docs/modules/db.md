@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 1fff58dd6d2370b09cecf091747dda995eaa0d4a5446b47e210a8fa1f7d6e2c4
+source_hash: 637d466c91b553a4c13d51b7e374f427839049a816fb6cacbb365f4f6c32b794
 updated: 2026-07-18
 ---
 
@@ -165,7 +165,7 @@ syncAlertedAt(packetId)             // → void  — writes alerted_at if alread
 |---|---|
 | `insertMessage` | INSERT OR IGNORE into messages (legacy, no message_key) |
 | `insertRxMessage` | INSERT … ON CONFLICT(message_key) — upserts best SNR/RSSI, accumulates rx_devices |
-| `insertTxMessage` | INSERT OR IGNORE into messages (sent messages, message_key = 't-{id}') |
+| `insertTxMessage` | INSERT OR IGNORE into messages (sent messages, message_key = 't-{id}', carries `category`) — called only via `mesh-send.js` |
 | `updateMessageStatus` | UPDATE messages SET status WHERE packet_id (TX rows only) |
 | `upsertNodeinfo` | INSERT … ON CONFLICT(node_id) — COALESCE merge into persistent nodeinfo |
 | `upsertNode` | INSERT … ON CONFLICT(num) — COALESCE merge into ephemeral nodes |
@@ -243,6 +243,7 @@ migration, plus partial unique index `idx_env_dedup`. The index is partial so th
 | status | TEXT | TX message ACK state (sent/queued/delivered/…) |
 | message_key | TEXT | dedup key: 'r-{packet_id}' rx, 't-{packet_id}' tx |
 | rx_devices | TEXT | comma-separated BLE MACs that heard this packet |
+| category | TEXT | traffic class on outbound: 'chat'/'command'/'ping'; NULL on received (see mesh-send.md) |
 
 Unique index on `(packet_id, device)` WHERE packet_id IS NOT NULL (legacy).
 Unique index on `message_key` WHERE message_key IS NOT NULL (current dedup).
