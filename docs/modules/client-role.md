@@ -1,7 +1,7 @@
 ---
 module: client-role
 source: src/client-role.js
-source_hash: 2ac97a8a2aa2dba1351ab97a4a24ce2ca59a45f7b15cae9870703e1d59426a84
+source_hash: b438e0ab3a068890e4e58fd703566f913f996fcb0dda3630935fb376bc06c725
 updated: 2026-07-20
 ---
 
@@ -30,17 +30,28 @@ export function clientRole(role)     // → the role string when it is one of ou
 
 `clientRole('SENSOR')` → `'SENSOR'`; `clientRole('CLIENT_BASE')` → `null`.
 
-## The interim rule
+## The rule -- keyed on the DECLARED role
 
-Our alarm firmware doesn't yet declare a clean type; today our custom nodes
-**repurpose the MT `SENSOR` role**, so `SENSOR` is the interim marker. `clientRole`
-returns the MT role verbatim when it's in `OUR_ROLES`, else `null` (a regular
-public node).
+Our alarm firmware (pac-garage-alarm **260720-2** onward) sets **`user.role = 200`
+(`PAC_ALARM`)** in its NodeInfo -- a private value in a reserved PAC range 200-255,
+deliberately clear of upstream's 0..12 (which grows upward). `DeviceConfig.Role` is
+NOT a closed enum: it is extended upstream, and mt-transport generates its own
+protobuf and owns the firmware, so a private value is legitimate.
 
-**Future (firmware-declared):** when the firmware advertises a real type (e.g.
-`PAC_ALARM`) over our own protocol, only this function changes — either `OUR_ROLES`
-gains the value, or the function reads the declared type instead of the MT role.
-Everything downstream (DB column, WS field, consumers) is unaffected.
+**Verified on live data:** the gw cannot map a private value to an enum name, so it
+arrives as a **float-formatted numeric string** -- `role = "200.0"` (in both
+`nodeinfo` and `nodes`), not `"200"` and not a name. So the rule parses it
+numerically: `Number(role) === 200`.
+
+- `Number(role) === 200` -> `'PAC_ALARM'` (declared, reliable -- the primary rule).
+- `role === 'SENSOR'` -> `'PAC_ALARM'` (**legacy fallback**). Pre-260720-2 alarm
+  units still report SENSOR; dropping it would silently unflag a real alarm unit.
+  **Retire this once every alarm unit runs 260720-2+.** It carries a false-positive
+  risk (a stock node may be SENSOR) which the declared role does not.
+- anything else -> `null` (a regular public node).
+
+`client_role` is normalised to **`'PAC_ALARM'`** -- what the node *is to us* -- not
+the raw `"200.0"`.
 
 ## Where it is applied (SSOT — two mirrors of this one rule)
 

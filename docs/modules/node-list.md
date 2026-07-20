@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 8aaa326c05aa2ec87a990ddcc38d5cb11e7a454052e2bc7a6e2e50cc174faf00
+source_hash: 634540335b3358525cbbf6ad009cf0908e4e4c370f6669a15def6931804efb41
 updated: 2026-07-08
 ---
 
@@ -312,6 +312,15 @@ ev.node_id`), matching `_cache._device` — audit violation B8.
 
 `setTraceroute` returns the inserted history row id (for WS row keying).
 
-## client_role on the WS feed (task client-role-ssot, 2026-07-20)
+## client_role on the WS feed (task client-role-ssot / client-role-pac-alarm)
 
-`enrichFromCache` adds `client_role` to every emitted node via `clientRole(node.user?.role ?? cached.role)` (`client-role.js`) — the server-side value the browser renders (Control picker, badges) and never re-derives. `null` for regular nodes. See `client-role.md`.
+`_filter()` -- the single boundary where nodes leave for consumers (`get nodes()`
+and the `change` emit) -- stamps `client_role` on **every** emitted node via
+`clientRole(n.user?.role)` (`client-role.js`). Server-derived, so the browser never
+classifies (BROWSER_CONTRACT); `null` for regular nodes.
+
+**It is deliberately NOT in `enrichFromCache`.** Only ~5 of the ~17 `_cache.set`
+paths run that helper, so nodes populated by the others silently lacked the field --
+observed live: a PAC node reporting `role "200.0"` reached the browser with
+`client_role: null` while the DB column had it. Stamping at the emit boundary is the
+only placement that covers every path.

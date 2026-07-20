@@ -4,15 +4,29 @@
 // and carried in the node WS feed; plugins/custom-node surfaces consume it but
 // never re-derive it. See docs/modules/client-role.md.
 //
-// Custom types can't be Meshtastic roles (DeviceConfig.Role is a closed protobuf
-// enum), so this is our own field. Interim: our alarm nodes repurpose the SENSOR
-// role, so SENSOR is the marker. When the firmware declares a real type (PAC_ALARM)
-// over our protocol, only this module + the DB generated column change.
+// Our alarm firmware (pac-garage-alarm 260720-2+) DECLARES itself: it sets
+// user.role = 200 (PAC_ALARM) in NodeInfo — a private value in a reserved PAC range
+// 200-255, clear of upstream's 0..12. DeviceConfig.Role is NOT a closed enum; it is
+// extended upstream, and mt-transport owns both the firmware and its protobuf, so a
+// private value is legitimate.
+//
+// The gw cannot map a private value to an enum name, so it arrives as a
+// FLOAT-FORMATTED NUMERIC STRING — role === "200.0" (verified on live data), not
+// "200" and not a name. Hence the numeric parse below.
 
-// MT roles that currently mark our custom nodes.
-export const OUR_ROLES = ['SENSOR'];
+// The declared role our alarm firmware advertises.
+export const PAC_ALARM_ROLE = 200;
 
-// → the role string when it is one of ours, else null (a regular public node).
+// Pre-260720-2 alarm units still report SENSOR. Kept so upgrading firmware doesn't
+// silently unflag a real alarm unit. RETIRE once every alarm runs 260720-2+ — it
+// carries a false-positive risk (a stock node may legitimately be SENSOR) that the
+// declared role does not.
+export const LEGACY_OUR_ROLES = ['SENSOR'];
+
+// → 'PAC_ALARM' for one of ours, else null (a regular public node).
 export function clientRole(role) {
-  return OUR_ROLES.includes(role) ? role : null;
+  if (role == null || role === '') return null;
+  if (Number(role) === PAC_ALARM_ROLE) return 'PAC_ALARM';   // declared — reliable
+  if (LEGACY_OUR_ROLES.includes(role)) return 'PAC_ALARM';   // legacy firmware
+  return null;
 }

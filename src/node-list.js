@@ -25,10 +25,7 @@ export function hopsAway(hopStart, hopLimit) {
 
 function enrichFromCache(node) {
   const cached = getMqttNode(node.num);
-  // CORE SSOT: our own "is this ours / what kind", server-derived so the browser
-  // never classifies (BROWSER_CONTRACT). null for regular nodes. See client-role.md.
-  const client_role = clientRole(node.user?.role ?? cached?.role ?? null);
-  if (!cached) return { ...node, client_role };
+  if (!cached) return node;
 
   const now   = Math.floor(Date.now() / 1000);
   const isNew = cached.first_heard != null && (now - cached.first_heard) < NEW_NODE_TTL;
@@ -44,14 +41,13 @@ function enrichFromCache(node) {
   // Node already has identity — just tag _new and attach stored traceroute + warm hops
   if (node.user?.short_name || node.user?.long_name) {
     return isNew
-      ? { ...node, client_role, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra }
-      : { ...node, client_role, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra };
+      ? { ...node, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra }
+      : { ...node, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra };
   }
 
   // Backfill identity + position from cache
   return {
     ...node,
-    client_role,
     ...favExtra,
     user: {
       id:         node.user?.id ?? cached.node_id,
@@ -452,13 +448,18 @@ class NodeList extends EventEmitter {
     }
 
     const hp = this.homePos;
-    if (!hp) return filtered;
-    return filtered.map(n => {
+    const withGeo = !hp ? filtered : filtered.map(n => {
       if (!n.position?.latitude_i || !n.position?.longitude_i) return n;
       const lat = n.position.latitude_i / 1e7;
       const lon = n.position.longitude_i / 1e7;
       return { ...n, _km: haversine(hp.lat, hp.lon, lat, lon), _az: bearing(hp.lat, hp.lon, lat, lon) };
     });
+
+    // CORE SSOT: stamp client_role on EVERY emitted node, here at the one boundary
+    // where nodes leave for consumers. NOT in enrichFromCache — most _cache.set
+    // paths bypass that helper, so nodes populated by them silently lacked the
+    // field (observed: a PAC node with role "200.0" arrived with client_role null).
+    return withGeo.map(n => ({ ...n, client_role: clientRole(n.user?.role) }));
   }
 
   _scheduleEmit() {

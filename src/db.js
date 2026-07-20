@@ -47,9 +47,10 @@ db.exec(`
     uptime_seconds  INTEGER,
     device          TEXT,
     updated_at      INTEGER NOT NULL DEFAULT (unixepoch()),
-    -- CORE SSOT: our own "is this ours / what kind", generated from the MT role
-    -- (interim: SENSOR marks our custom nodes). Mirrors client-role.js clientRole.
-    client_role     TEXT GENERATED ALWAYS AS (CASE WHEN role = 'SENSOR' THEN role END) VIRTUAL
+    -- CORE SSOT: our own "is this ours / what kind". Keyed on the role our firmware
+    -- DECLARES (user.role=200 PAC_ALARM, arriving as the string "200.0"), plus a
+    -- legacy SENSOR fallback. Mirrors client-role.js clientRole.
+    client_role     TEXT GENERATED ALWAYS AS (CASE WHEN CAST(role AS REAL) = 200.0 OR role = 'SENSOR' THEN 'PAC_ALARM' END) VIRTUAL
   );
 
   CREATE TABLE IF NOT EXISTS events (
@@ -267,9 +268,18 @@ db.exec(`
 // columns, so a table_info guard never sees the column it added and re-ALTERs on
 // every boot -> "duplicate column" crash loop. table_xinfo lists generated columns.
 {
-  const nodeCols = db.prepare(`PRAGMA table_xinfo(nodes)`).all().map(r => r.name);
-  if (!nodeCols.includes('client_role')) {
-    db.exec(`ALTER TABLE nodes ADD COLUMN client_role TEXT GENERATED ALWAYS AS (CASE WHEN role = 'SENSOR' THEN role END) VIRTUAL`);
+  // Mirrors client-role.js clientRole(): the DECLARED PAC role (user.role=200,
+  // which arrives as the numeric string "200.0"), plus the legacy SENSOR fallback.
+  const EXPR = `CASE WHEN CAST(role AS REAL) = 200.0 OR role = 'SENSOR' THEN 'PAC_ALARM' END`;
+  const ddl  = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='nodes'`).get()?.sql || '';
+  const has  = db.prepare(`PRAGMA table_xinfo(nodes)`).all().some(r => r.name === 'client_role');
+  // A generated column's expression cannot be altered in place. 'PAC_ALARM' in the
+  // stored DDL is the discriminator: present = current, absent = the old
+  // SENSOR-only expression that must be rebuilt.
+  const stale = has && !ddl.includes('PAC_ALARM');
+  if (stale) db.exec(`ALTER TABLE nodes DROP COLUMN client_role`);
+  if (!has || stale) {
+    db.exec(`ALTER TABLE nodes ADD COLUMN client_role TEXT GENERATED ALWAYS AS (${EXPR}) VIRTUAL`);
   }
 }
 const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);
