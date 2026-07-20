@@ -1,7 +1,7 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: 2dc11d30cdc002cd4236111fb95b0538c65b390d3e68c614e89607fe21b6842d
+source_hash: a4bfad74d502a97931552613cccf1f700f3d3af7f2e9ebe9b12fb6a406ef7b1e
 updated: 2026-07-09
 ---
 
@@ -98,3 +98,18 @@ Live node updates route to `nodeList.handleNodeUpdate` on the V2 event name
 wired, so live rssi/snr/hops/via_mqtt/device_metrics never reached the node
 cache — six of nine node filters matched no field and the node-card signal
 bars were blank.
+
+## Push-refusal inspection (task `push-publish-first`, 2026-07-20)
+
+The reply-correlation block gained one more read-only consumer. Alongside
+`handleReply` (settings) and `handleAlignPong` (align), device replies are now passed to
+`notePushReply(pkt.from, text)` in `chunk-api.js`.
+
+It exists because `{"start":N,"ok":0}` — the device explicitly REFUSING a push START —
+was arriving here, being persisted to the message feed, and rendering as a blank progress
+bar. A flat refusal was indistinguishable from a dead radio. `notePushReply` turns it into
+a `chunk_error`.
+
+Same contract as the other two consumers: it is a no-op unless a transfer is in flight,
+it only reads the reply text, and it transmits nothing. Wrapped in its own try/catch so a
+malformed payload cannot break settings or align correlation.
