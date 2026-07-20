@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: abcb492b33e365e58b41598062d6067770e7def0df5495b1d2c8151edd4c78e1
+source_hash: 5732c12ca960fe965fd02dced4177a7735d13772deddba848780fa3dd5200000
 updated: 2026-07-20
 ---
 
@@ -278,3 +278,32 @@ it still update every tick, and an unchanged tick still counts toward liveness (
 
 Verified: 40 identical ticks now produce ONE line, and the surviving log reads
 `progress 32/32 · progress 31/32 · progress 30/32 · MANIFEST count=32 · START …`.
+
+## Interrupted transfers, and `count: 0` is not a manifest (2026-07-20)
+
+**`chunk_idle`:** if the server reports no transfer while this page believes one is
+running, the transfer was interrupted — a restart or a crash — and the page now says so
+(`error`, with "received chunks are not resumable across a restart") instead of leaving a
+frozen bar that looks live. A page already idle is unaffected.
+
+**`count: 0` is no longer treated as the manifest.** The client emits an early progress
+tick with `count: 0` before the manifest lands; taking it as the first real count logged
+`MANIFEST count=0` and then SUPPRESSED the true manifest when 32 arrived. Now a manifest
+requires `count > 0`, and the early tick renders as `progress 0/?`.
+
+Verified against the exact sequence from a real run: `START · progress 0/? · MANIFEST
+count=32 · progress 0/32 · progress 20/32`, then `chunk_idle` → `error`.
+
+## Abandoned partials are cleared when a new transfer starts
+
+A `.part` left by a failed transfer was announced to every new session forever — Peter
+opened a fresh session hours later and was still shown `pid-1.jpg.part · incomplete`.
+
+Cleared at the START of a new transfer for that pid, not on failure: immediately after a
+failure the partial is genuinely useful (it renders as half a picture, which is how the
+16/32 stall was diagnosed). It becomes clutter only once superseded.
+
+The caption also no longer prints `?` for the node — push writes to the payload root, so
+there is no node directory and the placeholder invented an unknown that was not one — and
+now carries age, so a stale partial reads as `pid-1.jpg.part · incomplete · abandoned
+11 min ago`.

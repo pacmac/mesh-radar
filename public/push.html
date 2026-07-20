@@ -321,9 +321,12 @@ function pushViewer() {
           // server would refuse it with a 409.
           this.state = 'running';
           if (ev.num != null) { this.num = ev.num; this.pid = ev.pid; }
-          const firstCount = this.count === null && ev.count != null;
+          // count 0 is NOT a manifest — the client emits an early progress tick before
+          // the manifest lands, and treating it as one logged "MANIFEST count=0" and then
+          // suppressed the real one when 32 arrived.
+          const firstCount = this.count === null && ev.count != null && ev.count > 0;
           this.received = ev.received ?? this.received;
-          if (ev.count != null) this.count = ev.count;
+          if (ev.count) this.count = ev.count;   // ignore 0/null; a real count is > 0
           this.elapsedMs = ev.elapsedMs ?? this.elapsedMs;
           if (firstCount) this.note(`MANIFEST count=${ev.count}`);
           // Log only on CHANGE. onProgress fires ~1/second, so logging every event
@@ -353,6 +356,16 @@ function pushViewer() {
         this.endedAt = ev.endedAt || null;
         this.error = ev.error || 'transfer failed';
         this.note(`ERROR ${this.error}`);
+      } else if (ev.type === 'chunk_idle') {
+        // The server has no transfer. If this page thought one was running, it was
+        // interrupted (a restart or a crash) — say so rather than leaving a frozen bar
+        // that looks live. A page that was already idle is unaffected.
+        if (this.state === 'running') {
+          this.state = 'error';
+          this.error = 'transfer interrupted — the service restarted or the transfer was lost. Received chunks are not resumable across a restart.';
+          this.endedAt = new Date().toISOString();
+          this.note('INTERRUPTED — server reports no transfer in progress');
+        }
       } else if (ev.type === 'chunk_images') {
         // Everything the SERVER says is on disk — replayed on connect, so a reload (or a
         // browser opened after the transfer ended) still shows the result. Captions and
