@@ -36,6 +36,9 @@ export const messagesMixin = {
         direction:          r.direction || 'rx',
         ackStatus:          r.status || null,
         src:                r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
+        // Server-computed type bucket (message-type.js). The browser renders it;
+        // it never re-derives it. Feeds the per-viewer type filter.
+        bucket:             r.type_bucket ?? null,
       };
     });
   },
@@ -51,9 +54,44 @@ export const messagesMixin = {
   },
 
   displayMessages() {
-    // Order and thread structure are pre-computed by node-dash.
-    // Browser renders the array as-is — no sorting, no classification.
-    return this.messages;
+    // Order and thread structure are pre-computed by node-dash. The browser
+    // never sorts or classifies — it only hides rows the viewer filtered out.
+    const t = this.msgFilterType, d = this.msgFilterDevice, c = this.msgFilterChannel;
+    if (!t.length && !d.length && !c.length) return this.messages;   // All
+    return this.messages.filter(m =>
+      (t.length === 0 || t.includes(m.bucket)) &&
+      (c.length === 0 || c.includes(m.channel)) &&
+      (d.length === 0 || (Array.isArray(m.src) && m.src.some(x => d.includes(x))))
+    );
+  },
+
+  // -- Per-viewer feed filter (task message-feed-filters) --------------------
+  // Options are derived from the loaded feed so a control never offers a value
+  // that would match nothing. Type is the fixed 5-bucket vocabulary.
+  msgTypeOptions() {
+    return ['chat', 'command', 'alarm', 'camera', 'diagnostics'];
+  },
+  msgDeviceOptions() {
+    const s = new Set();
+    for (const m of this.messages) for (const x of (m.src || [])) if (x) s.add(x);
+    return [...s].sort();
+  },
+  msgChannelOptions() {
+    const s = new Set();
+    for (const m of this.messages) if (m.channel != null) s.add(m.channel);
+    return [...s].sort((a, b) => a - b);
+  },
+  msgFilterActive(dim, val) {
+    return this['msgFilter' + dim].includes(val);
+  },
+  toggleMsgFilter(dim, val) {
+    const key = 'msgFilter' + dim, arr = this[key];
+    this[key] = arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val];
+    persistSet(key, this[key]);
+  },
+  clearMsgFilter(dim) {
+    this['msgFilter' + dim] = [];
+    persistSet('msgFilter' + dim, []);
   },
 
   async sendMessage() {

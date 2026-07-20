@@ -98,6 +98,49 @@
           <div class="card bg-base-100 shadow flex flex-col min-h-0">
             <div class="card-body flex flex-col min-h-0">
               <h2 class="card-title shrink-0">Message Feed</h2>
+
+              <!-- Per-viewer feed filter (task message-feed-filters). Button
+                   groups, NOT dropdowns. Empty = All. Multi-select within a row,
+                   AND across rows. Selection persists per viewer (localStorage). -->
+              <div class="flex flex-col gap-1 shrink-0 mb-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs text-base-content/50 w-14 shrink-0">Type</span>
+                  <div class="join">
+                    <button class="join-item btn btn-xs" :class="msgFilterType.length===0 ? 'btn-primary' : 'btn-outline'"
+                            @click="clearMsgFilter('Type')">All</button>
+                    <template x-for="t in msgTypeOptions()" :key="t">
+                      <button class="join-item btn btn-xs capitalize"
+                              :class="msgFilterActive('Type', t) ? 'btn-primary' : 'btn-outline'"
+                              @click="toggleMsgFilter('Type', t)" x-text="t"></button>
+                    </template>
+                  </div>
+                </div>
+                <div x-show="msgDeviceOptions().length" class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs text-base-content/50 w-14 shrink-0">Device</span>
+                  <div class="join">
+                    <button class="join-item btn btn-xs" :class="msgFilterDevice.length===0 ? 'btn-primary' : 'btn-outline'"
+                            @click="clearMsgFilter('Device')">All</button>
+                    <template x-for="dv in msgDeviceOptions()" :key="dv">
+                      <button class="join-item btn btn-xs"
+                              :class="msgFilterActive('Device', dv) ? 'btn-primary' : 'btn-outline'"
+                              @click="toggleMsgFilter('Device', dv)" x-text="deviceLabel(dv) || dv"></button>
+                    </template>
+                  </div>
+                </div>
+                <div x-show="msgChannelOptions().length" class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs text-base-content/50 w-14 shrink-0">Channel</span>
+                  <div class="join">
+                    <button class="join-item btn btn-xs" :class="msgFilterChannel.length===0 ? 'btn-primary' : 'btn-outline'"
+                            @click="clearMsgFilter('Channel')">All</button>
+                    <template x-for="cv in msgChannelOptions()" :key="cv">
+                      <button class="join-item btn btn-xs font-mono"
+                              :class="msgFilterActive('Channel', cv) ? 'btn-primary' : 'btn-outline'"
+                              @click="toggleMsgFilter('Channel', cv)" x-text="cv"></button>
+                    </template>
+                  </div>
+                </div>
+              </div>
+
               <div class="overflow-y-auto flex-1 min-h-0">
                 <template x-for="m in displayMessages()" :key="m.key">
                   <div class="flex items-start gap-3 py-2"
@@ -157,7 +200,8 @@
                     </div>
                   </div>
                 </template>
-                <div x-show="messages.length===0" class="text-base-content/40 italic py-4">No messages yet…</div>
+                <div x-show="displayMessages().length===0" class="text-base-content/40 italic py-4"
+                     x-text="messages.length===0 ? 'No messages yet…' : 'No messages match the current filters'"></div>
               </div>
             </div>
           </div>

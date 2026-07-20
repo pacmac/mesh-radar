@@ -1,8 +1,8 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: ed033ed8afc7c9a34b3dc829176b73bdb0558a2f99214aa98b8f65e4b746b95f
-updated: 2026-07-17
+source_hash: f598423023b3c45ec8ac92715c6db69fdedbc2bc138cf78ccd53e970583e8250
+updated: 2026-07-20
 ---
 
 # Module: tab-messages
@@ -100,3 +100,36 @@ An `x-effect` resets `msgChannel` to 0 when the From radio changes to one
 that lacks the selected index. Fallback before the first channels fetch:
 `[{index:0}]` (Primary only). Helper `msgFromChannels()` lives in
 `app-messages.js` (display convenience, no decisions).
+
+## Per-viewer feed filter (task `message-feed-filters`, step 3, 2026-07-20)
+
+A filter toolbar sits between the "Message Feed" `<h2>` and the feed scroll
+container — three rows (Type / Device / Channel), each a `.join` button group in
+the established `join-item btn btn-xs` style (denser than the compose `btn-sm`
+controls). **Not dropdowns** (Peter). Each row:
+
+- A leading **All** button — `btn-primary` when that dimension's filter array is
+  empty, else `btn-outline`; `@click="clearMsgFilter('<Dim>')"`.
+- One button per option (`x-for`), `btn-primary` when
+  `msgFilterActive('<Dim>', v)` else `btn-outline`; `@click="toggleMsgFilter(...)"`.
+- Multi-select within a row; the three rows AND across dimensions.
+
+Options come from `app-messages.js`: `msgTypeOptions()` (fixed 5 buckets, labelled
+`capitalize`), `msgDeviceOptions()` (distinct feed MACs, labelled via
+`deviceLabel`), `msgChannelOptions()` (distinct **raw** channel numbers — sends
+store index, receives store hash, so Peter tests raw then we refine). The Device
+and Channel rows are `x-show`-guarded on their option count so an empty dimension
+draws nothing.
+
+The feed `x-for` is unchanged (`m in displayMessages()`), but `displayMessages()`
+now returns the filtered subset (see `app-messages.md`). The empty-state line
+switches on `displayMessages().length===0` and reads "No messages match the
+current filters" when `messages.length` is non-zero, else "No messages yet…".
+
+Filter selection is a **per-viewer** localStorage pref (`app.js` state
+`msgFilterType/Device/Channel` via `persistGet`) — not server config. Contract-clean:
+the *classification* of each message is server-computed; the user's show/hide is raw
+input + presentation. Files: `public/partials/tab-messages.html` (toolbar +
+empty-state), `public/app-messages.js` (bucket field, filter methods,
+`displayMessages` filtering), `public/app.js` (3 persisted state fields — unspecced
+aggregate root).

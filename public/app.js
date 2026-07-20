@@ -148,6 +148,11 @@ function dashboard() {
 
     // -- Messages -------------------------------------------------------------
     msgFrom:    persistGet('msgFrom', ''),
+    // Per-viewer feed filter (task message-feed-filters). Empty array = "All".
+    // localStorage-backed → per viewer, not server config (see app-messages.md).
+    msgFilterType:    persistGet('msgFilterType',    []),
+    msgFilterDevice:  persistGet('msgFilterDevice',  []),
+    msgFilterChannel: persistGet('msgFilterChannel', []),
     msgIsDirect: false,
     msgDirectTo: '',
     msgReplyId:  null,
