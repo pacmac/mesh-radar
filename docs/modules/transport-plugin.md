@@ -1,7 +1,7 @@
 ---
 module: transport-plugin
 source: src/transport-plugin.js
-source_hash: 318dba9e350ca7ccb53ec5952b0a31dce8dcaf1d9633fb0b46c7ba4a69abedc4
+source_hash: 6b468d8d73cfaf7bf8a3f2be74441fadadabe70ee989a5991c511e84af11dbc5
 updated: 2026-07-19
 ---
 
@@ -190,3 +190,15 @@ Live capability line after the purge:
 
 Also gone with it: `batch`, and every `MSG_BUSY (0x06)` reference describing pacing as
 current — under push the device paces itself and that frame does not exist.
+
+## Log the implementation's version at load (2026-07-20)
+
+mt-transport's client is loaded by PATH, not as a dependency, so "which client is actually
+running?" was unanswerable from node-dash. Today that question cost debugging time on both
+sides. The load line now includes `CLIENT_VERSION` and `PUSH_PROTO_VERSION` when the module
+exports them:
+
+    loaded …/clients/node/index.js (client 1.1.0, push proto 1) — capabilities: debug260, chunkPush
+
+Absent exports degrade silently to the old line — an older build must still load cleanly,
+since refusing to run because it cannot name itself would be worse than not knowing.

@@ -133,7 +133,14 @@ export async function loadTransport() {
         ),
       });
 
-      log.info('transport', `loaded ${path} — capabilities: ${[...caps].join(', ')}`);
+      // Version, when the implementation offers it. It is loaded by PATH rather than as
+      // a dependency, so "which client is actually running?" is otherwise unanswerable
+      // from here — and today that question cost real debugging time on both sides.
+      const ver = [
+        mod.CLIENT_VERSION ? `client ${mod.CLIENT_VERSION}` : null,
+        mod.PUSH_PROTO_VERSION != null ? `push proto ${mod.PUSH_PROTO_VERSION}` : null,
+      ].filter(Boolean).join(', ');
+      log.info('transport', `loaded ${path}${ver ? ` (${ver})` : ''} — capabilities: ${[...caps].join(', ')}`);
       return _cached;
     } catch (e) {
       // ERR_MODULE_NOT_FOUND is the ordinary "not installed" path and is not
