@@ -25,7 +25,12 @@ export const PAYLOAD_DIR = path.join(process.cwd(), 'data', 'payloads');
 // traffic and every node. A second request is refused, never queued.
 let _inFlight = null;   // { num, pid } | null
 
-const numToNodeId = (num) => '!' + ((num >>> 0).toString(16).padStart(8, '0'));
+// The device's command grammar is `@<4-hex-suffix> <verb>` — the SAME addressing the
+// command route uses (command-api.js hexSuffix). The Client prefixes '@' to whatever
+// target it is given, so passing a full node id produced `@!8cee336b chunk info 1`,
+// which the device silently ignores. Evidence: 155 `@336b …` commands were answered;
+// 18 `@!8cee336b …` were not answered once.
+const hexSuffix = (num) => (Number(num) >>> 0).toString(16).padStart(8, '0').slice(-4);
 
 // The browser must never derive the image's path: assembling it there is the browser
 // deciding state, and GETting a listing breaks the WS-only transport rule. So the
@@ -86,7 +91,7 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
   const ch = resolveCommandChannel(getDeviceChannelsByNodeId(gatewayNodeId));
   if (!ch.ok) return res.status(409).json({ error: ch.error });
 
-  const target = numToNodeId(num);
+  const target = hexSuffix(num);
   _inFlight = { num, pid };
   const startedAt = Date.now();
   broadcastChunkProgress({ type: 'chunk_progress', num, pid, received: 0, count: null, state: 'started' });

@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: 34a0cc2c0a6d604612e5b81235bdd33ee8ff2bf7782341fc6067d972a8a43243
+source_hash: e94ad767e5b5183aab593d4e8e9fea6f3f239f12225645d48458ded988eacb97
 updated: 2026-07-20
 ---
 
@@ -199,3 +199,37 @@ watched. This inverts the normal instinct for a progress UI (poll harder while b
 - `upst`: 0 idle · 1 pending · 2 sending · 3 awaiting COMPLETE.
 
 Source: mt-transport, measured on the bench 2026-07-20.
+
+## BUG: the target was addressed with a full node id, so the device ignored it
+
+Peter pressed Start and the page sat on "waiting for manifest" — because the device never
+answered, and it never answered because it was never addressed in a form it parses.
+
+`const target = numToNodeId(num)` produced `!8cee336b`. The `Client` prefixes `@` to
+whatever target it is given, so the frame on air read `@!8cee336b chunk info 1`. The
+device's command grammar is `@<4-hex-suffix> <verb>` — the same grammar `command-api.js`
+already uses via `hexSuffix()`, and the same one `src/message-type.js` classifies on
+(`/^@[0-9a-f]{4}\s+\S/i`).
+
+Evidence from the message log, which is unambiguous:
+
+| form | count | answered |
+|---|---|---|
+| `@336b chunk info …` | 155 | yes (all prior working traffic) |
+| `@!8cee336b chunk info 1` | 18 | **never once** |
+| `@!00000001 chunk info …` | 12 | never (nonexistent node, my accidental fetch) |
+
+Fixed: `const target = hexSuffix(num)`, matching the command route. The full-node-id
+helper is removed rather than left unused.
+
+**This was silent by construction.** The route reports 202, the transfer "starts", frames
+go out, and the device simply never replies — so it looks identical to a weak link. There
+is no error to log because nothing failed; the messages were addressed to nobody. Worth
+remembering: a mis-addressed command is indistinguishable from a lost one, and only
+comparing against known-good traffic separates them.
+
+**Still unverified even with correct addressing:** the bench is on push firmware
+`260720-11`. Whether it still serves the PULL verb `chunk info` is unknown — the 155
+working examples predate that flash. So a retry may still fail, for a different and
+legitimate reason, and that will need mt-transport's `push` entry point rather than
+another fix here.
