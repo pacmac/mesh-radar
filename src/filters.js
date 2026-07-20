@@ -1,4 +1,5 @@
 import db, { getConfig } from './db.js';
+import { messageBucket } from './message-type.js';
 
 export function queryMessages(limit = 100) {
   const channels = getConfig('message_filter.channels', []);
@@ -35,6 +36,7 @@ export function queryMessages(limit = 100) {
       m.packet_id, m.reply_id,
       COALESCE(MAX(m.rx_devices), GROUP_CONCAT(m.device)) AS rx_devices,
       MAX(m.replay)                                       AS replay,
+      MAX(m.category)                                     AS category,
       COALESCE(MIN(m.short_name), MIN(n.short_name))     AS short_name,
       COALESCE(MIN(m.long_name),  MIN(n.long_name))      AS long_name,
       MIN(m.status)                                       AS status,
@@ -51,7 +53,10 @@ export function queryMessages(limit = 100) {
     ${where}
     GROUP BY CASE WHEN m.packet_id IS NOT NULL THEN m.packet_id ELSE m.id END
     ORDER BY MAX(m.ts) DESC LIMIT ?
-  `).all(...params);
+  `).all(...params)
+    // type_bucket for the feed's type filter — computed here so the browser only
+    // renders it (message-type.md). rx_devices + channel are already selected.
+    .map(r => ({ ...r, type_bucket: messageBucket(r.category, r.text) }));
 }
 
 export function queryNodes() {

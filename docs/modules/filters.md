@@ -1,7 +1,7 @@
 ---
 module: filters
 source: src/filters.js
-source_hash: 1d0f6b5970eb7ab4cd604e73114dd876192d89df7ee949920afe472415193a40
+source_hash: f2519df9adc6210f16aa4041f3afdfdb896d25fee74cfcb443e145e6f85a2ab3
 updated: 2026-06-30
 ---
 
@@ -56,6 +56,7 @@ SELECT
   m.packet_id, m.reply_id,
   COALESCE(MAX(m.rx_devices), GROUP_CONCAT(m.device)) AS rx_devices,
   MAX(m.replay)                                     AS replay,
+  MAX(m.category)                                   AS category,
   COALESCE(MIN(m.short_name), MIN(n.short_name))   AS short_name,
   COALESCE(MIN(m.long_name),  MIN(n.long_name))    AS long_name,
   MIN(m.status)                                     AS status
@@ -78,7 +79,16 @@ logical message.
 - `snr`, `rssi`, `hops`, `replay` — `MAX` (best reception wins)
 - `ts`, `id`, `from_num`, `to_num`, `text`, `channel`, `is_dm`, `hop_limit`, `status` — `MIN` (first reception wins)
 - `rx_devices` — `COALESCE(MAX(rx_devices), GROUP_CONCAT(device))`: prefers the stored `rx_devices` JSON array; falls back to concatenating the `device` field across rows
+- `category` — `MAX(m.category)`: the non-null outbound tag if any row has one
 - `short_name`/`long_name` — `COALESCE(MIN(m.*), MIN(n.*))`: message-stored name wins; falls back to live `nodes` table
+
+### `type_bucket` (post-query, for the feed type filter)
+
+Each returned row gains `type_bucket` — one of `chat` / `command` / `alarm` /
+`camera` / `diagnostics` — computed in JS via `messageBucket(category, text)`
+(`message-type.js`), not in SQL. Server-side so the browser only renders it
+(BROWSER_CONTRACT). The row's `rx_devices` and `channel` already cover the other
+two filter dimensions.
 
 ### Limit
 
