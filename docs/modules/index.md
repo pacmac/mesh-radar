@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: e79f2c2d3675f105685f7f74102b76c7cc2e5fa104462b5bbcd10d5c19a22402
+source_hash: dfc1be1518b8cbf1d8e5935d02b6e0eda9b06912a8db976dbb56ed493ad49c09
 updated: 2026-07-20
 ---
 
@@ -142,3 +142,26 @@ box boots unchanged).
 - mesh-gw semantics — `bridge.js` and `docs/gw/`.
 - Known stale wiring (`startImapReceiver`, auto-purge) belongs to the
   `remove-legacy-mesh-features` task, not here.
+
+## Partials are served as STRUCTURALLY VALID JPEGs (2026-07-20)
+
+A `.part` is the transfer's contiguous prefix — a truncated JPEG with no `FFD9`
+end-of-image marker. **Chromium renders such a file anyway; most decoders reject the whole
+stream and draw nothing.** That is the most likely explanation for the live image painting
+in a Playwright Chromium here while Peter saw a blank panel through an entire transfer,
+hard-refreshing before each run.
+
+`GET /chunk-images/{*rest}` now intercepts `.part` requests, appends `FFD9` if absent, and
+sends `image/jpeg` with `no-store`. The file on disk is untouched and complete images fall
+through to the static mount byte-identical (verified by sha256).
+
+**Express 5 note, learned by taking the service down for ~1 minute:** a bare `'*'` wildcard
+throws `PathError: Missing parameter name at index 15` at route-registration time and the
+process fails to boot. The wildcard must be NAMED — `'/chunk-images/{*rest}'`.
+
+**Path containment:** the resolved absolute path is checked against `CHUNK_PAYLOAD_DIR`
+before reading; anything outside gets 403. A handler that reads a client-supplied path
+without that check would serve arbitrary files.
+
+Verified: a 3000-byte truncated file ending `22c5` is served as 3002 bytes ending `ffd9`;
+a complete `.jpg` is sha256-identical to disk.

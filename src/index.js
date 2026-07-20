@@ -238,18 +238,29 @@ app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
 
 // Fetched chunk payloads (images pulled off nodes) — read-only. The mt-transport
 // Client writes them here; node-dash serves them for the node-page gallery.
-app.use('/chunk-images', express.static(CHUNK_PAYLOAD_DIR, {
-  etag: true, maxAge: 0, index: false,
-  // A `.part` is a preallocated JPEG whose received prefix is valid and renderable, but
-  // by extension it would be served as application/octet-stream and no <img> would draw
-  // it. Serve it as the image it is — and never cache it, since it grows as chunks land.
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.part')) {
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'no-store');
-    }
-  },
-}));
+// A `.part` is a TRUNCATED JPEG: the transfer's contiguous prefix, with no FFD9
+// end-of-image marker. Chromium renders such a file anyway; most decoders REFUSE it
+// outright and draw nothing — which is why the live image painted here and was blank
+// for Peter through an entire transfer.
+//
+// So serve partials through a handler that appends FFD9, making the response a
+// STRUCTURALLY VALID JPEG that ends where the data ends. Decoders that reject a
+// truncated stream accept this one. The file on disk is untouched.
+app.get('/chunk-images/{*rest}', (req, res, next) => {
+  const rel = decodeURIComponent(req.path.replace(/^\/chunk-images\//, ''));
+  if (!rel.endsWith('.part')) return next();
+  // Contain to the payload dir — a path escape here would serve arbitrary files.
+  const abs = path.resolve(CHUNK_PAYLOAD_DIR, rel);
+  if (!abs.startsWith(path.resolve(CHUNK_PAYLOAD_DIR))) return res.sendStatus(403);
+  let buf;
+  try { buf = readFileSync(abs); } catch { return res.sendStatus(404); }
+  const hasEOI = buf.length >= 2 && buf[buf.length - 2] === 0xFF && buf[buf.length - 1] === 0xD9;
+  res.set('Content-Type', 'image/jpeg');
+  res.set('Cache-Control', 'no-store');
+  res.send(hasEOI ? buf : Buffer.concat([buf, Buffer.from([0xFF, 0xD9])]));
+});
+
+app.use('/chunk-images', express.static(CHUNK_PAYLOAD_DIR, { etag: true, maxAge: 0, index: false }));
 
 // Debug monitor — served directly, not through the SPA assembler
 app.get('/debug', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'debug.html')));

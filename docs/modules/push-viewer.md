@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: c0a38dbf2e9e27bc999b8ea301039e363e43ba57fe4dab7b3c9def202b32125a
+source_hash: 6ea01296c54204e287cd430cb8cc673c3eed88f3a61848b69fe0c63e92ca7fe8
 updated: 2026-07-20
 ---
 
@@ -395,3 +395,22 @@ mistake was trying two more declarative variants first.
 transfer reached 32/32 before the streaming phase could be sampled, and the `.part` is
 removed on success. Confirm on the next transfer: sample the canvas while chunks arrive
 and check for blank frames.
+
+## The Image panel states its own state (2026-07-20)
+
+Peter reported a blank panel for an entire transfer, with a hard refresh before every run,
+while a freshly-loaded Chromium here painted the canvas. Three different failures look
+identical from outside: nothing announced, announced but not decoded, decoded but not
+drawn.
+
+A permanent one-line readout now distinguishes them without devtools:
+
+    arriving 1 · stored 1 · decoded yes
+
+plus `· decode FAILED (browser refused the truncated JPEG)` in red when `probe.onerror`
+fires — the case a strict JPEG decoder produces, which otherwise yields an empty panel and
+no console error.
+
+**Standing correction on method:** I attributed the blank panel to a stale tab, having
+never observed Peter's browser. It was an assertion with no evidence behind it, and it was
+wrong. The readout exists so the next report carries data rather than another guess.
