@@ -14,11 +14,11 @@ import { adaptMtTransport, looksLikeMtTransport, closeClients } from '../src/tra
 // mt-transport/clients/node/index.js:21-66,128:
 //   constructor({host, gatewayId, channel, ...})   — channel 0/unset throws
 //   async connect()
-//   async fetch(target, pid, {deadlineMs, batch, onProgress})   — POSITIONAL
+//   async push(target, pid, {deadlineMs, onProgress, payloadDir, signal}) — POSITIONAL
 //   close()
 //
 // The first version of this fake took `{channel, gatewayNodeId, send}` and
-// `fetch({target, pid})`, which is not the real API at all. Every test passed
+// `push({target, pid})`, which is not the real API at all. Every test passed
 // and the adapter would have thrown on its first real call. A fake that does not
 // mirror the contract tests nothing — it tests the fake.
 function FakeClient(spy = {}) {
@@ -30,7 +30,7 @@ function FakeClient(spy = {}) {
       spy.instances = (spy.instances ?? 0) + 1;
     }
     async connect() { spy.connected = true; }
-    async fetch(target, pid, opts) { spy.fetchArgs = [target, pid, opts]; return Buffer.from('jpegbytes'); }
+    async push(target, pid, opts) { spy.pushArgs = [target, pid, opts]; return Buffer.from('jpegbytes'); }
     close() { spy.closed = true; }
   };
 }
@@ -51,15 +51,15 @@ await t('empty module advertises nothing', () => {
   assert.deepStrictEqual(adaptMtTransport({}), {});
 });
 
-await t('parse260 only => debug260 present, chunkFetch absent', () => {
+await t('parse260 only => debug260 present, chunkPush absent', () => {
   const caps = adaptMtTransport({ parse260: () => ({ type: 'debug' }) });
   assert.ok(typeof caps.debug260 === 'function');
-  assert.strictEqual(caps.chunkFetch, undefined);
+  assert.strictEqual(caps.chunkPush, undefined);
 });
 
-await t('Client only => chunkFetch present, debug260 absent', () => {
+await t('Client only => chunkPush present, debug260 absent', () => {
   const caps = adaptMtTransport({ Client: FakeClient() });
-  assert.ok(typeof caps.chunkFetch === 'function');
+  assert.ok(typeof caps.chunkPush === 'function');
   assert.strictEqual(caps.debug260, undefined);
 });
 
@@ -76,82 +76,92 @@ await t('debug260 wraps the parse result in the house shape', () => {
 // the unset value is the dangerous one.
 const ARGS = { target: '336b', pid: 1, channel: 2, host: 'localhost:8000', gatewayId: '!2687afb1' };
 
-await t('chunkFetch REFUSES channel 0 (PRIMARY)', async () => {
+await t('chunkPush REFUSES channel 0 (PRIMARY)', async () => {
   closeClients();
   const caps = adaptMtTransport({ Client: FakeClient() });
-  await assert.rejects(() => caps.chunkFetch({ ...ARGS, channel: 0 }), /PRIMARY/);
+  await assert.rejects(() => caps.chunkPush({ ...ARGS, channel: 0 }), /PRIMARY/);
 });
 
-await t('chunkFetch REFUSES an omitted channel', async () => {
+await t('chunkPush REFUSES an omitted channel', async () => {
   closeClients();
   const caps = adaptMtTransport({ Client: FakeClient() });
   const { channel, ...noChannel } = ARGS;
-  await assert.rejects(() => caps.chunkFetch(noChannel), /explicitly/);
+  await assert.rejects(() => caps.chunkPush(noChannel), /explicitly/);
 });
 
-await t('chunkFetch REFUSES a missing host or gatewayId', async () => {
+await t('chunkPush REFUSES a missing host or gatewayId', async () => {
   closeClients();
   const caps = adaptMtTransport({ Client: FakeClient() });
   const { gatewayId, ...noGw } = ARGS;
-  await assert.rejects(() => caps.chunkFetch(noGw), /host and gatewayId/);
+  await assert.rejects(() => caps.chunkPush(noGw), /host and gatewayId/);
 });
 
-await t('chunkFetch uses the REAL Client contract (ctor object + positional fetch)', async () => {
+await t('chunkPush uses the REAL Client contract (ctor object + positional fetch)', async () => {
   closeClients();
   const spy = {};
   const caps = adaptMtTransport({ Client: FakeClient(spy) });
-  const r = await caps.chunkFetch(ARGS);
+  const r = await caps.chunkPush(ARGS);
 
   assert.deepStrictEqual(spy.ctor, { host: 'localhost:8000', gatewayId: '!2687afb1', channel: 2 });
   assert.strictEqual(spy.connected, true, 'connect() must be awaited before fetch');
-  assert.deepStrictEqual(spy.fetchArgs.slice(0, 2), ['336b', 1], 'fetch is positional');
+  assert.deepStrictEqual(spy.pushArgs.slice(0, 2), ['336b', 1], 'fetch is positional');
   assert.strictEqual(r.ok, true);
   assert.strictEqual(r.value.toString(), 'jpegbytes');
 });
 
-// Since the async firmware (chunk-flow-control, 2026-07-20) the DEVICE paces via
-// MSG_BUSY and the client obeys it. mt-transport's design: node-dash adds no
-// pacing. So the adapter must impose NO batch default — it forwards batch only
-// when a caller gives one, letting the client's device-derived default apply.
-// This test exists so a client-side batch heuristic cannot silently come back.
-await t('chunkFetch imposes NO batch default — device owns pacing', async () => {
+// Under PUSH the device streams at its own rate and mt-transport's client runs the
+// receiver loop. MSG_BUSY (0x06) was pull-era flow control and no longer exists.
+// node-dash adds no
+// Pull is GONE — there is no batch, no MSG_BUSY, no client-side pacing to test for.
+// What must be proven instead is that the surviving path carries the same guards.
+await t('chunkPush forwards payloadDir and signal untouched', async () => {
   closeClients();
   const spy = {};
   const caps = adaptMtTransport({ Client: FakeClient(spy) });
-  await caps.chunkFetch(ARGS);                    // no batch supplied
-  assert.strictEqual(spy.fetchArgs[2].batch, undefined, 'no batch heuristic on our side');
+  const ac = new AbortController();
+  await caps.chunkPush({ ...ARGS, payloadDir: '/tmp/p', signal: ac.signal });
+  assert.strictEqual(spy.pushArgs[2].signal, ac.signal, 'signal must reach the client — cancel depends on it');
+  assert.strictEqual(spy.pushArgs[2].batch, undefined, 'no batch under push, ever');
 });
 
-await t('chunkFetch honours an explicit batch override', async () => {
+// Pull is not a fallback. A build without Client.push must FAIL LOUDLY rather than
+// quietly reaching for the protocol that stalled at 16/32.
+await t('chunkPush REJECTS a build with no Client.push', async () => {
   closeClients();
   const spy = {};
-  const caps = adaptMtTransport({ Client: FakeClient(spy) });
-  await caps.chunkFetch({ ...ARGS, batch: 8 });
-  assert.strictEqual(spy.fetchArgs[2].batch, 8);
+  // Defined WITHOUT push rather than deleting it from a subclass — the method would
+  // still be inherited from the parent prototype and the test would pass vacuously.
+  const NoPush = class {
+    constructor(o) { spy.ctor = o; }
+    async connect() { spy.connected = true; }
+    close() {}
+  };
+  const caps = adaptMtTransport({ Client: NoPush });
+  await assert.rejects(() => caps.chunkPush(ARGS), /no Client\.push/);
 });
 
 // The stable API (2026-07-20): progress + hard deadline pass straight through to
 // Client.fetch. The adapter relays them; it fires no progress and enforces no
 // deadline itself.
-await t('chunkFetch forwards onProgress + deadlineMs when given', async () => {
+await t('chunkPush forwards onProgress + deadlineMs when given', async () => {
   closeClients();
   const spy = {};
   const caps = adaptMtTransport({ Client: FakeClient(spy) });
   const onProgress = () => {};
-  await caps.chunkFetch({ ...ARGS, deadlineMs: 240000, onProgress });
-  assert.strictEqual(spy.fetchArgs[2].deadlineMs, 240000, 'deadlineMs forwarded');
-  assert.strictEqual(spy.fetchArgs[2].onProgress, onProgress, 'onProgress forwarded');
-  assert.strictEqual(spy.fetchArgs[2].timeoutMs, undefined, 'timeoutMs retired');
+  await caps.chunkPush({ ...ARGS, deadlineMs: 240000, onProgress });
+  assert.strictEqual(spy.pushArgs[2].deadlineMs, 240000, 'deadlineMs forwarded');
+  assert.strictEqual(spy.pushArgs[2].onProgress, onProgress, 'onProgress forwarded');
+  assert.strictEqual(spy.pushArgs[2].timeoutMs, undefined, 'timeoutMs retired');
 });
 
-await t('chunkFetch reuses one Client per (host,gatewayId,channel)', async () => {
+await t('chunkPush reuses one Client per (host,gatewayId,channel)', async () => {
   closeClients();
   const spy = {};
   const caps = adaptMtTransport({ Client: FakeClient(spy) });
-  await caps.chunkFetch(ARGS);
-  await caps.chunkFetch({ ...ARGS, pid: 2 });
+  await caps.chunkPush(ARGS);
+  await caps.chunkPush({ ...ARGS, pid: 2 });
   assert.strictEqual(spy.instances, 1, 'must not open a socket per fetch');
-  await caps.chunkFetch({ ...ARGS, channel: 3 });
+  await caps.chunkPush({ ...ARGS, channel: 3 });
   assert.strictEqual(spy.instances, 2, 'a different channel is a different client');
   closeClients();
   assert.strictEqual(spy.closed, true, 'closeClients() must close them');
@@ -166,13 +176,13 @@ await t('looksLikeMtTransport recognises either marker', () => {
 
 // Integration — skips cleanly when mt-transport is not installed, so this suite
 // stays green on a machine that only has stock Meshtastic.
-await t('real module maps to exactly [debug260, chunkFetch]', async () => {
+await t('real module maps to exactly [debug260, chunkPush]', async () => {
   const p = process.env.MT_TRANSPORT_PATH;
   if (!p) skipIf('MT_TRANSPORT_PATH not set');
   let m;
   try { m = await import(p); } catch { skipIf('module not importable'); }
   const caps = Object.keys(adaptMtTransport(m)).sort();
-  assert.deepStrictEqual(caps, ['chunkFetch', 'debug260']);
+  assert.deepStrictEqual(caps, ['chunkPush', 'debug260']);
 });
 
 console.log(`\n${pass} passed${skip ? `, ${skip} skipped` : ''}${fail ? `, ${fail} FAILED` : ''}`);

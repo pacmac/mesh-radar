@@ -1,7 +1,7 @@
 ---
 module: transport-adapter
 source: src/transport-adapter.js
-source_hash: b0783daed4ac53fab8274b839512606bec43b6f040aa74c8a4b5d0fba0340635
+source_hash: c0cec8b82c2f5813533c2032c6300ef816e016117d61c3ae8d6b04ba7708a701
 updated: 2026-07-20
 ---
 
@@ -165,3 +165,30 @@ omitted channel both reject. Omission is tested separately and deliberately —
 - The protocol — mt-transport (other repo, read-only here)
 - Channel *resolution* — `node-settings.js:resolveCommandChannel()` owns picking
   the index; this module only refuses bad ones
+
+## PULL PURGED — push is the only bulk-transfer path (2026-07-20)
+
+Peter: *"purge it."* `chunkFetch` / `Client.fetch` is **removed entirely** — from the
+adapter, from the `CAPABILITIES` allow-list, from the route, and from the tests. It is not
+a fallback and must not be reintroduced as one.
+
+**Why it went rather than being kept for compatibility.** Pull's follow-up requests were
+the failure: a real transfer here stalled at exactly 16/32 because the device never
+received the pull for `first=16` (`stalled at 16/32 after 12 empty windows (no serve, no
+busy)`, evidence preserved under `data/payload-evidence/`). Keeping a path that is known
+to strand transfers, as a silent fallback, would mean the worst case is chosen precisely
+when the good path is unavailable.
+
+**A build without `Client.push` now FAILS LOUDLY** (`no Client.push — pull is no longer
+supported`) instead of quietly degrading. There is a test for exactly that.
+
+**The field unit** `!987ab80f` runs `mt-chunk` (pull) and cannot be reflashed — but it is
+off-limits to node-dash entirely, so we would never have driven a transfer to it. The
+pull path was dead by policy before it was dead by protocol.
+
+Live capability line after the purge:
+
+    capabilities: debug260, chunkPush
+
+Also gone with it: `batch`, and every `MSG_BUSY (0x06)` reference describing pacing as
+current — under push the device paces itself and that frame does not exist.

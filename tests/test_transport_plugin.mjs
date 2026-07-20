@@ -47,7 +47,10 @@ await t('present: can() true for exactly the exported subset', async () => {
   assert.strictEqual(tr.can('configSet'), true);
   assert.strictEqual(tr.can('debug260'), true);
   assert.strictEqual(tr.can('tilt256'), true);
-  assert.strictEqual(tr.can('chunkFetch'), false, 'not exported => not advertised');
+  // Must name a capability that COULD be advertised. Asserting on a removed name
+  // ('chunkFetch') passes vacuously — it can never be advertised again, so the test
+  // would keep passing even if the allow-list stopped being enforced.
+  assert.strictEqual(tr.can('chunkPush'), false, 'not exported => not advertised');
   assert.strictEqual(tr.can('pullQueue'), false);
 });
 

@@ -9,7 +9,7 @@ import fs from 'fs';
 import { transport } from './transport-plugin.js';
 import { resolvePrimaryNodeId } from './device-config.js';
 import { resolveCommandChannel } from './node-settings.js';
-import { getDeviceChannelsByNodeId, broadcastChunkProgress } from './ws-relay.js';
+import { getDeviceChannelsByNodeId, broadcastChunkProgress, setChunkImagesProvider } from './ws-relay.js';
 import { log } from './log.js';
 
 const router = Router();
@@ -20,6 +20,58 @@ const DEADLINE_MS = 240000;                // mt-transport's suggested hard wall
 
 // node-dash owns the storage location (not the Client's cwd-relative ./payloads).
 export const PAYLOAD_DIR = path.join(process.cwd(), 'data', 'payloads');
+
+// Everything on disk under PAYLOAD_DIR, described for the browser. Finished images AND
+// resumable partials: the Client preallocates `<name>.part` to the full length and keeps
+// `<name>.part.json` beside it recording {pid, crc, count, len, have[]}.
+//
+// A partial is genuinely useful, not debris: chunks arrive in order from 0, so the
+// non-zero prefix is a VALID TRUNCATED JPEG that a browser renders (verified — a
+// truncated baseline JPEG draws its prefix). A stall at 16/32 is half a picture, not
+// nothing.
+//
+// Everything here is computed server-side (URL, caption, percentage) — the browser
+// renders it and decides nothing (BROWSER_CONTRACT).
+function listStoredPayloads() {
+  const out = [];
+  const walk = (dir, rel) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const abs = path.join(dir, e.name);
+      const relPath = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { walk(abs, relPath); continue; }
+      if (e.name.endsWith('.json')) continue;               // sidecar, not a payload
+      let st; try { st = fs.statSync(abs); } catch { continue; }
+
+      const partial = e.name.endsWith('.part');
+      let have = null, count = null, pct = null;
+      if (partial) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(`${abs}.json`, 'utf8'));
+          have  = Array.isArray(meta.have) ? meta.have.length : null;
+          count = meta.count ?? null;
+          if (have != null && count) pct = Math.round((have / count) * 100);
+        } catch { /* no sidecar — still listable, just without progress */ }
+      }
+      out.push({
+        url: '/chunk-images/' + relPath.split('/').map(encodeURIComponent).join('/'),
+        name: e.name,
+        node: rel || null,
+        bytes: st.size,
+        modified: new Date(st.mtimeMs).toISOString(),
+        partial,
+        have, count, pct,
+        caption: partial
+          ? `${rel || '?'} · ${e.name} · incomplete${pct != null ? ` ${have}/${count} chunks (${pct}%)` : ''}`
+          : `${rel || '?'} · ${e.name} · ${st.size} bytes`,
+      });
+    }
+  };
+  walk(PAYLOAD_DIR, '');
+  return out.sort((a, b) => (a.modified < b.modified ? 1 : -1));
+}
+setChunkImagesProvider(listStoredPayloads);
 
 // Exactly one transfer at a time — the mesh channel is shared with the alarm's own
 // traffic and every node. A second request is refused, never queued.
@@ -36,7 +88,7 @@ const hexSuffix = (num) => (Number(num) >>> 0).toString(16).padStart(8, '0').sli
 // deciding state, and GETting a listing breaks the WS-only transport rule. So the
 // server resolves it and pushes the URL on chunk_done (BROWSER_CONTRACT).
 //
-// LAYOUT-AGNOSTIC on purpose. chunkFetch returns the buffer only — no path — and the
+// LAYOUT-AGNOSTIC on purpose. chunkPush returns the buffer only — no path — and the
 // Client's PayloadStore names the file. mt-transport documents
 // <payloadDir>/<node>/<when>_pid<N>.jpg, but that has never been observed here, so we
 // find the newest file written since the fetch began rather than build a filename from
@@ -76,7 +128,7 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
   }
 
   const t = transport();
-  if (!t.can('chunkFetch')) {
+  if (!t.can('chunkPush')) {
     return res.status(503).json({ error: 'chunk transport not available on this box' });
   }
   if (_inFlight) {
@@ -101,7 +153,9 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
   res.status(202).json({ ok: true, state: 'started', num, pid });
 
   try {
-    const r = await t.chunkFetch({
+    // PUSH only. Pull was removed entirely — its follow-up requests were the failure
+    // (stall at 16/32, the device never received the pull for first=16).
+    const r = await t.chunkPush({
       target,
       pid,
       channel: ch.channel,

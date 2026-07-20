@@ -21,13 +21,10 @@
 //   pullQueue — not designed on either side; the device half does not exist
 //               (Q&A Q1). Name reserved, deliberately unimplemented.
 
-// No batch/interval heuristics here. As of the async firmware the DEVICE owns
-// pacing — it emits a MSG_BUSY (0x06) "retry after N ms" frame that Client.fetch
-// obeys internally (task chunk-flow-control, 2026-07-20). mt-transport's explicit
-// design: node-dash must not pace; chunkFetch is a thin wrapper. So we impose no
-// batch default — pass it through only when a caller gives one. The old batch:4
-// was a workaround for the pre-async blocking cadence (16 never completed in a
-// 35 s deaf window); that window no longer exists.
+// No pacing heuristics here, ever. Under PUSH the device streams at its own rate and
+// mt-transport's client runs the receiver loop (store[seq], PROGRESS_Q, REPAIR,
+// COMPLETE) for the whole transfer. node-dash adds nothing — it triggers and relays.
+// (MSG_BUSY 0x06 flow control belonged to the pull era and no longer exists.)
 //
 // Cost for anyone exposing it in the UI: ~41 bytes/second effective, so budget
 // roughly 3 minutes for a 7 KB image. Do not let a user queue several — the
@@ -96,41 +93,35 @@ export function adaptMtTransport(m) {
     };
   }
 
-  // --- chunkFetch: pull a chunked payload (JPEG etc) off a device ---------
+  // --- chunkPush: receive a chunked payload (JPEG etc) PUSHED by a device ----
+  //
+  // The ONLY bulk-transfer path. Pull (`Client.fetch`) was removed entirely: its
+  // follow-up requests were the thing that failed — a transfer stalled at 16/32
+  // because the device never received the pull for `first=16`, which is why
+  // mt-transport replaced the protocol.
   //
   // mt-transport's `Client` is an OUT-OF-PROCESS consumer of node-dash, not a
   // library: it POSTs to `http://<host>/<gatewayId>/messages` and subscribes to
-  // `ws://<host>/events` — both of which are node-dash's own routes. Confirmed
-  // by measurement in Q&A Q9; they have driven DEV1 through :8000 all session.
+  // `ws://<host>/events` — both node-dash's own routes. So we point it at
+  // ourselves; that loopback is deliberate (see docs/modules/transport-adapter.md).
   //
-  // So we point it at ourselves. That is a loopback — node-dash → HTTP →
-  // node-dash → mesh-gw — and it is deliberate. The alternative is
-  // reimplementing Client.fetch()'s manifest/pull/reassemble loop here, which
-  // would duplicate the one part of the module that is properly tested against
-  // the C++ encoder. Duplicating tested protocol logic to save a local HTTP hop
-  // is the wrong trade: the queue spaces commands 3 s apart, so loopback cost is
-  // noise, and one frame carries sixteen chunks.
-  //
-  // `host` and `gatewayId` are supplied per call rather than captured: the
-  // gateway radio can change at runtime (mode roles), and a captured one goes
-  // stale silently.
+  // The client owns the receiver loop for the whole ~3 minutes. We forward and
+  // relay; we never pace, never batch, never decode a 261 frame.
   if (typeof m.Client === 'function') {
-    caps.chunkFetch = async ({ target, pid, channel, host, gatewayId, deadlineMs, batch, onProgress, payloadDir }) => {
+    caps.chunkPush = async ({ target, pid, channel, host, gatewayId, deadlineMs, onProgress, payloadDir, signal }) => {
       assertChannel(channel);
       if (!host || !gatewayId) {
-        throw new Error('chunkFetch needs host and gatewayId — node-dash supplies both');
+        throw new Error('chunkPush needs host and gatewayId — node-dash supplies both');
       }
       const client = await getClient(m, { host, gatewayId, channel, payloadDir });
-      // Positional signature — fetch(target, pid, opts). Stable API committed by
-      // mt-transport 2026-07-20: opts carries onProgress + deadlineMs.
-      //
-      // Thin wrapper only: forward what the caller gave, add nothing. No batch
-      // default (the device paces via MSG_BUSY), no progress firing, no deadline
-      // enforcement — the client owns all three. We relay.
-      const buf = await client.fetch(target, pid, {
+      if (typeof client.push !== 'function') {
+        throw new Error('this mt-transport build has no Client.push — pull is no longer supported');
+      }
+      const buf = await client.push(target, pid, {
         ...(deadlineMs !== undefined ? { deadlineMs } : {}),
-        ...(batch !== undefined ? { batch } : {}),
         ...(typeof onProgress === 'function' ? { onProgress } : {}),
+        ...(payloadDir ? { payloadDir } : {}),
+        ...(signal ? { signal } : {}),
       });
       return { ok: true, state: 'applied', value: buf };
     };
