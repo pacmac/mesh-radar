@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 6c42f1ab636734e4fb571065ea501633c84a94e826b2bb184459804e78b407ed
+source_hash: 76e2b98546240e55ad03c914c7c1c4e443af6cc2e0a07284a0388e1fbfec4cb0
 updated: 2026-07-20
 ---
 
@@ -607,3 +607,25 @@ Both feeds are now server-split from the one `buildMessageFeedRows()` query:
 `message_history` carries only `type_bucket === 'chat'`, `command_history` only
 `'command'`. The messages page is a chat page and needs no client-side filtering to
 keep control traffic out; the Control page renders `command_history` directly.
+
+## In-flight chunk transfer replayed on connect (task `chunk-inflight-replay`)
+
+A transfer runs for minutes. A browser connecting MID-transfer previously received
+nothing about it, so it rendered `idle` — and any start control would have looked
+available while `chunk-api`'s one-in-flight guard would refuse it with a `409`. The
+button's enabled/disabled state is server-owned (BROWSER_CONTRACT); the browser must
+never infer it from the absence of events.
+
+`_broadcastChunkProgress` now caches the last `chunk_progress` in `lastChunkProgress`
+and clears it on `chunk_done`/`chunk_error`, so a stale "running" cannot outlive the
+transfer. On connect the cached event is sent **only if one is in flight** — its absence
+therefore means "no transfer", not "unknown".
+
+Cached here rather than read back from `chunk-api` because that module already imports
+this one; a reverse import would be circular. A process restart clears the cache, which
+is correct — a restart kills the transfer too.
+
+**Verification is DEFERRED and deliberately so:** exercising this needs a real transfer,
+which means transmitting, which is Peter's call alone. Static review only. The test when
+authorised: start a transfer, open `/push.html` fresh mid-transfer, confirm it shows
+`running` with the correct node/pid rather than `idle`.

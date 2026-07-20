@@ -284,6 +284,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // Seeded from device_snapshot on bridge connect, then kept live by WS events.
   // Replayed to new frontend clients on connect — no per-client HTTP calls.
   const lastDeviceState = {};
+  // The in-flight chunk transfer, replayed to every new connection. null = none.
+  let lastChunkProgress = null;
 
   // Last-known device list — replayed to new frontend clients on connect.
   // Composed from lastDeviceState in memory — no HTTP calls after startup.
@@ -399,7 +401,21 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     broadcast(lastDeviceList);
   }
   _pokeDeviceList = broadcastDeviceList;
-  _broadcastChunkProgress = (ev) => broadcast(ev);
+  // A transfer runs for minutes, so a browser that connects MID-transfer must be told
+  // one is running — otherwise it renders "idle" with a live start button, the user
+  // presses it and gets a 409 from chunk-api's one-in-flight guard. The button's
+  // enabled/disabled state is server-owned (BROWSER_CONTRACT); the browser must never
+  // infer it from the absence of events.
+  //
+  // Cached here rather than read back from chunk-api to avoid a circular import
+  // (chunk-api already imports this module). Cleared on any terminal event, so a
+  // stale "running" cannot outlive the transfer. A process restart also clears it,
+  // which is correct: a restart kills the transfer too.
+  _broadcastChunkProgress = (ev) => {
+    if (ev?.type === 'chunk_progress')                                 lastChunkProgress = ev;
+    else if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error')  lastChunkProgress = null;
+    broadcast(ev);
+  };
 
   // Enriched message history — used for the on-connect replay and rebroadcast
   // to all clients after a dash send (message-tx-broadcast). 200 rows: bot
@@ -819,6 +835,11 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const feedRows = buildMessageFeedRows();
       ws.send(JSON.stringify(buildMessageHistoryEvent(feedRows)));   // chat feed replay
       ws.send(JSON.stringify(buildCommandHistoryEvent(feedRows)));   // control feed replay
+
+      // An in-flight chunk transfer, if any. Sent ONLY while one is running, so its
+      // absence means "no transfer", not "unknown". A viewer opened mid-transfer
+      // renders it as running and its start control as unavailable.
+      if (lastChunkProgress) ws.send(JSON.stringify(lastChunkProgress));
 
       const tiltRows = queryAllTiltHistory(since24h);
       ws.send(JSON.stringify({ type: 'tilt_history', rows: tiltRows }));
