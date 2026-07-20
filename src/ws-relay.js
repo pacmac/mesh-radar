@@ -307,7 +307,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // finished. A finished-and-failed transfer must look different from a running one.
   let lastChunkTerminal = null;
   let _lastImagesPush = 0;
-  let _lastImagesSig = '';
 
   // Last-known device list — replayed to new frontend clients on connect.
   // Composed from lastDeviceState in memory — no HTTP calls after startup.
@@ -447,14 +446,18 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // about once a second, so 4 s gives a visible fill without re-walking constantly.
     else if (ev?.type === 'chunk_progress' && Date.now() - _lastImagesPush > 4000) {
       _lastImagesPush = Date.now();
-      // Only announce if a partial actually GREW. Re-sending an unchanged listing makes
-      // every viewer re-fetch a file whose bytes are identical, for no gain — and the
-      // re-fetch is what exposed the flicker in the first place.
-      try {
-        const sig = _chunkImagesProvider()
-          .filter(i => i.partial).map(i => `${i.name}:${i.bytes}`).join('|');
-        if (sig !== _lastImagesSig) { _lastImagesSig = sig; _broadcastChunkImagesEvent(); }
-      } catch { /* relay not attached */ }
+      // Announce unconditionally while a transfer runs.
+      //
+      // A "only if it grew" gate was tried and REMOVED: the `.part` holds the contiguous
+      // prefix, so its size stops changing the moment a chunk is lost — while later
+      // chunks are still arriving and the repair round is still to come. The gate
+      // therefore suppressed every announce after the first gap, and the image stopped
+      // updating altogether. Cheapness is not worth a display that silently freezes.
+      //
+      // Re-fetching identical bytes is harmless now: the viewer preloads each candidate
+      // and only swaps on a successful decode, so an unchanged file simply repaints the
+      // same frame.
+      try { _broadcastChunkImagesEvent(); } catch { /* relay not attached */ }
     }
     if (ev?.type === 'chunk_progress') { lastChunkProgress = ev; lastChunkTerminal = null; }
     else if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error') {

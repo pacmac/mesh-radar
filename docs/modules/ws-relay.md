@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 713ff2fd3f5191f3202fa57e8f24e898a0bee79380999d20b1c1df10482c9716
+source_hash: cf37d90a44604fa37b86a3edb1cec19b803529089a7d19036f6cf5cdb3fccdda
 updated: 2026-07-20
 ---
 
@@ -643,3 +643,21 @@ receiver's chunk map lives in the client's memory), but nothing said so.
 
 Connect now always yields exactly one of three: the in-flight `chunk_progress`, the last
 terminal outcome, or `{type:'chunk_idle'}`. Silence is never one of the options.
+
+## The grow-only announce gate was REMOVED — it froze the live image (2026-07-20)
+
+Peter suggested only updating when the new size exceeds the last, to stop the flicker. The
+reasoning was right; applying it to the ANNOUNCE was wrong, and it made things worse: the
+image stopped updating at all.
+
+The `.part` holds the CONTIGUOUS PREFIX, so its size stops changing the moment a chunk is
+lost — while later chunks are still arriving and the repair round is still ahead. A gate
+keyed on size therefore suppressed every announce after the first gap, which on a ~17%
+loss link is early. The display froze silently: exactly the failure this whole page exists
+to avoid.
+
+Announces are unconditional again while a transfer runs. Re-sending identical bytes is
+harmless because the viewer preloads each candidate and swaps only on a successful decode
+(push-viewer.md) — an unchanged file simply repaints the same frame. The flicker was
+solved on the browser side, where it actually originated; the server-side gate was
+addressing the symptom in the wrong layer.
