@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: 5f0da35d9fe50dd1df1ce1b846e79bc3b6f176c7d9b480604b2d3e2e2fc8f54c
+source_hash: 13e8c6b65967747fc02dd87bf6df67feb6c75aa8c23e9214bd60c94d822dace6
 updated: 2026-07-20
 ---
 
@@ -372,3 +372,30 @@ Clearing an abandoned partial was invisible to browsers: `chunk_images` was only
 connect and after a terminal event, so a page kept rendering the deleted partial —
 "abandoned 18 min ago" — while a fresh transfer was already running. The route now
 broadcasts the listing immediately after the clear.
+
+## Auto-republish ONCE when the device reports `upst=0` (2026-07-20)
+
+COMPLETE releases the device's buffer, so **the transfer after a successful one is always
+refused** until the payload is republished. That made Publish-then-Start a permanent
+two-step for the ordinary case, and the failure Peter saw —
+
+    push 1: device has no payload published (upst=0, badStarts=0).
+    It will not send pid 1 — publish it first.
+
+— is the expected steady state, not an anomaly.
+
+**Why this is not the blind publish that was withdrawn.** That one was unsafe at `upst=2`
+(resets the cursor under a running stream, possibly mt-transport's) and wasteful at
+`upst=3` (discards a finished pass and re-sends 32 chunks). The difference is that
+mt-transport's fail-fast now reports the STATE, and `upst=0` is unambiguous: nothing
+pending, nothing sending, nothing held. Publishing is safe precisely and only in the state
+the device has just named — which is the conditional they proposed, with the condition
+supplied by the device rather than guessed.
+
+**Strictly once.** If the republish does not take, the second failure is reported as-is
+rather than retried into a loop putting frames on air indefinitely. A fresh
+`chunk_progress {state:'started'}` is emitted before the retry so the viewer shows the
+second attempt rather than appearing to hang on the first.
+
+The explicit **Publish** control stays — it is still the right tool for republishing
+deliberately, and it is the only option if a retry ever needs to be avoided.

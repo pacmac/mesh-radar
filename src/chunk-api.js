@@ -10,6 +10,7 @@ import { transport } from './transport-plugin.js';
 import { resolvePrimaryNodeId } from './device-config.js';
 import { resolveCommandChannel } from './node-settings.js';
 import { getDeviceChannelsByNodeId, broadcastChunkProgress, setChunkImagesProvider, broadcastChunkImages } from './ws-relay.js';
+import { sendMeshText } from './mesh-send.js';
 import { log } from './log.js';
 
 const router = Router();
@@ -251,7 +252,7 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
     // offers an explicit Publish control so the operator can stage deliberately.
     // PUSH only. Pull was removed entirely — its follow-up requests were the failure
     // (stall at 16/32, the device never received the pull for first=16).
-    const r = await t.chunkPush({
+    let r = await t.chunkPush({
       target,
       pid,
       channel: ch.channel,
@@ -266,6 +267,31 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
       onProgress: ({ received, count, elapsedMs }) =>
         broadcastChunkProgress({ type: 'chunk_progress', num, pid, received, count, elapsedMs, state: 'running' }),
     });
+    // AUTO-RECOVER FROM upst=0, ONCE. COMPLETE releases the device's buffer, so the
+    // transfer AFTER a successful one is always refused until the payload is
+    // republished — a permanent two-step (Publish, then Start) for the common case.
+    //
+    // Publishing blindly was withdrawn earlier because it is unsafe at upst=2 (resets the
+    // cursor under a running stream) and wasteful at upst=3 (discards a finished pass).
+    // This is not that: mt-transport's fail-fast reports the STATE, and `upst=0` is
+    // unambiguous — nothing pending, nothing sending, nothing held. Publishing is safe
+    // precisely and only in the state the device has just named.
+    //
+    // Strictly once. If the republish does not take, the second failure is reported as-is
+    // rather than retried into a loop that puts frames on air indefinitely.
+    if (r && r.ok === false && /upst=0/.test(r.error || '')) {
+      log.info('chunk', `device reports upst=0 — republishing pid ${pid} and retrying once`);
+      broadcastChunkProgress({ type: 'chunk_progress', num, pid, received: 0, count: null, state: 'started' });
+      await sendMeshText({ gatewayNodeId, text: `@${target} push pub`, channel: ch.channel, category: 'command' });
+      await new Promise(res2 => setTimeout(res2, 5000));
+      r = await t.chunkPush({
+        target, pid, channel: ch.channel, host: HOST, gatewayId: gatewayNodeId,
+        deadlineMs: DEADLINE_MS, payloadDir: PAYLOAD_DIR,
+        onProgress: ({ received, count, elapsedMs }) =>
+          broadcastChunkProgress({ type: 'chunk_progress', num, pid, received, count, elapsedMs, state: 'running' }),
+      });
+    }
+
     if (r && r.ok === false) throw new Error(r.error || 'fetch failed');
     const bytes = r?.value?.length ?? null;
 
