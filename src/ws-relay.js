@@ -404,13 +404,29 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // Enriched message history — used for the on-connect replay and rebroadcast
   // to all clients after a dash send (message-tx-broadcast). 200 rows: bot
   // chatter churned the old 50-row window within hours.
-  function buildMessageHistoryEvent() {
-    const msgRows = _enrichMessages(queryMessages(200).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) })));
-    return { type: 'message_history', messages: msgRows };
+  function buildMessageFeedRows() {
+    return _enrichMessages(queryMessages(200).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) })));
   }
+  function buildMessageHistoryEvent() {
+    return { type: 'message_history', messages: buildMessageFeedRows() };
+  }
+  // Control feed: the command/response subset, SERVER-computed (type_bucket) so no
+  // consumer filters. Its own WS event on /events so the mt-transport Client (DEV1)
+  // and the browser Control page subscribe to it directly for control + monitoring
+  // — the browser renders it and decides nothing (BROWSER_CONTRACT). Pass `rows` to
+  // reuse an already-built feed rather than re-querying.
+  function buildCommandHistoryEvent(rows) {
+    const msgRows = (rows ?? buildMessageFeedRows()).filter(m => m.type_bucket === 'command');
+    return { type: 'command_history', messages: msgRows };
+  }
+  // A new message rebroadcasts BOTH feeds (a command is also a message, so command
+  // traffic already triggers this path). Built from one query, broadcast as two.
   _broadcastMessageHistory = () => {
-    try { broadcast(buildMessageHistoryEvent()); }
-    catch (e) { console.error('[ws-relay] message_history rebroadcast failed:', e.message); }
+    try {
+      const rows = buildMessageFeedRows();
+      broadcast({ type: 'message_history', messages: rows });
+      broadcast(buildCommandHistoryEvent(rows));
+    } catch (e) { console.error('[ws-relay] message/command history rebroadcast failed:', e.message); }
   };
 
   _pruneDevice = (mac, nodeId) => {
@@ -796,7 +812,9 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     try {
       const since24h = Math.floor(Date.now() / 1000) - 86400;
 
-      ws.send(JSON.stringify(buildMessageHistoryEvent()));
+      const feedRows = buildMessageFeedRows();
+      ws.send(JSON.stringify({ type: 'message_history', messages: feedRows }));
+      ws.send(JSON.stringify(buildCommandHistoryEvent(feedRows)));   // control feed replay
 
       const tiltRows = queryAllTiltHistory(since24h);
       ws.send(JSON.stringify({ type: 'tilt_history', rows: tiltRows }));
