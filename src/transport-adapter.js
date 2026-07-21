@@ -108,6 +108,23 @@ export function adaptMtTransport(m) {
   // The client owns the receiver loop for the whole ~3 minutes. We forward and
   // relay; we never pace, never batch, never decode a 261 frame.
   if (typeof m.Client === 'function') {
+    // What does the device actually hold? One `push stat` round-trip, returning
+    // {pid, state, chunks, crc, proto, fw, badStarts, ready}. Safe BEFORE a transfer —
+    // the no-polling rule concerns control traffic landing mid-stream (upst=2), which is
+    // exactly when nobody is pressing Start.
+    //
+    // It reports; it does not substitute. Fetching a different payload than the one asked
+    // for would be a wrong answer that looks right.
+    caps.pushAvailable = async ({ target, channel, host, gatewayId, payloadDir }) => {
+      assertChannel(channel);
+      if (!host || !gatewayId) throw new Error('pushAvailable needs host and gatewayId');
+      const client = await getClient(m, { host, gatewayId, channel, payloadDir });
+      if (typeof client.pushAvailable !== 'function') {
+        throw new Error('this mt-transport build has no Client.pushAvailable');
+      }
+      return { ok: true, state: 'applied', value: await client.pushAvailable(target) };
+    };
+
     caps.chunkPush = async ({ target, pid, channel, host, gatewayId, deadlineMs, onProgress, payloadDir, signal }) => {
       assertChannel(channel);
       if (!host || !gatewayId) {

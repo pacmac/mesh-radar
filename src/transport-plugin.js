@@ -31,6 +31,7 @@ export const CAPABILITIES = Object.freeze([
   'configSet',    // validate + send a setting, confirm by device reply
   'debug260',     // portnum 260 JSON: debug + config broadcast
   'tilt256',      // portnum 256 tilt decode
+  'pushAvailable',// ask the device WHAT it holds: {pid, state, chunks, crc, ready}
   'chunkPush',    // portnum 261 chunked transfer, PUSH — the device streams and the
                   // client runs the receiver loop. Pull ('chunkFetch') was removed:
                   // its follow-up requests were the failure (stall at 16/32).

@@ -1,7 +1,7 @@
 ---
 module: push-viewer
 source: public/push.html
-source_hash: 6ea01296c54204e287cd430cb8cc673c3eed88f3a61848b69fe0c63e92ca7fe8
+source_hash: 16040167b2772d9cf7d8ed2750bf70960eef0f3c3249f906275dc198b7f7f6f5
 updated: 2026-07-20
 ---
 
@@ -414,3 +414,12 @@ no console error.
 **Standing correction on method:** I attributed the blank panel to a stale tab, having
 never observed Peter's browser. It was an assertion with no evidence behind it, and it was
 wrong. The readout exists so the next report carries data rather than another guess.
+
+## pid is optional; a mismatch offers the real one (2026-07-21)
+
+The pid box defaults to BLANK (placeholder "auto"). Blank omits `pid` from the request, and
+the server uses whatever the device actually holds. The old default of `1` is what produced
+the refusal loop once the device superseded it with a fresh capture.
+
+On a 409 carrying `available`, the device's real pid is placed in the box — so the next
+press is one click, but the operator makes the choice. The server does not substitute.

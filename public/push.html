@@ -65,8 +65,9 @@
           </select>
         </label>
         <label class="form-control w-24">
-          <span class="label-text text-xs opacity-60">pid</span>
-          <input type="number" min="1" class="input input-sm input-bordered font-mono" x-model.number="pidInput">
+          <span class="label-text text-xs opacity-60">pid <span class="opacity-60">(blank = auto)</span></span>
+          <input type="number" min="1" placeholder="auto" class="input input-sm input-bordered font-mono w-28"
+                 x-model="pidInput">
         </label>
         <button class="btn btn-primary btn-sm" @click="start()"
                 :disabled="!target || state === 'running' || starting"
@@ -288,7 +289,7 @@ function pushViewer() {
     frames261: 0, receptions: 0, _seen: new Set(),
     imageUrl: null, imageFile: '', imageUnknown: false,
     lastEventAt: null, sinceLast: 0, log: [],
-    targets: [], target: '', pidInput: 1, starting: false, startError: '',
+    targets: [], target: '', pidInput: '', starting: false, startError: '',
     images: [], endedAt: null, publishing: false, _lastMark: null,
     _pendingSrc: null, livePainted: false, decodeFailed: false,
 
@@ -318,10 +319,19 @@ function pushViewer() {
       try {
         const r = await fetch(`/nodes/${this.target}/chunk-fetch`, {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ pid: this.pidInput }),
+          // Omitted when blank: the server then asks the device (`push stat`) and uses
+          // the pid it actually holds. Hardcoding 1 caused a 10-minute refusal loop once
+          // the device superseded it with a fresh capture.
+          body: JSON.stringify(this.pidInput === '' ? {} : { pid: Number(this.pidInput) }),
         });
         const body = await r.json().catch(() => ({}));
-        if (!r.ok) this.startError = `${r.status}: ${body.error || 'refused'}`;
+        if (!r.ok) {
+          this.startError = `${r.status}: ${body.error || 'refused'}`;
+          // The server reports what the device holds rather than substituting it. Put the
+          // real pid in the box so the next press is one click, but let the operator make
+          // that choice — a silent swap is a wrong answer that looks right.
+          if (body.available?.pid) this.pidInput = String(body.available.pid);
+        }
         else this.note(`REQUESTED node=${this.target} pid=${this.pidInput}`);
       } catch (e) { this.startError = e.message; }
       finally { this.starting = false; }

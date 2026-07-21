@@ -107,7 +107,7 @@ setChunkImagesProvider(listStoredPayloads);
 
 // Exactly one transfer at a time — the mesh channel is shared with the alarm's own
 // traffic and every node. A second request is refused, never queued.
-let _inFlight = null;   // { num, pid } | null
+let _inFlight = null;   // { num, pid, abort } | null
 
 // The device's command grammar is `@<4-hex-suffix> <verb>` — the SAME addressing the
 // command route uses (command-api.js hexSuffix). The Client prefixes '@' to whatever
@@ -160,8 +160,14 @@ export function notePushReply(fromNum, text) {
   let msg; try { msg = JSON.parse(text); } catch { return; }
   if (msg?.type !== 'push' || msg.start === undefined) return;
   if (msg.ok === 0 || msg.ok === false) {
-    const detail = `device refused the transfer (start ok:0, cnt:${msg.cnt ?? '?'}) — it will not send pid ${_inFlight.pid}`;
-    log.warn('chunk', `${detail} [node ${_inFlight.num}]`);
+    // ABORT, do not merely announce. Reporting the refusal while the client kept
+    // retrying START produced a 10-minute loop: ~2 frames on air every 30 s, the page
+    // showing an error over a transfer that was still running. A reporter is not a
+    // handler. `signal` is mt-transport's supported cancellation (Client 1.1.0).
+    const held = msg.cnt ? ` — it holds a different payload (${msg.cnt} chunks)` : '';
+    const detail = `device refused pid ${_inFlight.pid}${held}. Use "push stat" to see which pid it has, then fetch that.`;
+    log.warn('chunk', `${detail} [node ${_inFlight.num}] — aborting`);
+    try { _inFlight.abort?.abort(); } catch (e) { log.warn('chunk', `abort failed: ${e.message}`); }
     broadcastChunkProgress({ type: 'chunk_error', num: _inFlight.num, pid: _inFlight.pid, error: detail });
   }
 }
@@ -193,9 +199,10 @@ function _partialsForPid(pid) {
 // number, never primary.
 router.post('/nodes/:num/chunk-fetch', async (req, res) => {
   const num = Number(req.params.num);
-  const pid = Number(req.body?.pid);
-  if (!Number.isInteger(num) || !Number.isInteger(pid)) {
-    return res.status(400).json({ error: 'num and integer pid required' });
+  // pid is OPTIONAL now: omit it and the device's own published pid is used.
+  let pid = req.body?.pid == null || req.body.pid === '' ? null : Number(req.body.pid);
+  if (!Number.isInteger(num) || (pid !== null && !Number.isInteger(pid))) {
+    return res.status(400).json({ error: 'num required; pid optional (integer)' });
   }
 
   const t = transport();
@@ -215,6 +222,43 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
   if (!ch.ok) return res.status(409).json({ error: ch.error });
 
   const target = hexSuffix(num);
+
+  // ASK THE DEVICE WHAT IT HOLDS, rather than assuming a pid.
+  //
+  // Hardcoding pid 1 caused a 10-minute retry loop: the device had superseded it with a
+  // fresh camera capture (pid 55366), refused every START, and the client kept trying.
+  // One `push stat` round-trip removes the guess. Safe here — the no-polling rule is
+  // about control traffic landing mid-stream (upst=2), and nobody presses Start then.
+  //
+  // NO SUBSTITUTION. If the caller named a pid the device does not hold, that is reported,
+  // not quietly swapped: fetching a different payload than the one requested is a wrong
+  // answer that looks right.
+  let avail = null;
+  if (t.can('pushAvailable')) {
+    try {
+      const a = await t.pushAvailable({ target, channel: ch.channel, host: HOST,
+                                        gatewayId: gatewayNodeId, payloadDir: PAYLOAD_DIR });
+      avail = a?.value ?? null;
+    } catch (e) {
+      log.warn('chunk', `pushAvailable failed (${e.message}) — proceeding with the requested pid`);
+    }
+  }
+  if (avail && avail.ready === false) {
+    _inFlight = null;
+    return res.status(409).json({
+      error: `device has nothing published (upst=${avail.state}, badStarts=${avail.badStarts ?? '?'}). Press Publish first.`,
+      available: avail,
+    });
+  }
+  if (avail && avail.ready && pid && avail.pid && Number(pid) !== Number(avail.pid)) {
+    _inFlight = null;
+    return res.status(409).json({
+      error: `device holds pid ${avail.pid} (${avail.chunks} chunks), not pid ${pid}. Fetch ${avail.pid}, or Publish to replace it.`,
+      available: avail,
+    });
+  }
+  // No pid asked for: take the device's own.
+  if (avail && avail.ready && !pid) pid = Number(avail.pid);
 
   // Clear any ABANDONED partial for this pid before starting. A .part left by a failed
   // transfer cannot be resumed across a restart — the receiver's chunk map lives in the
@@ -237,7 +281,8 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
   // while a fresh transfer was already running.
   broadcastChunkImages();
 
-  _inFlight = { num, pid };
+  const _ac = new AbortController();
+  _inFlight = { num, pid, abort: _ac };
   const startedAt = Date.now();
   broadcastChunkProgress({ type: 'chunk_progress', num, pid, received: 0, count: null, state: 'started' });
 
@@ -269,6 +314,7 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
       gatewayId: gatewayNodeId,
       deadlineMs: DEADLINE_MS,
       payloadDir: PAYLOAD_DIR,
+      signal: _ac.signal,          // a refusal aborts; see notePushReply
       // No `batch`: under push the device streams at its own pace, so there is no
       // client batch size. mt-transport spec'd onProgress as {received, count,
       // elapsedMs} (specs/chunk-push.md §4b, citing this line). Keeping it would emit
@@ -295,7 +341,7 @@ router.post('/nodes/:num/chunk-fetch', async (req, res) => {
       await new Promise(res2 => setTimeout(res2, 5000));
       r = await t.chunkPush({
         target, pid, channel: ch.channel, host: HOST, gatewayId: gatewayNodeId,
-        deadlineMs: DEADLINE_MS, payloadDir: PAYLOAD_DIR,
+        deadlineMs: DEADLINE_MS, payloadDir: PAYLOAD_DIR, signal: _ac.signal,
         onProgress: ({ received, count, elapsedMs }) =>
           broadcastChunkProgress({ type: 'chunk_progress', num, pid, received, count, elapsedMs, state: 'running' }),
       });

@@ -1,7 +1,7 @@
 ---
 module: chunk-api
 source: src/chunk-api.js
-source_hash: 09c7a0534f742a89bbbac0de0caf3cc9d0756fdbca8fedd55bdea3b389aa1429
+source_hash: 385dbbfbc65eee7ba7850ae13630241e38dc1483db2fc44d5193a691d5c15576
 updated: 2026-07-20
 ---
 
@@ -431,3 +431,36 @@ block expired and my note did not.
 
 The viewer separates them: partials render first under "receiving now", completed images
 below under "previously fetched", so a finished image can never occupy the current slot.
+
+## Ask the device WHICH pid it holds (2026-07-21)
+
+A hardcoded pid 1 produced a ten-minute retry loop: the device had superseded pid 1 with a
+fresh camera capture (`pid 55366`, 10 chunks), refused every START, and mt-transport's
+client kept retrying until the 600 s deadline — ~2 frames on air every 30 s. Its own
+refusal carried `cnt:10`, i.e. "I have something, just not that".
+
+The route now calls `pushAvailable` (one `push stat` round-trip) before starting:
+
+| device state | result |
+|---|---|
+| `ready:false` (`upst=0`) | **409** — nothing published; press Publish |
+| `ready:true`, pid requested ≠ pid held | **409** naming the real pid and chunk count |
+| `ready:true`, no pid requested | uses the device's own pid |
+
+**No substitution, deliberately** — mt-transport's rule and the right one: fetching a
+different payload than the one asked for is a wrong answer that looks right. The response
+carries the full `available` object so the caller can decide.
+
+`pid` in the request body is now OPTIONAL. Omitted, the device's published pid is used.
+
+Verified live: `POST {"pid":1}` returned
+`device holds pid 55366 (10 chunks), not pid 1` with
+`{"pid":55366,"state":1,"chunks":10,"crc":1622915325,"fw":"260721-1","ready":true}`.
+
+## A refusal ABORTS the transfer (2026-07-21)
+
+`notePushReply` previously broadcast `chunk_error` and let the transfer continue — a
+reporter, not a handler — so the page showed an error over a transfer still retrying
+underneath. It now aborts via the `AbortController` held on `_inFlight`, wired into
+`chunkPush` as `signal` (mt-transport Client 1.1.0). Raising the deadline to 600 s had
+doubled the length of that failing loop.

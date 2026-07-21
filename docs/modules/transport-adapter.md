@@ -1,7 +1,7 @@
 ---
 module: transport-adapter
 source: src/transport-adapter.js
-source_hash: c0cec8b82c2f5813533c2032c6300ef816e016117d61c3ae8d6b04ba7708a701
+source_hash: 09729964ef60d59dd4072004f0e9d9deb20c7491d01ea94609618c2288f02b77
 updated: 2026-07-20
 ---
 
@@ -192,3 +192,10 @@ Live capability line after the purge:
 
 Also gone with it: `batch`, and every `MSG_BUSY (0x06)` reference describing pacing as
 current — under push the device paces itself and that frame does not exist.
+
+## `pushAvailable` (2026-07-21)
+
+`pushAvailable({target, channel, host, gatewayId})` → `{pid, state, chunks, crc, proto, fw,
+badStarts, ready}` via one `push stat`. Safe BEFORE a transfer: the no-polling rule concerns
+control traffic landing mid-stream (`upst=2`), which is exactly when nobody presses Start.
+It reports what the device holds and never substitutes.

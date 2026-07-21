@@ -1,7 +1,7 @@
 ---
 module: transport-plugin
 source: src/transport-plugin.js
-source_hash: 6b468d8d73cfaf7bf8a3f2be74441fadadabe70ee989a5991c511e84af11dbc5
+source_hash: 9f10d52a79c07bdbb190b07cd5d032f471d728708deda504034394b75837c6ec
 updated: 2026-07-19
 ---
 
@@ -202,3 +202,9 @@ exports them:
 
 Absent exports degrade silently to the old line — an older build must still load cleanly,
 since refusing to run because it cannot name itself would be worse than not knowing.
+
+## `pushAvailable` added to CAPABILITIES (2026-07-21)
+
+Third capability alongside `debug260` and `chunkPush`. As ever the allow-list is the gate —
+a capability absent from `CAPABILITIES` is silently dropped however well the adapter
+exposes it. Live line: `capabilities: debug260, pushAvailable, chunkPush`.
