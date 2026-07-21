@@ -8,6 +8,7 @@ import { broadcastMessageHistory } from './ws-relay.js';
 import { handleReply } from './node-settings.js';
 import { handleAlignPong } from './align-api.js';
 import { notePushReply } from './chunk-api.js';
+import { handleGrabReply } from './capture-api.js';
 import { ownDeviceNums } from './node-filter.js';
 import { isListenerForMode } from './dash-mode.js';
 import { FF } from './feature-flags.js';
@@ -40,6 +41,14 @@ export function registerBridgeEvents(bridge) {
           handleReply(pkt.decoded.reply_id, text);
         } catch (e) {
           console.error('[settings] reply correlation failed:', e.message);
+        }
+        // A `cam grab` reply threads by the same reply_id but is classified by `type`
+        // (grab/err), not `ok` — so it has its own correlator. Independent _pending map,
+        // own try/catch, so a malformed grab reply cannot break settings or align.
+        try {
+          handleGrabReply(pkt.decoded.reply_id, text);
+        } catch (e) {
+          console.error('[capture] grab reply correlation failed:', e.message);
         }
         // A push START the DEVICE refuses ({"start":N,"ok":0}) is an explicit "no",
         // and it was invisible: the client retries the START and the UI shows a blank

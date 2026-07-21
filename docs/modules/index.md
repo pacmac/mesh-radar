@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: dfc1be1518b8cbf1d8e5935d02b6e0eda9b06912a8db976dbb56ed493ad49c09
+source_hash: af703d71b4520a63f3024f38a4b9b94c621e1288be09771473a7cd50e85259bc
 updated: 2026-07-20
 ---
 
@@ -165,3 +165,8 @@ without that check would serve arbitrary files.
 
 Verified: a 3000-byte truncated file ending `22c5` is served as 3002 bytes ending `ffd9`;
 a complete `.jpg` is sha256-identical to disk.
+
+## capture-api mounted (2026-07-21)
+
+`app.use(captureRouter)` — `POST /nodes/:num/capture` (the `cam grab` trigger), mounted
+next to `chunkRouter` and `commandRouter`. See docs/modules/capture-api.md.

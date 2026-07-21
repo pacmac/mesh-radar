@@ -1,7 +1,7 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: a4bfad74d502a97931552613cccf1f700f3d3af7f2e9ebe9b12fb6a406ef7b1e
+source_hash: d5498b2c637768e4db38885add44cc403e89cc3ab339736bb41c7646149ba8a2
 updated: 2026-07-09
 ---
 
@@ -113,3 +113,15 @@ a `chunk_error`.
 Same contract as the other two consumers: it is a no-op unless a transfer is in flight,
 it only reads the reply text, and it transmits nothing. Wrapped in its own try/catch so a
 malformed payload cannot break settings or align correlation.
+
+## Grab-reply dispatch (task `cam-grab-capture-route`, 2026-07-21)
+
+The reply-correlation block gained a fourth consumer alongside `handleReply` (settings),
+`handleAlignPong` (align) and `notePushReply` (push): `handleGrabReply(pkt.decoded.reply_id,
+text)` from `capture-api.js`.
+
+A `cam grab` reply threads by `reply_id` (the SAME machinery settings verbs use, verified on
+the wire), but is classified by `type` (`grab`/`err`), not `ok` — so it needs its own
+correlator rather than `handleReply`, which gates on `ok:true` and would misread a grab
+success. Independent `_pendingGrab` map, own try/catch, so a malformed grab reply cannot
+break settings or align correlation.

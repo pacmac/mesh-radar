@@ -32,6 +32,7 @@ import nodesApi from './nodes-api.js';
 import settingsApi from './settings-api.js';
 import chunkRouter, { PAYLOAD_DIR as CHUNK_PAYLOAD_DIR } from './chunk-api.js';
 import commandRouter from './command-api.js';
+import captureRouter from './capture-api.js';
 import { registerStartupHandlers } from './startup.js';
 import { initLifecycle } from './lifecycle.js';
 import { startImapReceiver } from './imap-receiver.js';
@@ -197,6 +198,7 @@ app.use(messagesRouter);
 
 app.use(chunkRouter);   // POST /nodes/:num/chunk-fetch (alarm-transport plugin)
 app.use(commandRouter); // POST /nodes/:num/command (addressed command/response on Private)
+app.use(captureRouter); // POST /nodes/:num/capture (cam grab -> fresh pid)
 
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 
