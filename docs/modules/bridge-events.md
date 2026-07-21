@@ -1,7 +1,7 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: d5498b2c637768e4db38885add44cc403e89cc3ab339736bb41c7646149ba8a2
+source_hash: 7f34afa36458cf05b670ed221b5d9960f0d3f955e13fab3ec1d6095582e73fe0
 updated: 2026-07-09
 ---
 
@@ -125,3 +125,19 @@ the wire), but is classified by `type` (`grab`/`err`), not `ok` — so it needs 
 correlator rather than `handleReply`, which gates on `ok:true` and would misread a grab
 success. Independent `_pendingGrab` map, own try/catch, so a malformed grab reply cannot
 break settings or align correlation.
+
+## Scope bug: `text` out of scope for grab correlation (2026-07-21)
+
+`const text` was declared INSIDE the settings `try` block; `handleGrabReply` referenced it
+from a sibling `try`, throwing `ReferenceError: text is not defined` on EVERY reply. So a
+`cam grab` reply arrived correctly (reply_id matched the sent packet) but was never
+correlated — the capture route timed out and the button reported "no reply from the camera"
+while the reply sat in the message feed.
+
+`text` is now decoded once in the shared `if (reply_id)` scope; all three consumers
+(`handleReply`, `handleGrabReply`, `notePushReply`) use it, and the duplicate `text2` is
+gone.
+
+Caught by Peter pressing the button live — NOT by the injection tests, which stubbed the
+browser `fetch` and never exercised this backend reply path. The lesson: a feature that
+spans browser→route→reply is not verified by testing the browser half alone.

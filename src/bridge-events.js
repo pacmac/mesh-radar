@@ -35,9 +35,14 @@ export function registerBridgeEvents(bridge) {
       // history rebroadcast above.
       const pkt = ev.data.packet;
       if (pkt.decoded.reply_id) {
+        // Decoded ONCE, in the shared scope, so every reply consumer sees it. A previous
+        // version declared `text` inside the settings try-block only; handleGrabReply then
+        // referenced it out of scope and threw "text is not defined" every time — a grab
+        // reply arrived correctly but was never correlated, so the capture route timed out
+        // and reported "no reply". Caught by a live press, not by the tests I deferred.
+        const text = pkt.decoded.payload
+          ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8') : '';
         try {
-          const text = pkt.decoded.payload
-            ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8') : '';
           handleReply(pkt.decoded.reply_id, text);
         } catch (e) {
           console.error('[settings] reply correlation failed:', e.message);
@@ -54,9 +59,7 @@ export function registerBridgeEvents(bridge) {
         // and it was invisible: the client retries the START and the UI shows a blank
         // progress bar, so a flat refusal looked identical to a dead radio. Surface it.
         try {
-          const text2 = pkt.decoded.payload
-            ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8') : '';
-          notePushReply(pkt.from, text2);
+          notePushReply(pkt.from, text);
         } catch (e) {
           console.error('[chunk] push reply inspection failed:', e.message);
         }
