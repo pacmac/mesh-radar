@@ -7,13 +7,14 @@ import { fetchJSON } from './app-helpers.js';
 export const CONTROL_SHORTCUTS = ['ping', 'status', 'config', 'reboot'];
 
 export const controlMixin = {
-  // Command targets: favourites (server nav list) first, then the rest of the
-  // messageable nodes, deduped. Ordering only — the lists are server-provided.
+  // Command targets: favourites (server nav list) first, then our PAC_ALARM nodes,
+  // deduped. Control only ever addresses our alarm units — client_role is
+  // server-stamped (src/client-role.js), same filter push-viewer.html uses.
   controlDevices() {
     const favs = (this.favourites || []).map(f => ({ num: f.num, label: f.label }));
     const seen = new Set(favs.map(f => f.num));
     const rest = (this.allMsgNodes() || [])
-      .filter(n => !seen.has(n.num))
+      .filter(n => n.client_role === 'PAC_ALARM' && !seen.has(n.num))
       .map(n => ({ num: n.num, label: n.user?.short_name || n.user?.long_name || ('!' + (n.num >>> 0).toString(16)) }));
     return [...favs, ...rest];
   },
