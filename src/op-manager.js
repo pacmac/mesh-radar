@@ -136,7 +136,7 @@ const REGISTRY = new Map([
   }],
 
   // ── Class 2 — Radio ───────────────────────────────────────────────────────
-  // RadioRunner: write → read-back compare
+  // RadioRunner: write → optional read-back compare
   // The firmware decides whether to reboot after a config write — we never predict
   // or command it. device_state WS events inform the UI independently.
 
@@ -150,7 +150,8 @@ const REGISTRY = new Map([
   ['channel_config', {
     class: 'Radio', description: 'Channel settings and role',
     method: 'PUT', endpoint: p => `/${p.target}/channels/${p.index}`,
-    read_back_path: p => `/${p.target}/channels/${p.index}`, match_fields: ['role'],
+    // mesh-gw's channel GET is cached until reconnect, so it cannot verify this write.
+    read_back_path: null, match_fields: [],
     example_payload: { target: '!2687afb1', index: 0, values: { role: 'PRIMARY' } },
     timeout_s: 15, reboot: false,
   }],
@@ -415,10 +416,9 @@ export class OpManager {
     if (!entry.read_back_path) return { ok: true };
 
     this._transition(op, 'validating');
-    // Radio config commits are not instantaneous — an immediate read-back can
-    // return the pre-write state (first seen enabling a new channel: the radio
-    // briefly reported the old DISABLED role). Retry with backoff before
-    // failing; a genuine mismatch still fails after all attempts.
+    // Some radio config commits are not instantaneous, so a genuinely live
+    // read-back can briefly return the pre-write state. Retry with backoff;
+    // entries backed only by cached state must not register a read-back path.
     let lastErr = null;
     for (let attempt = 0; attempt < 4; attempt++) {
       if (attempt) await new Promise(r => setTimeout(r, attempt * 1000));

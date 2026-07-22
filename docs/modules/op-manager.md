@@ -1,8 +1,8 @@
 ---
 module: op-manager
 source: src/op-manager.js
-source_hash: 99c99dce7858542d0c1e213c033e37312419b5ffd574750e32a7fc6f1364d4b6
-updated: 2026-07-16
+source_hash: 1c76a62c5bc1d36c3a9c4910b62e14cf5ab71409ba22df7ef53eeac6facbe193
+updated: 2026-07-22
 ---
 
 # Module: op-manager
@@ -73,7 +73,7 @@ Each transition calls `_transition(op, state)` which:
 
 ## REGISTRY
 
-27 named operations in 3 classes. Each entry:
+32 named operations in 3 classes. Each entry:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -111,18 +111,21 @@ Written to node-dash's own config/DB. Read-back is immediate.
 
 ### Class 2 — Radio (6 ops)
 
-Written through node-dash to mesh-gw and then to the radio. Read-back verifies the value was accepted by the firmware.
+Written through node-dash to mesh-gw and then to the radio. Operations use a
+read-back only where the gateway endpoint provides fresh confirmation. A
+successful `channel_config` means mesh-gw accepted and completed its BLE write;
+it does not claim that the radio firmware acknowledged or echoed the value.
 
 | Kind | Write endpoint | Read-back |
 |---|---|---|
 | `radio_config_section` | `PUT /:target/config/:section` | none |
-| `channel_config` | `PUT /:target/channels/:index` | same |
+| `channel_config` | `PUT /:target/channels/:index` | none (gateway 2xx) |
 | `owner_info` | `PUT /:target/owner` | same |
 | `fixed_position_push` | `PUT /:target/fixed_position` | same |
 | `fixed_position_clear` | `DELETE /:target/fixed_position` | none |
 | `send_message` | `POST /:target/messages` | none |
 
-### Class 3 — Mode (10 ops)
+### Class 3 — Mode (12 ops)
 
 Action triggers. Confirmation is either the HTTP 200 response or a WS `device_state` event.
 
@@ -154,7 +157,16 @@ Action triggers. Confirmation is either the HTTP 200 response or a WS `device_st
 
 ### RadioRunner (`_radioRunner`)
 
-Identical to `LocalRunner`. The distinction is architectural (future runners may add retry or device-state awareness), but the current code shares the same logic.
+1. `_localFetch(method, endpoint(params), params.values)` — write
+2. Non-2xx → throw `Write failed HTTP N`
+3. If `read_back_path` is null → return `{ ok: true }`
+4. Otherwise transition to `'validating'`, retry the read-back and comparison up
+   to 4 times with 1s/2s/3s backoff, and throw the last mismatch on exhaustion.
+
+`channel_config` deliberately has no read-back. Mesh-gw's channel GET is a
+connection cache, not a live firmware query, and remains stale after a channel
+write until a reconnect/resync. Comparing the write to that cache creates a
+deterministic false failure even when the BLE write was accepted.
 
 ### ModeRunner (`_modeRunner`)
 
@@ -178,7 +190,7 @@ Mismatches accumulate and are thrown as a single error.
 
 ## REST endpoints (mounted on `opManager.router`)
 
-### `POST /op`
+### `POST /ops`
 
 Body: `{ kind, target?, payload? }`.
 - Unknown `kind` → 400
@@ -189,7 +201,7 @@ Body: `{ kind, target?, payload? }`.
 
 Returns `{ count, ops[] }` — full REGISTRY serialized. Each entry includes `kind`, `class`, `description`, `method`, `timeout_s`, `reboot`, `has_read_back`, `match_fields`, `confirming`, `example_payload`. Used by `test_ops.py` to enumerate all ops for automated testing.
 
-### `GET /op/:op_id`
+### `GET /ops/:op_id`
 
 Returns the current op state: `{ op_id, kind, target, state, result, error, ts }`.
 - 404 if op not found or already GC'd (completed ops are GC'd after 5 minutes).
@@ -202,7 +214,11 @@ Returns the current op state: `{ op_id, kind, target, state, result, error, ts }
 - `_transition` is always called on state entry — there is no silent state change.
 - `device_state_ready` postcondition listener is armed **before** the write to handle cases where the device reaches READY before the HTTP response arrives.
 - `_waitForStateChange` matches on both `node_id` and `addr` because a connecting device may only report its BLE MAC (`addr`) before acquiring a mesh node ID.
-- **LocalRunner and RadioRunner are currently identical** — the class distinction is forward-looking for future retry/reboot detection.
+- `channel_config` performs exactly one PUT and no validation GET. Gateway 2xx is
+  the strongest synchronous evidence available at this boundary; non-2xx still
+  transitions the operation to `error`.
+- Radio operations that do have a fresh `read_back_path` retry comparison up to
+  four times; Local operations compare once.
 - Op state is in-memory only. A server restart loses all in-flight and completed ops.
 
 ## Test notes
@@ -217,8 +233,12 @@ Returns the current op state: `{ op_id, kind, target, state, result, error, ts }
 - **mode device_state_ready — timeout**: no WS event within timeout → `state = 'error'`
 - **mode bridge null**: `bridge = null`, confirming = 'device_state_ready' → resolves false immediately → error
 - **flattenResponse**: `{ telemetry: { hop_limit: 3 } }` → `{ hop_limit: 3 }` for field comparison
-- **GC**: after success/error, op removed from `_ops` after 5 min; `GET /op/:op_id` → 404
-- **manifest**: `GET /ops/manifest` → `count: 27`, one entry per REGISTRY key
+- **GC**: after success/error, op removed from `_ops` after 5 min; `GET /ops/:op_id` → 404
+- **channel write accepted**: fake gateway returns 2xx → exactly one PUT, no GET,
+  terminal `success`
+- **channel write rejected**: fake gateway returns non-2xx → exactly one PUT, no
+  GET, terminal `error` containing the HTTP status
+- **manifest**: `GET /ops/manifest` → `count: 32`, one entry per REGISTRY key
 
 ## Out of scope
 
@@ -227,21 +247,17 @@ Returns the current op state: `{ op_id, kind, target, state, result, error, ts }
 - Retry on failure — each op runs once; retry is the caller's responsibility
 - Persistent op history — in-memory only; lost on restart
 - Browser rendering of op state — `ws-relay.js` relays `config_op` events to the browser
+- Browser channel form/PSK serialization — tracked separately from this backend contract
+- Changes to mesh-gw's channel cache or firmware acknowledgement semantics
 
 ## Read-back retry (task `radio-readback-retry`, 2026-07-16)
 
-Radio config commits are not instantaneous: after a `PUT`, the live-admin
-read-back can briefly return the pre-write state. First observed enabling a
-new channel — the radio reported the old `DISABLED` role (omitted in proto3
-JSON) for a moment, so the single-attempt verify threw
-`Read-back mismatch: role: expected "SECONDARY"` for a write that landed.
-(Masked before 2026-07-16: the per-channel read-back endpoint 500'd at the
-gw, so this verify never actually ran.)
+Some radio config commits are not instantaneous: after a `PUT`, a genuinely
+live admin read-back can briefly return the pre-write state. The retry applies
+only when the registered read-back endpoint supplies fresh device state.
 
 `_radioRunner` now retries the read-back + compare up to 4 attempts with
 1s/2s/3s backoff (~6s budget, inside every Radio op's 15s timeout) and only
-throws the last error after all attempts fail. Applies to every Radio-class
-op with a `read_back_path` (`channel_config`, `owner_info`,
-`fixed_position_push`, `tilt_cal`) — commit latency is a property of the
-write→verify mechanism, not of any one op. A genuine mismatch still fails,
-just ~6s later.
+throws the last error after all attempts fail. `channel_config` is excluded:
+its GET endpoint is cached state and cannot validate the just-completed write.
+A genuine mismatch on a fresh read-back still fails, just ~6s later.
