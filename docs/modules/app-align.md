@@ -1,8 +1,10 @@
 ---
 module: app-align
-source: public/app-align.js
-source_hash: de71e4f75f1f7ff22ab50e64b18dacd6ba1f8cc9d5237c475ea3c82239a44171
-updated: 2026-07-19
+source:
+  - public/app-align.js
+  - public/align.html
+source_hash: 42488043658437ab74160b2b4e52c68a5c1346b99c273a7618739c94a074f2db
+updated: 2026-07-23
 ---
 
 # Module: app-align
@@ -62,22 +64,34 @@ never computes a fallback.
 
 `STYLE_GUIDE.md` is canonical (three bespoke attempts were rejected). DaisyUI
 semantic classes only — cards, `.stat`, `badge`, `btn`, the type-role table — no
-hex/rgba/oklch in markup. No Chart.js; bars are plain DOM. Custom CSS is two layout
-declarations (`html,body{height:100%}`, `body{overflow:hidden}`). Controls sit in
-the bottom thumb zone. The layout (approved 2026-07-19) is unchanged; this step
-only moves computation out of the browser.
+hex/rgba/oklch in markup. No Chart.js; bars are plain DOM. Controls sit in the
+bottom thumb zone.
+
+The control header is responsive by construction: on viewports below the `sm`
+breakpoint the target occupies a full row and the average/wait controls share a
+second row; at `sm` and above all three occupy one row. Every shrinkable grid item
+has `min-width: 0`. The fixed viewport uses `100dvh` where available and includes
+all four safe-area insets. At 375–430px portrait widths, document `scrollWidth`
+must equal `innerWidth`.
 
 ## Public interface
 
 Alpine component `alignPage()`: `model` (the last pushed view-model), `nBurst`
 (the N selector, browser-held input), `target`, `targets`, `ping()`, `end()`,
-`init()`. No derived getters.
+`init()`. Alpine invokes `init()` automatically; markup must not also call it via
+`x-init`. No derived view-model getters.
 
 ## Frame handling (`WS /align/events`)
 
 - `kind:'align'` → replace `model` wholesale and render. Adopt `target` from it.
 - No other frame kinds. The socket opens on load so a second phone reflects a
-  running session; `_open()` is idempotent (two sockets would double-render).
+  running session.
+- `_open()` is idempotent and resolves only after the socket is OPEN. PING awaits
+  that readiness before its POST, preventing the mobile reconnect race.
+- An unexpected close schedules one reconnect. `pageshow` and returning to a
+  visible document also ensure a connection; explicit End suppresses reconnect.
+- Request failures are logged with their HTTP status/error instead of being
+  silently discarded. They do not fabricate server-owned view-model state.
 
 ## Invariants
 
@@ -86,7 +100,12 @@ Alpine component `alignPage()`: `model` (the last pushed view-model), `nBurst`
 - **PING disabled while `burst.active`** and while no target is selected — but the
   *disabled flag comes from the model where the backend can set it*; the browser
   mirrors it.
-- `navigator.wakeLock` held while `running`; `pagehide` beacons `/align/stop`.
+- Initialization performs one targets GET and creates at most one WebSocket.
+- Browser `pagehide` never POSTs `/align/stop`; the backend's existing last-client
+  dead-man and the explicit End action own session termination.
+- Where Screen Wake Lock is available, it is reacquired when the document becomes
+  visible and the server says the session is running. Absence on insecure iPhone
+  HTTP origins remains non-fatal.
 
 ## Test notes
 
@@ -95,9 +114,33 @@ Alpine component `alignPage()`: `model` (the last pushed view-model), `nBurst`
 - pressing PING with N=4 sends `{num, n:4}`; the button shows `got/of` progress
   from pushed `burst` frames; one averaged reading appears
 - two browsers on one session render identical screens
-- at a true 390×844 viewport, both themes, 0 console errors
+- at true 375×667, 390×844 and 430×932 viewports, document `scrollWidth === innerWidth`
+- desktop 1280×800 keeps target, average and wait controls on one row
+- initialization makes one `/align/targets` request and one live WebSocket
+- force-close the socket: one reconnect reaches OPEN; explicit End does not reconnect
+- `pagehide` emits no `/align/stop` request
+- both themes render with 0 application console errors
 
 ## Out of scope
 
 - Any computation of signal, quality, best, trend, or layout scaling — all Node's.
 - Dashboard state, nav, drawer; rotator control.
+- Backend session/dead-man behavior in `src/align-api.js`.
+- Bundling the externally hosted Tailwind, DaisyUI, Alpine, or font dependencies.
+
+## Mobile reliability fix (`fix-align-mobile`, 2026-07-23)
+
+Implementation is limited to two browser sources:
+
+1. `public/align.html`: remove the explicit `x-init`; replace the overflowing
+   one-row control flexbox with the specified two-row-mobile/one-row-desktop grid;
+   add shrink constraints, dynamic viewport height, and horizontal safe-area
+   padding.
+2. `public/app-align.js`: remove the pagehide stop beacon; make WebSocket opening
+   awaitable/idempotent; reconnect on unexpected close/pageshow/visibility;
+   suppress reconnect after End; check HTTP responses; reacquire wake lock where
+   supported.
+
+Explicitly unchanged: `src/align-api.js` and every other backend file, because
+this task is Domain 2 only; `public/sw.js` and CDN packaging, because neither is
+required to fix the reproduced overflow or observed explicit mobile stop path.

@@ -29,29 +29,29 @@
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"></script>
 <style>
   /* Only layout — a fixed-viewport field page. Colour/type come from the system. */
-  html, body { height: 100%; }
-  body { overflow: hidden; }
+  html, body { width: 100%; max-width: 100%; height: 100%; overflow: hidden; }
+  @supports (height: 100dvh) { html, body { height: 100dvh; } }
 </style>
 </head>
-<body class="bg-base-200 font-body" x-data="alignPage()" x-init="init()">
+<body class="bg-base-200 font-body" x-data="alignPage()">
 
-<div class="flex flex-col h-full gap-3 p-3"
-     style="padding-top:calc(0.75rem + env(safe-area-inset-top));padding-bottom:calc(0.75rem + env(safe-area-inset-bottom))">
+<div class="flex flex-col h-full min-w-0 gap-3 p-3"
+     style="padding-top:calc(0.75rem + env(safe-area-inset-top));padding-right:calc(0.75rem + env(safe-area-inset-right));padding-bottom:calc(0.75rem + env(safe-area-inset-bottom));padding-left:calc(0.75rem + env(safe-area-inset-left))">
 
   <!-- ── target + how many pings to average ─────────────────────────────── -->
-  <div class="flex gap-2 shrink-0">
-    <select class="select select-bordered flex-1 font-display" x-model.number="target"
+  <div class="grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 shrink-0 min-w-0">
+    <select class="select select-bordered col-span-2 sm:col-span-1 w-full min-w-0 font-display" x-model.number="target"
             :disabled="bursting" aria-label="Node to align">
       <template x-if="!targets.length"><option value="">Star a node to align it</option></template>
       <template x-for="t in targets" :key="t.num">
         <option :value="t.num" x-text="t.label"></option>
       </template>
     </select>
-    <label class="join" title="Pings to average per reading">
-      <span class="join-item btn btn-disabled no-animation font-display text-xs">avg</span>
+    <label class="join w-full min-w-0 sm:w-auto" title="Pings to average per reading">
+      <span class="join-item btn btn-disabled no-animation shrink-0 font-display text-xs">avg</span>
       <!-- Static options, not x-for: an x-for list is populated after x-model
            evaluates, so the model's value is not reflected and the control shows 1. -->
-      <select class="join-item select select-bordered font-mono" x-model.number="nBurst" :disabled="bursting">
+      <select class="join-item select select-bordered flex-1 min-w-0 sm:flex-none font-mono" x-model.number="nBurst" :disabled="bursting">
         <option value="1">1</option>
         <option value="2">2</option>
         <option value="3">3</option>
@@ -61,10 +61,10 @@
     </label>
     <!-- Reply-wait period (seconds). Server-persisted; @change commits + persists.
          5–120s; a weak node can answer at 30–43s so this must be raisable. -->
-    <label class="join" title="Seconds to wait for a reply (persisted)">
-      <span class="join-item btn btn-disabled no-animation font-display text-xs">wait s</span>
+    <label class="join w-full min-w-0 sm:w-auto" title="Seconds to wait for a reply (persisted)">
+      <span class="join-item btn btn-disabled no-animation shrink-0 font-display text-xs">wait s</span>
       <input type="number" min="5" max="120" step="5" inputmode="numeric"
-             class="join-item input input-bordered font-mono w-16"
+             class="join-item input input-bordered flex-1 min-w-0 sm:flex-none sm:w-16 font-mono"
              x-model.number="replyWinSec" @change="setReplyWindow()" :disabled="bursting">
     </label>
   </div>
