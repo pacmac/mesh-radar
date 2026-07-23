@@ -3,7 +3,7 @@ module: app-align
 source:
   - public/app-align.js
   - public/align.html
-source_hash: 42488043658437ab74160b2b4e52c68a5c1346b99c273a7618739c94a074f2db
+source_hash: 60d3f6411049ad95a67ebcc929accf83aec00b9cc15ad97e2153965e39ba1da9
 updated: 2026-07-23
 ---
 
@@ -96,6 +96,10 @@ Alpine component `alignPage()`: `model` (the last pushed view-model), `nBurst`
 ## Invariants
 
 - **Renders the model; decides nothing.** Enforced by review, not `check_specs`.
+- `public/app-align.js` is loaded as a classic local script before deferred
+  Alpine. This deterministic order guarantees that `window.alignPage` exists
+  before Alpine evaluates `x-data`; do not mix a module component script with a
+  classic deferred Alpine bootstrap.
 - **N is the only browser-originated value**, and it is raw input, not state.
 - **PING disabled while `burst.active`** and while no target is selected — but the
   *disabled flag comes from the model where the backend can set it*; the browser
@@ -117,6 +121,8 @@ Alpine component `alignPage()`: `model` (the last pushed view-model), `nBurst`
 - at true 375×667, 390×844 and 430×932 viewports, document `scrollWidth === innerWidth`
 - desktop 1280×800 keeps target, average and wait controls on one row
 - initialization makes one `/align/targets` request and one live WebSocket
+- on a cold, cache-disabled load, `window.alignPage` exists when Alpine
+  initializes; PING disables immediately and sends one `/align/ping` request
 - force-close the socket: one reconnect reaches OPEN; explicit End does not reconnect
 - `pagehide` emits no `/align/stop` request
 - both themes render with 0 application console errors
@@ -144,3 +150,13 @@ Implementation is limited to two browser sources:
 Explicitly unchanged: `src/align-api.js` and every other backend file, because
 this task is Domain 2 only; `public/sw.js` and CDN packaging, because neither is
 required to fix the reproduced overflow or observed explicit mobile stop path.
+
+## Mobile bootstrap fix (`fix-align-mobile-bootstrap`, 2026-07-23)
+
+Implementation is limited to `public/align.html`: load the import-free
+`public/app-align.js` as a classic local script before deferred Alpine. This
+removes the module/defer execution race that can leave a cold Safari load with
+uninitialized `x-data` and inert controls.
+
+Explicitly unchanged: `public/app-align.js`, all backend files, radio
+configuration, and external dependency packaging.
