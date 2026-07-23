@@ -4,9 +4,8 @@
 // rule 1 goes further for this page — every value arrives already formatted, so
 // there is no unit string, no rounding and no date math anywhere in this file.
 //
-// This module knows THREE section kinds and nothing else. It does not know what
-// portnum 260 is, what a detection is, or which port any datum came from. A new
-// backend section of a known kind renders with no change here.
+// This module knows three section kinds and nothing else. A new backend section
+// of a known kind renders with no change here.
 //
 // Presence and order are server decisions: we render `sections` in the order
 // given and never test whether one has content.
@@ -128,55 +127,6 @@ export const nodeStatusMixin = {
   onNodeStatusUpdate(num) {
     if (this.tab !== 'node') return;
     if (Number(num) !== Number(this.nodeStatusNum)) return;
-    this.requestNodeStatus();
-  },
-
-  // ---- config editing ------------------------------------------------------
-  //
-  // Read-only by default. Edit unlocks the inputs, Save transmits. Nothing is
-  // written to local state on success: the displayed value keeps coming from the
-  // device's own type:config re-broadcast (NODE_SETTINGS_SSOT_SPEC). If the
-  // device disagrees with what we asked for, the device wins.
-
-  startEditSection(id) {
-    this.nodeEditSection = id;
-    this.nodeEditDraft = {};
-    this.nodeEditBusy = false;
-  },
-
-  cancelEditSection() {
-    this.nodeEditSection = null;
-    this.nodeEditDraft = {};
-  },
-
-  async saveEditSection(section) {
-    if (this.nodeEditBusy) return;
-    // Only fields the user actually changed are transmitted — each setting is a
-    // separate command over the air, so unchanged ones must not cost airtime.
-    const changed = section.fields.filter(f =>
-      f.edit && this.nodeEditDraft[f.edit.path] !== undefined
-             && String(this.nodeEditDraft[f.edit.path]) !== String(f.raw));
-    if (!changed.length) { this.cancelEditSection(); return; }
-
-    this.nodeEditBusy = true;
-    let applied = 0;
-    for (const f of changed) {
-      const raw = this.nodeEditDraft[f.edit.path];
-      const value = f.edit.type === 'bool' ? (raw === true || raw === 'true' || Number(raw) === 1)
-                                           : Number(raw);
-      try {
-        const res = await fetchJSON(`/nodes/${this.nodeStatusNum}/settings`, 'PUT',
-                                    { path: f.edit.path, value });
-        if (res?.ok) { applied++; this.showToast(`${f.edit.name}: applied`, 'success'); }
-        else this.showToast(`${f.edit.name}: ${res?.error || res?.state || 'failed'}`, 'error', 0);
-      } catch (e) {
-        // no_reply arrives here as a 504 — silence is a failure, not a success.
-        this.showToast(`${f.edit.name}: ${e.message || 'no reply from device'}`, 'error', 0);
-      }
-    }
-    this.nodeEditBusy = false;
-    this.cancelEditSection();
-    // Re-read from the server; the device's re-broadcast is the truth.
     this.requestNodeStatus();
   },
 

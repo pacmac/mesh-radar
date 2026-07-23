@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: cf37d90a44604fa37b86a3edb1cec19b803529089a7d19036f6cf5cdb3fccdda
+source_hash: 3cfdae947df44f39e20e41df86faf75414a0533b6bc2d8c0c3749d451f36d102
 updated: 2026-07-20
 ---
 
@@ -50,19 +50,9 @@ to every newly connected client so the browser is immediately consistent.
 ```js
 export function getLiveNodeIdByMac(mac)     // → !hexid | null
 export function getLiveMacByNodeId(nodeId)  // → MAC | null
-export function getDeviceChannelsByNodeId(nodeId)      // → [{index,name,role}] | null
 export function getChannelNameByMac(mac, index)        // → channel name | null
-export function broadcastChunkProgress(ev)             // push chunk_progress/done/error to dashboard clients
 export function attachWsRelay(server, getRangeTimer?)  // → WebSocketServer (main wss)
 ```
-
-### `broadcastChunkProgress(ev)`
-
-Forward-ref export (same pattern as `broadcastMessageHistory` / `pokeDeviceList`):
-a module-scope `_broadcastChunkProgress` is wired to the internal `broadcast` once
-`attachWsRelay` runs, so `chunk-api.js` can push chunk-fetch progress
-(`chunk_progress` / `chunk_done` / `chunk_error`) to every dashboard client without
-importing the WSS. No-op before the relay is attached.
 
 ### `getChannelNameByMac(mac, index)`
 
@@ -594,70 +584,3 @@ Throttled per node to 1 hint/second (`_lastStatusHint`, capped at 2 000 entries)
 so a burst of packets cannot storm connected browsers. The throttle is a
 delivery concern, not a data decision — no datum is lost, since the browser
 always re-reads current state.
-
-## command_history control feed (task ws-control-feed, 2026-07-20)
-
-A **server-computed control feed** on `/events`: `{type:'command_history', messages}` carrying only the **command-bucket** subset of the 200-row window (sent commands + their responses), classified server-side via `type_bucket`. Pushed on connect (beside `message_history`, from one shared `buildMessageFeedRows()` query) and re-pushed by `_broadcastMessageHistory` on every new message (a command is a message). 
-
-Purpose: the mt-transport Client (DEV1) and the browser Control page **subscribe to it directly** for control + monitoring — no consumer filters `message_history` itself (BROWSER_CONTRACT; and DEV1 gets a ready-made control stream). `message_history` is unchanged.
-
-## message_history is CHAT-ONLY (task messages-chat-only, 2026-07-20)
-
-Both feeds are now server-split from the one `buildMessageFeedRows()` query:
-`message_history` carries only `type_bucket === 'chat'`, `command_history` only
-`'command'`. The messages page is a chat page and needs no client-side filtering to
-keep control traffic out; the Control page renders `command_history` directly.
-
-## In-flight chunk transfer replayed on connect (task `chunk-inflight-replay`)
-
-A transfer runs for minutes. A browser connecting MID-transfer previously received
-nothing about it, so it rendered `idle` — and any start control would have looked
-available while `chunk-api`'s one-in-flight guard would refuse it with a `409`. The
-button's enabled/disabled state is server-owned (BROWSER_CONTRACT); the browser must
-never infer it from the absence of events.
-
-`_broadcastChunkProgress` now caches the last `chunk_progress` in `lastChunkProgress`
-and clears it on `chunk_done`/`chunk_error`, so a stale "running" cannot outlive the
-transfer. On connect the cached event is sent **only if one is in flight** — its absence
-therefore means "no transfer", not "unknown".
-
-Cached here rather than read back from `chunk-api` because that module already imports
-this one; a reverse import would be circular. A process restart clears the cache, which
-is correct — a restart kills the transfer too.
-
-**Verification is DEFERRED and deliberately so:** exercising this needs a real transfer,
-which means transmitting, which is Peter's call alone. Static review only. The test when
-authorised: start a transfer, open `/push.html` fresh mid-transfer, confirm it shows
-`running` with the correct node/pid rather than `idle`.
-
-## `chunk_idle` — an explicit "no transfer" on connect (2026-07-20)
-
-Both chunk caches (`lastChunkProgress`, `lastChunkTerminal`) are IN MEMORY, so a process
-restart empties them. A browser that was watching a transfer then reconnects, is told
-nothing, and keeps rendering its last frame forever — indistinguishable from a live
-transfer that froze.
-
-That is exactly how a pm2 restart mid-transfer presented: a log that simply stopped at
-20/32 and a page reported as "crashed / stalled". The transfer was genuinely gone (the
-receiver's chunk map lives in the client's memory), but nothing said so.
-
-Connect now always yields exactly one of three: the in-flight `chunk_progress`, the last
-terminal outcome, or `{type:'chunk_idle'}`. Silence is never one of the options.
-
-## The grow-only announce gate was REMOVED — it froze the live image (2026-07-20)
-
-Peter suggested only updating when the new size exceeds the last, to stop the flicker. The
-reasoning was right; applying it to the ANNOUNCE was wrong, and it made things worse: the
-image stopped updating at all.
-
-The `.part` holds the CONTIGUOUS PREFIX, so its size stops changing the moment a chunk is
-lost — while later chunks are still arriving and the repair round is still ahead. A gate
-keyed on size therefore suppressed every announce after the first gap, which on a ~17%
-loss link is early. The display froze silently: exactly the failure this whole page exists
-to avoid.
-
-Announces are unconditional again while a transfer runs. Re-sending identical bytes is
-harmless because the viewer preloads each candidate and swaps only on a successful decode
-(push-viewer.md) — an unchanged file simply repaints the same frame. The flicker was
-solved on the browser side, where it actually originated; the server-side gate was
-addressing the symptom in the wrong layer.

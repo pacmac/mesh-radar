@@ -149,8 +149,9 @@ and become an **official component**, `.instrument`, defined once in `style.css`
   CSS hooks are semantic class names; utilities stay in markup.
 - **Banned:** inline `style=` in partials, except values genuinely computed from
   data at runtime (chart geometry, avatar hue, progress width).
-- Fonts load once via the `style.css` `@import`; `tailwind.config` in `index.html`
-  maps them to `font-display` / `font-body` / `font-mono`.
+- Fonts load once from local `/vendor/fonts/*.woff2` faces declared in
+  `style.css`; `tailwind.config` in `index.html` maps them to `font-display` /
+  `font-body` / `font-mono`. Runtime font CDNs are forbidden.
 - Transitional note: legacy utility-selector rules remain in a marked
   `/* LEGACY */` block until each page's refactor task removes its dependents.
 

@@ -1,7 +1,7 @@
 ---
 module: tab-perf
 source: public/partials/tab-perf.html
-source_hash: 52c3f89caf8b6fb3f545dedc081e0cb8b9e2d7985e504607f7f14357553f587b
+source_hash: 64d2155ebd33b279cab0d3260ce3fde910d5c97c11c1801ce7b9eb489b5ffc99
 updated: 2026-07-09
 ---
 
@@ -12,6 +12,12 @@ updated: 2026-07-09
 Performance page: setup-health stat grid (Simple/Expert), headroom trend and
 distance charts, traceroute history table, auto-traceroute controls.
 Presentation only.
+
+## Mobile containment (2026-07-23)
+
+The page scrolls vertically below `lg`, the main content is one column on
+phones and two columns on desktop, and history owns both-axis overflow. The
+iPhone page no longer clips the history panel or widens the document.
 
 ## Scope
 

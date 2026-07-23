@@ -114,7 +114,6 @@ Chart tick/legend fonts drop their `size:10` overrides and inherit, per §2.
 - **Favourites / nav entry** (backlog #7 item 3). It needs a config key, a
   backend route and nav wiring — a feature, not a restyle. Tracked separately;
   the page stays reachable via the modal meanwhile.
-- The 260 config **editor** (read-only panel is by design).
 
 ## Done when (STYLE_GUIDE §8)
 

@@ -1,5 +1,4 @@
 import db, { getConfig } from './db.js';
-import { messageBucket } from './message-type.js';
 import { getChannelNameByMac } from './ws-relay.js';
 
 export function queryMessages(limit = 100) {
@@ -58,8 +57,6 @@ export function queryMessages(limit = 100) {
     GROUP BY CASE WHEN m.packet_id IS NOT NULL THEN m.packet_id ELSE m.id END
     ORDER BY MAX(m.ts) DESC LIMIT ?
   `).all(...params)
-    // type_bucket for the feed's type filter — computed here so the browser only
-    // renders it (message-type.md). rx_devices + channel are already selected.
     // channel_name resolves the raw per-gateway index -> logical channel name via
     // (device,index)->name; the first pair that resolves wins (all pairs of one
     // packet agree). _dev_chans is internal — stripped from the output.
@@ -71,7 +68,7 @@ export function queryMessages(limit = 100) {
         const name = getChannelNameByMac(pair.slice(0, at), pair.slice(at + 1));
         if (name) { channel_name = name; break; }
       }
-      return { ...r, type_bucket: messageBucket(r.category, r.text), channel_name };
+      return { ...r, channel_name };
     });
 }
 

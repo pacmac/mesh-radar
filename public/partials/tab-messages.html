@@ -77,7 +77,7 @@
                 </div>
 
                 <!-- Quick emoji -->
-                <div class="flex w-full">
+                <div class="grid grid-cols-6 sm:grid-cols-12 w-full">
                   <template x-for="em in msgEmojiSet" :key="em.e">
                     <button class="btn btn-sm btn-ghost text-xl px-0 flex-1" x-text="em.e" :title="em.t"
                             @click="insertAtCursor($refs.msgInput, em.e)"></button>
@@ -163,4 +163,3 @@
             </div>
           </div>
         </div>
-

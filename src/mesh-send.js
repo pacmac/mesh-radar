@@ -1,10 +1,7 @@
 // The single place that transmits an outbound mesh text AND records it.
 //
 // Every sender routes through sendMeshText() so no send can bypass the message
-// log. Before this, only messages-api recorded (insertTxMessage inline); align,
-// settings and op-manager POSTed straight to the gateway and recorded nothing,
-// so their traffic reached the feed only when a second local radio re-heard the
-// RF — lossy. See docs/modules/mesh-send.md.
+// log. See docs/modules/mesh-send.md.
 
 import { stmts, syncAlertedAt } from './db.js';
 import { nodeList } from './node-list.js';

@@ -5,6 +5,15 @@ import { buildForm, collectForm } from './app-forms.js';
 import { submitOp } from './op-client.js';
 import { opFlow } from './op-flow.js';
 
+// A channel PUT replaces ChannelSettings rather than patching it. Preserve
+// values omitted from the form (notably the locked PSK) and keep the route
+// index out of the body.
+export function channelWriteBody(current, edited) {
+  const role = edited.role ?? current?.role ?? 'DISABLED';
+  const settings = { ...(current?.settings || {}), ...edited };
+  delete settings.role;
+  return { settings, role };
+}
 
 export const configMixin = {
   // loadConfig is gone — settings arrive on the WS 'settings' event
@@ -190,21 +199,17 @@ export const configMixin = {
   async saveChannel(ch) {
     const el = document.getElementById('ch_' + ch.index);
     const payload = collectForm(el, this.channelSchema.fields);
-    const body = { settings: { ...payload }, role: payload.role, index: ch.index };
-    delete body.settings.role;
+    const body = channelWriteBody(ch.data, payload);
     const target = this.cfgRadioId || this.activeNodeId;
     await submitOp('channel_config', target, { index: ch.index, values: body });
-    // Refresh ALL channels from the bulk endpoint (a role change can affect
-    // the set) and rebuild this form — no per-channel live GET
-    // (channels-form-from-bulk).
-    const all = await fetchJSON(this.cd('/channels'));
-    for (const c of this.channels) {
-      const fresh = all.channels?.[String(c.index)];
-      if (fresh) c.data = fresh;
-    }
+    // mesh-gw's channel cache is stale until reconnect even after a completed
+    // BLE write. Keep the accepted full replacement locally instead of
+    // immediately overwriting it with the pre-write cached value.
+    ch.data = { ...(ch.data || {}), ...body };
     const formData = { ...(ch.data?.settings || {}), role: ch.data?.role };
     const formEl = document.getElementById('ch_' + ch.index);
-    if (formEl && !formEl.dataset.dirty) {
+    if (formEl) {
+      delete formEl.dataset.dirty;
       formEl.innerHTML = '';
       formEl.dataset.formRoot = '1';
       formEl.appendChild(buildForm(this.channelSchema.fields, formData, []));

@@ -2,7 +2,7 @@
         <div x-show="tab==='radar'" data-theme="business"
              class="flex flex-col flex-1 min-h-0 overflow-hidden"
              style="box-shadow:0 0 0 1px rgba(0,255,80,0.10),0 8px 40px rgba(0,0,0,0.6)">
-          <div class="flex flex-wrap gap-3 items-center shrink-0 px-4 py-2"
+          <div class="flex flex-wrap gap-2 sm:gap-3 items-center shrink-0 px-2 sm:px-4 py-2"
                style="background:#0a1a0a;border-bottom:1px solid rgba(0,255,80,0.12)">
 
             <!-- Status badges -->
@@ -132,8 +132,8 @@
             </details>
 
             <!-- Rotator strip -->
-            <div class="flex items-center gap-3 ml-auto pl-3"
-                 style="border-left:1px solid rgba(0,255,80,0.15)">
+            <div class="flex w-full sm:w-auto items-center justify-between sm:justify-start gap-2 sm:gap-3 sm:ml-auto sm:pl-3 pt-1 sm:pt-0 border-t sm:border-t-0 sm:border-l"
+                 style="border-color:rgba(0,255,80,0.15)">
               <!-- Rotator connection dot -->
               <span class="inline-block w-1.5 h-1.5 rounded-full"
                     :class="rotatorConnected ? 'bg-success animate-pulse' : 'bg-error opacity-60'"
@@ -158,10 +158,10 @@
               </div>
 
               <!-- Scan/ACTV config badge -->
-              <span class="text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode && rotatorMode !== 1"
+              <span class="hidden sm:inline text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode && rotatorMode !== 1"
                     style="color:rgba(0,255,80,0.30)"
                     x-text="scanStep + '°/' + scanDwell + 's'"></span>
-              <span class="text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode && rotatorMode === 1"
+              <span class="hidden sm:inline text-xs font-mono tabular-nums" x-show="rotatorConnected && !scanMode && rotatorMode === 1"
                     style="color:rgba(0,255,80,0.30)"
                     x-text="actvDwell + 's/node'"></span>
 
@@ -184,7 +184,7 @@
                     style="color:rgba(255,200,40,0.85)">moving</span>
 
               <!-- Manual point input (PASV only) -->
-              <div class="flex items-center gap-1.5" x-show="rotatorConnected && rotatorMode === 0 && !scanMode">
+              <div class="hidden sm:flex items-center gap-1.5" x-show="rotatorConnected && rotatorMode === 0 && !scanMode">
                 <input type="number" min="0" max="360" step="1" placeholder="0–360"
                        class="input input-xs w-20 font-mono text-center"
                        style="background:rgba(80,200,255,0.07);border:1px solid rgba(80,200,255,0.25);color:rgba(80,200,255,0.9);border-radius:0.25rem"
@@ -399,4 +399,3 @@
             </template>
           </div>
         </div>
-

@@ -1,7 +1,7 @@
 ---
 module: app-node-status
 source: public/app-node-status.js
-source_hash: ceeb78ee01255edc5c189b8eaf08cba903e095a42d52940685d1cfd062b3bb86
+source_hash: d2e1088553d9b199a3fd2871e3e39e64219b62fd10619510ada74af4bdf3aefc
 updated: 2026-07-18
 ---
 
@@ -87,7 +87,6 @@ than scrolled and the lower sections become unreachable (observed 2026-07-18:
 
 - `/node/!hexid` deep link loads the node directly and survives reload
 - Reconnect re-requests (`app-ws.js` onopen) — a deep link may beat the socket
-- A 260 node shows alarm_config/diagnostics; a plain node shows neither
 - Unknown node → "No record of this node", no throw
 - Zero console errors across several live update cycles
 - Scroll to bottom reaches the last section
@@ -97,8 +96,6 @@ than scrolled and the lower sections become unreachable (observed 2026-07-18:
 - Building the payload — `src/node-status.js`
 - Favourites (a pinned node's own left-menu item) — separate task; the page is
   reachable from the modal for every node regardless
-- The 260 config EDITOR — read-only value_grid here; the editor is OpManager +
-  a new MeshRunner
 
 ## Chart lifecycle (revised — backlog #7)
 

@@ -1,7 +1,7 @@
 ---
 module: tab-radar
 source: public/partials/tab-radar.html
-source_hash: 923de1d807554b54a80a260789a0cf234774673b068bbee1eeae99fb74dc47b5
+source_hash: 631e56ba26c28d639fa5b417b5e9cd1a7eb0153f4410a8526470d9fde876bee6
 updated: 2026-07-08
 ---
 
@@ -13,6 +13,13 @@ Radar page partial: radar scope canvas, RADAR NODES / SCAN CONTACTS list card
 (top-left), rotator sidebar, active-node card. Presentation only — all data
 comes from mixins (app-radar.js, app-nodes.js, app-ws.js); the partial makes
 zero filtering or business decisions.
+
+## Mobile containment (2026-07-23)
+
+At phone width the rotator controls wrap to their own full-width toolbar row;
+secondary dwell/config text and the manual Point control hide below `sm`.
+PASV/ACTV/SCAN and current bearing remain visible, with no clipped controls or
+document overflow.
 
 ## Responsibilities
 

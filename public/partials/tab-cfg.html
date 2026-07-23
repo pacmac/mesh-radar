@@ -1,11 +1,11 @@
         <!-- ===================== CONFIG ===================== -->
         <div x-show="tab==='cfg'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
-          <div class="tabs tabs-bordered w-fit shrink-0">
-            <a class="tab" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
-            <a class="tab" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
-            <a class="tab" :class="cfgTab==='modes'   && 'tab-active font-semibold'" @click="switchCfgTab('modes')">Modes</a>
-            <a class="tab" :class="cfgTab==='radar'   && 'tab-active font-semibold'" @click="switchCfgTab('radar')">Radar</a>
-            <a class="tab" :class="cfgTab==='alerts'  && 'tab-active font-semibold'" @click="switchCfgTab('alerts')">Alerts</a>
+          <div class="tabs tabs-bordered grid grid-cols-5 w-full sm:w-fit shrink-0">
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='modes'   && 'tab-active font-semibold'" @click="switchCfgTab('modes')">Modes</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='radar'   && 'tab-active font-semibold'" @click="switchCfgTab('radar')">Radar</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='alerts'  && 'tab-active font-semibold'" @click="switchCfgTab('alerts')">Alerts</a>
           </div>
 
           <div x-show="cfgTab==='bridge'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
@@ -552,4 +552,3 @@
           </div>
 
         </div>
-

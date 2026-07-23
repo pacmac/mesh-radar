@@ -95,8 +95,6 @@ No code residue.
   timestamps.** Pre-existing, predates the status page (the `bridge-events.js`
   writer dates to `77dea64`), and rebuilding that ingestion **is** step 3's
   deliverable. Fixing it here would be step 3 under another name.
-- **`ws-relay.js:466` PRIVATE_APP string-match collision risk.** Real, but it is
-  portnum-260 routing — step 3.
 - **`public/app-helpers.js:78` `DETECTION_SENSOR_APP` label.** Not a leftover;
   it is a generic portnum display label that step 3 will use.
 

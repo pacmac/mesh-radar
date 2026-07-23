@@ -46,11 +46,7 @@ db.exec(`
     air_util_tx     REAL,
     uptime_seconds  INTEGER,
     device          TEXT,
-    updated_at      INTEGER NOT NULL DEFAULT (unixepoch()),
-    -- CORE SSOT: our own "is this ours / what kind". Keyed on the role our firmware
-    -- DECLARES (user.role=200 PAC_ALARM, arriving as the string "200.0"), plus a
-    -- legacy SENSOR fallback. Mirrors client-role.js clientRole.
-    client_role     TEXT GENERATED ALWAYS AS (CASE WHEN CAST(role AS REAL) = 200.0 OR role = 'SENSOR' THEN 'PAC_ALARM' END) VIRTUAL
+    updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
   CREATE TABLE IF NOT EXISTS events (
@@ -140,20 +136,13 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_dmh_dedup  ON device_metrics_history(num, packet_id) WHERE packet_id IS NOT NULL;
   CREATE INDEX        IF NOT EXISTS idx_dmh_num_ts ON device_metrics_history(num, ts DESC);
 
-  -- DETECTION_SENSOR_APP. Payload is a STRING (meshtastic registry gives this
-  -- portnum no protobufFactory), so raw is always kept: our nodes send a JSON
-  -- envelope, a stock detection module sends plain text. Both are stored.
+  -- Standard DETECTION_SENSOR_APP text. The payload is deliberately kept raw;
+  -- application-specific interpretation belongs outside node-dash.
   CREATE TABLE IF NOT EXISTS detection_events (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     ts        INTEGER NOT NULL,
     num       INTEGER NOT NULL,
     packet_id INTEGER,
-    type      TEXT,
-    kind      TEXT,
-    val       REAL,
-    count_num INTEGER,
-    msg       TEXT,
-    more      INTEGER,
     raw       TEXT NOT NULL
   );
 
@@ -177,17 +166,6 @@ db.exec(`
   -- hops is recorded so the direct-only rule stays auditable rather than merely
   -- asserted: any row with hops != 0 is a bug, and can be found.
   CREATE INDEX        IF NOT EXISTS idx_sig_num_ts ON signal_history(num, ts DESC);
-
-  -- Latest-only cache for private-app state (portnum 260 config/debug/calc).
-  -- Keyed by portnum as well as type so this is not a 260-specific table.
-  CREATE TABLE IF NOT EXISTS node_app_state (
-    num     INTEGER NOT NULL,
-    portnum INTEGER NOT NULL,
-    type    TEXT    NOT NULL,
-    ts      INTEGER NOT NULL,
-    payload TEXT    NOT NULL,
-    PRIMARY KEY (num, portnum, type)
-  );
 
   CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup  ON messages(packet_id, device) WHERE packet_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_messages_ts     ON messages(ts DESC);
@@ -259,27 +237,6 @@ db.exec(`
   const niCols = db.prepare(`PRAGMA table_info(nodeinfo)`).all().map(r => r.name);
   if (!niCols.includes('favourite')) {
     db.exec(`ALTER TABLE nodeinfo ADD COLUMN favourite INTEGER NOT NULL DEFAULT 0`);
-  }
-}
-// client_role: CORE SSOT — node-dash's own "is this ours / what kind", generated
-// from the MT role (interim: SENSOR marks our custom nodes). Auto-syncs with role,
-// no ingest change, queryable like role. Mirrors client-role.js clientRole.
-// GUARD USES table_xinfo, NOT table_info: PRAGMA table_info OMITS generated
-// columns, so a table_info guard never sees the column it added and re-ALTERs on
-// every boot -> "duplicate column" crash loop. table_xinfo lists generated columns.
-{
-  // Mirrors client-role.js clientRole(): the DECLARED PAC role (user.role=200,
-  // which arrives as the numeric string "200.0"), plus the legacy SENSOR fallback.
-  const EXPR = `CASE WHEN CAST(role AS REAL) = 200.0 OR role = 'SENSOR' THEN 'PAC_ALARM' END`;
-  const ddl  = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='nodes'`).get()?.sql || '';
-  const has  = db.prepare(`PRAGMA table_xinfo(nodes)`).all().some(r => r.name === 'client_role');
-  // A generated column's expression cannot be altered in place. 'PAC_ALARM' in the
-  // stored DDL is the discriminator: present = current, absent = the old
-  // SENSOR-only expression that must be rebuilt.
-  const stale = has && !ddl.includes('PAC_ALARM');
-  if (stale) db.exec(`ALTER TABLE nodes DROP COLUMN client_role`);
-  if (!has || stale) {
-    db.exec(`ALTER TABLE nodes ADD COLUMN client_role TEXT GENERATED ALWAYS AS (${EXPR}) VIRTUAL`);
   }
 }
 const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);
@@ -623,10 +580,8 @@ export const stmts = {
   `),
 
   insertDetectionEvent: db.prepare(`
-    INSERT OR IGNORE INTO detection_events
-      (ts, num, packet_id, type, kind, val, count_num, msg, more, raw)
-    VALUES
-      (@ts, @num, @packet_id, @type, @kind, @val, @count_num, @msg, @more, @raw)
+    INSERT OR IGNORE INTO detection_events (ts, num, packet_id, raw)
+    VALUES (@ts, @num, @packet_id, @raw)
   `),
 
   // node_status RPC reads (NODE_STATUS_RPC_SPEC). Read-only; ASC by ts so the
@@ -638,13 +593,9 @@ export const stmts = {
   `),
 
   queryDetectionEvents: db.prepare(`
-    SELECT ts, type, kind, val, count_num, msg, raw
+    SELECT ts, raw
     FROM detection_events WHERE num = ? AND ts >= ?
     ORDER BY ts DESC LIMIT ?
-  `),
-
-  queryNodeAppState: db.prepare(`
-    SELECT portnum, type, ts, payload FROM node_app_state WHERE num = ?
   `),
 
   getNodeByNum: db.prepare(`SELECT * FROM nodes WHERE num = ? LIMIT 1`),
@@ -676,12 +627,6 @@ export const stmts = {
     SELECT ts, from_num, packet_id, rssi, snr, hops FROM messages
     WHERE (rssi IS NOT NULL OR snr IS NOT NULL) AND from_num IS NOT NULL
       AND hops = 0
-  `),
-
-  upsertNodeAppState: db.prepare(`
-    INSERT INTO node_app_state (num, portnum, type, ts, payload)
-    VALUES (@num, @portnum, @type, @ts, @payload)
-    ON CONFLICT(num, portnum, type) DO UPDATE SET ts = @ts, payload = @payload
   `),
 
   queryEnvHistory: db.prepare(`
@@ -773,10 +718,6 @@ export function insertSignalHistory(entry) {
 
 export function insertDetectionEvent(entry) {
   stmts.insertDetectionEvent.run(entry);
-}
-
-export function upsertNodeAppState(entry) {
-  stmts.upsertNodeAppState.run(entry);
 }
 
 // packet_id defaults to null so callers that have no packet id (the

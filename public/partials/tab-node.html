@@ -122,24 +122,6 @@
                   <span x-text="section.observed_text"></span> · <span x-text="section.observed_ago"></span>
                 </span>
               </template>
-              <!-- Edit / Save — shown only when the SERVER marks the section
-                   editable. The browser never decides what is settable. -->
-              <template x-if="section.editable && nodeEditSection !== section.id">
-                <button class="btn btn-xs btn-outline btn-neutral"
-                        @click="startEditSection(section.id)">Edit</button>
-              </template>
-              <template x-if="section.editable && nodeEditSection === section.id">
-                <div class="join">
-                  <button class="btn btn-xs join-item btn-primary"
-                          :class="nodeEditBusy && 'loading'"
-                          :disabled="nodeEditBusy"
-                          @click="saveEditSection(section)">Save changes</button>
-                  <button class="btn btn-xs join-item btn-ghost"
-                          :disabled="nodeEditBusy"
-                          @click="cancelEditSection()">Cancel</button>
-                </div>
-              </template>
-
               <!-- Window selector, matching the perf charts. User input only:
                    the server slices history and computes the axis labels. -->
               <template x-if="section.kind === 'series'">
@@ -162,26 +144,8 @@
                    style="grid-template-columns:repeat(auto-fill,minmax(15rem,22rem))">
                 <template x-for="f in section.fields" :key="f.label">
                   <div class="flex items-baseline justify-between gap-3 border-b border-base-200 py-1">
-                    <span class="text-xs text-base-content/50"
-                          :title="f.edit ? f.edit.name : ''" x-text="f.label"></span>
-
-                    <!-- Editing: only fields the server marked editable become
-                         inputs. Range/type come from the server too. -->
-                    <template x-if="nodeEditSection === section.id && f.edit && f.edit.type !== 'bool'">
-                      <input type="number" class="input input-xs input-bordered w-28 font-mono text-right"
-                             :min="f.edit.min" :max="f.edit.max"
-                             :placeholder="f.raw"
-                             :value="nodeEditDraft[f.edit.path] ?? f.raw"
-                             @input="nodeEditDraft[f.edit.path] = $event.target.value">
-                    </template>
-                    <template x-if="nodeEditSection === section.id && f.edit && f.edit.type === 'bool'">
-                      <input type="checkbox" class="toggle toggle-xs"
-                             :checked="Number(nodeEditDraft[f.edit.path] ?? f.raw) === 1"
-                             @change="nodeEditDraft[f.edit.path] = $event.target.checked ? 1 : 0">
-                    </template>
-                    <template x-if="!(nodeEditSection === section.id && f.edit)">
-                      <span class="text-sm font-mono tabular-nums" x-text="f.text"></span>
-                    </template>
+                    <span class="text-xs text-base-content/50" x-text="f.label"></span>
+                    <span class="text-sm font-mono tabular-nums" x-text="f.text"></span>
                   </div>
                 </template>
               </div>

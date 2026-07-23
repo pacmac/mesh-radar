@@ -1,7 +1,7 @@
 ---
 module: node-status
 source: src/node-status.js
-source_hash: aaae13de613de1f0b6a094c633159781384ba93a92fb4c326cc9006fbb0729e9
+source_hash: 7f9c162ab58ae691823d3b8425c72191d46ffd4fdb3876a0997b9d98e0fa358f
 updated: 2026-07-18
 ---
 
@@ -15,7 +15,7 @@ designated subset.
 
 ## Responsibilities
 
-- Query the node's identity, history and cached private-app state
+- Query the node's identity and standard history
 - Decide **which sections exist** for this node (presence follows real data)
 - Decide **what order** sections appear in
 - Format every displayed value via `format.js` so the browser formats nothing
@@ -37,8 +37,7 @@ buildNodeStatus(num)
 ## The section-kinds contract
 
 The browser knows a small fixed vocabulary of section **kinds** and nothing
-else. It does not know which port a datum came from, what portnum 260 is, or
-what a detection is.
+else. It does not know which port a datum came from or how data was ingested.
 
 | kind | shape |
 |---|---|
@@ -49,9 +48,6 @@ what a detection is.
 Adding a port, a `type` or a field later is a change to **this file alone** —
 the browser is never touched again.
 
-`config_form` is not built here. The 260 config panel ships read-only as a
-`value_grid`; the editor (OpManager + a new `MeshRunner`) is separate work.
-
 ## Sections emitted (source-grouped, fixed order)
 
 | id | kind | source | present when |
@@ -59,15 +55,9 @@ the browser is never touched again.
 | `device_vitals` | `series` | `device_metrics_history` | ≥1 row in window |
 | `environment` | `series` | `environment_history` | ≥1 row in window |
 | `detections` | `event_log` | `detection_events` | ≥1 row in window |
-| `alarm_config` | `value_grid` | `node_app_state` 260 `config` | row exists |
-| `diagnostics` | `value_grid` | `node_app_state` 260 `debug` | row exists |
-| `power` | `value_grid` | `node_app_state` 260 `calc` | row exists |
 | `position` | `value_grid` | `nodeinfo`/`nodes` lat+lon | coords present |
 
-Grouping is **source-based** — honest about provenance, matches the SSOT table
-in NODE_STATUS_SPEC. Question-based grouping (e.g. overlaying `alarm`/`cleared`
-events on the environment chart) is deliberately not done yet; because the
-browser is a dumb renderer this is a backend-only decision, cheap to revise.
+Grouping is source-based and follows `NODE_STATUS_SPEC`.
 
 ## Invariants
 
@@ -81,19 +71,13 @@ browser is a dumb renderer this is a backend-only decision, cheap to revise.
   array (e.g. the device's `pts`) must not render as a blank row.
 - Series are downsampled to ≤200 points, preserving first and last so the
   visible time axis spans the true window.
-- 260 payload keys are flattened with the **device's own key names**
-  (`det.n`, `alm.ovr`) — renaming them would be node-dash editorialising device
-  data (iron rule 2).
-- Nothing here is sourced from a command reply (`@ping`/`@status`/`@env`) —
-  iron rule 3.
+- Nothing here is sourced from a text command reply.
 - Header shows values, never verdicts: no health pill, no "battery low".
 
 ## Test notes
 
-- Node with 260 traffic → gains `alarm_config`/`diagnostics`; a plain node does not
 - Env-only sensor node → `environment` + `position`, no `device_vitals`
 - Unknown num → `{found:false, sections:[]}`, no throw
-- 260 config flattens nested keys to `det.n`, `alm.ovr`, …
 - Empty array value → field omitted, not a blank row
 
 ## Out of scope

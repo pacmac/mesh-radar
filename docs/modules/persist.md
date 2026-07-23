@@ -1,7 +1,7 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: e48735fcf922c3c8ae40fbc46e11cd5f2ef9eb314e7a74cf541f6d7ae1034ad1
+source_hash: ab11662adb006b857b807f7f79db8ffa7b37eb14f412cb4946a8509313edbb5e
 updated: 2026-07-19
 ---
 
@@ -74,7 +74,6 @@ _N/A_ — persist.js does not emit events.
 | `user` | `stmts.upsertNode` + `_upsertCache` — AppRouter-decoded NODEINFO_APP |
 | `position` | `stmts.upsertNode` — AppRouter-decoded POSITION_APP |
 | `detectionsensor` | `handleDetectionEvent(event, ts)` — AppRouter-decoded DETECTION_SENSOR_APP |
-| `private_app` **and `portnum === 260`** | `handlePrivateAppState(event, ts)` — PAC_ALARM_APP latest-only cache |
 | all others | silently ignored |
 
 ### `detectionsensor` — DETECTION_SENSOR_APP
@@ -84,29 +83,8 @@ A **standard registered portnum**, so it arrives as a typed event, not via
 `__init__.py`), and the entry has **no `protobufFactory`**, so the payload is a
 **string**.
 
-`raw` is stored verbatim in every case. `JSON.parse` is attempted; on failure —
-or on success without a string `type` — the row is written with all typed
-columns null. **It never throws.** A stock Meshtastic detection module sends
-plain text on this port by design, so one such node anywhere in the mesh must not
-break ingestion for every other node. Unknown `type` values are stored as-is
-rather than filtered (accept what the device sends).
-
-### `private_app` portnum 260 — PAC_ALARM_APP
-
-Routed by **numeric** `event.portnum === 260`, then by the payload's `type`
-(`config`/`debug`/`calc`), into `node_app_state` keyed `(num, portnum, type)`.
-The payload is stored **verbatim** — no interpretation here; formatting belongs
-to the API layer (NODE_STATUS_SPEC iron rule 1).
-
-The numeric check matters: `'PRIVATE_APP'` is a portnum-*range* label, not an app
-identity — Meshtastic disambiguates private apps by portnum, not payload
-(mt-transport API.md §7). Portnum 256 (tilt) is handled in `ws-relay.js` and is
-never reached from here. Non-JSON payloads, or payloads without a string `type`,
-are ignored silently: 260 is additive and node-dash must not assume it is the
-only user.
-
-No packet-id dedup — `private_app` does not carry `packet_id`. The latest-only
-upsert is idempotent, so repeat deliveries from N radios are harmless.
+`raw` is stored verbatim without application-specific parsing. It never throws:
+one detection node must not break ingestion for every other node.
 
 ### Packet portnum routing (inside `handlePacket`)
 

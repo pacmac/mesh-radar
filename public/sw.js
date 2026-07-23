@@ -2,7 +2,7 @@
 // restarts or is temporarily unreachable.
 // API calls go cross-origin (MESH_API on port 8001) so the SW never
 // intercepts them — no exclusion list needed.
-const CACHE = 'mesh-gw-dash-v3';
+const CACHE = 'mesh-gw-dash-v4';
 const SHELL = ['/', '/app.js', '/style.css', '/config.js'];
 
 self.addEventListener('install', e => {

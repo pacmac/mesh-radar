@@ -1,177 +1,558 @@
 """
-test_playwright.py — Browser smoke test via Playwright.
+Structured node-dash browser acceptance audit.
 
-Tests the full end-to-end save pipeline:
-  click button → Alpine handler → submitOp → POST /ops → WS config_op → toast
-
-Prerequisites:
-  pip install playwright && playwright install chromium
-
-Run: python3 tests/test_playwright.py
+Passive by default. Set PLAYWRIGHT_LIVE_CHANNEL=3 (or 4) to enable the
+guarded OMNI channel write/read-back/restore test.
 """
+
+from __future__ import annotations
+
 import asyncio
 import json
 import os
+import re
 import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import quote, urlparse
 
-from playwright.async_api import async_playwright, Page, expect
+from playwright.async_api import BrowserContext, Page, async_playwright
 
-BASE = os.environ.get("NODE_DASH_URL", "http://localhost:8000")
+
+BASE = os.environ.get("NODE_DASH_URL", "http://localhost:8000").rstrip("/")
 HEADLESS = os.environ.get("PLAYWRIGHT_HEADLESS", "1") != "0"
-TIMEOUT_MS = int(os.environ.get("PLAYWRIGHT_TIMEOUT", "15000"))
+TIMEOUT = int(os.environ.get("PLAYWRIGHT_TIMEOUT", "15000"))
+ARTIFACT_DIR = Path(os.environ.get("PLAYWRIGHT_ARTIFACT_DIR", ".playwright-mcp/audit"))
+LIVE_CHANNEL = os.environ.get("PLAYWRIGHT_LIVE_CHANNEL", "").strip()
+OMNI_NODE_ID = os.environ.get("PLAYWRIGHT_OMNI_NODE_ID", "!2687afb1")
+OMNI_MAC = os.environ.get("PLAYWRIGHT_OMNI_MAC", "E9:B0:3F:17:27:91").upper()
+VISUAL = os.environ.get("PLAYWRIGHT_VISUAL", "1") != "0"
 
-TESTS_PASSED = 0
-TESTS_FAILED = 0
+VIEWPORTS = {
+    "desktop": {"width": 1440, "height": 900},
+    "iphone": {"width": 390, "height": 844},
+}
 
 
-async def wait_for_op_success(page: Page, timeout_ms: int = TIMEOUT_MS) -> dict | None:
-    """Wait for a config_op WS event with state='success'. Returns the event or None."""
-    result = {}
+@dataclass(frozen=True)
+class RouteCase:
+    path: str
+    tab: str | None
+    tokens: tuple[str, ...]
+    name: str
 
-    async def on_websocket(ws):
-        async def on_message(msg):
+
+ROUTES = (
+    RouteCase("/", "overview", ("Live Event Feed",), "overview-root"),
+    RouteCase("/overview", "overview", ("Live Event Feed",), "overview"),
+    RouteCase("/radar", "radar", ("PASV", "ACTV", "SCAN"), "radar"),
+    RouteCase("/nodes", "nodes", ("NodeDB",), "nodes"),
+    RouteCase("/messages", "messages", ("Send Text", "Message Feed"), "messages"),
+    RouteCase("/config", "cfg", ("Bridge", "Rotator", "Modes", "Radar", "Alerts"), "config"),
+    RouteCase("/device-config", "devices", ("Connected radios",), "device-config-legacy"),
+    RouteCase("/devices", "devices", ("Connected radios",), "devices"),
+    RouteCase("/range", "range", ("Range Test Log",), "range"),
+    RouteCase("/performance", "perf", ("Performance", "Traceroute History"), "performance"),
+    RouteCase(f"/node/{OMNI_NODE_ID}", "node", (), "node-focus"),
+    RouteCase("/debug", None, ("mt-radar debug", "mesh-gw", "node-dash"), "debug"),
+)
+
+ALLOWED_HOST = (urlparse(BASE).hostname or "").lower()
+BLOCKED_REMOTE = re.compile(r"(^|\.)((jsdelivr|tailwindcss|googleapis|gstatic)\.com)$", re.I)
+
+
+class Results:
+    def __init__(self) -> None:
+        self.passed = 0
+        self.failed = 0
+        self.failures: list[str] = []
+
+    def check(self, ok: bool, label: str, detail: str = "") -> bool:
+        if ok:
+            self.passed += 1
+            print(f"  PASS  {label}")
+            return True
+        self.failed += 1
+        msg = f"{label}: {detail}" if detail else label
+        self.failures.append(msg)
+        print(f"  FAIL  {msg}")
+        return False
+
+
+RESULTS = Results()
+
+
+def app_state_js() -> str:
+    return """() => {
+      const root = document.querySelector('[x-data="dashboard()"]');
+      const d = root?._x_dataStack?.[0];
+      return {
+        tab: d?.tab ?? null,
+        cfgTab: d?.cfgTab ?? null,
+        wsConnected: d?.wsConnected ?? false,
+        bridgeConnected: d?.bridgeConnected ?? false,
+        devices: (d?.availableDevices || []).map(x => ({
+          addr: x.addr, node_id: x.node_id, label: x.cfg?.label,
+          ble_state: x.ble_state
+        })),
+        nodeCount: d?.nodeCount ?? null,
+        nodeStatus: d?.nodeStatus ?? null
+      };
+    }"""
+
+
+async def settle_app(page: Page, debug: bool = False) -> dict:
+    if debug:
+        await page.wait_for_selector("#grid", timeout=TIMEOUT)
+        await page.wait_for_timeout(500)
+        return {}
+    await page.wait_for_function(
+        """() => {
+          const d=document.querySelector('[x-data="dashboard()"]')?._x_dataStack?.[0];
+          return !!d && d.wsConnected === true && d.availableDevices?.length > 0;
+        }""",
+        timeout=TIMEOUT,
+    )
+    await page.wait_for_timeout(350)
+    return await page.evaluate(app_state_js())
+
+
+async def geometry(page: Page, debug: bool = False) -> dict:
+    return await page.evaluate(
+        """(debug) => {
+          const shown = e => {
+            const s=getComputedStyle(e), r=e.getBoundingClientRect();
+            return s.display !== 'none' && s.visibility !== 'hidden' &&
+              r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
+          };
+          const bad = [...document.querySelectorAll('button,a,input,select,textarea,.badge')]
+            .filter(e => shown(e))
+            .filter(e => !e.closest('.drawer-side'))
+            .filter(e => !e.closest('dialog:not([open])'))
+            .filter(e => !e.closest('details:not([open]) .dropdown-content'))
+            .map(e => ({e, r:e.getBoundingClientRect()}))
+            .filter(x => x.r.left < -1 || x.r.right > innerWidth + 1)
+            .map(x => (x.e.innerText || x.e.getAttribute('aria-label') ||
+              x.e.getAttribute('title') || x.e.tagName).trim().slice(0,60));
+          const main = debug ? document.documentElement :
+            document.querySelector('.drawer-content > .flex-1');
+          const active = debug ? document.querySelector('#grid') :
+            document.querySelector('.drawer-content > .flex-1 > div');
+          return {
+            viewport: [innerWidth, innerHeight],
+            documentOverflowX: document.documentElement.scrollWidth > innerWidth + 1,
+            mainOverflowX: !!main && main.scrollWidth > main.clientWidth + 1,
+            blank: !active || active.getBoundingClientRect().height < 2 ||
+              (!debug && !active.innerText.trim() && !active.querySelector('canvas,svg')),
+            clipped: bad
+          };
+        }""",
+        debug,
+    )
+
+
+def install_observers(page: Page, errors: list[str], remote: set[str]) -> None:
+    page.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"))
+    page.on(
+        "console",
+        lambda msg: errors.append(f"console {msg.type}: {msg.text}")
+        if msg.type == "error"
+        else None,
+    )
+
+    def on_request(request) -> None:
+        host = (urlparse(request.url).hostname or "").lower()
+        if host and host != ALLOWED_HOST and BLOCKED_REMOTE.search(host):
+            remote.add(request.url)
+
+    page.on("request", on_request)
+
+
+async def screenshot(page: Page, viewport: str, case: str, theme: str) -> None:
+    if not VISUAL:
+        return
+    target = ARTIFACT_DIR / viewport / case
+    target.mkdir(parents=True, exist_ok=True)
+    await page.evaluate(
+        "(theme) => document.documentElement.setAttribute('data-theme', theme)", theme
+    )
+    await page.wait_for_timeout(100)
+    await page.screenshot(path=str(target / f"{theme}.png"), full_page=False)
+
+
+async def audit_routes(browser) -> None:
+    print("\nROUTES / DATA / GEOMETRY")
+    for viewport_name, viewport in VIEWPORTS.items():
+        context = await browser.new_context(viewport=viewport)
+        page = await context.new_page()
+        page.set_default_timeout(TIMEOUT)
+        errors: list[str] = []
+        remote: set[str] = set()
+        install_observers(page, errors, remote)
+
+        for case in ROUTES:
+            errors.clear()
+            before_remote = set(remote)
+            response = None
             try:
-                ev = json.loads(msg)
-                if ev.get("type") == "config_op" and ev.get("state") == "success":
-                    result["ev"] = ev
-            except Exception:
-                pass
-        ws.on("framereceived", lambda f: asyncio.ensure_future(on_message(f.payload)) if f.is_text else None)
+                response = await page.goto(BASE + case.path, wait_until="domcontentloaded")
+                state = await settle_app(page, case.tab is None)
+                body = await page.locator("body").inner_text()
+                geo = await geometry(page, case.tab is None)
+                prefix = f"{viewport_name}/{case.name}"
+                RESULTS.check(
+                    response is not None and response.status == 200,
+                    f"{prefix} HTTP 200",
+                    f"HTTP {response.status if response else 'none'}",
+                )
+                if case.tab is not None:
+                    RESULTS.check(
+                        state.get("tab") == case.tab,
+                        f"{prefix} tab",
+                        f"expected {case.tab}, got {state.get('tab')}",
+                    )
+                    RESULTS.check(state.get("wsConnected"), f"{prefix} WebSocket live")
+                    RESULTS.check(
+                        len(state.get("devices", [])) >= 1,
+                        f"{prefix} device_list data",
+                    )
+                for token in case.tokens:
+                    RESULTS.check(
+                        token.lower() in body.lower(),
+                        f"{prefix} surface {token}",
+                    )
+                RESULTS.check(not geo["blank"], f"{prefix} non-blank main")
+                RESULTS.check(
+                    not geo["documentOverflowX"] and not geo["mainOverflowX"],
+                    f"{prefix} horizontal containment",
+                    json.dumps(geo),
+                )
+                RESULTS.check(
+                    not geo["clipped"],
+                    f"{prefix} controls in viewport",
+                    ", ".join(geo["clipped"]),
+                )
+                RESULTS.check(not errors, f"{prefix} console/page errors", " | ".join(errors))
+                RESULTS.check(
+                    remote == before_remote,
+                    f"{prefix} same-origin runtime assets",
+                    ", ".join(sorted(remote - before_remote)),
+                )
+                await screenshot(page, viewport_name, case.name, "corporate")
+                await screenshot(page, viewport_name, case.name, "business")
+            except Exception as exc:
+                RESULTS.check(False, f"{viewport_name}/{case.name} completed", str(exc))
+                target = ARTIFACT_DIR / viewport_name / case.name
+                target.mkdir(parents=True, exist_ok=True)
+                try:
+                    await page.screenshot(path=str(target / "failure.png"), full_page=False)
+                except Exception:
+                    pass
+        await context.close()
 
-    page.on("websocket", on_websocket)
 
-    deadline_ms = asyncio.get_event_loop().time() * 1000 + timeout_ms
-    while asyncio.get_event_loop().time() * 1000 < deadline_ms:
-        if "ev" in result:
-            return result["ev"]
-        await asyncio.sleep(0.2)
-    return None
+async def audit_invalid_persisted_tab(browser) -> None:
+    print("\nPERSISTED NAVIGATION MIGRATION")
+    context = await browser.new_context(viewport=VIEWPORTS["desktop"])
+    await context.add_init_script(
+        """localStorage.setItem('ui_prefs', JSON.stringify({
+          activeTab:'control', cfgTab:'radio'
+        }));"""
+    )
+    page = await context.new_page()
+    await page.goto(BASE + "/", wait_until="domcontentloaded")
+    state = await settle_app(page)
+    prefs = await page.evaluate("() => JSON.parse(localStorage.getItem('ui_prefs') || '{}')")
+    RESULTS.check(state.get("tab") == "overview", "removed control tab falls back to Overview")
+    RESULTS.check(prefs.get("activeTab") == "overview", "invalid activeTab is replaced")
+
+    await page.goto(BASE + "/config", wait_until="domcontentloaded")
+    state = await settle_app(page)
+    RESULTS.check(state.get("cfgTab") == "bridge", "removed Radio config subtab maps to Bridge")
+    await context.close()
 
 
-async def assert_toast(page: Page, label: str):
-    """Assert a success toast appears within TIMEOUT_MS."""
-    global TESTS_PASSED, TESTS_FAILED
-    toast = page.locator("#op-toast-container .alert-success")
+async def audit_safe_interactions(browser) -> None:
+    print("\nSAFE INTERACTIONS")
+    context = await browser.new_context(viewport=VIEWPORTS["desktop"])
+    page = await context.new_page()
+    page.set_default_timeout(TIMEOUT)
+
+    await page.goto(BASE + "/config", wait_until="domcontentloaded")
+    await settle_app(page)
+    for label in ("Bridge", "Rotator", "Modes", "Radar", "Alerts"):
+        tab = page.locator("a.tab", has_text=label).first
+        await tab.click()
+        await page.wait_for_timeout(250)
+        RESULTS.check(await tab.is_visible(), f"Config subtab {label} opens")
+    RESULTS.check(
+        await page.locator("a.tab", has_text="Radio").count() == 0,
+        "Config has no dead Radio subtab",
+    )
+
+    await page.goto(BASE + "/devices", wait_until="domcontentloaded")
+    state = await settle_app(page)
+    omni = next((d for d in state["devices"] if d.get("label") == "OMNI"), None)
+    RESULTS.check(omni is not None, "OMNI device is present")
+    if omni:
+        strip = page.locator('div[role="button"]', has_text="OMNI").first
+        await strip.click()
+        for label in ("Settings", "Radio", "Channels", "Owner", "Firmware", "Maintenance"):
+            button = page.get_by_role("button", name=label, exact=True).first
+            await button.click()
+            await page.wait_for_timeout(350)
+            RESULTS.check(await button.is_visible(), f"OMNI Devices tab {label} opens")
+        RESULTS.check(
+            await page.get_by_role("button", name="Wipe node DB", exact=True).is_visible(),
+            "dangerous maintenance controls are visible but untouched",
+        )
+
+    await page.goto(BASE + "/performance", wait_until="domcontentloaded")
+    await settle_app(page)
+    await page.get_by_role("button", name="Expert", exact=True).click()
+    RESULTS.check(
+        await page.get_by_text("EIRP", exact=True).is_visible(),
+        "Performance Expert display toggles",
+    )
+    await page.get_by_role("button", name="Simple", exact=True).click()
+    await context.close()
+
+
+def channel_at(payload: dict, index: int) -> dict:
+    channels = payload.get("channels", [])
+    if isinstance(channels, list):
+        return channels[index] if index < len(channels) else {}
+    return channels.get(str(index), {})
+
+
+async def api_json(page: Page, path: str) -> dict:
+    return await page.evaluate(
+        """async (path) => {
+          const r=await fetch(path);
+          if (!r.ok) throw new Error(`${path} HTTP ${r.status}`);
+          return await r.json();
+        }""",
+        path,
+    )
+
+
+async def api_request(page: Page, path: str, method: str, body: dict | None = None) -> dict:
+    return await page.evaluate(
+        """async ({path,method,body}) => {
+          const opts={method, headers:{}};
+          if (body !== null) {
+            opts.headers['Content-Type']='application/json';
+            opts.body=JSON.stringify(body);
+          }
+          const r=await fetch(path, opts);
+          const data=await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(`${path} HTTP ${r.status}: ${data.detail || data.error || ''}`);
+          return data;
+        }""",
+        {"path": path, "method": method, "body": body},
+    )
+
+
+async def wait_op(page: Page, op_id: str, timeout: float = 90.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = await api_json(page, f"/ops/{op_id}")
+        if result.get("state") in ("success", "error"):
+            return result
+        await asyncio.sleep(0.5)
+    raise TimeoutError(f"operation {op_id} did not finish")
+
+
+async def restore_channel(page: Page, index: int, original: dict) -> None:
+    values = {
+        "index": index,
+        "settings": dict(original.get("settings") or {}),
+        "role": original.get("role") or "DISABLED",
+    }
+    op_id = await page.evaluate(
+        """async ({target,index,values}) => {
+          const r=await fetch('/ops', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+              kind:'channel_config', target,
+              payload:{index, values}
+            })
+          });
+          if (!r.ok) throw new Error(`restore submit HTTP ${r.status}`);
+          return (await r.json()).op_id;
+        }""",
+        {"target": OMNI_NODE_ID, "index": index, "values": values},
+    )
+    outcome = await wait_op(page, op_id)
+    if outcome.get("state") != "success":
+        raise RuntimeError(outcome.get("error") or "channel restore failed")
+
+
+async def wait_omni_ready(page: Page) -> None:
+    await page.wait_for_function(
+        """({target,mac}) => {
+          const d=document.querySelector('[x-data="dashboard()"]')?._x_dataStack?.[0];
+          const dev=d?.availableDevices?.find(x =>
+            x.node_id === target && x.addr?.toUpperCase() === mac);
+          return dev?.ble_state === 'ready';
+        }""",
+        {"target": OMNI_NODE_ID, "mac": OMNI_MAC},
+        timeout=120_000,
+    )
+    await page.wait_for_timeout(1000)
+
+
+async def resync_omni(page: Page) -> None:
+    encoded = quote(OMNI_MAC, safe="")
+    await api_request(page, f"/devices/{encoded}", "DELETE")
+    await page.wait_for_timeout(500)
+    await api_request(
+        page, f"/ble_devices/{encoded}", "PATCH", {"auto_connect": True}
+    )
+    await wait_omni_ready(page)
+
+
+async def audit_live_channel(browser) -> None:
+    if not LIVE_CHANNEL:
+        print("\nLIVE CHANNEL: SKIP (set PLAYWRIGHT_LIVE_CHANNEL=3 or 4)")
+        return
+    print("\nLIVE CHANNEL")
+    if LIVE_CHANNEL not in ("3", "4"):
+        RESULTS.check(False, "live channel guard", "only channel 3 or 4 is allowed")
+        return
+    index = int(LIVE_CHANNEL)
+    context: BrowserContext = await browser.new_context(viewport=VIEWPORTS["desktop"])
+    page = await context.new_page()
+    page.set_default_timeout(90_000)
+    attempted = False
+    original: dict = {}
     try:
-        await expect(toast.first).to_be_visible(timeout=TIMEOUT_MS)
-        print(f"  ✓ {label}: success toast appeared")
-        TESTS_PASSED += 1
-    except Exception as e:
-        print(f"  ✗ {label}: no success toast — {e}")
-        TESTS_FAILED += 1
+        await page.goto(BASE + "/devices", wait_until="domcontentloaded")
+        state = await settle_app(page)
+        omni = next((d for d in state["devices"] if d.get("label") == "OMNI"), None)
+        yagi = next((d for d in state["devices"] if d.get("label") == "YAGI"), None)
+        guards = (
+            omni is not None
+            and omni.get("node_id") == OMNI_NODE_ID
+            and omni.get("ble_state") == "ready"
+            and (not OMNI_MAC or omni.get("addr", "").upper() == OMNI_MAC)
+            and (not yagi or yagi.get("node_id") != OMNI_NODE_ID)
+        )
+        if not RESULTS.check(guards, "OMNI identity/ready guard"):
+            return
+
+        payload = await api_json(page, f"/{OMNI_NODE_ID}/channels")
+        original = channel_at(payload, index)
+        unused = not (original.get("settings") or {}) and not original.get("role")
+        if not RESULTS.check(unused, f"OMNI channel {index} is unused"):
+            return
+
+        strip = page.locator('div[role="button"]', has_text="OMNI").first
+        await strip.click()
+        await page.get_by_role("button", name="Channels", exact=True).first.click()
+        collapse = page.locator(".collapse", has_text=f"Channel {index}").first
+        await collapse.locator('input[type="checkbox"]').first.check()
+        await page.wait_for_selector(f"#ch_{index} [data-field='name']")
+
+        audit_name = f"PW{int(time.time()) % 100000:05d}"[:8]
+        await page.locator(f"#ch_{index} [data-field='name']").fill(audit_name)
+        await page.locator(f"#ch_{index} [data-field='role']").select_option("SECONDARY")
+        save = collapse.get_by_role("button", name="Save", exact=True)
+        attempted = True
+        await save.click()
+        await page.wait_for_function(
+            """({index,target}) => {
+              const d=document.querySelector('[x-data="dashboard()"]')?._x_dataStack?.[0];
+              const op=d?.ops?.[`ch_${index}_${target}`];
+              return !!op && (op.ok === true || !!op.err);
+            }""",
+            {"index": index, "target": OMNI_NODE_ID},
+            timeout=90_000,
+        )
+        op_state = await page.evaluate(
+            """({index,target}) => {
+              const d=document.querySelector('[x-data="dashboard()"]')?._x_dataStack?.[0];
+              return d?.ops?.[`ch_${index}_${target}`] || null;
+            }""",
+            {"index": index, "target": OMNI_NODE_ID},
+        )
+        RESULTS.check(bool(op_state and op_state.get("ok")), "channel Save reaches success UI")
+
+        local = await page.evaluate(
+            """({index,target,name}) => {
+              const d=document.querySelector('[x-data="dashboard()"]')?._x_dataStack?.[0];
+              const ch=d?.channels?.find(x => x.index === index)?.data;
+              return ch?.role === 'SECONDARY' && ch?.settings?.name === name;
+            }""",
+            {"index": index, "target": OMNI_NODE_ID, "name": audit_name},
+        )
+        RESULTS.check(local, "channel UI retains accepted values")
+
+        # mesh-gw's bulk channel cache is stale until the next device sync.
+        # Resync OMNI only, then verify what the radio persisted.
+        await resync_omni(page)
+        readback = await api_json(page, f"/{OMNI_NODE_ID}/channels")
+        changed = channel_at(readback, index)
+        RESULTS.check(
+            changed.get("role") == "SECONDARY"
+            and (changed.get("settings") or {}).get("name") == audit_name,
+            "channel bulk read-back matches saved values",
+            "read-back did not contain audit name/role",
+        )
+    except Exception as exc:
+        RESULTS.check(False, "OMNI channel round-trip completed", str(exc))
+    finally:
+        if attempted and original is not None:
+            try:
+                await wait_omni_ready(page)
+                await restore_channel(page, index, original)
+                await resync_omni(page)
+                restored = channel_at(
+                    await api_json(page, f"/{OMNI_NODE_ID}/channels"), index
+                )
+                clean = not (restored.get("settings") or {}) and not restored.get("role")
+                RESULTS.check(clean, f"OMNI channel {index} restored unused")
+            except Exception as exc:
+                RESULTS.check(False, f"OMNI channel {index} restoration", str(exc))
+        if OMNI_MAC:
+            try:
+                await api_request(
+                    page,
+                    f"/ble_devices/{quote(OMNI_MAC, safe='')}",
+                    "PATCH",
+                    {"auto_connect": True},
+                )
+                await wait_omni_ready(page)
+            except Exception as exc:
+                RESULTS.check(False, "OMNI final ready/auto-connect restoration", str(exc))
+        await context.close()
 
 
-async def navigate_config_bridge(page: Page):
-    """Navigate to /config then click Bridge sub-tab and wait for form to load."""
-    await page.goto(f"{BASE}/config", timeout=10000)
-    await page.wait_for_load_state("networkidle", timeout=10000)
-    await asyncio.sleep(1.0)
-    # Click Bridge sub-tab — locator by text inside the config tabs
-    await page.click('.tab:text("Bridge")', timeout=5000)
-    # Wait for bridge_cfg_form to be populated
-    await page.wait_for_selector("#bridge_cfg_form", timeout=8000)
-    await asyncio.sleep(1.2)
+def root_artifacts() -> list[str]:
+    suffixes = {".png", ".jpg", ".jpeg", ".webp", ".zip", ".trace"}
+    return [p.name for p in Path(".").iterdir() if p.is_file() and p.suffix.lower() in suffixes]
 
 
-async def wait_ws_and_radar_config(page: Page):
-    """After nav, wait for WS connection AND /config/radar response, then click Radar."""
-    # Use Playwright WS interception: ARM listener BEFORE navigating so we don't miss the connect
-    ws_connected = asyncio.Event()
-
-    def on_ws(ws):
-        ws_connected.set()
-
-    page.on("websocket", on_ws)
-
-    # Navigate
-    await page.goto(f"{BASE}/config", timeout=10000)
-    await page.wait_for_load_state("networkidle", timeout=10000)
-
-    # Wait for WS connection
-    try:
-        await asyncio.wait_for(ws_connected.wait(), timeout=8.0)
-    except asyncio.TimeoutError:
-        pass  # proceed anyway
-
-    await asyncio.sleep(0.5)
-
-    # Now click Radar tab and wait for the config fetch
-    async with page.expect_response(lambda r: "/config/radar" in r.url, timeout=8000) as resp_info:
-        await page.click('.tab:text("Radar")', timeout=5000)
-    await resp_info.value
-    await asyncio.sleep(0.3)
-
-
-async def navigate_config_radar(page: Page):
-    """Navigate to /config then click Radar sub-tab. Wait for WS + radar config fetch."""
-    await wait_ws_and_radar_config(page)
-
-
-async def test_bridge_config_save(page: Page):
-    """Click the bridge config save button and assert a success toast."""
-    await navigate_config_bridge(page)
-    btn = page.locator('[data-op-kind="bridge_config"]')
-    await expect(btn).to_be_visible(timeout=5000)
-    await btn.click()
-    await assert_toast(page, "bridge_config save")
-
-
-async def test_radar_config_save(page: Page):
-    """Click the radar config save button and assert a success toast."""
-    await navigate_config_radar(page)
-    btn = page.locator('[data-op-kind="radar_config"]')
-    await expect(btn).to_be_visible(timeout=5000)
-    await btn.click()
-    await assert_toast(page, "radar_config save")
-
-
-async def main():
-    global TESTS_PASSED, TESTS_FAILED
-
-    print(f"Playwright smoke — {BASE}  headless={HEADLESS}")
-    print()
-
+async def main() -> int:
+    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"node-dash Playwright audit — {BASE}")
+    print(f"artifacts: {ARTIFACT_DIR}")
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=HEADLESS)
-        page = await browser.new_page()
-
-        # Capture browser console errors
-        console_errors = []
-        page.on("console", lambda m: console_errors.append(f"[{m.type}] {m.text}") if m.type in ("error", "warning") else None)
-
-        # Load dashboard and wait for Alpine to initialise
-        await page.goto(BASE, timeout=15000)
-        await page.wait_for_load_state("networkidle", timeout=15000)
-        await asyncio.sleep(1.5)
-
-        # Sanity check — page title
-        title = await page.title()
-        print(f"  Page title: {title!r}")
-
-        # Run tests
-        try:
-            await test_bridge_config_save(page)
-            await test_radar_config_save(page)
-        except Exception as e:
-            print(f"  ✗ Unexpected error: {e}")
-            TESTS_FAILED += 1
-
-        if console_errors:
-            print(f"  Console errors/warnings ({len(console_errors)}):")
-            for e in console_errors[-10:]:
-                print(f"    {e}")
-
+        await audit_routes(browser)
+        await audit_invalid_persisted_tab(browser)
+        await audit_safe_interactions(browser)
+        await audit_live_channel(browser)
         await browser.close()
 
-    print()
-    print("═" * 55)
-    if TESTS_FAILED == 0:
-        print(f"  RESULT: PASS  ({TESTS_PASSED} tests passed)")
-    else:
-        print(f"  RESULT: FAIL  ({TESTS_PASSED} passed, {TESTS_FAILED} failed)")
-    print("═" * 55)
-    sys.exit(0 if TESTS_FAILED == 0 else 1)
+    RESULTS.check(not root_artifacts(), "no root-level browser artifacts", ", ".join(root_artifacts()))
+    print(f"\nRESULT: {RESULTS.passed} passed, {RESULTS.failed} failed")
+    if RESULTS.failures:
+        for failure in RESULTS.failures:
+            print(f"  - {failure}")
+    return 0 if RESULTS.failed == 0 else 1
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.exit(asyncio.run(main()))

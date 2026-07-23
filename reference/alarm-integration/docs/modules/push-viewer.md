@@ -423,3 +423,50 @@ the refusal loop once the device superseded it with a fresh capture.
 
 On a 409 carrying `available`, the device's real pid is placed in the box — so the next
 press is one click, but the operator makes the choice. The server does not substitute.
+
+## Take-photo button (task `cam-take-photo-button`, 2026-07-21)
+
+A third button beside Start/Publish that captures a FRESH image and fetches it, so the
+dashboard shows a new photo rather than re-fetching the embedded test frame. Wires to the
+backend `POST /nodes/:num/capture` (task `cam-grab-capture-route`).
+
+**Flow** (`capture()`, modelled on `start()`/`publish()`):
+1. Confirm — it transmits (wakes the camera, command on Private).
+2. `POST /nodes/:num/capture`.
+3. On `{state:'captured', pid}`: set `pidInput = pid`, note it, then call `start(true)` to
+   fetch that pid. The `true` skips start's own confirm — one prompt, not two.
+4. On `capture_failed` (`{error, st}`) or `no_reply`: show "camera capture failed … — try
+   again" in `startError`; do NOT fetch. Both are NORMAL retryable outcomes (mt-transport's
+   `cam grab` is intermittent), not errors to escalate.
+
+**Why chain into `start()` rather than push directly:** the device holds the new pid after
+grab (`pushAvailable` returns it), so the existing fetch path — with all its guards, save,
+render — is reused unchanged. The button adds a capture step in front, nothing more. Thin,
+so the PIR-pipeline swap stays cheap.
+
+### Files changed — `public/push.html` only
+
+1. New state `capturing: false`.
+2. `start(skipConfirm = false)` — guard becomes `if (!skipConfirm && !confirm(...)) return;`.
+   Sole change to existing logic; `capture()` calls `start(true)`.
+3. New `capture()` method (confirm → POST capture → captured?→start(true) : startError).
+4. New button in the control row: `@click="capture()"`, disabled `!target || capturing ||
+   state === 'running'`, text `capturing ? 'taking photo…' : 'Take photo'`.
+
+NOT changed: any `src/` (backend done); the fetch/push path; Start/Publish behaviour beyond
+the `skipConfirm` param.
+
+### Outcomes rendered
+
+| capture reply | UI |
+|---|---|
+| `200 {captured, pid, len, n, crc}` | note "CAPTURED pid …", then the normal fetch begins |
+| `502 {capture_failed, st}` | `startError`: "camera capture failed (st N) — try again"; no fetch |
+| `504 {no_reply}` | `startError`: "no reply from the camera — try again"; no fetch |
+
+### Test notes
+
+Playwright at 1600x1000, both themes. The three outcomes exercised by stubbing `fetch` on
+the component and invoking `capture()`: captured → `pidInput` set + `start` invoked;
+capture_failed/no_reply → `startError` shown, `start` NOT invoked. Live end-to-end DEFERRED
+(transmits + bench camera intermittent).

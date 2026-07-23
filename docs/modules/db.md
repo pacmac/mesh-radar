@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 8aed11aeb28acf33db9289883a5290960bb565b900f22c09a8ef71c750f81a5e
+source_hash: 04075ae009302bf596a05dc6c287bafb9710434eab138c03db3eee2d97c3456d
 updated: 2026-07-18
 ---
 
@@ -98,18 +98,13 @@ missing named parameter. A null id is never deduped.
 
 ```js
 insertDeviceMetricsHistory(entry)   // → void  — { ts, num, packet_id, uptime_seconds, voltage, battery_level, channel_utilization, air_util_tx }
-insertDetectionEvent(entry)         // → void  — { ts, num, packet_id, type, kind, val, count_num, msg, more, raw }
-upsertNodeAppState(entry)           // → void  — { num, portnum, type, ts, payload }
+insertDetectionEvent(entry)         // → void  — { ts, num, packet_id, raw }
 ```
 
-All three history inserts are `INSERT OR IGNORE` against a **partial unique
+All history inserts are `INSERT OR IGNORE` against a **partial unique
 index on `(num, packet_id)`**: a broadcast heard by N gateway radios, or the same
 reading arriving as both a `telemetry` event and a raw `packet`, collapses to one
 row. Rows with a null `packet_id` are never deduped.
-
-`upsertNodeAppState` is a latest-only cache keyed `(num, portnum, type)` — a
-repeat delivery overwrites in place, so it is idempotent without a packet id
-(which `private_app` does not carry).
 
 ### Geocode cache
 
@@ -198,10 +193,8 @@ syncAlertedAt(packetId)             // → void  — writes alerted_at if alread
 | `queryAllEnvHistory` | SELECT from environment_history WHERE ts >= |
 | `insertDeviceMetricsHistory` | INSERT OR IGNORE into device_metrics_history (dedup on num, packet_id) |
 | `insertDetectionEvent` | INSERT OR IGNORE into detection_events (dedup on num, packet_id) |
-| `upsertNodeAppState` | INSERT … ON CONFLICT(num, portnum, type) DO UPDATE — latest-only cache |
 | `queryDeviceMetricsHistory` | SELECT from device_metrics_history WHERE num AND ts >= (ASC — chart-ready, browser never sorts) |
 | `queryDetectionEvents` | SELECT from detection_events WHERE num AND ts >= (DESC, LIMIT) |
-| `queryNodeAppState` | SELECT all cached private-app rows for a num |
 | `getNodeByNum` | SELECT * FROM nodes WHERE num = ? |
 
 ### Ingestion tables (INGESTION_SPEC)
@@ -209,8 +202,7 @@ syncAlertedAt(packetId)             // → void  — writes alerted_at if alread
 | Table | Purpose |
 |---|---|
 | `device_metrics_history` | Per-node device vitals series (uptime, voltage, battery, channel/air utilisation). Partial unique index `idx_dmh_dedup` on `(num, packet_id)`. |
-| `detection_events` | DETECTION_SENSOR_APP events. `raw` always holds the original payload **string** — the meshtastic registry gives this portnum no `protobufFactory`, so it is text, not protobuf. Our nodes send a JSON envelope (`motion`/`count`/`alarm`/`cleared`); a stock Meshtastic detection module sends plain text. Typed columns are null for anything that is not our JSON. |
-| `node_app_state` | Latest-only private-app state, keyed `(num, portnum, type)`. Used for portnum 260 `config`/`debug`/`calc`. Keyed by portnum so it is **not** 260-specific — a future private app caches here with no migration. |
+| `detection_events` | Standard `DETECTION_SENSOR_APP` events. `raw` holds the original text without application-specific interpretation. |
 
 `environment_history` gained `packet_id` via the guarded `PRAGMA table_info`
 migration, plus partial unique index `idx_env_dedup`. The index is partial so the
@@ -362,7 +354,3 @@ same MAC vocabulary the `node_source` filter compares against.
 MACs in `traceroute_history.tx_device`, `messages.device`, and inside
 `messages.rx_devices` comma-lists (string REPLACE per registry pair).
 Unmappable ids are left as-is per IDENTITY.md §7 amnesty.
-
-## client_role generated column (task client-role-ssot, 2026-07-20)
-
-`nodes` gains a **generated** `client_role TEXT` column — `CASE WHEN role='SENSOR' THEN role END` (VIRTUAL, added via guarded `ALTER TABLE` for existing DBs, and in `CREATE TABLE` for fresh). Auto-derived from `role`, so no ingest change; queryable/filterable like `role`. Mirrors `client-role.js` `clientRole` (the two change together). CORE node data — see `client-role.md`.

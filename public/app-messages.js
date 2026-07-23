@@ -3,10 +3,7 @@ import { fetchJSON } from './app-helpers.js';
 import { persistSet } from './app-persist.js';
 
 export const messagesMixin = {
-  // Called by WS message_history event — no HTTP fetch.
-  // ONE mapper, TWO feeds. The server splits chat (message_history) from control
-  // (command_history) and both carry the same row shape, so the browser maps them
-  // identically and classifies nothing.
+  // Called by the WS message_history event — no HTTP fetch.
   _mapMessageRows(rows) {
     if (!Array.isArray(rows)) return [];
     return rows.map(r => {
@@ -38,15 +35,11 @@ export const messagesMixin = {
         direction:          r.direction || 'rx',
         ackStatus:          r.status || null,
         src:                r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
-        // Server-computed type bucket (message-type.js). The browser renders it;
-        // it never re-derives it. Feeds the per-viewer type filter.
-        bucket:             r.type_bucket ?? null,
       };
     });
   },
 
-  _applyMessageRows(rows) { this.messages        = this._mapMessageRows(rows); },
-  _applyCommandRows(rows) { this.commandMessages = this._mapMessageRows(rows); },
+  _applyMessageRows(rows) { this.messages = this._mapMessageRows(rows); },
 
   loadMessages() { /* no-op — history arrives via WS message_history on connect */ },
 
@@ -59,8 +52,7 @@ export const messagesMixin = {
   },
 
   displayMessages() {
-    // No filtering. The server sends the chat feed only (control has its own
-    // feed), and order/threading are pre-computed — the browser renders as-is.
+    // Order and threading are pre-computed — the browser renders as-is.
     return this.messages;
   },
 

@@ -1,0 +1,81 @@
+        <!-- ===================== CONTROL ===================== -->
+        <div x-show="tab==='control'" class="flex flex-col gap-4 flex-1 min-h-0">
+
+          <!-- Send panel: device pick + command shortcuts + free text -->
+          <div class="card bg-base-100 shadow shrink-0">
+            <div class="card-body gap-3">
+              <h2 class="card-title">Control</h2>
+
+              <!-- Device picker -->
+              <div class="flex items-start gap-2">
+                <span class="text-sm text-base-content/60 w-16 shrink-0 mt-1.5">Device</span>
+                <div class="flex gap-1 flex-wrap">
+                  <template x-for="d in controlDevices()" :key="d.num">
+                    <button class="btn btn-sm"
+                            :class="controlTarget === d.num ? 'btn-primary' : 'btn-outline'"
+                            @click="controlTarget = d.num" x-text="d.label"></button>
+                  </template>
+                  <span x-show="controlDevices().length === 0" class="text-sm text-base-content/40 italic mt-1.5">No nodes yet…</span>
+                </div>
+              </div>
+
+              <!-- Command shortcuts -->
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm text-base-content/60 w-16 shrink-0">Command</span>
+                <div class="join">
+                  <template x-for="c in controlShortcuts()" :key="c">
+                    <button class="join-item btn btn-sm btn-outline capitalize"
+                            :disabled="controlTarget === null || controlSending"
+                            @click="sendControl(c)" x-text="c"></button>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Free-text command -->
+              <div class="flex items-center gap-2">
+                <span class="text-sm text-base-content/60 w-16 shrink-0">Custom</span>
+                <input class="input input-bordered input-sm flex-1" placeholder="any command / verb…"
+                       x-model="controlCommand"
+                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                       @keydown.enter="sendControl()">
+                <button class="btn btn-primary btn-sm"
+                        :disabled="!controlCommand.trim() || controlTarget === null || controlSending"
+                        @click="sendControl()">Send</button>
+              </div>
+
+              <div x-show="controlTarget !== null" class="text-xs text-base-content/50 flex items-center gap-1">
+                <span>→</span>
+                <span class="font-mono font-semibold" x-text="controlTargetLabel()"></span>
+                <span>on the Private channel</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Command / response feed -->
+          <div class="card bg-base-100 shadow flex flex-col flex-1 min-h-0">
+            <div class="card-body flex flex-col min-h-0">
+              <h2 class="card-title shrink-0">Command feed</h2>
+              <div class="overflow-y-auto flex-1 min-h-0">
+                <template x-for="m in controlFeed()" :key="m.key">
+                  <div class="flex items-start gap-3 py-2 border-t border-base-200"
+                       :style="m.replyDepth > 0 ? `margin-left:${m.replyDepth * 2}rem` : ''"
+                       :class="m.direction === 'tx' ? 'bg-success/5 border-l-2 border-l-success' : ''">
+                    <span class="badge badge-xs shrink-0 mt-0.5"
+                          :class="m.direction === 'tx' ? 'badge-success' : 'badge-info'"
+                          x-text="m.direction === 'tx' ? '↑ cmd' : '↓ resp'"></span>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-1.5 text-sm">
+                        <span class="font-semibold text-base-content" x-text="m.fromLongName || nodeLongName(m.fromNum)"></span>
+                        <span x-show="m.channel != null" class="badge badge-xs badge-ghost font-mono" x-text="m.channel_name || ('ch' + m.channel)"></span>
+                        <span class="ml-auto text-base-content/50 shrink-0" x-text="m.time"></span>
+                      </div>
+                      <div class="text-base text-base-content mt-0.5 break-words font-mono" x-text="m.text"></div>
+                    </div>
+                  </div>
+                </template>
+                <div x-show="controlFeed().length === 0" class="text-base-content/40 italic py-4">No commands yet…</div>
+              </div>
+            </div>
+          </div>
+
+        </div>

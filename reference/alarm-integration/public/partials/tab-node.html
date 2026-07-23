@@ -1,0 +1,231 @@
+<!--
+  Node focus page. Renders an ordered list of server-supplied sections.
+
+  STYLE_GUIDE.md is canonical here: every text element maps to a §3 type role,
+  colors are DaisyUI semantic classes only (§4), and the card anatomy is §5's.
+  No px sizes, no inline styles — the 17px root knob (§2) scales everything.
+
+  BROWSER_CONTRACT.md + NODE_STATUS_SPEC iron rule 1: every value is bound
+  verbatim from the server's `text`. No unit strings, no rounding, no date math,
+  and nothing tests whether a section has content — presence and order are
+  server decisions.
+
+  flex-1 min-h-0 overflow-y-auto: the parent is a flex column with
+  overflow-hidden, so without min-h-0 this content is clipped rather than
+  scrolled and the lower sections become unreachable.
+-->
+<div class="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-4">
+
+  <template x-if="!nodeStatus">
+    <div class="flex items-center gap-3">
+      <span class="loading loading-spinner loading-sm"></span>
+      <span class="text-xs text-base-content/50">Loading node…</span>
+    </div>
+  </template>
+
+  <!-- Designed empty state (§8.5): an empty screen is an invitation to act. -->
+  <template x-if="nodeStatus && !nodeStatus.found">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body py-4 gap-3 items-start">
+        <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">UNKNOWN NODE</h2>
+        <p class="text-sm">
+          Nothing has been heard from this node, so there is no telemetry to show.
+          It will appear here once it transmits.
+        </p>
+        <button class="btn btn-sm btn-primary" @click="setNav('nodes')">Back to nodes</button>
+      </div>
+    </div>
+  </template>
+
+  <template x-if="nodeStatus && nodeStatus.found">
+    <div class="flex flex-col gap-4">
+
+      <!-- Header: identity + right now. Values, never verdicts — no health
+           pill, no battery warning. The now-values are this page's headline
+           metric, so they take the §3 display-value role. -->
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body py-4 gap-3">
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span class="text-lg font-display font-bold tracking-wide"
+                  x-text="nodeStatus.header.long_name || nodeStatus.header.node_id"></span>
+            <span class="badge badge-sm" x-text="nodeStatus.header.short_name"></span>
+            <span class="text-sm font-mono tabular-nums text-base-content/70" x-text="nodeStatus.header.node_id"></span>
+            <span class="text-xs text-base-content/50" x-text="nodeStatus.header.hw_model"></span>
+          </div>
+
+          <!-- Vitals as stat cards, matching the Performance page
+               (.perf-stats-grid + DaisyUI .stat). A flat row of eight
+               label/value pairs read as one dense block; cards give each value
+               its own frame and a place for context. -->
+          <div class="perf-stats-grid">
+            <!-- Last heard leads: the vitals answer "how is it", this answers
+                 "is it there at all". -->
+            <template x-if="nodeStatus.header.last_heard">
+              <div class="stat bg-base-200 rounded-box">
+                <div class="stat-title">Last heard</div>
+                <div class="stat-value text-2xl font-mono tabular-nums"
+                     x-text="nodeStatus.header.last_heard.ago"></div>
+                <div class="stat-desc" x-text="nodeStatus.header.last_heard.text"></div>
+              </div>
+            </template>
+
+            <template x-for="f in nodeStatus.header.fields" :key="f.label">
+              <div class="stat bg-base-200 rounded-box">
+                <div class="stat-title" x-text="f.label"></div>
+                <div class="stat-value text-2xl font-mono tabular-nums" x-text="f.text"></div>
+                <!-- desc carries provenance where a value has more than one
+                     possible source (hops: verified vs reported). -->
+                <div class="stat-desc" x-text="f.desc || (f.edit ? f.edit.name : '')"></div>
+              </div>
+            </template>
+
+            <!-- Signal keeps the app's .sig-bars component; which bars are lit
+                 and the colour class are server-computed and bound verbatim. -->
+            <template x-if="nodeStatus.header.signal">
+              <div class="stat bg-base-200 rounded-box">
+                <div class="stat-title">Signal</div>
+                <div class="stat-value text-2xl font-mono tabular-nums flex items-center gap-2">
+                  <span class="sig-bars shrink-0" :class="nodeStatus.header.signal.cls">
+                    <template x-for="(lit, i) in nodeStatus.header.signal.bars" :key="i">
+                      <i :style="'height:' + [6,10,14,18][i] + 'px;opacity:' + (lit ? 1 : 0.15)"></i>
+                    </template>
+                  </span>
+                  <span class="truncate" x-text="nodeStatus.header.signal.rssi_text"></span>
+                </div>
+                <div class="stat-desc">
+                  <span x-text="nodeStatus.header.signal.label"></span>
+                  <span x-show="nodeStatus.header.signal.snr_text"> · <span x-text="nodeStatus.header.signal.snr_text"></span></span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sections, in the order the server gave them.
+           Charts sit TWO PER ROW on wide screens — full width was overkill and
+           made the page needlessly long. value_grid and event_log keep the full
+           width: they already lay out in internal columns, and a log needs the
+           room. Single column below lg. -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <template x-for="section in nodeStatus.sections" :key="section.id">
+        <div class="card bg-base-100 shadow-sm border border-base-300 h-full"
+             :class="section.kind !== 'series' && 'lg:col-span-2'">
+          <!-- h-full + flex-col + the chart wrapper growing keeps two charts in
+               a row the SAME HEIGHT even when one carries an extra note line. -->
+          <div class="card-body py-4 gap-3 flex flex-col">
+            <div class="flex items-baseline justify-between gap-3">
+              <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50"
+                  x-text="section.title"></h2>
+              <template x-if="section.observed_text">
+                <span class="text-xs text-base-content/50">
+                  <span x-text="section.observed_text"></span> · <span x-text="section.observed_ago"></span>
+                </span>
+              </template>
+              <!-- Edit / Save — shown only when the SERVER marks the section
+                   editable. The browser never decides what is settable. -->
+              <template x-if="section.editable && nodeEditSection !== section.id">
+                <button class="btn btn-xs btn-outline btn-neutral"
+                        @click="startEditSection(section.id)">Edit</button>
+              </template>
+              <template x-if="section.editable && nodeEditSection === section.id">
+                <div class="join">
+                  <button class="btn btn-xs join-item btn-primary"
+                          :class="nodeEditBusy && 'loading'"
+                          :disabled="nodeEditBusy"
+                          @click="saveEditSection(section)">Save changes</button>
+                  <button class="btn btn-xs join-item btn-ghost"
+                          :disabled="nodeEditBusy"
+                          @click="cancelEditSection()">Cancel</button>
+                </div>
+              </template>
+
+              <!-- Window selector, matching the perf charts. User input only:
+                   the server slices history and computes the axis labels. -->
+              <template x-if="section.kind === 'series'">
+                <div class="join">
+                  <template x-for="w in [1,4,24,72]" :key="w">
+                    <button class="btn btn-xs join-item font-mono"
+                            :class="nodeWindowHours === w ? 'btn-primary' : 'btn-outline btn-neutral'"
+                            @click="setNodeWindow(w)"
+                            x-text="w + 'HR'"></button>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- value_grid — §5 key-value rows: caption key left, data value
+                 right. Columns are BOUNDED so a pair never stretches apart at
+                 desktop width. -->
+            <template x-if="section.kind === 'value_grid'">
+              <div class="grid gap-x-8 gap-y-1 justify-start"
+                   style="grid-template-columns:repeat(auto-fill,minmax(15rem,22rem))">
+                <template x-for="f in section.fields" :key="f.label">
+                  <div class="flex items-baseline justify-between gap-3 border-b border-base-200 py-1">
+                    <span class="text-xs text-base-content/50"
+                          :title="f.edit ? f.edit.name : ''" x-text="f.label"></span>
+
+                    <!-- Editing: only fields the server marked editable become
+                         inputs. Range/type come from the server too. -->
+                    <template x-if="nodeEditSection === section.id && f.edit && f.edit.type !== 'bool'">
+                      <input type="number" class="input input-xs input-bordered w-28 font-mono text-right"
+                             :min="f.edit.min" :max="f.edit.max"
+                             :placeholder="f.raw"
+                             :value="nodeEditDraft[f.edit.path] ?? f.raw"
+                             @input="nodeEditDraft[f.edit.path] = $event.target.value">
+                    </template>
+                    <template x-if="nodeEditSection === section.id && f.edit && f.edit.type === 'bool'">
+                      <input type="checkbox" class="toggle toggle-xs"
+                             :checked="Number(nodeEditDraft[f.edit.path] ?? f.raw) === 1"
+                             @change="nodeEditDraft[f.edit.path] = $event.target.checked ? 1 : 0">
+                    </template>
+                    <template x-if="!(nodeEditSection === section.id && f.edit)">
+                      <span class="text-sm font-mono tabular-nums" x-text="f.text"></span>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+
+            <!-- A derived series says what it is derived FROM, so a percentage
+                 is never mistaken for a device measurement. -->
+            <template x-if="section.note">
+              <p class="text-xs text-base-content/50" x-text="section.note"></p>
+            </template>
+
+            <!-- series — axis endpoints arrive pre-formatted, so the time axis
+                 is visible without any browser date math -->
+            <template x-if="section.kind === 'series'">
+              <div class="flex flex-col gap-1 grow">
+                <div class="grow min-h-56"><canvas :id="'nodechart-' + section.id"></canvas></div>
+                <div class="flex justify-between text-xs text-base-content/50">
+                  <span x-text="section.t_min_text"></span>
+                  <span x-text="section.t_max_text"></span>
+                </div>
+              </div>
+            </template>
+
+            <!-- event_log -->
+            <template x-if="section.kind === 'event_log'">
+              <div class="max-h-96 overflow-y-auto flex flex-col">
+                <template x-for="(e, i) in section.events" :key="i">
+                  <div class="flex items-baseline gap-3 border-b border-base-200 py-1">
+                    <span class="text-xs text-base-content/50 shrink-0" x-text="e.ts_text"></span>
+                    <template x-if="e.label">
+                      <span class="badge badge-sm shrink-0" x-text="e.label"></span>
+                    </template>
+                    <span class="text-sm font-mono grow" x-text="e.text"></span>
+                    <span class="text-xs text-base-content/50 shrink-0" x-text="e.ts_ago"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+
+          </div>
+        </div>
+      </template>
+      </div>
+
+    </div>
+  </template>
+</div>

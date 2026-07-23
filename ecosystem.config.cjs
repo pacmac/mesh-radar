@@ -17,13 +17,6 @@ module.exports = {
         BRIDGE_WS_URL: "ws://localhost:8001",
         ROTATOR_WS_URL: "ws://192.168.10.186:81",
         ROTATOR_V5_WS_URL: "ws://192.168.10.195:81",
-        // Optional alarm-transport plugin (portnums 256/260/261, chunked
-        // transfer). Path-resolved rather than npm-installed: the module moves
-        // with the firmware it mirrors, so a vendored copy would drift the
-        // moment the wire format changes (agreed with mt-transport, Q&A Q4).
-        // Unset or wrong => node-dash boots exactly as before, with the
-        // alarm-specific surfaces simply absent.
-        MT_TRANSPORT_PATH: "/usr/share/pac/dev/pio/projects/mt-transport/clients/node/index.js",
       },
     },
   ],

@@ -1,7 +1,7 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: da120152853105ea54dd0aff563b0c2f19ba209caf4580fed119c1648101a373
+source_hash: 042fce481da8f1082a38b7389c18794e951cabddfc2c14e669ac40db9cae893d
 updated: 2026-07-16
 ---
 
@@ -32,6 +32,17 @@ Files explicitly NOT changed:
 See `docs/BROWSER_CONTRACT.md` and `docs/STYLE_GUIDE.md` — both mandatory.
 
 ---
+
+## Browser audit fixes (2026-07-23)
+
+- Mobile header and radio strips use compact responsive spacing; node id,
+  BLE percentage, and long action text progressively collapse without
+  clipping. The six detail tabs become a three-column grid on phones.
+- Channel success copy says “saved”, not “saved & verified”; persistence is
+  verified after the gateway cache resync in the live acceptance test.
+- Vitals expressions use optional access to `deviceBleStates[dev.node_id]`.
+  Device disconnect/reconnect no longer emits Alpine exceptions while the
+  state entry is temporarily absent.
 
 ## Structure
 

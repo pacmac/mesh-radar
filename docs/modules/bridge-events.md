@@ -1,7 +1,7 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: 7f34afa36458cf05b670ed221b5d9960f0d3f955e13fab3ec1d6095582e73fe0
+source_hash: 17069bef4cce181b75e5d2bf77b5145d84da1cb16ef811c87b46820d585c20b8
 updated: 2026-07-09
 ---
 
@@ -59,18 +59,6 @@ _N/A_ (consumes events from bridge; other modules emit downstream)
 - Hops-away is computed here from the raw packet (`pkt.hop_start`/`pkt.hop_limit`) — the only per-reception source that carries the hop fields and reaches `nodeList`. The gw's aggregate `node_info.hops` is unguarded and stripped in `node-list.js`; see its "Hops-away ownership" section.
 - `FF.SSOT_TRACEROUTE` governs both raw-packet and typed-event traceroute paths — they must stay in sync.
 - `traceroute` typed event path is additive (parallel to raw packet) in V1; V2 routes both to `traceroute.handlePacket`.
-- **A device reply is routed to two consumers, both keyed on `reply_id`.** For a
-  `TEXT_MESSAGE_APP` packet carrying `decoded.reply_id` (a device answer to one of
-  our addressed commands, `API.md` §3), the handler routes it AFTER persistence to:
-  - `handleReply(reply_id, text)` — the node-settings SSOT (config edits).
-  - `handleAlignPong(pkt, rxDevice)` — the align ping loop. Align is passed the
-    **whole packet**, not just the text, because it needs the per-radio signal:
-    `pkt.rx_snr` / `pkt.rx_rssi` are the receiving radio's reading, and align also
-    parses the pong payload's own `rssi`/`snr`. This is the live `packet` path, so
-    `rx_snr` is genuinely present — unlike the synthetic traceroute packet, it
-    needs no fabrication. `handleAlignPong` is a no-op unless an align session is
-    active and the `reply_id` matches its pending ping, so routing every reply to
-    it is free.
 
 ## Test notes
 
@@ -78,7 +66,6 @@ _N/A_ (consumes events from bridge; other modules emit downstream)
 - **packet — yagi-only**: scanner active, packet from non-rotator device → `touchLastHeard` NOT called.
 - **rangetest**: `insertRangeTestEntry` called with correct fields extracted from typed event.
 - **traceroute V2**: `traceroute.handlePacket` called for both raw TRACEROUTE_APP packet and typed event.
-- **reply routing**: a `TEXT_MESSAGE_APP` packet with `decoded.reply_id` set calls both `handleReply(reply_id, text)` and `handleAlignPong(pkt, rxDevice)`; a packet without `reply_id` calls neither.
 - **packet — hops-away**: packet with `hop_start:3, hop_limit:1` → `setHopsAway(from, 2)`; `hop_start:0` → `setHopsAway(from, null)` (prior value preserved); scanner active + non-rotator device → `setHopsAway` NOT called.
 
 ## Out of scope
@@ -98,46 +85,3 @@ Live node updates route to `nodeList.handleNodeUpdate` on the V2 event name
 wired, so live rssi/snr/hops/via_mqtt/device_metrics never reached the node
 cache — six of nine node filters matched no field and the node-card signal
 bars were blank.
-
-## Push-refusal inspection (task `push-publish-first`, 2026-07-20)
-
-The reply-correlation block gained one more read-only consumer. Alongside
-`handleReply` (settings) and `handleAlignPong` (align), device replies are now passed to
-`notePushReply(pkt.from, text)` in `chunk-api.js`.
-
-It exists because `{"start":N,"ok":0}` — the device explicitly REFUSING a push START —
-was arriving here, being persisted to the message feed, and rendering as a blank progress
-bar. A flat refusal was indistinguishable from a dead radio. `notePushReply` turns it into
-a `chunk_error`.
-
-Same contract as the other two consumers: it is a no-op unless a transfer is in flight,
-it only reads the reply text, and it transmits nothing. Wrapped in its own try/catch so a
-malformed payload cannot break settings or align correlation.
-
-## Grab-reply dispatch (task `cam-grab-capture-route`, 2026-07-21)
-
-The reply-correlation block gained a fourth consumer alongside `handleReply` (settings),
-`handleAlignPong` (align) and `notePushReply` (push): `handleGrabReply(pkt.decoded.reply_id,
-text)` from `capture-api.js`.
-
-A `cam grab` reply threads by `reply_id` (the SAME machinery settings verbs use, verified on
-the wire), but is classified by `type` (`grab`/`err`), not `ok` — so it needs its own
-correlator rather than `handleReply`, which gates on `ok:true` and would misread a grab
-success. Independent `_pendingGrab` map, own try/catch, so a malformed grab reply cannot
-break settings or align correlation.
-
-## Scope bug: `text` out of scope for grab correlation (2026-07-21)
-
-`const text` was declared INSIDE the settings `try` block; `handleGrabReply` referenced it
-from a sibling `try`, throwing `ReferenceError: text is not defined` on EVERY reply. So a
-`cam grab` reply arrived correctly (reply_id matched the sent packet) but was never
-correlated — the capture route timed out and the button reported "no reply from the camera"
-while the reply sat in the message feed.
-
-`text` is now decoded once in the shared `if (reply_id)` scope; all three consumers
-(`handleReply`, `handleGrabReply`, `notePushReply`) use it, and the duplicate `text2` is
-gone.
-
-Caught by Peter pressing the button live — NOT by the injection tests, which stubbed the
-browser `fetch` and never exercised this backend reply path. The lesson: a feature that
-spans browser→route→reply is not verified by testing the browser half alone.

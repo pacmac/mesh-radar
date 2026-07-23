@@ -5,10 +5,6 @@ import { scanner } from './scanner.js';
 import { traceroute } from './traceroute.js';
 import { stmts, insertRangeTestEntry, insertEnvHistory } from './db.js';
 import { broadcastMessageHistory } from './ws-relay.js';
-import { handleReply } from './node-settings.js';
-import { handleAlignPong } from './align-api.js';
-import { notePushReply } from './chunk-api.js';
-import { handleGrabReply } from './capture-api.js';
 import { ownDeviceNums } from './node-filter.js';
 import { isListenerForMode } from './dash-mode.js';
 import { FF } from './feature-flags.js';
@@ -29,49 +25,6 @@ export function registerBridgeEvents(bridge) {
     // history that does not yet contain the message.
     if (ev.type === 'packet' && ev.data?.packet?.decoded?.portnum === 'TEXT_MESSAGE_APP') {
       broadcastMessageHistory();
-
-      // A device reply is threaded to its command by reply_id (API.md §3).
-      // Routed here, after persistence, for the same ordering reason as the
-      // history rebroadcast above.
-      const pkt = ev.data.packet;
-      if (pkt.decoded.reply_id) {
-        // Decoded ONCE, in the shared scope, so every reply consumer sees it. A previous
-        // version declared `text` inside the settings try-block only; handleGrabReply then
-        // referenced it out of scope and threw "text is not defined" every time — a grab
-        // reply arrived correctly but was never correlated, so the capture route timed out
-        // and reported "no reply". Caught by a live press, not by the tests I deferred.
-        const text = pkt.decoded.payload
-          ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8') : '';
-        try {
-          handleReply(pkt.decoded.reply_id, text);
-        } catch (e) {
-          console.error('[settings] reply correlation failed:', e.message);
-        }
-        // A `cam grab` reply threads by the same reply_id but is classified by `type`
-        // (grab/err), not `ok` — so it has its own correlator. Independent _pending map,
-        // own try/catch, so a malformed grab reply cannot break settings or align.
-        try {
-          handleGrabReply(pkt.decoded.reply_id, text);
-        } catch (e) {
-          console.error('[capture] grab reply correlation failed:', e.message);
-        }
-        // A push START the DEVICE refuses ({"start":N,"ok":0}) is an explicit "no",
-        // and it was invisible: the client retries the START and the UI shows a blank
-        // progress bar, so a flat refusal looked identical to a dead radio. Surface it.
-        try {
-          notePushReply(pkt.from, text);
-        } catch (e) {
-          console.error('[chunk] push reply inspection failed:', e.message);
-        }
-        // The align ping loop needs the WHOLE packet, not just the text: the
-        // per-radio envelope (pkt.rx_snr/rx_rssi) is the receiving radio's own
-        // reading. No-op unless an align session is waiting on this reply_id.
-        try {
-          handleAlignPong(pkt, ev.addr || ev.device || null);
-        } catch (e) {
-          console.error('[align] pong correlation failed:', e.message);
-        }
-      }
     }
     if (ev.type === 'node_update' || ev.type === 'node_info') {   // V2 emits node_info
       nodeList.handleNodeUpdate(ev);

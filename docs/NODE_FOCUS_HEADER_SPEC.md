@@ -11,15 +11,15 @@ Names `docs/STYLE_GUIDE.md` (§8.6). Companions: `BROWSER_CONTRACT.md`,
 
 The header carried a hand-picked five — battery, voltage, uptime, RSSI, SNR
 (`node-status.js:178-182`) — while the same `nodes` row also held
-`channel_util` and `air_util_tx`, and the 260 cache held `boot`/`rst`. Those
-were captured, charted, and then omitted from the one place you look first.
+`channel_util` and `air_util_tx`. Those were captured, charted, and then omitted
+from the one place you look first.
 
 Two separate errors:
 
 1. **Selective display.** Fields were chosen by "what counts as a node vital"
    rather than "what does someone looking at one radio need". Utilisation and
-   airtime tell you whether the radio is drowning; boot count is what makes
-   uptime interpretable. Withholding them was not a decision worth making.
+   airtime tell you whether the radio is drowning. Withholding them was not a
+   decision worth making.
 2. **Reinventing signal.** The app already renders signal as bars
    (`app-components.js:56 sigBars`, `.sig-bars` in `style.css:817`, used by
    messages, devices and nodes). I planned bare `-30 dBm` text instead. The
@@ -33,7 +33,6 @@ Two separate errors:
 | Battery | `nodes.battery` | display value |
 | Voltage | `nodes.voltage` | display value |
 | Uptime | `nodes.uptime_seconds` | display value |
-| **Boots** | 260 `type:debug` → `boot` | display value |
 | **Chan util** | `nodes.channel_util` | display value |
 | **Air util TX** | `nodes.air_util_tx` | display value |
 | **Signal** | `nodes.rssi` + `nodes.snr` | **`.sig-bars` component** + `dBm / dB` |
@@ -41,9 +40,6 @@ Two separate errors:
 Absent stays absent. `API.md` is explicit that `channel_utilization` is present
 only when the device is awake and **absence is not zero** — so a missing value
 omits the field and must never render as `0%`. Same existing rule, applied.
-
-`rst` is not promoted: it is already in Diagnostics, and unlike `boot` it does
-not change how uptime reads.
 
 ## Signal quality — reuse, computed server-side
 
@@ -75,7 +71,7 @@ so the page looks identical to every other signal indicator.
 
 | File | Change |
 |---|---|
-| `src/node-status.js` | header gains boots/chan util/air util; `signal` block via `signalQuality` |
+| `src/node-status.js` | header gains chan util/air util; `signal` block via `signalQuality` |
 | `public/partials/tab-node.html` | render the new fields; `.sig-bars` markup for signal |
 | `docs/modules/node-status.md`, `app-node-status.md` | updated + rehashed |
 
@@ -91,9 +87,8 @@ component is reused as-is.
 
 ## Done when
 
-- Header shows battery, voltage, uptime, boots, chan util, air util TX, signal bars
-- A node without 260 traffic shows no Boots field; a sleeping node shows no
-  Chan util rather than 0%
+- Header shows battery, voltage, uptime, chan util, air util TX, signal bars
+- A sleeping node shows no Chan util rather than 0%
 - Signal bars are visually identical to the nodes/messages pages
 - 1440×900, both themes, zero console errors
 - `check_specs.py` green

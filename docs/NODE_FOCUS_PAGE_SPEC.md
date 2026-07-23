@@ -8,8 +8,8 @@ Mandatory reading: `docs/BROWSER_CONTRACT.md`. Payload contract:
 ## The browser decides nothing
 
 The page renders an ordered list of server-supplied sections. It knows three
-section **kinds** and nothing else — not which port a datum came from, not what
-portnum 260 is, not what a detection is.
+section **kinds** and nothing else — not which port a datum came from or how it
+was ingested.
 
 - **Presence** is server-decided. The page renders `sections` in order. It does
   **not** test whether a section has data. `x-if="section.fields.length"` would
@@ -100,7 +100,6 @@ delivery filter, not a data decision.
 
 - `/node/!hexid` loads the focused node directly and survives reload
 - The modal's action opens the page for any node
-- A 260 node shows its extra sections; a plain node does not
 - Series show a visible time axis
 - Screenshots in **both** themes; zero console errors
 - `python scripts/check_specs.py` green

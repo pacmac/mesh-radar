@@ -1,14 +1,13 @@
 // mesh-gw dashboard — Alpine compose entry point.
 // State and init() only. All logic lives in the app-*.js mixin modules.
 import { uiMixin }        from './app-ui.js';
-import { navMixin, initTab, nodeNumFromPath } from './app-nav.js';
+import { navMixin, initTab, nodeNumFromPath, tabFromPath } from './app-nav.js';
 import { wsMixin }        from './app-ws.js';
 import { devicesMixin }   from './app-devices.js';
 import { nodesMixin }     from './app-nodes.js';
 import { rotatorMixin }   from './app-rotator.js';
 import { radarMixin }     from './app-radar.js';
 import { messagesMixin }  from './app-messages.js';
-import { controlMixin }   from './app-control.js';
 import { rangeMixin }     from './app-range.js';
 import { perfMixin }      from './app-perf.js?v=20260627rewrite';
 import { telemetryMixin } from './app-telemetry.js';
@@ -133,9 +132,6 @@ function dashboard() {
     nodeStatus:     null,
     nodeStatusNum:  null,
     favourites:     [],   // server-computed; nav entries for starred nodes
-    nodeEditSection: null, // id of the config section being edited, or null
-    nodeEditDraft:   {},   // path -> pending value (never displayed as truth)
-    nodeEditBusy:    false,
     // Chart window (1/4/24/72 HR). User input, forwarded to the backend —
     // the SERVER slices history and computes the axis labels for it.
     nodeWindowHours: Number(persistGet('nodeWindowHours', 24)),
@@ -146,12 +142,6 @@ function dashboard() {
     _radarScalePts:    null,   // adaptive-scale control points (display cache, hysteresis)
     _radarLabelAngles: null,   // Map num→arm angle — per-node label placement memory
     lastHeardNum:   null,
-
-    // -- Control (command/response console) -----------------------------------
-    commandMessages: [],    // server-pushed control feed (command_history)
-    controlTarget:  null,   // selected node num
-    controlCommand: '',     // free-text command verb
-    controlSending: false,
 
     // -- Messages -------------------------------------------------------------
     msgFrom:    persistGet('msgFrom', ''),
@@ -335,14 +325,12 @@ function dashboard() {
       if (bootNode) this.focusNode(bootNode);
 
       window.addEventListener('popstate', e => {
-        const pathToTab = {
-          '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
-          '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/control': 'control', '/devices': 'devices',
-          '/performance': 'perf',
-        };
         const nodeNum = nodeNumFromPath();
         if (nodeNum) { this.setNav('node'); this.focusNode(nodeNum); return; }
-        const t = e.state?.tab ?? pathToTab[window.location.pathname] ?? 'overview';
+        const stateTab = e.state?.tab;
+        const t = (stateTab && ['overview','radar','nodes','cfg','range','messages','devices','perf'].includes(stateTab))
+          ? stateTab
+          : (tabFromPath() ?? 'overview');
         this.setNav(t);
       });
 
@@ -403,7 +391,7 @@ window.dashboard = function() {
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
     rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
-    componentsMixin, perfMixin, nodeStatusMixin, controlMixin,
+    componentsMixin, perfMixin, nodeStatusMixin,
   ];
   for (const mixin of mixins) {
     Object.defineProperties(state, Object.getOwnPropertyDescriptors(mixin));

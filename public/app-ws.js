@@ -400,13 +400,6 @@ export const wsMixin = {
       return;
     }
 
-    // The server-computed CONTROL feed (command/response only). The Control page
-    // renders this directly — it never filters the chat feed for commands.
-    if (ev.type === 'command_history') {
-      this._applyCommandRows(ev.messages || []);
-      return;
-    }
-
     if (ev.type === 'tilt_history') {
       // Store all-node tilt rows; expose only the active node's slice
       this._tiltHistoryAll = this._tiltHistoryAll || {};
@@ -641,10 +634,7 @@ export const wsMixin = {
     }
 
     if (ev.type === 'message_status' && ev.packet_id != null) {
-      // A sent message lives in the chat feed OR the control feed — the two are
-      // server-split now, so search both or a command's ACK never lands.
-      const m = this.messages.find(m => m.pktId === ev.packet_id)
-             || this.commandMessages.find(m => m.pktId === ev.packet_id);
+      const m = this.messages.find(m => m.pktId === ev.packet_id);
       if (m) {
         m.ackStatus = ev.status;
         if (ev.from_num) m.ackFrom = ev.from_num;

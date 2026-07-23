@@ -1,7 +1,7 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: 3bbd1ecc92667e97b637a381349b439687546d943aad737a54d553bf9c3753c0
+source_hash: 5058d2404076c317acbb753ce40f6a20331cb8bf65487d62b038f5a9a89b1496
 updated: 2026-07-20
 ---
 
@@ -11,6 +11,11 @@ updated: 2026-07-20
 
 Messages page: compose card (device/recipient/channel selection, @mention
 autocomplete, quick emoji) and message feed card. Presentation only.
+
+## Mobile containment (2026-07-23)
+
+The 12 quick-reply buttons use a six-column grid on phones and a twelve-column
+grid from `sm`, preventing the final “73” action from extending past 390px.
 
 ## Scope
 

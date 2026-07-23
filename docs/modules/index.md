@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: af703d71b4520a63f3024f38a4b9b94c621e1288be09771473a7cd50e85259bc
+source_hash: bd2bbcd777d224b0817f8d33bde309f709d4cc157d4e34fd662e5ff5c0526256
 updated: 2026-07-20
 ---
 
@@ -27,21 +27,21 @@ the mesh-gw except to proxy (see `bridge.js`), or hold runtime state beyond the
 - Assemble `index.html` from partials and route SPA pages vs API calls.
 - Mount all node-dash routers, then the bridge proxy, then static, then the SPA
   catch-all — order is load-bearing (see Invariants).
-- Create the HTTP server, attach the dashboard WS relay and the align WS.
+- Create the HTTP server and attach the dashboard WS relay.
 - Run guarded one-shot migrations.
 - On `listen`: start bridge, rotator, alert poller, imap receiver, and resume a
   saved scan.
-- Wire bridge events, lifecycle, startup handlers, and the optional transport plugin.
+- Wire bridge events, lifecycle, and startup handlers.
 
 ## Dependencies
 
-Routers mounted: `config-api`, `nodes-api`, `settings-api`, `device-config`,
-`device-remove`, `rotator-api`, `performance-api`, `geocode`, `align-api`,
+Routers mounted: `config-api`, `nodes-api`, `device-config`,
+`device-remove`, `rotator-api`, `performance-api`, `geocode`,
 `range-test-api`, `traceroute-api`, `auto-purge-api`, `messages-api`, `alerts-api`,
-`op-manager`. Infrastructure: `bridge`, `ws-relay` (`attachWsRelay`), `align-api`
-(`attachAlignWs`), `db` (config + migration statements), `rotator`, `scanner`,
+`op-manager`. Infrastructure: `bridge`, `ws-relay` (`attachWsRelay`),
+`db` (config + migration statements), `rotator`, `scanner`,
 `node-list`, `alerts` (`startAlertPoller`), `imap-receiver`, `startup`,
-`lifecycle`, `transport-plugin`, `node-filter`, `node-label`, `device-config`
+`lifecycle`, `node-filter`, `node-label`, `device-config`
 (`resolvePrimaryNodeId`), `bridge-config-schema`, `rotator-config-schema`,
 `bridge-events`. Env: `PORT` (default 8000), `BRIDGE_URL` (default
 `http://localhost:8001`).
@@ -49,7 +49,6 @@ Routers mounted: `config-api`, `nodes-api`, `settings-api`, `device-config`,
 ## Public interface
 
 None exported — this is the top-level script (`node src/index.js`, run under PM2).
-It ends with a top-level `await loadTransport()`.
 
 ## Route surface (mount order is the contract)
 
@@ -58,7 +57,11 @@ It ends with a top-level `await loadTransport()`.
    `/traceroute_history`, `/auto-purge`, `/geocode`) or exact `WS_ONLY_EXACT`
    (`/config`) is rejected **410** when the request carries `Sec-Fetch-Dest: empty`
    (a real browser `fetch()`). Server-side / curl (no such header) is allowed. This
-   forces browser page-data onto the `/events` WS (transport rule, BROWSER_CONTRACT).
+   forces browser page-data onto the `/events` WS (transport rule,
+   BROWSER_CONTRACT). Document navigations are exempt when identified by
+   `Accept: text/html`, `Sec-Fetch-Mode: navigate`, or
+   `Upgrade-Insecure-Requests: 1`; 410 responses are `no-store` so a prior API
+   rejection cannot poison a later page navigation.
 3. `GET /utils.js` — reads `src/utils.js`, strips comments + `export`, assigns the
    named funcs (`haversine`, `bearing`, `signalQuality`, `numToNodeId`,
    `nodeIdToNum`) to `window`. The browser's copy is generated from the one source.
@@ -66,23 +69,17 @@ It ends with a top-level `await loadTransport()`.
    **only** when `Accept: text/html` (a navigation); an XHR/`fetch()` falls through
    to the API. Registered **before** conflicting API routes (e.g. `/messages`,
    `/config`, `/devices`) so the browser gets the SPA while XHR hits the API.
-4b. **chunk-api** — `chunkRouter` (`POST /nodes/:num/chunk-fetch`) mounted among
-   the node-dash routers; and `express.static(chunkPayloadDir)` at `/chunk-images`
-   serves the stored images read-only. Both precede the SPA catch-all.
-4c. **command-api** — `commandRouter` (`POST /nodes/:num/command`) mounted among
-   the routers: the addressed command/response send on the Private channel (chat
-   stays on `messages-api` → Primary). Precedes the SPA catch-all.
 5. node-dash APIs: `GET /status`, `GET /messages`, `GET|DELETE /nodes`, then the
    mounted routers, `GET|PUT /home_pos`, `/rotator`, the node-dash-owned schema
    endpoints (`/schema/rotator_config`, `/schema/bridge_config`) **before** the
-   bridge proxy, then performance/geocode/align/range/traceroute/auto-purge/messages.
+   bridge proxy, then performance/geocode/range/traceroute/auto-purge/messages.
 6. **Bridge proxy** — `proxyToBridge` forwards to `${BRIDGE_URL}${originalUrl}` for
    the `BRIDGE_PREFIXES` and for per-device paths (`/!hex…` and `/AA:BB:…:FF…`
    regexes). MAC is the canonical device key (IDENTITY.md §2).
 7. `/alerts`, then **OpManager** `/ops` (registered before static to dodge the
    catch-all).
-8. `express.static(public)`, `GET /debug`, `GET /align` (standalone documents),
-   then the **SPA catch-all** (`serveIndex`) last.
+8. `express.static(public)`, `GET /debug`, then the **SPA catch-all**
+   (`serveIndex`) last.
 
 ## State
 
@@ -108,9 +105,7 @@ Each runs once and sets its flag; re-runs are skipped.
 `listen` → `bridge.start()`, `rotator.start()`, `startAlertPoller(nodeList)`,
 `startImapReceiver()`, and scan-resume (restore `scan_nodes`, resume the scanner
 once the rotator reports status). After the listener: `registerBridgeEvents(bridge)`,
-`initLifecycle()`, `registerStartupHandlers(bridge)`, and `await loadTransport()`
-(optional alarm-transport plugin; resolves to a null object when absent, so a stock
-box boots unchanged).
+`initLifecycle()`, and `registerStartupHandlers(bridge)`.
 
 ## Invariants
 
@@ -123,8 +118,6 @@ box boots unchanged).
   must be added to `WS_ONLY_ROUTES`/`WS_ONLY_EXACT`.
 - **`broadcastAll` is defined after `wss`**; the `_broadcast` closure bridges the
   forward reference for `OpManager`.
-- **`attachAlignWs` mounts a separate narrow WS** (`/align/events`) — deliberately
-  not the dashboard `/events` stream (which pushes ~7.2 MB on connect).
 
 ## Test notes
 
@@ -142,31 +135,3 @@ box boots unchanged).
 - mesh-gw semantics — `bridge.js` and `docs/gw/`.
 - Known stale wiring (`startImapReceiver`, auto-purge) belongs to the
   `remove-legacy-mesh-features` task, not here.
-
-## Partials are served as STRUCTURALLY VALID JPEGs (2026-07-20)
-
-A `.part` is the transfer's contiguous prefix — a truncated JPEG with no `FFD9`
-end-of-image marker. **Chromium renders such a file anyway; most decoders reject the whole
-stream and draw nothing.** That is the most likely explanation for the live image painting
-in a Playwright Chromium here while Peter saw a blank panel through an entire transfer,
-hard-refreshing before each run.
-
-`GET /chunk-images/{*rest}` now intercepts `.part` requests, appends `FFD9` if absent, and
-sends `image/jpeg` with `no-store`. The file on disk is untouched and complete images fall
-through to the static mount byte-identical (verified by sha256).
-
-**Express 5 note, learned by taking the service down for ~1 minute:** a bare `'*'` wildcard
-throws `PathError: Missing parameter name at index 15` at route-registration time and the
-process fails to boot. The wildcard must be NAMED — `'/chunk-images/{*rest}'`.
-
-**Path containment:** the resolved absolute path is checked against `CHUNK_PAYLOAD_DIR`
-before reading; anything outside gets 403. A handler that reads a client-supplied path
-without that check would serve arbitrary files.
-
-Verified: a 3000-byte truncated file ending `22c5` is served as 3002 bytes ending `ffd9`;
-a complete `.jpg` is sha256-identical to disk.
-
-## capture-api mounted (2026-07-21)
-
-`app.use(captureRouter)` — `POST /nodes/:num/capture` (the `cam grab` trigger), mounted
-next to `chunkRouter` and `commandRouter`. See docs/modules/capture-api.md.

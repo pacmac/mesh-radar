@@ -1,7 +1,7 @@
 ---
 module: style-css
 source: public/style.css
-source_hash: 259c40486b01d07bb56c2016cad28747ad21c2ec96932c38aac1511c51b74a9c
+source_hash: 7d1440df1a158b9b5cb7d0ccc747a23cb648992168099cc5dc08678284ad3cbe
 updated: 2026-07-08
 ---
 
@@ -16,7 +16,8 @@ must comply with the guide and update this spec's hash.
 
 ## Contents (in order)
 
-1. **Font import** — Oxanium, DM Sans, JetBrains Mono via Google Fonts
+1. **Local font faces** — Oxanium, DM Sans, JetBrains Mono from
+   `/vendor/fonts/*.woff2`; no runtime font CDN
 2. **The global size knob** — `html { font-size: 17px }`. The only absolute
    font size in the app (STYLE_GUIDE §2)
 3. **Dark tokens** — `:root` block: signal teal (`--sig*`), amber, red, grid,

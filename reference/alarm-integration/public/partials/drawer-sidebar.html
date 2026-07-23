@@ -1,0 +1,151 @@
+  <!-- ===================== DRAWER SIDEBAR ===================== -->
+  <div class="drawer-side z-50">
+    <label for="nav-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+    <aside class="w-56 bg-base-100 min-h-screen flex flex-col">
+
+      <!-- Logo -->
+      <div class="px-4 py-4 border-b border-base-200">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">📡</span>
+          <div class="flex flex-col leading-tight flex-1">
+            <span class="text-sm font-display font-bold tracking-widest uppercase">mesh radar</span>
+            <span class="text-xs text-base-content/50" x-text="primaryDevBleState.firmware_version ? ('fw ' + primaryDevBleState.firmware_version) : 'dashboard'"></span>
+          </div>
+          <!-- Desktop collapse button -->
+          <button class="btn btn-ghost btn-xs hidden lg:flex" @click="sidebarPinned = false; persistSet('sidebarPinned', false)" title="Collapse sidebar">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7M18 19l-7-7 7-7"/></svg>
+          </button>
+        </div>
+        <!-- Active device -->
+        <div class="mt-2 flex items-center gap-1" x-show="activeNodeId">
+          <span class="inline-block w-1.5 h-1.5 rounded-full bg-success animate-pulse" x-show="primaryDevBleState.ble_state === 'ready'"></span>
+          <span class="font-mono text-xs text-success" x-text="activeNodeId"></span>
+        </div>
+        <!-- Device selector (shown when multiple devices) -->
+        <div class="mt-2" x-show="availableDevices.length > 1">
+          <select class="select select-sm select-bordered w-full font-mono" x-model="activeDevice" @change="selectDevice(activeDevice)">
+            <template x-for="d in availableDevices" :key="d.addr">
+              <option :value="d.addr" x-text="deviceLabel(d.node_id)"></option>
+            </template>
+          </select>
+        </div>
+      </div>
+
+      <!-- Nav menu -->
+      <ul class="menu menu-sm px-2 py-3 gap-0.5 flex-1">
+        <li><a :class="tab==='overview' && 'active'" @click="setNav('overview')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          Overview</a></li>
+        <li><a :class="tab==='radar' && 'active'" @click="setNav('radar')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="3" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="21"/><line x1="3" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="21" y2="12"/></svg>
+          Radar</a></li>
+        <li><a :class="tab==='nodes' && 'active'" @click="setNav('nodes')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Nodes</a></li>
+        <li>
+          <details :open="tab==='cfg'">
+            <summary @click.prevent="setNav('cfg')">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              Config
+            </summary>
+            <ul>
+              <li><a :class="tab==='cfg'&&cfgTab==='radio'&&'active'"    @click="setNav('cfg','radio')">Radio</a></li>
+              <li><a :class="tab==='cfg'&&cfgTab==='bridge'&&'active'"   @click="setNav('cfg','bridge')">Bridge</a></li>
+              <li><a :class="tab==='cfg'&&cfgTab==='rotator'&&'active'"  @click="setNav('cfg','rotator')">Rotator</a></li>
+              <li><a :class="tab==='cfg'&&cfgTab==='radar'&&'active'"    @click="setNav('cfg','radar')">Radar</a></li>
+              <li><a :class="tab==='cfg'&&cfgTab==='alerts'&&'active'"   @click="setNav('cfg','alerts')">Alerts</a></li>
+          </details>
+        </li>
+        <li><a :class="tab==='range' && 'active'" @click="setNav('range')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Range Test</a></li>
+        <li>
+          <a :class="tab==='perf' && 'active'" @click="setNav('perf')" class="flex justify-between items-center">
+            <span class="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+              Performance
+            </span>
+            <template x-if="perfScore() != null">
+              <span class="badge badge-xs font-mono"
+                    :class="perfHealthBadge(perfScore())"
+                    x-text="perfSignedDb(perfScore(), 1, true)"></span>
+            </template>
+          </a>
+        </li>
+        <li>
+          <a :class="tab==='control' && 'active'" @click="setNav('control')">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Control
+          </a>
+        </li>
+        <li>
+          <a :class="tab==='messages' && 'active'" @click="setNav('messages')" class="flex justify-between items-center">
+            <span class="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+              Messages
+            </span>
+            <span x-show="unreadMessages > 0" class="badge badge-error badge-sm" x-text="unreadMessages"></span>
+          </a>
+        </li>
+        <li class="mt-2 border-t border-base-200 pt-2">
+          <a :class="tab==='devices' && 'active'" @click="setNav('devices')">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
+            Devices
+            <span class="badge badge-sm ml-auto" :class="availableDevices.length ? 'badge-success' : 'badge-ghost'" x-text="availableDevices.length"></span>
+          </a>
+        </li>
+        <!-- Favourite nodes — server-computed list; each links to the focus
+             page. The browser filters nothing (BROWSER_CONTRACT). -->
+        <template x-for="f in favourites" :key="f.num">
+          <li>
+            <!-- min-w-0 on the flex parent is required for truncate to work
+                 on the child: without it the flex item refuses to shrink below
+                 its content width and the name overflows the 14rem sidebar. -->
+            <a class="min-w-0"
+               :class="tab==='node' && nodeStatusNum===f.num && 'active'"
+               :title="f.label"
+               @click="openNodeStatusPage(f.num)">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-warning"
+                   fill="currentColor" viewBox="0 0 24 24">
+                <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+              </svg>
+              <span class="truncate" x-text="f.label"></span>
+            </a>
+          </li>
+        </template>
+      </ul>
+
+      <!-- Status footer inside sidebar -->
+      <div class="p-3 border-t border-base-200 text-xs flex flex-col gap-1.5">
+        <template x-for="dev in availableDevices" :key="dev.addr">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-mono opacity-50 shrink-0" x-text="deviceLabel(dev.node_id)"></span>
+            <span class="inline-flex items-center gap-1 min-w-0">
+              <span x-html="pctBars(deviceBleStates[dev.node_id]?.signal_pct)"></span>
+              <span :class="devBleState(dev.node_id)==='ready'?'text-success opacity-70':devBleState(dev.node_id)==='error'?'text-error':'text-warning'"
+                    x-text="devBleState(dev.node_id) || '–'"></span>
+            </span>
+          </div>
+        </template>
+        <div x-show="!availableDevices.length" class="opacity-50 italic">No radios</div>
+        <div class="flex justify-between border-t border-base-200 pt-1 mt-0.5 opacity-50">
+          <span>WS</span>
+          <span :class="wsConnected ? 'text-success' : 'text-error'" x-text="wsConnected ? 'live' : 'offline'"></span>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Toast notifications — must be inside x-data scope -->
+    <div class="toast toast-top toast-end z-[9999] pointer-events-none top-16">
+      <template x-for="t in toasts" :key="t.id">
+        <div class="alert shadow-lg text-sm py-2 px-3 pointer-events-auto flex items-start gap-2 max-w-xs"
+             :class="t.type === 'error' ? 'alert-error' : 'alert-success'"
+             x-transition>
+          <span class="flex-1" x-text="t.message"></span>
+          <button @click="dismissToast(t.id)" class="btn btn-xs btn-ghost shrink-0 opacity-70 hover:opacity-100 -mr-1">✕</button>
+        </div>
+      </template>
+    </div>
+
+  </div>

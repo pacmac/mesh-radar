@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 84e0ad91637cc40b77e2a4d9fd6f74dd67e52649cecabd1fc3e66d007c7c6af7
+source_hash: ead095884d5455206633ace37eb4ac5513b707cadd6a686817488a9858aca065
 updated: 2026-07-18
 ---
 
@@ -139,10 +139,3 @@ The handler now builds the entry with its real `replyId` and calls the shared
 `this.messages`, computes threadRootPktId/replyDepth/isReply/isOrphan, splices
 the entry after the parent's thread (else unshift), and caps at 200 — the same
 threading `sendMessage` applies to TX. The stray 50-cap here is removed.
-
-## command_history + ack across both feeds (task messages-chat-only, 2026-07-20)
-
-Handles the server control feed: `command_history` -> `_applyCommandRows()` ->
-`this.commandMessages`. The `message_status` ACK lookup now searches **both**
-`this.messages` and `this.commandMessages` — the feeds are server-split, so a
-command's ACK would otherwise never find its row.

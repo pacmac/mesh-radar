@@ -1,7 +1,7 @@
 ---
 module: filters
 source: src/filters.js
-source_hash: d7fa8b764add8ea42ac86b59882012603ab8307412d5055c23c03380c69e9b3c
+source_hash: a54257adb5f2dfdc26588e2b4b478aab7eed6afd2da479b93e0b47a4088c82a9
 updated: 2026-07-20
 ---
 
@@ -82,14 +82,6 @@ logical message.
 - `category` — `MAX(m.category)`: the non-null outbound tag if any row has one
 - `short_name`/`long_name` — `COALESCE(MIN(m.*), MIN(n.*))`: message-stored name wins; falls back to live `nodes` table
 
-### `type_bucket` (post-query, for the feed type filter)
-
-Each returned row gains `type_bucket` — one of `chat` / `command` / `alarm` /
-`camera` / `diagnostics` — computed in JS via `messageBucket(category, text)`
-(`message-type.js`), not in SQL. Server-side so the browser only renders it
-(BROWSER_CONTRACT). The row's `rx_devices` and `channel` already cover the other
-two filter dimensions.
-
 ### `channel_name` (post-query, resolved per-row before aggregation)
 
 Each returned row gains `channel_name` — the **logical channel name** (Primary /
@@ -104,7 +96,7 @@ Mechanism: the SELECT emits `GROUP_CONCAT(DISTINCT m.device || '@' || m.channel)
 _dev_chans` (`@` separator — a MAC already contains `:`). Post-query, JS splits the
 pairs and calls `getChannelNameByMac(mac, index)` (`ws-relay.js`) for each, taking
 the first non-null name. `_dev_chans` is stripped from the output; `channel_name`
-is added alongside `type_bucket`. Resolution is a pure read of the in-memory
+is added to the row. Resolution is a pure read of the in-memory
 `lastDeviceChannels` cache — no network, no new table, no migration. If no pair
 resolves (gateway not cached yet, or an unconfigured overhearing radio),
 `channel_name` is `null` and the browser falls back to the raw `channel`.

@@ -6,9 +6,9 @@
              x-data="{ expandedDevice: null, deviceTab: 'settings', connectOpen: false }">
 
           <!-- ── Page header ─────────────────────────────────────── -->
-          <div class="flex items-center justify-between">
-            <h1 class="text-lg font-display font-bold tracking-wide">Connected radios</h1>
-            <button class="btn btn-sm btn-primary" @click="connectOpen = !connectOpen">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h1 class="text-base sm:text-lg font-display font-bold tracking-wide">Connected radios</h1>
+            <button class="btn btn-sm btn-primary shrink-0" @click="connectOpen = !connectOpen">
               <span x-text="connectOpen ? 'Close' : '+ Connect radio'"></span>
             </button>
           </div>
@@ -126,7 +126,7 @@
 
                 <!-- ── Strip header — click toggles (exclusive) ──── -->
                 <div role="button" tabindex="0"
-                     class="px-4 pt-3 pb-1 flex items-center gap-2 flex-nowrap overflow-hidden cursor-pointer select-none hover:bg-base-200/40 transition-colors"
+                     class="px-2 sm:px-4 pt-3 pb-1 flex items-center gap-1 sm:gap-2 flex-nowrap overflow-hidden cursor-pointer select-none hover:bg-base-200/40 transition-colors"
                      @click="deviceTab = 'settings'; expandedDevice = expandedDevice === dev.addr ? null : dev.addr">
                   <svg class="w-3.5 h-3.5 shrink-0 text-base-content/30 transition-transform duration-150"
                        :class="expandedDevice === dev.addr && 'rotate-90'"
@@ -137,7 +137,7 @@
                   <span class="contents" x-show="deviceConfigs[dev.node_id]?.label"
                         x-html="labelBadge(deviceConfigs[dev.node_id]?.label, deviceConfigs[dev.node_id]?.color)"></span>
                   <span class="font-display font-semibold truncate" x-text="dev.long_name || dev.short_name || dev.node_id"></span>
-                  <span class="font-mono text-xs text-base-content/30 shrink-0" x-text="dev.node_id"></span>
+                  <span class="font-mono text-xs text-base-content/30 shrink-0 hidden sm:inline" x-text="dev.node_id"></span>
                   <span class="contents" x-show="deviceConfigs[dev.node_id]?.is_primary" x-html="roleBadge('PRIMARY')"></span>
                   <span class="contents" x-show="deviceConfigs[dev.node_id]?.is_rotator" x-html="roleBadge('ROTATOR')"></span>
 
@@ -145,7 +145,9 @@
 
                   <button class="btn btn-xs btn-outline shrink-0"
                           x-show="dev.node_id !== activeNodeId"
-                          @click.stop="selectDevice(dev.addr)">Set active</button>
+                          @click.stop="selectDevice(dev.addr)">
+                    <span class="sm:hidden">Use</span><span class="hidden sm:inline">Set active</span>
+                  </button>
                   <span class="text-sm font-mono tabular-nums text-base-content/70 whitespace-nowrap shrink-0 hidden sm:inline"
                         x-show="deviceBleStates[dev.node_id]?.node_count != null"
                         x-text="deviceBleStates[dev.node_id]?.node_count + ' nodes'"></span>
@@ -153,7 +155,7 @@
                         x-show="deviceBleStates[dev.node_id]?.battery_level != null"
                         x-text="deviceBleStates[dev.node_id]?.battery_level + '% ⚡'"></span>
                   <span x-show="deviceBleStates[dev.node_id]?.signal_pct != null"
-                        class="inline-flex items-center gap-1 text-sm font-mono tabular-nums text-base-content/70 whitespace-nowrap shrink-0"
+                        class="hidden md:inline-flex items-center gap-1 text-sm font-mono tabular-nums text-base-content/70 whitespace-nowrap shrink-0"
                         title="BLE link quality">
                     <span x-html="pctBars(deviceBleStates[dev.node_id]?.signal_pct)"></span>
                     <span x-text="deviceBleStates[dev.node_id]?.signal_pct + '%'"></span>
@@ -166,10 +168,10 @@
                      x-data="{ get _em() { return nodeById(dev.node_id)?.environment_metrics; } }">
                   <span class="font-mono" x-text="deviceBleStates[dev.node_id]?.hw_model || '–'"></span>
                   <span x-show="dev.firmware_version">fw <span class="font-mono" x-text="dev.firmware_version"></span></span>
-                  <span x-show="deviceBleStates[dev.node_id]?.uptime_s != null">up <span class="font-mono" x-text="fmtUptime(deviceBleStates[dev.node_id].uptime_s)"></span></span>
-                  <span x-show="deviceBleStates[dev.node_id]?.voltage != null"><span class="font-mono" x-text="Number(deviceBleStates[dev.node_id].voltage).toFixed(2) + 'V'"></span></span>
+                  <span x-show="deviceBleStates[dev.node_id]?.uptime_s != null">up <span class="font-mono" x-text="fmtUptime(deviceBleStates[dev.node_id]?.uptime_s)"></span></span>
+                  <span x-show="deviceBleStates[dev.node_id]?.voltage != null"><span class="font-mono" x-text="Number(deviceBleStates[dev.node_id]?.voltage).toFixed(2) + 'V'"></span></span>
                   <span x-show="deviceBleStates[dev.node_id]?.channel_utilization != null">ch <span class="font-mono"
-                        x-text="Number(deviceBleStates[dev.node_id].channel_utilization).toFixed(1) + '% / ' + (deviceBleStates[dev.node_id].air_util_tx != null ? Number(deviceBleStates[dev.node_id].air_util_tx).toFixed(2) : '–') + '%'"></span></span>
+                        x-text="Number(deviceBleStates[dev.node_id]?.channel_utilization).toFixed(1) + '% / ' + (deviceBleStates[dev.node_id]?.air_util_tx != null ? Number(deviceBleStates[dev.node_id]?.air_util_tx).toFixed(2) : '–') + '%'"></span></span>
                   <span x-show="_em?.temperature != null" class="inline-flex items-center gap-1.5">
                     <span class="font-mono" x-text="(_em?.temperature?.toFixed(1) ?? '–') + ' °C / ' + (_em?.relative_humidity?.toFixed(0) ?? '–') + '%'"></span>
                     <span x-show="dewPoint(_em?.temperature, _em?.relative_humidity) >= _em?.temperature - 3"
@@ -191,7 +193,7 @@
                   <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-3">
 
                     <!-- Tab row -->
-                    <div class="join" role="tablist">
+                    <div class="grid grid-cols-3 sm:flex" role="tablist">
                       <button class="btn btn-sm join-item" :class="deviceTab==='settings' && 'btn-active'"
                               @click="deviceTab='settings'">Settings</button>
                       <!-- Radio/Channels/Owner moved from Config → Radio (task radio-config-into-devices).
@@ -430,7 +432,7 @@
                               <div class="flex items-center gap-2 mt-3" x-show="ch.loaded">
                                 <button class="btn btn-sm btn-primary"
                                         :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) || opLoading('ch_' + ch.index + '_' + cfgRadioId)"
-                                        @click="asyncOp('ch_' + ch.index + '_' + cfgRadioId, () => saveChannel(ch), { successMsg: 'Channel ' + ch.index + ' saved & verified' })">
+                                        @click="asyncOp('ch_' + ch.index + '_' + cfgRadioId, () => saveChannel(ch), { successMsg: 'Channel ' + ch.index + ' saved' })">
                                   <span x-show="opLoading('ch_' + ch.index + '_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
                                   Save
                                 </button>

@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mesh radar</title>
+<script>
+  (function() {
+    var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', dark ? 'business' : 'corporate');
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+      document.documentElement.setAttribute('data-theme', e.matches ? 'business' : 'corporate');
+    });
+  })();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><text y=%22.9em%22 font-size=%2220%22>📡</text></svg>">
+<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  /* Font role utilities — see docs/STYLE_GUIDE.md §3.
+     font-display = Oxanium, font-body = DM Sans, font-mono = JetBrains Mono. */
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          display: ['Oxanium', 'sans-serif'],
+          body: ['"DM Sans"', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', '"Courier New"', 'monospace'],
+        },
+      },
+    },
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script type="module" src="/app.js?v=20260627headroom4"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"></script>
+<style>
+  /* Reusable node avatar — set size via --sz custom property or modifier class.
+     font-size is derived as 32% of --sz so 4-char names always fit. */
+  .node-avatar {
+    --sz: 2.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: 700;
+    color: white;
+    width: var(--sz);
+    height: var(--sz);
+    font-size: calc(var(--sz) * 0.32);
+    flex-shrink: 0;
+    line-height: 1;
+    user-select: none;
+  }
+  .node-avatar-sm { --sz: 1.75rem; }
+  .node-avatar-lg { --sz: 2.75rem; }
+  [x-cloak] { display: none !important; }
+</style>
+<link rel="stylesheet" href="/style.css?v=20260627headroom4">
+</head>
+<body class="h-screen overflow-hidden bg-base-200">
+
+<div class="drawer h-screen" :class="sidebarPinned ? 'lg:drawer-open' : ''" x-data="dashboard()" x-init="init()">
+  <input id="nav-drawer" type="checkbox" class="drawer-toggle" x-model="drawerOpen" />
+
+  <!-- ===================== OTA OVERLAY ===================== -->
+  <!-- activeFlashKey getter (app-ui.js) returns the first active otaFlash_ op key, or null -->
+  <div x-show="activeFlashKey"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-base-300/80 backdrop-blur-sm">
+    <!-- Flashing -->
+    <span class="loading loading-rings loading-lg text-warning" x-show="opLoading(activeFlashKey)"></span>
+    <p class="text-base-content font-semibold" x-show="opLoading(activeFlashKey)">Flashing firmware…</p>
+    <!-- NVS serial wait countdown -->
+    <div x-show="opLoading(activeFlashKey) && otaNvsDeadline" class="text-center space-y-1">
+      <p class="text-warning font-semibold text-sm mt-2">Hold PRG + RST to enter ROM bootloader</p>
+      <p class="font-mono text-3xl font-bold tabular-nums" x-text="otaNvsCountdownSecs !== null ? otaNvsCountdownSecs + 's' : ''"></p>
+    </div>
+    <!-- Done -->
+    <svg x-show="opOk(activeFlashKey)" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+    </svg>
+    <p x-show="opOk(activeFlashKey)" class="text-success font-semibold text-lg">Flash complete</p>
+    <!-- Error -->
+    <svg x-show="opErr(activeFlashKey)" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+    <p x-show="opErr(activeFlashKey)" class="text-error font-semibold text-lg">Flash failed</p>
+    <p x-show="opErr(activeFlashKey)" class="text-base-content/60 text-sm font-mono text-center max-w-xs"
+       x-text="opErr(activeFlashKey) || ''"></p>
+    <button x-show="opErr(activeFlashKey)" class="btn btn-sm btn-ghost mt-2"
+            @click="ops = { ...ops, [activeFlashKey]: null }">Dismiss</button>
+    <!-- Progress while flashing -->
+    <p class="text-base-content/50 text-sm font-mono" x-show="opLoading(activeFlashKey)"
+       x-text="activeFlashKey ? activeFlashKey.replace('otaFlash_','') : ''"></p>
+    <div class="w-64 bg-base-200 rounded-full h-3 overflow-hidden" x-show="opLoading(activeFlashKey)">
+      <div class="bg-warning h-3 rounded-full transition-all duration-300"
+           :style="`width:${opPct(activeFlashKey) ?? 0}%`"></div>
+    </div>
+    <p class="text-base-content/70 text-sm font-mono" x-show="opLoading(activeFlashKey)"
+       x-text="(opPct(activeFlashKey) ?? 0) + '%'"></p>
+  </div>
+
+  <!-- ===================== NEED_PAIR PIN OVERLAY ===================== -->
+  <div x-show="needPairAddr"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-base-300/80 backdrop-blur-sm">
+    <div class="card bg-base-100 shadow-xl w-80 max-w-full">
+      <div class="card-body gap-3">
+        <!-- Title -->
+        <h2 class="card-title text-base-content">Bluetooth Pairing</h2>
+        <p class="text-base-content/60 text-sm">
+          Enter the 6-digit PIN shown on the device
+          <span class="font-mono font-semibold text-base-content/80" x-text="needPairAddr ? needPairAddr.slice(-8) : ''"></span>.
+        </p>
+        <!-- PIN input -->
+        <input type="text" inputmode="numeric" maxlength="6" placeholder="000000"
+               x-model="needPairPin"
+               :disabled="needPairBusy"
+               @keydown.enter="submitPairPin()"
+               class="input input-bordered font-mono tracking-widest text-center text-xl w-full" />
+        <!-- Error -->
+        <p x-show="needPairError" x-text="needPairError"
+           class="text-error text-sm text-center"></p>
+        <!-- Busy spinner -->
+        <div x-show="needPairBusy" class="flex items-center justify-center gap-2 text-base-content/60 text-sm">
+          <span class="loading loading-spinner loading-sm"></span>
+          <span>Pairing…</span>
+        </div>
+        <!-- Buttons -->
+        <div class="card-actions justify-end gap-2 mt-1" x-show="!needPairBusy">
+          <button class="btn btn-ghost btn-sm" @click="needPairAddr = null; needPairError = ''">Cancel</button>
+          <button class="btn btn-primary btn-sm" :disabled="!needPairPin" @click="submitPairPin()">Pair</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== DRAWER CONTENT ===================== -->
+  <div class="drawer-content flex flex-col h-screen overflow-hidden">
+
+    <!-- Top navbar -->
+    <div class="navbar min-h-0 py-1.5 bg-base-100 shadow-md sticky top-0 z-50 px-3">
+
+      <!-- LEFT: sidebar toggle + rotator mode buttons -->
+      <div class="flex-none flex items-center gap-2">
+        <!-- Mobile hamburger -->
+        <label for="nav-drawer" class="btn btn-square btn-ghost lg:hidden">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </label>
+        <!-- Desktop expand (only when sidebar collapsed) -->
+        <button class="btn btn-square btn-ghost hidden" :class="!sidebarPinned && 'lg:flex'"
+                @click="sidebarPinned = true; persistSet('sidebarPinned', true)" title="Expand sidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+        <!-- Rotator mode buttons (always visible when rotator known) -->
+        <div class="flex items-center gap-1.5 pl-1" x-show="rotatorConnected || scanMode">
+          <span class="inline-block w-1.5 h-1.5 rounded-full shrink-0"
+                :class="rotatorConnected ? 'bg-success animate-pulse' : 'bg-error opacity-60'"></span>
+          <div class="flex gap-0.5">
+            <button class="btn btn-xs font-mono tracking-widest px-2"
+                    :class="rotatorMode === 0 && !scanMode ? 'btn-outline btn-info' : 'btn-ghost opacity-40'"
+                    :disabled="scanMode"
+                    @click="setRotatorMode(0)">PASV</button>
+            <button class="btn btn-xs font-mono tracking-widest px-2"
+                    :class="rotatorMode === 1 && !scanMode ? 'btn-error' : 'btn-ghost opacity-40'"
+                    :disabled="scanMode"
+                    @click="setRotatorMode(1)">ACTV</button>
+            <button class="btn btn-xs font-mono tracking-widest px-2"
+                    :class="scanMode ? 'btn-warning btn-outline' : 'btn-ghost opacity-40'"
+                    :disabled="!rotatorConnected || !rotatorDeviceId()"
+                    @click="scanMode ? abortScan() : startScan()"
+                    x-text="scanMode ? 'ABORT' : 'SCAN'"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile title + permanent spacer -->
+      <div class="flex-1 flex items-center justify-center gap-3">
+        <span class="text-base font-display font-bold tracking-wide uppercase lg:hidden">mesh radar</span>
+      </div>
+
+      <!-- RIGHT: az readout + status badges -->
+      <div class="flex-none flex items-center gap-2">
+        <!-- Az readout -->
+        <span class="font-mono text-xs tabular-nums hidden sm:inline text-info"
+              x-show="rotatorStatus.az != null"
+              x-text="Number(rotatorStatus.az).toFixed(1) + '°'"></span>
+        <!-- Per-device not-ready indicator — all devices shown in header -->
+        <template x-for="dev in availableDevices.filter(d => { const k = d.node_id ?? d.addr; const s = devBleState(k); return s && s !== 'ready' && s !== 'offline'; })" :key="dev.addr">
+          <div class="tooltip tooltip-bottom" :data-tip="(dev.node_id ?? dev.addr) + ' — ' + devBleLabel(dev.node_id ?? dev.addr)"
+               @click="setNav('devices')" class="cursor-pointer">
+            <div class="badge badge-warning gap-1 text-xs animate-pulse">
+              <span class="font-mono" x-text="deviceLabel(dev.node_id ?? dev.addr)"></span>
+              <span x-text="devBleLabel(dev.node_id ?? dev.addr)"></span>
+            </div>
+          </div>
+        </template>
+        <div class="badge badge-sm badge-info" x-text="nodeCount + ' nodes'"></div>
+        <template x-if="perfScore() != null">
+          <div class="badge badge-sm font-mono cursor-pointer"
+               :class="perfHealthBadge(perfScore())"
+               :title="'Signal headroom: ' + perfSignedDb(perfScore()) + ' above decode limit'"
+               @click="setNav('perf')"
+               x-text="'RF ' + perfSignedDb(perfScore(), 1, true)"></div>
+        </template>
+        <div class="badge badge-sm" :class="wsConnected ? 'badge-primary' : 'badge-ghost'" x-text="wsConnected ? 'live' : 'offline'"></div>
+      </div>
+    </div>
+
+    <!-- Offline banner -->
+    <div x-show="!serverReachable" x-transition class="bg-error text-error-content text-sm font-semibold text-center py-2 px-4 z-40">
+      Bridge unreachable — retrying…
+    </div>
+
+    <!-- No device selected banner -->
+    <div x-show="!activeNodeId && serverReachable" x-transition class="bg-warning text-warning-content text-sm font-semibold text-center py-2 px-4 z-40 cursor-pointer" @click="setNav('devices')">
+      No device selected — go to Devices to connect
+    </div>
+
+    <!-- Main content — all tabs fill viewport, no page-level scroll -->
+    <div class="flex-1 min-h-0 overflow-hidden">
+      <div :class="tab==='radar' ? 'h-full flex flex-col' : 'h-full flex flex-col p-3 max-w-[1400px] w-full mx-auto'">
+
+        <!-- Tabs are lazy-mounted (x-if): only the active tab's DOM + Alpine
+             effects exist, so hidden tabs' x-for lists don't reconcile on every
+             WS update (task lazy-tabs-xif). tab-shared is a node-info panel, not
+             a tab — it stays always-mounted. -->
+        <template x-if="tab==='overview'"><!-- include: tab-overview.html --></template>
+        <template x-if="tab==='radar'"><!-- include: tab-radar.html --></template>
+        <!-- include: tab-shared.html -->
+        <template x-if="tab==='nodes'"><!-- include: tab-nodes.html --></template>
+        <template x-if="tab==='cfg'"><!-- include: tab-cfg.html --></template>
+        <template x-if="tab==='perf'"><!-- include: tab-perf.html --></template>
+        <template x-if="tab==='range'"><!-- include: tab-range.html --></template>
+        <template x-if="tab==='messages'"><!-- include: tab-messages.html --></template>
+        <template x-if="tab==='control'"><!-- include: tab-control.html --></template>
+        <template x-if="tab==='devices'"><!-- include: tab-devices.html --></template>
+        <template x-if="tab==='node'"><!-- include: tab-node.html --></template>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- include: drawer-sidebar.html -->
+
+</div>
+
+<script src="/utils.js"></script>
+<script>
+  document.addEventListener('click', e => {
+    document.querySelectorAll('details.dropdown[open]').forEach(d => {
+      if (!d.contains(e.target)) d.removeAttribute('open');
+    });
+  });
+</script>
+
+</body>
+</html>

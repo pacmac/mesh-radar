@@ -1,7 +1,7 @@
 ---
 module: app-config
 source: public/app-config.js
-source_hash: 1a52e153513e4ffbfff727b2591ab05037975803be8252fbcea8b49a0b7cd250
+source_hash: 3573dd95dfecdcdb2482393a750014c037ccb4a63934b39e315eb1a72d81019e
 updated: 2026-07-16
 ---
 
@@ -42,11 +42,18 @@ dirty-guard, loaded/loading/error state) unchanged.
 
 ### `saveChannel(ch)` (was app-config.js:189)
 
-The write path is untouched: `submitOp('channel_config', target, …)` — the
-op flow still verifies the write. The post-save refresh switches from the
-per-channel GET to one bulk `GET cd('/channels')`, updating `ch.data` for
-ALL channels (a role change can affect the set) and rebuilding the saved
-channel's form from its fresh `ch.data`.
+The channel endpoint replaces the complete `ChannelSettings` protobuf; it is
+not a patch. `channelWriteBody()` therefore overlays edited fields on the
+cached settings before `submitOp('channel_config', target, …)`. This preserves
+locked fields omitted by `collectForm()`, especially the PSK. Role remains
+outside `settings`, and the route index is not duplicated in the request body.
+
+mesh-gw completes the BLE write but its bulk channel cache remains stale until
+the next radio sync. The old post-save refresh immediately repainted the
+pre-write values and made every save appear broken. The accepted full
+replacement is now retained in `ch.data`, the form dirty flag is cleared, and
+the form is rebuilt from that accepted state. A later device sync remains the
+authoritative persistence confirmation.
 
 ### Known edge
 
@@ -76,8 +83,10 @@ mounts; ops verify via `submitOp` (op-client.js).
 - Live: Devices → expand radio → Channels → open a channel → form renders
   with the radio's real values (e.g. channel 1 name "mqtt"), no request to
   `/channels/{index}`, no console error.
-- Save path: DEFERRED in validation — exercising it writes channel config to
-  a live radio (psk warning applies). The refresh logic is the same
-  bulk-endpoint call pattern as loadChannels, verified by code path.
+- Unit: `tests/test_channel_write.mjs` proves omitted locked settings are
+  preserved and role is separated.
+- Live: OMNI channel 3 accepted through the UI, survived a controlled radio
+  reconnect, then was restored to unused and verified after a second reconnect
+  (`browser-page-playwright-audit`, 2026-07-23).
 - Regression: sections (lora form) and owner form still load — their
   endpoints are unaffected.

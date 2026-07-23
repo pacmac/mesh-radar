@@ -5,7 +5,34 @@
    Signal teal accent · themes: business (dark) / corporate (light)
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
+@font-face {
+  font-family: 'Oxanium';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/vendor/fonts/oxanium-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 300 600;
+  font-display: swap;
+  src: url('/vendor/fonts/dm-sans-normal-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/vendor/fonts/dm-sans-italic-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('/vendor/fonts/jetbrains-mono-latin.woff2') format('woff2');
+}
 
 /* ── THE global size knob (STYLE_GUIDE §2) ─────────────────
    The only absolute font size in the application. All Tailwind

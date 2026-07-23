@@ -3,7 +3,6 @@ import { getConfig, setConfig, getMqttNode, listFavourites, listFavouriteNodes, 
 import { getRotatorAddress } from './device-config.js';
 import { passesFilter, ownDeviceNums } from './node-filter.js';
 import { haversine, bearing } from './utils.js';
-import { clientRole } from './client-role.js';
 
 const NEW_NODE_TTL = 86400; // 24 hours
 
@@ -455,11 +454,7 @@ class NodeList extends EventEmitter {
       return { ...n, _km: haversine(hp.lat, hp.lon, lat, lon), _az: bearing(hp.lat, hp.lon, lat, lon) };
     });
 
-    // CORE SSOT: stamp client_role on EVERY emitted node, here at the one boundary
-    // where nodes leave for consumers. NOT in enrichFromCache — most _cache.set
-    // paths bypass that helper, so nodes populated by them silently lacked the
-    // field (observed: a PAC node with role "200.0" arrived with client_role null).
-    return withGeo.map(n => ({ ...n, client_role: clientRole(n.user?.role) }));
+    return withGeo;
   }
 
   _scheduleEmit() {

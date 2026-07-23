@@ -72,6 +72,9 @@
         <button class="btn btn-primary btn-sm" @click="start()"
                 :disabled="!target || state === 'running' || starting"
                 x-text="state === 'running' ? 'transfer in progress' : (starting ? 'starting…' : 'Start transfer')"></button>
+        <button class="btn btn-secondary btn-sm" @click="capture()"
+                :disabled="!target || state === 'running' || capturing || starting"
+                x-text="capturing ? 'taking photo…' : 'Take photo'"></button>
         <button class="btn btn-outline btn-sm" @click="publish()"
                 :disabled="!target || state === 'running' || publishing"
                 x-text="publishing ? 'publishing…' : 'Publish'"></button>
@@ -291,7 +294,7 @@ function pushViewer() {
     lastEventAt: null, sinceLast: 0, log: [],
     targets: [], target: '', pidInput: '', starting: false, startError: '',
     images: [], endedAt: null, publishing: false, _lastMark: null,
-    _pendingSrc: null, livePainted: false, decodeFailed: false,
+    _pendingSrc: null, livePainted: false, decodeFailed: false, capturing: false,
 
     // Explicit staging. Uses the existing command route — no new backend, and the
     // server still owns gateway + channel. Deliberate because an automatic publish can
@@ -313,8 +316,38 @@ function pushViewer() {
 
     // Submission workflow (BROWSER_CONTRACT sanctions POST for this). The browser sends
     // only num + pid — gateway and channel are server decisions.
-    async start() {
-      if (!confirm(`Start a transfer from node ${this.target}?\n\nThis TRANSMITS on the Private channel and takes about 3 minutes.`)) return;
+    // Take a FRESH photo: cam grab -> new pid -> fetch it. On a failed/silent grab, say so
+    // and do NOT fetch (that would re-fetch a stale image as if it were new). cam grab is
+    // intermittent (mt-transport), so err/no_reply are normal retryable outcomes.
+    async capture() {
+      if (!confirm(`Take a new photo from node ${this.target}?\n\nThis wakes the camera and puts a command on the Private channel.`)) return;
+      this.capturing = true; this.startError = '';
+      try {
+        const r = await fetch(`/nodes/${this.target}/capture`, { method: 'POST' });
+        const body = await r.json().catch(() => ({}));
+        if (r.ok && body.state === 'captured') {
+          this.note(`CAPTURED pid=${body.pid} (${body.len} B, ${body.n} chunks)`);
+          this.pidInput = String(body.pid);
+          this.capturing = false;
+          await this.start(true);          // fetch the pid we just captured, no 2nd confirm
+          return;
+        }
+        // capture_failed (with st) or no_reply — both retryable, never fetched.
+        if (body.state === 'capture_failed') {
+          this.startError = `camera capture failed${body.st != null ? ` (st ${body.st})` : ''} — try again`;
+        } else if (body.state === 'no_reply') {
+          this.startError = 'no reply from the camera — try again';
+        } else {
+          this.startError = `capture ${r.status}: ${body.error || 'failed'}`;
+        }
+      } catch (e) { this.startError = e.message; }
+      finally { this.capturing = false; }
+    },
+
+    async start(skipConfirm = false) {
+      // skipConfirm lets capture() chain straight into the fetch after a successful grab,
+      // so the operator sees ONE prompt (the capture) not two.
+      if (!skipConfirm && !confirm(`Start a transfer from node ${this.target}?\n\nThis TRANSMITS on the Private channel and takes about 3 minutes.`)) return;
       this.starting = true; this.startError = '';
       try {
         const r = await fetch(`/nodes/${this.target}/chunk-fetch`, {

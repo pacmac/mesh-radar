@@ -1,7 +1,7 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: 5f3396525ef91d8c26fcdf4a7c1c5d17606d1c007860ac3f13475e357e263dd7
+source_hash: d9d5ad472e28b971f0115739599bd7634c2102d15aa4d1ae4ef5c660da189973
 updated: 2026-07-20
 ---
 
@@ -11,6 +11,12 @@ updated: 2026-07-20
 
 Sidebar drawer: logo block, active-device indicator + selector, nav menu,
 device status footer, toast container. Presentation only.
+
+## Standard-node cleanup (2026-07-23)
+
+The removed custom Config → Radio entry no longer points at a dead sub-tab.
+Standard per-radio configuration lives on Devices; Config now links Bridge,
+Rotator, Modes, Radar, and Alerts.
 
 ## Scope
 
@@ -89,9 +95,3 @@ The device selector binds `x-model="activeDevice"`; options carry
 `:value="d.addr"` and are keyed by `d.addr` (node_id can be null
 pre-sync — keying on it produced duplicate-null Alpine keys). Labels
 still render via deviceLabel until C3c bundles.
-
-## Control nav item (task `command-response-route`, 2026-07-20)
-
-A `Control` entry sits above Messages (`@click="setNav('control')"`, active when
-`tab==='control'`) — the command/response console page. Same `<li><a>` idiom as
-the Messages/Devices items. Command traffic lives here; Messages is chat-only.

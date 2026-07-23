@@ -26,13 +26,7 @@ import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
 import geocodeRouter from './geocode.js';
 import { registerBridgeEvents } from './bridge-events.js';
-import alignRouter, { attachAlignWs } from './align-api.js';
-import { loadTransport } from './transport-plugin.js';
 import nodesApi from './nodes-api.js';
-import settingsApi from './settings-api.js';
-import chunkRouter, { PAYLOAD_DIR as CHUNK_PAYLOAD_DIR } from './chunk-api.js';
-import commandRouter from './command-api.js';
-import captureRouter from './capture-api.js';
 import { registerStartupHandlers } from './startup.js';
 import { initLifecycle } from './lifecycle.js';
 import { startImapReceiver } from './imap-receiver.js';
@@ -72,10 +66,18 @@ const WS_ONLY_EXACT = new Set(['/config']);
 
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
+  // Document navigation may target the same path as a WS-only API
+  // (`/config`, `/devices`). Only browser fetch/XHR page-data reads are
+  // subject to the 410 guard; HTML navigations must reach the SPA stub.
+  if (
+    req.headers.accept?.includes('text/html')
+    || req.headers['sec-fetch-mode'] === 'navigate'
+    || req.headers['upgrade-insecure-requests'] === '1'
+  ) return next();
   const path = '/' + req.path.split('/')[1]; // first segment only
   if (!WS_ONLY_ROUTES.has(path) && !WS_ONLY_EXACT.has(req.path)) return next();
   if (req.headers['sec-fetch-dest'] !== 'empty') return next(); // server-side / curl — allow
-  return res.status(410).json({
+  return res.status(410).set('Cache-Control', 'no-store').json({
     error:   'ws_only',
     message: 'GET /devices is not available to browser clients. Subscribe to the WebSocket stream — device_list events carry real-time device state.',
     ws:      '/events',
@@ -156,7 +158,6 @@ app.get('/nodes', (req, res) => {
 
 app.use('/config', configRouter);
 app.use(nodesApi);
-app.use(settingsApi);
 app.use('/device-config', deviceConfigRouter);
 // The ONE device-removal operation — gw forget + local state cleanup (device-remove-op)
 app.use('/device', deviceRemoveRouter);
@@ -186,7 +187,6 @@ app.get('/schema/bridge_config', (req, res) => res.json(BRIDGE_CONFIG_SCHEMA));
 app.use(createPerformanceRouter(broadcastAll));
 
 app.use('/geocode', geocodeRouter);
-app.use('/', alignRouter);   // /align/targets, /align/start, /align/stop
 
 app.use('/range_test', rangeTestRouter);
 
@@ -195,10 +195,6 @@ app.use(tracerouteRouter);
 app.use(autoPurgeRouter);
 
 app.use(messagesRouter);
-
-app.use(chunkRouter);   // POST /nodes/:num/chunk-fetch (alarm-transport plugin)
-app.use(commandRouter); // POST /nodes/:num/command (addressed command/response on Private)
-app.use(captureRouter); // POST /nodes/:num/capture (cam grab -> fresh pid)
 
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 
@@ -238,36 +234,8 @@ app.use('/ops', opManager.router);  // POST /ops, GET /ops/manifest, GET /ops/:o
 // -- static files -----------------------------------------------------------
 app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
 
-// Fetched chunk payloads (images pulled off nodes) — read-only. The mt-transport
-// Client writes them here; node-dash serves them for the node-page gallery.
-// A `.part` is a TRUNCATED JPEG: the transfer's contiguous prefix, with no FFD9
-// end-of-image marker. Chromium renders such a file anyway; most decoders REFUSE it
-// outright and draw nothing — which is why the live image painted here and was blank
-// for Peter through an entire transfer.
-//
-// So serve partials through a handler that appends FFD9, making the response a
-// STRUCTURALLY VALID JPEG that ends where the data ends. Decoders that reject a
-// truncated stream accept this one. The file on disk is untouched.
-app.get('/chunk-images/{*rest}', (req, res, next) => {
-  const rel = decodeURIComponent(req.path.replace(/^\/chunk-images\//, ''));
-  if (!rel.endsWith('.part')) return next();
-  // Contain to the payload dir — a path escape here would serve arbitrary files.
-  const abs = path.resolve(CHUNK_PAYLOAD_DIR, rel);
-  if (!abs.startsWith(path.resolve(CHUNK_PAYLOAD_DIR))) return res.sendStatus(403);
-  let buf;
-  try { buf = readFileSync(abs); } catch { return res.sendStatus(404); }
-  const hasEOI = buf.length >= 2 && buf[buf.length - 2] === 0xFF && buf[buf.length - 1] === 0xD9;
-  res.set('Content-Type', 'image/jpeg');
-  res.set('Cache-Control', 'no-store');
-  res.send(hasEOI ? buf : Buffer.concat([buf, Buffer.from([0xFF, 0xD9])]));
-});
-
-app.use('/chunk-images', express.static(CHUNK_PAYLOAD_DIR, { etag: true, maxAge: 0, index: false }));
-
 // Debug monitor — served directly, not through the SPA assembler
 app.get('/debug', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'debug.html')));
-// Mobile Yagi alignment page — standalone document, same precedent as /debug.
-app.get('/align', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'align.html')));
 
 // Catch-all: serve assembled index.html for any unrecognised path (SPA deep-links)
 app.use((req, res) => serveIndex(req, res));
@@ -275,11 +243,6 @@ app.use((req, res) => serveIndex(req, res));
 // -- server + WS relay -------------------------------------------------------
 const server = http.createServer(app);
 const wss = attachWsRelay(server, getRangeTimer);
-
-// Mobile Yagi alignment page. Same port, same server — /align and its own narrow
-// WS /align/events. Deliberately NOT on the dashboard's /events stream, which
-// pushes ~7.2 MB on connect; the alignment page needs ~11 KB for a whole session.
-attachAlignWs(server);
 
 function broadcastAll(msg) {
   const data = JSON.stringify(msg);
@@ -372,9 +335,3 @@ registerBridgeEvents(bridge);
 initLifecycle();
 
 registerStartupHandlers(bridge);
-
-// Optional alarm-transport plugin (portnums 256/260/261, chunked transfer).
-// Awaited so every request handler sees a settled capability set, but absence is
-// a normal state — this resolves to a null object and never rejects, so a box
-// with only stock Meshtastic nodes boots exactly as before.
-await loadTransport();

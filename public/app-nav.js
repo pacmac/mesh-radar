@@ -2,9 +2,9 @@
 import { persistGet, persistSet } from './app-persist.js';
 
 const _PATH_TO_TAB = {
-  '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
+  '/': 'overview', '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
   '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/devices': 'devices',
-  '/performance': 'perf',
+  '/device-config': 'devices', '/performance': 'perf',
 };
 const _TAB_TO_PATH = {
   overview: '/', radar: '/radar', nodes: '/nodes',
@@ -24,7 +24,20 @@ export function nodeNumFromPath(pathname = window.location.pathname) {
 
 export function initTab() {
   if (nodeNumFromPath()) return 'node';
-  return _PATH_TO_TAB[window.location.pathname] ?? persistGet('activeTab', 'overview');
+  const saved = persistGet('activeTab', 'overview');
+  const routed = _PATH_TO_TAB[window.location.pathname];
+  if (routed) {
+    if (!Object.hasOwn(_TAB_TO_PATH, saved)) persistSet('activeTab', routed);
+    return routed;
+  }
+  if (Object.hasOwn(_TAB_TO_PATH, saved)) return saved;
+  persistSet('activeTab', 'overview');
+  return 'overview';
+}
+
+export function tabFromPath(pathname = window.location.pathname) {
+  if (nodeNumFromPath(pathname)) return 'node';
+  return _PATH_TO_TAB[pathname] ?? null;
 }
 
 export const navMixin = {
@@ -37,12 +50,13 @@ export const navMixin = {
     if (this.tab === 'node' && t !== 'node') this._destroyNodeCharts();
     this.tab = t;
     persistSet('activeTab', t);
-    if (c) { this.cfgTab = c; persistSet('cfgTab', c); }
+    const cfg = c === 'radio' ? 'bridge' : c;
+    if (cfg) { this.cfgTab = cfg; persistSet('cfgTab', cfg); }
     this.drawerOpen = false;
     const p = _TAB_TO_PATH[t] || '/';
     if (window.location.pathname !== p) history.pushState({ tab: t }, '', p);
     if (t === 'radar') this.$nextTick(() => this.initRadar());
-    else if (t === 'cfg') this.switchCfgTab(c || this.cfgTab || 'radio');
+    else if (t === 'cfg') this.switchCfgTab(cfg || this.cfgTab || 'bridge');
     else if (t === 'range') { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
     else if (t === 'messages') this.unreadMessages = 0;
     else if (t === 'perf') { this.adoptPerfLoraCfg(); this.perfHistory = this.perfHistorySlice(); this.$nextTick(() => this.initPerfCharts()); }

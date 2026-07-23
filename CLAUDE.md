@@ -79,6 +79,7 @@ Nothing is "fixed" until it passes a test that proves it.
 
 ## Workflow — no exceptions
 
+- Responses must be terse unless the user explicitly asks for details.
 - Every change goes through `/idiot`. No exceptions, no shortcuts.
 - Every task and step is tracked in mcpp-plan. No exceptions.
 - No `Edit`, `Write`, or file modification without an active mcpp task and an attached spec.

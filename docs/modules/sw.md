@@ -1,7 +1,7 @@
 ---
 module: sw
 source: public/sw.js
-source_hash: 4567833f3b1af891fa68eda316cb15128f4892c13c3b7bd8c9d1b1916b9d429d
+source_hash: e23ed75ceab4e084e5351215b0763938faf09bd5c65f450b897c933f43b8f377
 updated: 2026-07-08
 ---
 
@@ -15,7 +15,7 @@ so the SW never intercepts them.
 
 ## Behaviour
 
-- **Cache name:** `CACHE` (`mesh-gw-dash-vN`). Bumping the version invalidates
+- **Cache name:** `CACHE` (`mesh-gw-dash-vN`, currently `v4`). Bumping the version invalidates
   every client's cache — the `activate` handler deletes all non-current caches.
 - **Precache (`install`):** `SHELL = ['/', '/app.js', '/style.css', '/config.js']`.
   `skipWaiting()` + `clients.claim()` so a new SW takes over immediately.
@@ -44,6 +44,9 @@ so the SW never intercepts them.
   versa) is a broken *mix* (lazy-tabs split the perf mount/teardown across
   `index.html` + `app-nav` + `app-perf`, so a partial update showed "perf: no
   data"). Any `index.html` edit that pairs with module changes MUST bump `CACHE`.
+- **`v3` → `v4`** (`browser-page-playwright-audit`, 2026-07-23) atomically
+  delivers the local Alpine/Chart/Tailwind assets, route migration, and mobile
+  shell changes.
 
 ## Test notes
 

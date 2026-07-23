@@ -70,38 +70,9 @@ export function pruneDevice(mac, nodeId = null) {
 let _broadcastSettings = () => {};
 export function broadcastSettings() { _broadcastSettings(); }
 
-// chunk-fetch progress: chunk-api.js pushes chunk_progress/done/error here so the
-// browser renders a progress bar + result. Wired to broadcast inside attachWsRelay;
-// a no-op before the relay exists.
-let _broadcastChunkProgress = () => {};
-export function broadcastChunkProgress(ev) { _broadcastChunkProgress(ev); }
-
-// Stored payloads (finished images AND resumable .part files) are announced to every
-// new connection, so a browser that reloads — or opens for the first time after a
-// transfer ended — is told what exists. Without this, chunk_done was fire-and-forget:
-// the result lived on disk and no client could ever learn of it (a directory GET is
-// barred by the WS-only transport rule).
-//
-// chunk-api registers the scanner because it owns PAYLOAD_DIR; a direct import here
-// would be circular (chunk-api already imports this module).
-let _chunkImagesProvider = () => [];
-export function setChunkImagesProvider(fn) { _chunkImagesProvider = fn; }
-export function broadcastChunkImages() {
-  try { _broadcastChunkImagesEvent(); } catch { /* relay not attached yet */ }
-}
-let _broadcastChunkImagesEvent = () => {};
 // Seed from persisted mapping so ownDeviceNums() is correct immediately on cold start.
 for (const [mac, nodeId] of loadNodeMacMap()) {
   _liveNodeIds.set(mac, nodeId);
-}
-
-// The configured channels of a gateway radio, by its !hexid. Needed server-side
-// so a command can resolve its TX channel by NAME rather than a hardcoded index
-// (NODE_SETTINGS_SSOT_SPEC — Private only, never primary).
-export function getDeviceChannelsByNodeId(nodeId) {
-  const mac = getLiveMacByNodeId(nodeId);
-  if (!mac) return null;
-  return lastDeviceChannels[mac.toUpperCase()] ?? null;
 }
 
 // Resolve a stored message's (device MAC, channel INDEX) to the LOGICAL channel
@@ -141,8 +112,7 @@ const _seenLivePktIds = new Set();
 // chance of a pushed value disagreeing with a fetched one.
 // Throttled per node: a burst of packets must not storm connected browsers.
 // This is a delivery concern, not a data decision.
-// MAC -> configured channels. Module scope so getDeviceChannelsByNodeId can
-// read it outside attachWsRelay.
+// MAC -> configured channels.
 const lastDeviceChannels = {};
 
 const _lastStatusHint = new Map();   // num → ms
@@ -299,15 +269,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // Seeded from device_snapshot on bridge connect, then kept live by WS events.
   // Replayed to new frontend clients on connect — no per-client HTTP calls.
   const lastDeviceState = {};
-  // The in-flight chunk transfer, replayed to every new connection. null = none.
-  let lastChunkProgress = null;
-  // The last TERMINAL outcome (done/error) and when it happened. Replayed too: without
-  // it, a page that reloads — or simply sits there — after a failure shows a stale
-  // frame counter and no explanation, which reads as "hung" when the transfer actually
-  // finished. A finished-and-failed transfer must look different from a running one.
-  let lastChunkTerminal = null;
-  let _lastImagesPush = 0;
-
   // Last-known device list — replayed to new frontend clients on connect.
   // Composed from lastDeviceState in memory — no HTTP calls after startup.
   let lastDeviceList = null;
@@ -422,81 +383,19 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     broadcast(lastDeviceList);
   }
   _pokeDeviceList = broadcastDeviceList;
-  // A transfer runs for minutes, so a browser that connects MID-transfer must be told
-  // one is running — otherwise it renders "idle" with a live start button, the user
-  // presses it and gets a 409 from chunk-api's one-in-flight guard. The button's
-  // enabled/disabled state is server-owned (BROWSER_CONTRACT); the browser must never
-  // infer it from the absence of events.
-  //
-  // Cached here rather than read back from chunk-api to avoid a circular import
-  // (chunk-api already imports this module). Cleared on any terminal event, so a
-  // stale "running" cannot outlive the transfer. A process restart also clears it,
-  // which is correct: a restart kills the transfer too.
-  _broadcastChunkImagesEvent = () =>
-    broadcast({ type: 'chunk_images', images: _chunkImagesProvider() });
-
-  _broadcastChunkProgress = (ev) => {
-    // A terminal event changes what is on disk, so re-announce the stored set.
-    if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error') {
-      setTimeout(() => { try { _broadcastChunkImagesEvent(); } catch {} }, 250);
-    }
-    // DURING a transfer, re-announce the listing periodically so the growing `.part` is
-    // re-rendered — that is what makes the picture fill in live rather than appearing
-    // only at the end. Throttled: the listing is a directory walk and onProgress fires
-    // about once a second, so 4 s gives a visible fill without re-walking constantly.
-    else if (ev?.type === 'chunk_progress' && Date.now() - _lastImagesPush > 4000) {
-      _lastImagesPush = Date.now();
-      // Announce unconditionally while a transfer runs.
-      //
-      // A "only if it grew" gate was tried and REMOVED: the `.part` holds the contiguous
-      // prefix, so its size stops changing the moment a chunk is lost — while later
-      // chunks are still arriving and the repair round is still to come. The gate
-      // therefore suppressed every announce after the first gap, and the image stopped
-      // updating altogether. Cheapness is not worth a display that silently freezes.
-      //
-      // Re-fetching identical bytes is harmless now: the viewer preloads each candidate
-      // and only swaps on a successful decode, so an unchanged file simply repaints the
-      // same frame.
-      try { _broadcastChunkImagesEvent(); } catch { /* relay not attached */ }
-    }
-    if (ev?.type === 'chunk_progress') { lastChunkProgress = ev; lastChunkTerminal = null; }
-    else if (ev?.type === 'chunk_done' || ev?.type === 'chunk_error') {
-      lastChunkProgress = null;
-      lastChunkTerminal = { ...ev, endedAt: new Date().toISOString() };
-    }
-    broadcast(ev);
-  };
-
   // Enriched message history — used for the on-connect replay and rebroadcast
   // to all clients after a dash send (message-tx-broadcast). 200 rows: bot
   // chatter churned the old 50-row window within hours.
   function buildMessageFeedRows() {
     return _enrichMessages(queryMessages(200).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) })));
   }
-  // The chat feed. Since control/command traffic has its own feed (below), the
-  // messages page is a CHAT page: only chat-bucket rows reach it, server-side, so
-  // the browser needs no type/channel filtering to keep commands out.
   function buildMessageHistoryEvent(rows) {
-    const msgRows = (rows ?? buildMessageFeedRows()).filter(m => m.type_bucket === 'chat');
-    return { type: 'message_history', messages: msgRows };
+    return { type: 'message_history', messages: rows ?? buildMessageFeedRows() };
   }
-  // Control feed: the command/response subset, SERVER-computed (type_bucket) so no
-  // consumer filters. Its own WS event on /events so the mt-transport Client (DEV1)
-  // and the browser Control page subscribe to it directly for control + monitoring
-  // — the browser renders it and decides nothing (BROWSER_CONTRACT). Pass `rows` to
-  // reuse an already-built feed rather than re-querying.
-  function buildCommandHistoryEvent(rows) {
-    const msgRows = (rows ?? buildMessageFeedRows()).filter(m => m.type_bucket === 'command');
-    return { type: 'command_history', messages: msgRows };
-  }
-  // A new message rebroadcasts BOTH feeds (a command is also a message, so command
-  // traffic already triggers this path). Built from one query, broadcast as two.
   _broadcastMessageHistory = () => {
     try {
-      const rows = buildMessageFeedRows();
-      broadcast(buildMessageHistoryEvent(rows));   // chat only
-      broadcast(buildCommandHistoryEvent(rows));   // control only
-    } catch (e) { console.error('[ws-relay] message/command history rebroadcast failed:', e.message); }
+      broadcast(buildMessageHistoryEvent());
+    } catch (e) { console.error('[ws-relay] message history rebroadcast failed:', e.message); }
   };
 
   _pruneDevice = (mac, nodeId) => {
@@ -883,26 +782,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const since24h = Math.floor(Date.now() / 1000) - 86400;
 
       const feedRows = buildMessageFeedRows();
-      ws.send(JSON.stringify(buildMessageHistoryEvent(feedRows)));   // chat feed replay
-      ws.send(JSON.stringify(buildCommandHistoryEvent(feedRows)));   // control feed replay
-
-      // An in-flight chunk transfer, if any. Sent ONLY while one is running, so its
-      // absence means "no transfer", not "unknown". A viewer opened mid-transfer
-      // renders it as running and its start control as unavailable.
-      if (lastChunkProgress) ws.send(JSON.stringify(lastChunkProgress));
-      // ...or the last outcome, so a failure that happened while nobody was looking is
-      // still visible, with the time it ended.
-      else if (lastChunkTerminal) ws.send(JSON.stringify(lastChunkTerminal));
-      // ...or an explicit "nothing here". A browser that was watching a transfer when the
-      // process restarted reconnects to a server with no memory of it — and both caches
-      // above are in-memory, so both are empty. Without this it keeps rendering its last
-      // frame forever and reads as a live transfer that froze. That is exactly how a pm2
-      // restart mid-transfer presented on 2026-07-20: "crashed / stalled" with a log that
-      // simply stopped. Silence again, and stating it costs one small event.
-      else ws.send(JSON.stringify({ type: 'chunk_idle' }));
-
-      // Everything already on disk — finished images and resumable partials alike.
-      ws.send(JSON.stringify({ type: 'chunk_images', images: _chunkImagesProvider() }));
+      ws.send(JSON.stringify(buildMessageHistoryEvent(feedRows)));
 
       const tiltRows = queryAllTiltHistory(since24h);
       ws.send(JSON.stringify({ type: 'tilt_history', rows: tiltRows }));
@@ -1038,18 +918,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     });
   }
 
-  // -- Single upgrade router — exactly one WSS handles each request ----------
-  //
-  // Paths owned by another module are yielded, NOT 404'd. Node emits 'upgrade'
-  // to every listener, so the 404 fallthrough below would destroy a socket that
-  // a later listener is about to handle. Anything added here must be a path this
-  // relay does not serve.
-  const FOREIGN_UPGRADE = [/^\/align\/events(?:\?.*)?$/];   // align-api.js
-
   server.on('upgrade', (req, socket, head) => {
-    const rawUrl = req.url ?? '';
-    if (FOREIGN_UPGRADE.some(re => re.test(rawUrl))) return;   // not ours — leave the socket alone
-
     const deviceMatch = req.url?.match(/^\/(![0-9a-f]+)\/events(?:\?.*)?$/i);
     if (deviceMatch) {
       const nodeId = deviceMatch[1];

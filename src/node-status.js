@@ -1,9 +1,8 @@
 // node_status payload builder.
 //
 // Produces an ORDERED LIST OF DISPLAY-READY SECTIONS. The browser knows a small
-// fixed vocabulary of section kinds and nothing else — not which port a datum
-// came from, not what portnum 260 is, not what a detection is. It renders what
-// it is handed, in the order handed.
+// fixed vocabulary of section kinds and nothing else. It renders what it is
+// handed, in the order handed.
 //
 // Two decisions live here BECAUSE they are decisions, and iron rule 1 puts
 // every decision server-side:
@@ -17,10 +16,9 @@
 import { stmts } from './db.js';
 import {
   fmtVoltage, fmtPercent, fmtUtil, fmtTemp, fmtHumidity, fmtPressure,
-  fmtRssi, fmtSnr, fmtCount, fmtUptime, fmtTimestamp, fmtStamp, fmtAgo, fmtAxisTick,
+  fmtRssi, fmtSnr, fmtUptime, fmtTimestamp, fmtStamp, fmtAgo, fmtAxisTick,
 } from './format.js';
 import { numToNodeId, signalQuality } from './utils.js';
-import { settingsSchema, validateSetting } from './node-settings.js';
 
 // Window is chosen by the user (1/4/24/72 HR) and travels with the request.
 // The SERVER slices to it and computes the axis labels for it — the browser
@@ -30,13 +28,9 @@ const WINDOW_HOURS_DEFAULT = 24;
 const AXIS_TICKS = 6;
 const MAX_POINTS   = 200;
 const MAX_EVENTS   = 200;
-// Events are NOT bound to the chart window. An alarm log answers "what happened
-// recently", not "what happened inside the currently selected chart range" —
-// with a 4HR view a node whose last alarm was yesterday showed no log at all,
-// which reads as "nothing ever happened". Charts are a time series; a log is a
-// list of the most recent events.
+// Events are not bound to the chart window. Charts are a time series; a log is
+// a list of the most recent events.
 const EVENT_WINDOW_DAYS = 30;
-const PAC_ALARM_APP = 260;
 
 // Every displayed field carries raw + text + ts. A field whose value is absent
 // returns null and is dropped by the caller — an absent value is absent, not a
@@ -191,81 +185,13 @@ function buildSeriesSection(id, title, rows, specs) {
   };
 }
 
-// 260 payloads are cached verbatim. Flattened to labelled rows here — the
-// device's own key names are kept, because inventing friendlier names would be
-// node-dash editorialising device data (iron rule 2).
-function flattenPayload(obj, prefix = '') {
-  const out = [];
-  for (const [k, v] of Object.entries(obj)) {
-    if (k === 'type') continue;
-    const label = prefix ? `${prefix}.${k}` : k;
-    if (Array.isArray(v)) {
-      // Arrays (e.g. the device's future `pts` per-trigger timestamps) render as
-      // JSON, not String([]) — which yields "" and would show as a blank row.
-      out.push({ label, raw: v, text: v.length ? JSON.stringify(v) : null });
-    } else if (v && typeof v === 'object') {
-      out.push(...flattenPayload(v, label));
-    } else {
-      out.push({ label, raw: v, text: v == null ? null : String(v) });
-    }
-  }
-  return out;
-}
-
-// Which fields are editable, and their constraints, are DECISIONS — so the
-// server states them (iron rule 1). The browser renders the inputs it is told
-// to and never reads config-schema.json (a backend file it cannot see anyway).
-function editableMeta(label) {
-  const def = (settingsSchema().settings || []).find(s => s.path === label);
-  if (!def) return null;
-  // validateSetting is the authority on what is actually settable — it knows
-  // about readonly and unsupported multi-arg commands.
-  const probe = validateSetting(label, def.type === 'bool' ? 0 : (def.min ?? 0));
-  if (!probe.ok && /read-only|not wired|no command|unknown/.test(probe.error)) return null;
-  return { path: def.path, type: def.type, min: def.min ?? null, max: def.max ?? null,
-           unit: def.unit ?? null, name: def.label ?? def.path };
-}
-
-function buildAppStateSection(id, title, row) {
-  if (!row) return null;
-  let payload;
-  try { payload = JSON.parse(row.payload); } catch { return null; }
-  const fields = compact(flattenPayload(payload).map(f => {
-    const base = field(f.label, f.raw, f.text, row.ts);
-    if (!base) return null;
-    const edit = editableMeta(f.label);
-    return edit ? { ...base, edit } : base;
-  }));
-  if (!fields.length) return null;
-  return {
-    id, kind: 'value_grid', title, fields,
-    editable: fields.some(f => f.edit),
-    observed_ts: row.ts, observed_text: fmtStamp(row.ts), observed_ago: fmtAgo(row.ts),
-  };
-}
-
-// Detection events. `raw` is always present; our JSON envelope yields a typed
-// label, a stock Meshtastic detection module's plain text yields the text
-// itself. Both render in the same log.
+// Standard Meshtastic detection text is displayed verbatim.
 function buildDetectionsSection(rows) {
   if (!rows.length) return null;
-  const events = rows.map(r => {
-    let text;
-    if (r.type === 'alarm' || r.type === 'cleared') {
-      const parts = compact([r.kind, r.val != null ? String(r.val) : null, r.msg]);
-      text = parts.join(' · ') || r.raw;
-    } else if (r.type === 'count') {
-      text = fmtCount(r.count_num) ?? r.raw;
-    } else if (r.type === 'motion') {
-      text = r.msg || r.raw;
-    } else {
-      text = r.msg || r.raw;      // unknown type, or plain text from a stock node
-    }
-    return {
+  const events = rows.map(r => ({
       ts: r.ts, ts_text: fmtStamp(r.ts, { withSeconds: true }), ts_ago: fmtAgo(r.ts),
-      label: r.type ?? null, text,
-    };
-  });
+      label: null, text: r.raw,
+    }));
   return { id: 'detections', kind: 'event_log', title: 'Detections', events };
 }
 
@@ -427,20 +353,6 @@ export function buildNodeStatus(num, windowHours) {
   const src   = info ?? {};
   const lastHeard = node?.last_heard ?? info?.last_heard ?? null;
 
-  const appRows = stmts.queryNodeAppState.all(num);
-  const appOf   = t => appRows.find(r => r.portnum === PAC_ALARM_APP && r.type === t) ?? null;
-
-  // Boot count lives in the 260 debug payload; absent for any node that does
-  // not speak 260 (every stock Meshtastic node), and then simply not shown.
-  let bootCount = null, bootTs = null;
-  const dbgRow = appOf('debug');
-  if (dbgRow) {
-    try {
-      const dbg = JSON.parse(dbgRow.payload);
-      if (Number.isFinite(dbg?.boot)) { bootCount = dbg.boot; bootTs = dbgRow.ts; }
-    } catch { /* unparseable debug payload — leave boots absent */ }
-  }
-
   const header = {
     num,
     node_id:    src.node_id ?? node?.node_id ?? numToNodeId(num),
@@ -458,10 +370,7 @@ export function buildNodeStatus(num, windowHours) {
       field('Battery',     node?.battery,        fmtPercent(node?.battery),      lastHeard),
       field('Voltage',     node?.voltage,        fmtVoltage(node?.voltage),      lastHeard),
       field('Uptime',      node?.uptime_seconds, fmtUptime(node?.uptime_seconds), lastHeard),
-      // Boot count comes from the 260 debug cache — it is what makes uptime
-      // interpretable ("up 5m" reads very differently at 37 boots).
       hopsField(node, info),
-      field('Boots',       bootCount,            fmtCount(bootCount),            bootTs),
       field('Chan util',   node?.channel_util,   fmtUtil(node?.channel_util),    lastHeard),
       field('Air util TX', node?.air_util_tx,    fmtUtil(node?.air_util_tx),     lastHeard),
     ]),
@@ -492,9 +401,6 @@ export function buildNodeStatus(num, windowHours) {
     ]),
     buildAirQualitySection(num, envRows, since),
     buildDetectionsSection(detRows),
-    buildAppStateSection('alarm_config', 'Alarm config', appOf('config')),
-    buildAppStateSection('diagnostics',  'Diagnostics',  appOf('debug')),
-    buildAppStateSection('power',        'Power',        appOf('calc')),
     (lat != null && lon != null) ? {
       id: 'position', kind: 'value_grid', title: 'Position',
       fields: compact([

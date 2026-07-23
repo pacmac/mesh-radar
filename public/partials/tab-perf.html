@@ -1,5 +1,5 @@
         <!-- ===================== PERFORMANCE ===================== -->
-        <div x-show="tab==='perf'" class="flex-1 min-h-0 flex flex-col gap-4">
+        <div x-show="tab==='perf'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto lg:overflow-hidden">
 
           <div class="flex items-center gap-3 shrink-0 flex-wrap">
             <div class="min-w-0 flex-1">
@@ -121,7 +121,7 @@
           </div>
 
           <!-- ── Two-column grid — fills remaining viewport height ──────────── -->
-          <div class="grid grid-cols-2 gap-4 flex-1 min-h-0">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
 
             <!-- ── Left column: aggregate trend + SNR distance chart ──────── -->
             <div class="flex flex-col gap-4 min-h-0">
@@ -194,7 +194,7 @@
                     <button class="btn btn-sm btn-ghost"
                             @click="loadPerfHistory()" :disabled="perfLoading">↺ Refresh</button>
                   </div>
-                  <div class="flex-1 min-h-0 overflow-y-auto">
+                  <div class="flex-1 min-h-0 overflow-auto">
                     <table class="table table-xs whitespace-nowrap">
                       <thead class="sticky top-0 bg-base-100 z-10 backdrop-blur-sm">
                         <tr>
