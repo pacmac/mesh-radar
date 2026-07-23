@@ -1,8 +1,8 @@
 ---
 module: align-api
 source: src/align-api.js
-source_hash: 35bf429cb99a82cf3da50b5e605ac3fb8c016cea7fb293aaa5aa067481a567de
-updated: 2026-07-19
+source_hash: 35875c49b9f858cfe9f996bfcc5cfbebf95cf91d2ef4d413fec938e057adbb2f
+updated: 2026-07-23
 ---
 
 # Module: align-api
@@ -85,7 +85,8 @@ measurements, not guessed:
 ## The view-model (the only thing the WS pushes)
 
 One frame, broadcast complete on every change (connect, burst start, each reply,
-burst resolve, stop). The browser holds only the last one it was told.
+burst resolve, stop). `GET /align/state` returns the exact same complete model
+for clients whose reverse proxy cannot upgrade the WebSocket.
 
 ```js
 {
@@ -126,6 +127,8 @@ burst resolve, stop). The browser holds only the last one it was told.
 - `POST /align/ping { num, n }` opens/re-targets the session (forces PASV, resolves
   tx radio + Private channel), then fires a burst of `n`. One button, no separate
   start.
+- `GET /align/state` returns `computeView()` without changing the session. It is
+  the authoritative polling fallback, not a second model implementation.
 - `alignStart` forces PASV (restored on stop); ACTV would swing the home Yagi and
   perturb the per-radio readout.
 - Dead-man stop when the last WS client disconnects.
@@ -148,7 +151,7 @@ burst resolve, stop). The browser holds only the last one it was told.
 ## Public interface
 
 ```js
-export default router                    // GET /align, /align/targets; POST /align/ping|stop|reply-window
+export default router                    // GET /align/targets|state; POST /align/ping|stop|reply-window
 export function attachAlignWs(server)    // mounts WS /align/events; pushes the view-model
 export function alignStop()              // → {ok, state}
 export function handleAlignPong(pkt, rxDevice)  // called from bridge-events
@@ -171,6 +174,8 @@ persisted; the browser field is raw input that calls this (BROWSER_CONTRACT).
 - **TX radio is fixed for the session** (OMNI — the YAGI is unreliable since its
   WiFi→BLE swap and cannot transmit dependably); it defines what the quality means.
 - One session at a time; dead-man stop.
+- `GET /align/state` and WS frames are byte-equivalent serializations of the one
+  `computeView()` result; transport choice cannot change displayed state.
 
 ## Test notes
 
@@ -181,6 +186,8 @@ persisted; the browser field is raw input that calls this (BROWSER_CONTRACT).
 - two WS clients receive byte-identical view-models
 - `got === 0` yields a warning and no reading
 - appending a new best re-flags `isBest` and rescales every `barPct`
+- block WS upgrade: `GET /align/state` still exposes burst start, progress,
+  resolution and stop without initiating or mutating a session
 
 ## Out of scope
 

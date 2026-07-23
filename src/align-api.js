@@ -317,6 +317,12 @@ router.get('/align/targets', (_req, res) => {
   res.json(rows.map(r => ({ num: r.num, label: r.label })));
 });
 
+// Authoritative polling fallback for clients behind a reverse proxy that cannot
+// upgrade /align/events. This is the exact same complete model the WS pushes.
+router.get('/align/state', (_req, res) => {
+  res.set('Cache-Control', 'no-store').json(computeView());
+});
+
 // One press = one burst. Opens/re-targets the session, then fires N pings.
 router.post('/align/ping', async (req, res) => {
   const num = Number(req.body?.num);

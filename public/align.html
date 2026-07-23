@@ -6,16 +6,18 @@
 <title>Yagi Align</title>
 <script>
   (function () {
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    document.documentElement.setAttribute('data-theme', dark ? 'business' : 'corporate');
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-      document.documentElement.setAttribute('data-theme', e.matches ? 'business' : 'corporate');
-    });
-  })();
+    var query = window.matchMedia('(prefers-color-scheme: dark)');
+    function applyTheme(event) {
+      document.documentElement.setAttribute('data-theme', event.matches ? 'business' : 'corporate');
+    }
+    applyTheme(query);
+    if (query.addEventListener) query.addEventListener('change', applyTheme);
+    else if (query.addListener) query.addListener(applyTheme);
+  }());
 </script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><text y=%22.9em%22 font-size=%2220%22>📡</text></svg>">
-<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-<script src="https://cdn.tailwindcss.com"></script>
+<link href="/vendor/daisyui-4.12.14.min.css" rel="stylesheet" type="text/css">
+<script src="/vendor/tailwindcss-3.4.17.js"></script>
 <script>
   tailwind.config = { theme: { extend: { fontFamily: {
     display: ['Oxanium', 'system-ui', 'sans-serif'],
@@ -23,113 +25,80 @@
     mono:    ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
   } } } };
 </script>
-<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;700&family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css">
-<script src="/app-align.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"></script>
+<link rel="stylesheet" href="/align.css?v=native-1">
+<script defer src="/app-align.js?v=native-rest-2"></script>
 <style>
-  /* Only layout — a fixed-viewport field page. Colour/type come from the system. */
   html, body { width: 100%; max-width: 100%; height: 100%; overflow: hidden; }
   @supports (height: 100dvh) { html, body { height: 100dvh; } }
 </style>
 </head>
-<body class="bg-base-200 font-body" x-data="alignPage()">
+<body class="bg-base-200 font-body">
 
 <div class="flex flex-col h-full min-w-0 gap-3 p-3"
      style="padding-top:calc(0.75rem + env(safe-area-inset-top));padding-right:calc(0.75rem + env(safe-area-inset-right));padding-bottom:calc(0.75rem + env(safe-area-inset-bottom));padding-left:calc(0.75rem + env(safe-area-inset-left))">
 
-  <!-- ── target + how many pings to average ─────────────────────────────── -->
   <div class="grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 shrink-0 min-w-0">
-    <select class="select select-bordered col-span-2 sm:col-span-1 w-full min-w-0 font-display" x-model.number="target"
-            :disabled="bursting" aria-label="Node to align">
-      <template x-if="!targets.length"><option value="">Star a node to align it</option></template>
-      <template x-for="t in targets" :key="t.num">
-        <option :value="t.num" x-text="t.label"></option>
-      </template>
-    </select>
+    <div class="col-span-2 sm:col-span-1 flex items-center gap-2 min-w-0">
+      <select id="align-target" class="select select-bordered flex-1 min-w-0 font-display"
+              disabled aria-label="Node to align">
+        <option value="">Star a node to align it</option>
+      </select>
+      <span id="align-status" class="badge badge-ghost shrink-0 font-display">LOADING</span>
+    </div>
     <label class="join w-full min-w-0 sm:w-auto" title="Pings to average per reading">
       <span class="join-item btn btn-disabled no-animation shrink-0 font-display text-xs">avg</span>
-      <!-- Static options, not x-for: an x-for list is populated after x-model
-           evaluates, so the model's value is not reflected and the control shows 1. -->
-      <select class="join-item select select-bordered flex-1 min-w-0 sm:flex-none font-mono" x-model.number="nBurst" :disabled="bursting">
+      <select id="align-burst-size"
+              class="join-item select select-bordered flex-1 min-w-0 sm:flex-none font-mono" disabled>
         <option value="1">1</option>
         <option value="2">2</option>
         <option value="3">3</option>
-        <option value="4">4</option>
+        <option value="4" selected>4</option>
         <option value="5">5</option>
       </select>
     </label>
-    <!-- Reply-wait period (seconds). Server-persisted; @change commits + persists.
-         5–120s; a weak node can answer at 30–43s so this must be raisable. -->
     <label class="join w-full min-w-0 sm:w-auto" title="Seconds to wait for a reply (persisted)">
       <span class="join-item btn btn-disabled no-animation shrink-0 font-display text-xs">wait s</span>
-      <input type="number" min="5" max="120" step="5" inputmode="numeric"
+      <input id="align-reply-window" type="number" min="5" max="120" step="5" value="30"
+             inputmode="numeric"
              class="join-item input input-bordered flex-1 min-w-0 sm:flex-none sm:w-16 font-mono"
-             x-model.number="replyWinSec" @change="setReplyWindow()" :disabled="bursting">
+             disabled>
     </label>
   </div>
 
-  <template x-if="model.warning">
-    <div class="alert alert-warning py-2 text-sm shrink-0" x-text="model.warning"></div>
-  </template>
+  <div id="align-warning" class="alert alert-warning py-2 text-sm shrink-0" hidden></div>
 
-  <!-- ── current reading — big, in plain quality ────────────────────────── -->
-  <div class="card bg-base-100 shadow-sm border-2 shrink-0"
-       :class="cur && cur.isBest ? 'border-success' : 'border-base-300'">
+  <div id="align-current-card" class="card bg-base-100 shadow-sm border-2 border-base-300 shrink-0">
     <div class="card-body py-4 gap-1 items-center text-center">
+      <div id="align-current-empty" class="py-4 text-base-content/50 text-sm">
+        Press PING to take a reading.
+      </div>
 
-      <template x-if="!cur">
-        <div class="py-4 text-base-content/50 text-sm">Press PING to take a reading.</div>
-      </template>
-
-      <template x-if="cur">
-        <div class="flex flex-col items-center gap-1 w-full">
-          <!-- quality % + word -->
-          <div class="flex items-baseline gap-2">
-            <span class="text-6xl font-mono font-bold tabular-nums leading-none"
-                  :class="'text-' + cur.cls" x-text="cur.quality"></span>
-            <span class="text-lg text-base-content/50">%</span>
-          </div>
-          <div class="text-2xl font-display font-semibold" :class="'text-' + cur.cls" x-text="cur.label"></div>
-
-          <!-- provenance + confidence -->
-          <div class="text-xs font-mono text-base-content/50">
-            via <span x-text="model.tx"></span>
-            · ±<span x-text="cur.spread"></span>
-            · <span x-text="cur.got"></span>/<span x-text="cur.of"></span> pings
-          </div>
-
-          <!-- Q1: better than the last? -->
-          <div class="text-lg font-display font-semibold mt-1">
-            <template x-if="cur.trendDir === null"><span class="text-base-content/50">First reading</span></template>
-            <template x-if="cur.trendDir === 'up'"><span class="text-success">▲ BETTER <span class="font-mono" x-text="'+' + cur.trendDelta"></span></span></template>
-            <template x-if="cur.trendDir === 'down'"><span class="text-error">▼ worse <span class="font-mono" x-text="cur.trendDelta"></span></span></template>
-            <template x-if="cur.trendDir === 'same'"><span class="text-base-content/60">■ same as last</span></template>
-          </div>
-
-          <!-- Q2/Q3: best, or was an earlier one better? -->
-          <div class="text-sm">
-            <template x-if="cur.isBest"><span class="badge badge-success badge-lg gap-1 font-display">★ BEST YET</span></template>
-            <template x-if="!cur.isBest">
-              <span class="text-base-content/70">
-                <span class="font-mono text-error" x-text="'−' + cur.gapToBest"></span> below best
-                — reading <span class="font-mono" x-text="'#' + cur.bestN"></span>,
-                <span x-text="cur.bestAgo === 1 ? 'the one before' : cur.bestAgo + ' readings ago'"></span>
-              </span>
-            </template>
-          </div>
-
-          <!-- both radios hearing the remote -->
-          <div class="text-xs font-mono text-base-content/40 mt-1">
-            YAGI <span x-text="cur.yagi_q ?? '—'"></span> · OMNI <span x-text="cur.omni_q ?? '—'"></span>
-            &nbsp;·&nbsp; <span x-text="cur.rssi"></span> dBm / <span x-text="cur.snr"></span> dB
-          </div>
+      <div id="align-current" class="flex flex-col items-center gap-1 w-full" hidden>
+        <div class="flex items-baseline gap-2">
+          <span id="align-quality" class="text-6xl font-mono font-bold tabular-nums leading-none"></span>
+          <span class="text-lg text-base-content/50">%</span>
         </div>
-      </template>
+        <div id="align-quality-label" class="text-2xl font-display font-semibold"></div>
+
+        <div class="text-xs font-mono text-base-content/50">
+          via <span id="align-tx"></span>
+          · ±<span id="align-spread"></span>
+          · <span id="align-got"></span>/<span id="align-of"></span> pings
+        </div>
+
+        <div id="align-trend" class="text-lg font-display font-semibold mt-1"></div>
+        <div><span id="align-best-line"></span></div>
+
+        <div class="text-xs font-mono text-base-content/40 mt-1">
+          YAGI <span id="align-yagi-quality">—</span>
+          · OMNI <span id="align-omni-quality">—</span>
+          &nbsp;·&nbsp; <span id="align-rssi"></span> dBm /
+          <span id="align-snr"></span> dB
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- ── every reading, tallest = best ──────────────────────────────────── -->
   <div class="card bg-base-100 shadow-sm border border-base-300 flex-1 min-h-0">
     <div class="card-body py-3 px-3 gap-2 flex flex-col min-h-0">
       <div class="flex items-baseline justify-between shrink-0">
@@ -137,43 +106,28 @@
         <span class="text-xs text-base-content/40">tallest = strongest · ★ best</span>
       </div>
 
-      <template x-if="!model.readings.length">
-        <div class="flex-1 flex items-center justify-center text-sm text-base-content/40 text-center px-4">
-          Point the antenna, then press PING. Each press averages
-          <span class="mx-1 font-mono" x-text="nBurst"></span> pings into one reading.
-        </div>
-      </template>
-
-      <div class="flex-1 min-h-0 flex items-stretch gap-1.5 overflow-x-auto pt-1" x-show="model.readings.length">
-        <template x-for="r in model.readings" :key="r.n">
-          <div class="flex flex-col items-center gap-1 shrink-0 h-full" style="width:2.25rem">
-            <div class="text-sm leading-none h-4 text-warning" x-text="r.isBest ? '★' : ''"></div>
-            <div class="flex-1 w-full flex items-end min-h-0">
-              <div class="w-full rounded-t transition-[height] duration-300"
-                   :class="r.isBest ? 'bg-success' : r.isCurrent ? 'bg-primary' : 'bg-base-content/30'"
-                   :style="`height:${r.barPct}%`"></div>
-            </div>
-            <div class="text-xs font-mono tabular-nums leading-none"
-                 :class="r.isCurrent ? 'font-bold text-primary' : 'text-base-content/60'" x-text="r.quality"></div>
-            <div class="text-[0.6rem] font-mono text-base-content/30 leading-none" x-text="'#' + r.n"></div>
-          </div>
-        </template>
+      <div id="align-readings-empty"
+           class="flex-1 flex items-center justify-center text-sm text-base-content/40 text-center px-4">
+        Point the antenna, then press PING. Each press averages
+        <span id="align-readings-empty-n" class="mx-1 font-mono">4</span>
+        pings into one reading.
       </div>
+
+      <div id="align-readings"
+           class="flex-1 min-h-0 flex items-stretch gap-1.5 overflow-x-auto pt-1" hidden></div>
     </div>
   </div>
 
-  <!-- ── controls: PING is the whole interaction ────────────────────────── -->
   <div class="grid grid-cols-3 gap-2 shrink-0">
-    <button class="btn btn-lg col-span-2 font-display text-lg"
-            :class="bursting ? 'btn-disabled' : 'btn-primary'"
-            :disabled="bursting || !target" @click="ping()">
-      <span x-show="!bursting">PING</span>
-      <span x-show="bursting" class="flex items-center gap-2">
+    <button id="align-ping"
+            class="btn btn-lg btn-disabled col-span-2 font-display text-lg" disabled>
+      <span id="align-ping-idle">PING</span>
+      <span id="align-ping-active" class="flex items-center gap-2" hidden>
         <span class="loading loading-spinner loading-sm"></span>
-        <span x-text="'GATHERING ' + (model.burst ? model.burst.got : 0) + '/' + (model.burst ? model.burst.of : 0)"></span>
+        <span id="align-ping-progress">GATHERING 0/0</span>
       </span>
     </button>
-    <button class="btn btn-lg btn-outline font-display" :disabled="!model.running" @click="end()">End</button>
+    <button id="align-end" class="btn btn-lg btn-outline font-display" disabled>End</button>
   </div>
 
 </div>

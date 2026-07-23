@@ -1,0 +1,43 @@
+/* Local-only additions for the standalone /align field page.
+   DaisyUI and Tailwind are served by this gateway; no internet is required. */
+
+html {
+  font-size: 17px;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0.01em;
+  background-image:
+    linear-gradient(rgba(127, 127, 127, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(127, 127, 127, 0.055) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.font-display,
+h1,
+h2,
+h3,
+.badge {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.font-mono,
+input[type="number"] {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+.badge {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.badge-success {
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.35);
+}
+
+[hidden] {
+  display: none !important;
+}
