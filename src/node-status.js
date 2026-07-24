@@ -13,12 +13,12 @@
 // Adding a port, a type or a field later is a change to this file alone. The
 // browser is never touched again.
 
-import { stmts } from './db.js';
+import { stmts, getConfig } from './db.js';
 import {
   fmtVoltage, fmtPercent, fmtUtil, fmtTemp, fmtHumidity, fmtPressure,
-  fmtRssi, fmtSnr, fmtUptime, fmtTimestamp, fmtStamp, fmtAgo, fmtAxisTick,
+  fmtRssi, fmtSnr, fmtUptime, fmtTimestamp, fmtStamp, fmtAgo, fmtAxisTick, fmtCount,
 } from './format.js';
-import { numToNodeId, signalQuality } from './utils.js';
+import { numToNodeId, signalQuality, bearing } from './utils.js';
 
 // Window is chosen by the user (1/4/24/72 HR) and travels with the request.
 // The SERVER slices to it and computes the axis labels for it — the browser
@@ -84,8 +84,37 @@ function downsample(rows, max = MAX_POINTS) {
 
 function seriesFrom(rows, key) {
   const points = compact(rows.map(r =>
-    (typeof r[key] === 'number' && Number.isFinite(r[key])) ? { t: r.ts, v: r[key] } : null));
+    (typeof r[key] === 'number' && Number.isFinite(r[key]))
+      ? { t: r.ts, v: r[key], min: r[`${key}_min`], max: r[`${key}_max`] }
+      : null));
   return points.length ? points : null;
+}
+
+// Reduce noisy high-frequency samples into bounded time buckets. The mean is
+// the displayed line; min/max remain attached for callers that want an
+// uncertainty envelope without inventing readings.
+function bucketRows(rows, max = MAX_POINTS) {
+  if (rows.length <= 3) return rows;
+  // Always combine a small run of adjacent samples. A normal 24-hour node
+  // history often has only 20–40 readings and must not bypass smoothing merely
+  // because it is below the transport payload limit.
+  const size = Math.max(3, Math.ceil(rows.length / max));
+  const out = [];
+  for (let i = 0; i < rows.length; i += size) {
+    const group = rows.slice(i, i + size);
+    const row = { ts: group[Math.floor(group.length / 2)].ts };
+    const keys = new Set(group.flatMap(r => Object.keys(r)));
+    for (const key of keys) {
+      if (key === 'ts') continue;
+      const values = group.map(r => r[key]).filter(v => typeof v === 'number' && Number.isFinite(v));
+      if (!values.length) continue;
+      row[key] = values.reduce((sum, v) => sum + v, 0) / values.length;
+      row[`${key}_min`] = Math.min(...values);
+      row[`${key}_max`] = Math.max(...values);
+    }
+    out.push(row);
+  }
+  return out;
 }
 
 // A `series` section, built only from the metrics that actually have points.
@@ -166,6 +195,7 @@ function axisLabel(group) {
 
 function buildSeriesSection(id, title, rows, specs) {
   if (!rows.length) return null;
+  rows = bucketRows(rows);
   const series = compact(specs.map(({ key, label, unit }) => {
     const points = seriesFrom(rows, key);
     return points ? { key, label, unit, axis: 'y', points: downsample(points) } : null;
@@ -352,6 +382,12 @@ export function buildNodeStatus(num, windowHours) {
   const since = now - hours * 3600;
   const src   = info ?? {};
   const lastHeard = node?.last_heard ?? info?.last_heard ?? null;
+  const lat = info?.lat ?? node?.lat ?? null;
+  const lon = info?.lon ?? node?.lon ?? null;
+  const homeLat = getConfig('home.lat', null);
+  const homeLon = getConfig('home.lon', null);
+  const nodeBearing = lat != null && lon != null && homeLat != null && homeLon != null
+    ? bearing(homeLat, homeLon, lat, lon) : null;
 
   const header = {
     num,
@@ -375,6 +411,13 @@ export function buildNodeStatus(num, windowHours) {
       field('Air util TX', node?.air_util_tx,    fmtUtil(node?.air_util_tx),     lastHeard),
     ]),
     signal: buildSignal(node?.rssi ?? null, node?.snr ?? null),
+    position: compact([
+      field('Latitude', lat, lat?.toFixed(5)),
+      field('Longitude', lon, lon?.toFixed(5)),
+      nodeBearing == null
+        ? { label: 'Bearing', raw: null, text: '—' }
+        : field('Bearing', nodeBearing, `${Math.round(nodeBearing)}°`),
+    ]),
   };
 
   const dmRows  = stmts.queryDeviceMetricsHistory.all(num, since);
@@ -382,8 +425,6 @@ export function buildNodeStatus(num, windowHours) {
   const detRows = stmts.queryDetectionEvents.all(
     num, now - EVENT_WINDOW_DAYS * 86400, MAX_EVENTS);
   const sigRows = stmts.querySignalHistory.all(num, since);
-  const lat = info?.lat ?? node?.lat ?? null;
-  const lon = info?.lon ?? node?.lon ?? null;
 
   // Fixed order, each section present ONLY if it has data.
   const sections = compact([
@@ -401,13 +442,6 @@ export function buildNodeStatus(num, windowHours) {
     ]),
     buildAirQualitySection(num, envRows, since),
     buildDetectionsSection(detRows),
-    (lat != null && lon != null) ? {
-      id: 'position', kind: 'value_grid', title: 'Position',
-      fields: compact([
-        field('Latitude',  lat, lat.toFixed(5)),
-        field('Longitude', lon, lon.toFixed(5)),
-      ]),
-    } : null,
   ]);
 
   return { num, found: true, window_h: hours, header, sections };

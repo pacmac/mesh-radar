@@ -97,13 +97,23 @@
           </div>
           <div class="card bg-base-100 shadow flex flex-col min-h-0">
             <div class="card-body flex flex-col min-h-0">
-              <h2 class="card-title shrink-0">Message Feed</h2>
+              <div class="flex items-center justify-between gap-3 shrink-0">
+                <h2 class="card-title">Message Feed</h2>
+                <div class="join" aria-label="Message feed filter">
+                  <template x-for="f in [{id:'all',label:'ALL'},{id:'bcast',label:'BCAST'},{id:'dir',label:'DIR'},{id:'chat',label:'CHAT'}]" :key="f.id">
+                    <button class="join-item btn btn-xs font-mono"
+                            :class="msgFilter === f.id ? 'btn-primary' : 'btn-outline btn-neutral'"
+                            @click="msgFilter = f.id"
+                            x-text="f.label"></button>
+                  </template>
+                </div>
+              </div>
 
               <div class="overflow-y-auto flex-1 min-h-0">
                 <template x-for="m in displayMessages()" :key="m.key">
                   <div class="flex items-start gap-3 py-2"
                        :style="m.replyDepth > 0 ? `margin-left:${m.replyDepth * 2}rem` : ''"
-                       :class="(m.isReply ? 'pl-2 ' : 'border-t border-base-200 ') + (m.direction === 'tx' ? 'bg-success/5 border-l-2 border-l-success' : '')"
+                       :class="(m.isReply ? 'pl-2 ' : 'border-t border-base-200 ') + (!m.broadcast ? 'bg-warning/10 border-l-2 border-l-warning' : (m.privateChannel ? 'bg-success/5 border-l-2 border-l-success' : ''))"
                        >
                     <span class="relative inline-block shrink-0 cursor-pointer"
                           :title="'Reply to ' + (m.fromShortName || nodeShortName(m.fromNum))"

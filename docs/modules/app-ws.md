@@ -1,8 +1,8 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: ead095884d5455206633ace37eb4ac5513b707cadd6a686817488a9858aca065
-updated: 2026-07-18
+source_hash: 3144454ff60ab0f93c1d5c62bea862e17dd95a7621ee5dc36b2ceeccbf85c2e3
+updated: 2026-07-24
 ---
 
 # Module: app-ws
@@ -44,6 +44,10 @@ task): the preference lives in per-browser localStorage. Server-side
 ownership (`device_list.active_device`) will supersede this mechanism.
 
 ## Other fixed contracts
+
+- `node_status_age` dispatches to `applyNodeStatusAge(ev)`. The event contains
+  only server-formatted focused-node clock state; the browser performs no date
+  arithmetic and does not request page data with GET.
 
 - `packet` (TEXT_MESSAGE_APP) handler dedupes by `pktId`: second radio's copy
   merges `src`/rssi/snr into the existing entry instead of appending a

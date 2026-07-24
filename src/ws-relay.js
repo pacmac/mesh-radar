@@ -17,6 +17,7 @@ import { getAutoPurgeCfg } from './auto-purge-api.js';
 import { lookupGeocode } from './geocode.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
+import { fmtAgo } from './format.js';
 
 function makeRotatorThrottle(sendFn) {
   let lastMs    = 0;
@@ -700,6 +701,46 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // ─────────────────────────────────────────────────────────────────────────
 
   wss.on('connection', (ws) => {
+    // A quiet node emits no ingest hint, but its server-formatted relative age
+    // still changes with wall time. Retain only the last successful status
+    // reply's clock state; never rebuild histories merely to advance "ago".
+    let nodeStatusAge = null;
+    let nodeStatusAgeTimer = null;
+
+    function stopNodeStatusAge() {
+      if (nodeStatusAgeTimer) clearInterval(nodeStatusAgeTimer);
+      nodeStatusAgeTimer = null;
+      nodeStatusAge = null;
+    }
+
+    function rememberNodeStatusAge(payload) {
+      const lastHeard = payload?.header?.last_heard;
+      if (!lastHeard || lastHeard.raw == null) {
+        stopNodeStatusAge();
+        return;
+      }
+      nodeStatusAge = {
+        num: Number(payload.num),
+        raw: lastHeard.raw,
+        ago: lastHeard.ago,
+      };
+      if (nodeStatusAgeTimer) return;
+      nodeStatusAgeTimer = setInterval(() => {
+        if (!nodeStatusAge || ws.readyState !== 1) return;
+        const ago = fmtAgo(nodeStatusAge.raw);
+        if (ago == null || ago === nodeStatusAge.ago) return;
+        nodeStatusAge.ago = ago;
+        ws.send(JSON.stringify({
+          type: 'node_status_age',
+          num: nodeStatusAge.num,
+          raw: nodeStatusAge.raw,
+          ago,
+        }));
+      }, 1000);
+    }
+
+    ws.once('close', stopNodeStatusAge);
+
     // Send current bridge connection state immediately
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: bridge.connected ? 'bridge_connected' : 'bridge_disconnected' }));
@@ -724,7 +765,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
           console.error(`[node_status] build failed for ${msg.num}: ${e.message}`);
           payload = { num: Number(msg.num), found: false, header: null, sections: [] };
         }
-        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'node_status', ...payload }));
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'node_status', ...payload }));
+          rememberNodeStatusAge(payload);
+        }
       }
     });
     // Replay last-known BLE state for each device — no HTTP

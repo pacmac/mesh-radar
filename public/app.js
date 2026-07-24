@@ -167,6 +167,7 @@ function dashboard() {
     mentionIdx: 0,
     unreadMessages: 0,
     msgChannel: '0',
+    msgFilter: 'all',
     msgText: '',
     msgSent: false,
     messages: [],

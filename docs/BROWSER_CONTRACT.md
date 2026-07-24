@@ -52,3 +52,8 @@ on-demand (e.g. geocode). `WS_ONLY_ROUTES`/`WS_ONLY_EXACT` in index.js
 enforce this with a hard 410 for browser-flavored GETs; add every new
 page-data endpoint there. Config-editor reads (schemas, sections,
 channels, owner, radar settings panel) are the sanctioned form flows.
+
+Server-formatted time-dependent display values (for example, relative ages)
+must remain current while their page is open. The server pushes their changed
+display value over `/events`; page reloads, browser timers that recompute
+server facts, polling, and browser GETs are forbidden freshness mechanisms.

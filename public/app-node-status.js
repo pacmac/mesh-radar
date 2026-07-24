@@ -121,6 +121,18 @@ export const nodeStatusMixin = {
     this.$nextTick(() => this._renderNodeCharts());
   },
 
+  // The server owns the clock and sends the already-formatted age. Guard the
+  // raw timestamp as well as the focused node so a delayed clock frame can
+  // never overwrite a newer complete node_status reply.
+  applyNodeStatusAge(msg) {
+    if (!msg || this.tab !== 'node') return;
+    if (Number(msg.num) !== Number(this.nodeStatusNum)) return;
+    const lastHeard = this.nodeStatus?.header?.last_heard;
+    if (!lastHeard || Number(msg.raw) !== Number(lastHeard.raw)) return;
+    if (typeof msg.ago !== 'string') return;
+    this.nodeStatus.header.last_heard = { ...lastHeard, ago: msg.ago };
+  },
+
   // Hint carries only a num — never a value. Re-request so there is exactly one
   // code path producing displayed values. Filtering to the focused node is a
   // delivery concern, not a data decision.

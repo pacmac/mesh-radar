@@ -96,6 +96,7 @@ export const wsMixin = {
     // carries only a num, so we re-request rather than trust a pushed value.
     if (ev.type === 'node_status')        { this.applyNodeStatus(ev); return; }
     if (ev.type === 'node_status_update') { this.onNodeStatusUpdate(ev.num); return; }
+    if (ev.type === 'node_status_age')    { this.applyNodeStatusAge(ev); return; }
 
     if (ev.type === 'geocode_result') {
       const pending = this._geocodePending?.[ev.num];

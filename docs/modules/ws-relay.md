@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 3cfdae947df44f39e20e41df86faf75414a0533b6bc2d8c0c3749d451f36d102
-updated: 2026-07-20
+source_hash: b1ab6b4af5e9c06249cfb00fbab45876cdbdf6640ae16585a0fcf9c25f903681
+updated: 2026-07-24
 ---
 
 # Module: ws-relay
@@ -584,3 +584,55 @@ Throttled per node to 1 hint/second (`_lastStatusHint`, capped at 2 000 entries)
 so a burst of packets cannot storm connected browsers. The throttle is a
 delivery concern, not a data decision — no datum is lost, since the browser
 always re-reads current state.
+
+### Focused-node header clock (`fix-node-status-live-refresh`)
+
+`header.last_heard.ago` is server-formatted display text. A quiet node emits no
+ingest event, so `node_status_update` does not fire and the text otherwise
+freezes until reload even though the `/events` socket remains healthy.
+
+After each successful `node_status` reply, the main `/events` connection retains
+only that reply's focused `num`, `header.last_heard.raw`, and last emitted
+`ago`. A one-second server timer recomputes `ago` with `format.js::fmtAgo`.
+When the resulting string changes, it sends:
+
+```js
+{ type: 'node_status_age', num, raw, ago }
+```
+
+The browser applies this server-formatted string only when `num` and `raw`
+still match the displayed node/header. The raw timestamp guard prevents a
+delayed clock frame from overwriting a newer full `node_status` reply.
+
+The timer:
+
+- starts lazily after a successful reply containing `header.last_heard`;
+- keeps no history rows and never calls `buildNodeStatus`;
+- emits nothing while the formatted string is unchanged;
+- replaces its retained state when the focused node changes;
+- is cleared and discarded on WebSocket close.
+
+This is deliberately a small clock event rather than a periodic full status
+reply: histories and charts are not requeried or redrawn merely because a
+relative-age string changed.
+
+## Implementation scope (`fix-node-status-live-refresh`)
+
+| File | Before | After |
+|---|---|---|
+| `src/ws-relay.js` | `node_status` replies are remembered nowhere; no server clock exists | retain the successful reply's last-heard state per main WS client; emit guarded `node_status_age` changes; clear timer on close |
+| `public/app-ws.js` | dispatches `node_status` and `node_status_update` only | dispatch `node_status_age` to the node-status mixin |
+| `public/app-node-status.js` | can replace only the complete status payload | add `applyNodeStatusAge(msg)` that replaces only server-formatted `ago` after tab, node and raw-timestamp guards |
+| `docs/modules/ws-relay.md` | ingest-only freshness contract | specify the server-owned focused-node header clock |
+| `docs/modules/app-ws.md` | no age-event dispatch contract | record `node_status_age` dispatch |
+| `docs/modules/app-node-status.md` | explicitly says no liveness tick | record guarded application of server-generated age text |
+
+Adjacent files explicitly not changed:
+
+- `src/node-status.js`: its full payload builder and the user's current
+  uncommitted chart/header work remain untouched.
+- `public/partials/tab-node.html`: it already binds
+  `nodeStatus.header.last_heard.ago` verbatim.
+- `docs/BROWSER_CONTRACT.md`: the design complies without an exception; the
+  browser formats nothing and page data remains WebSocket-only.
+- `src/index.js`: no HTTP route or GET is added.

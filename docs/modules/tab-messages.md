@@ -1,8 +1,8 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: 5058d2404076c317acbb753ce40f6a20331cb8bf65487d62b038f5a9a89b1496
-updated: 2026-07-20
+source_hash: e0128252e23427a0f59d1e53cc7f2aacb752e89fddca3f103d9334b5b9c057b7
+updated: 2026-07-24
 ---
 
 # Module: tab-messages
@@ -10,7 +10,24 @@ updated: 2026-07-20
 ## Purpose
 
 Messages page: compose card (device/recipient/channel selection, @mention
-autocomplete, quick emoji) and message feed card. Presentation only.
+autocomplete, quick emoji) and filtered message feed card. Presentation only.
+
+## Current feed controls and row treatment (2026-07-24)
+
+The feed header contains one compact joined control with four mutually
+exclusive viewer filters: `ALL`, `BCAST`, `DIR`, and `CHAT`. The selected id is
+stored in `msgFilter`; `displayMessages()` owns the corresponding ordered
+subset.
+
+Rows use server-derived delivery facts consistently:
+
+- direct messages: warning-tinted left rule;
+- non-primary broadcast/private-channel traffic: success-tinted left rule;
+- primary broadcast chat: neutral row;
+- TX/RX remains visible in the avatar arrow, independent of traffic class.
+
+The toolbar changes only the current viewer's presentation. Message history,
+threading, identity and order remain server-owned and arrive over WebSocket.
 
 ## Mobile containment (2026-07-23)
 
@@ -73,14 +90,15 @@ reconciled via the `pkt_id` hint sent to the gw, so status events match).
 
 ## Invariants
 
-- Zero changes to Alpine expressions/handlers; send flow untouched
+- Send flow remains untouched by the viewer filter.
+- The feed iterates `displayMessages()` and keeps the stable server `m.key`.
+- Filter buttons never fetch page data and never mutate message rows.
 - No raw colors; the only remaining `text-[...]` arbitrary sizes are removed
 
 ## Test notes
 
-Playwright, both themes (guide §8): compose controls legible, joins at sm,
-feed renders; data check — first rendered feed texts/senders match
-`GET /messages`; 0 console errors.
+Playwright, both themes (guide §8): compose controls legible, filter join
+selects each view, feed renders from WS history, and there are 0 console errors.
 
 ## TX row treatment + 200-row window (task `feed-tx-cap-style`, 2026-07-17)
 
@@ -139,7 +157,11 @@ empty-state), `public/app-messages.js` (bucket field, filter methods,
 `displayMessages` filtering), `public/app.js` (3 persisted state fields — unspecced
 aggregate root).
 
-## Filter toolbar removed (task messages-chat-only, 2026-07-20)
+## Filter toolbar removed (task messages-chat-only, 2026-07-20; superseded)
 
 The type/device/channel button groups are gone; the feed is chat-only server-side.
 Empty state is a single case again ("No messages yet…").
+
+The three-dimensional toolbar described above remains removed. The current
+2026-07-24 toolbar is the smaller four-view `ALL/BCAST/DIR/CHAT` control defined
+under “Current feed controls and row treatment”.

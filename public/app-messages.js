@@ -29,6 +29,9 @@ export const messagesMixin = {
         to:                 r.to_num >>> 0,
         broadcast:          (r.to_num >>> 0) === 0xFFFFFFFF || r.is_dm === 0,
         channel:            r.channel ?? 0,
+        // Primary channel is ordinary chat; non-primary broadcast channels
+        // are private channel traffic. Direct messages are classified separately.
+        privateChannel:     (r.channel ?? 0) !== 0,
         text:               r.text,
         ts:                 r.ts,
         time:               new Date(r.ts * 1000).toLocaleTimeString(),
@@ -52,7 +55,11 @@ export const messagesMixin = {
   },
 
   displayMessages() {
-    // Order and threading are pre-computed — the browser renders as-is.
+    // Order and threading are pre-computed — the browser only applies the
+    // user's feed view filter.
+    if (this.msgFilter === 'bcast') return this.messages.filter(m => m.broadcast);
+    if (this.msgFilter === 'dir')   return this.messages.filter(m => !m.broadcast);
+    if (this.msgFilter === 'chat')  return this.messages.filter(m => m.broadcast && !m.privateChannel);
     return this.messages;
   },
 

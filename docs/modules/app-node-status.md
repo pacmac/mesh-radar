@@ -1,8 +1,8 @@
 ---
 module: app-node-status
 source: public/app-node-status.js
-source_hash: d2e1088553d9b199a3fd2871e3e39e64219b62fd10619510ada74af4bdf3aefc
-updated: 2026-07-18
+source_hash: c684df32d67c8f1cdb431495e3ac853dc7060ef6a403cb95771eea786ac2ccba
+updated: 2026-07-24
 ---
 
 # Module: app-node-status
@@ -18,6 +18,7 @@ Mandatory reading: `docs/BROWSER_CONTRACT.md`.
 
 - Request `node_status` over the WS RPC and hold the reply for display
 - Re-request on a `node_status_update` hint for the focused node
+- Apply server-formatted `node_status_age` clock updates after node/timestamp guards
 - Render three section kinds; manage Chart.js lifecycle for `series`
 
 ## Dependencies
@@ -33,6 +34,7 @@ openNodeStatusPage(num)   // from the summary modal: close it, nav to the page
 focusNode(num)            // set focus, push /node/!hexid, request
 requestNodeStatus()       // WS RPC
 applyNodeStatus(msg)      // reply → state + chart rebuild
+applyNodeStatusAge(msg)   // server clock → guarded last_heard.ago replacement
 onNodeStatusUpdate(num)   // hint → re-request (focused node only)
 _destroyNodeCharts()      // called on tab leave by navMixin
 ```
@@ -49,11 +51,14 @@ _destroyNodeCharts()      // called on tab leave by navMixin
 - **Hints carry no values.** `node_status_update` carries only `num`; the page
   re-requests, so one code path produces every displayed value.
 
-## NOT implemented: the step title's "1s liveness tick"
+## Server-owned header clock
 
-A browser timer recomputing relative ages would be the browser computing a
-displayed value. The server sends `ago` as text; freshness comes from
-re-requesting on the hint.
+The browser never recomputes relative ages. `ws-relay.js` sends
+`node_status_age {num, raw, ago}` only when its server-formatted string changes.
+`applyNodeStatusAge` requires the node tab, focused `num`, matching raw
+last-heard timestamp, and a string `ago` before replacing only the displayed
+age. The raw guard rejects a delayed clock frame after a newer full status
+reply.
 
 ## Visible time axis without date math
 

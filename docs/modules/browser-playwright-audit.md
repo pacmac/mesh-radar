@@ -28,8 +28,8 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 1a5b2a3d97270440c3a5b81f451680ae59755548968734d572b0780bdf639b99
-updated: 2026-07-23
+source_hash: f835acb6c148ead056602f443e7570e7bd171bb5c04a8c4a6b6e1399522094fd
+updated: 2026-07-24
 ---
 
 # Module: browser-playwright-audit

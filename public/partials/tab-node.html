@@ -98,6 +98,14 @@
                 </div>
               </div>
             </template>
+          <template x-if="nodeStatus.header.position?.length">
+            <template x-for="f in nodeStatus.header.position" :key="f.label">
+              <div class="stat bg-base-200 rounded-box">
+                <div class="stat-title" x-text="f.label"></div>
+                <div class="stat-value text-2xl font-mono tabular-nums" x-text="f.text"></div>
+              </div>
+            </template>
+          </template>
           </div>
         </div>
       </div>
