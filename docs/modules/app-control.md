@@ -1,7 +1,7 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: e46bfd96f35ab9e80ed8cd685a5fdaa8a80b64c91cf0f2f1502cf6b4bc2fb663
+source_hash: 21e1f88b81e5faa6a01f92533edeeb4ae90e49d75fd21d3b106e63488889ae96
 updated: 2026-07-25
 ---
 
@@ -32,6 +32,18 @@ other caller once the confirm-triggered warning paragraph in
 `tab-control.html` was removed alongside it) are gone — not disabled, fully
 deleted. `sendControl()` now sends immediately for every unit, uniformly.
 
+**Ledger field rename, no old-shape fallback — task `ledger-field-rename`,
+2026-07-25.** mt-transport shipped a full command-ledger rewrite (commit
+`975449e`, xsession `[request-ledger]`) the same day: `status`→`state`,
+`enqueuedAt`→`createdAt`, `receipt`→`result`, `lastError` (string)→`error`
+(`{code,message}` object), plus a new `kind: 'command'|'text'` since the
+same ledger now also holds text messages. `controlLedger()` filters to
+`kind==='command'` (this page's own Invariant already forbids rendering
+command traffic alongside chat — the ledger now conflates both, so this
+filter is what keeps that true). `controlPending()`/`controlExecuted()`
+split on `state` now (`queued`/`trying` vs everything else).
+`controlReceiptFields()` is renamed `controlResultFields()` to match.
+
 ## Public interface
 
 ```js
@@ -41,10 +53,10 @@ export const controlMixin = {
   controlDevices(),                  // → [{id,num,label,present}] — pacHostStatus.units mapped directly (GET /mesh/devices is already ours-only, task control-devices-endpoint), never a hardcoded id list
   controlShortcuts(),                // → CONTROL_SHORTCUTS
   sendControl(verb),                  // → POST /nodes/:num/pac-command {verb}, sends immediately, no confirmation gate for any unit (task garg-confirm-removal, 2026-07-25). No manual refresh after — the pushed queue updates on its own within one poll cycle.
-  controlLedger(),                    // → pacHostQueues[controlTarget] || [], newest-first — PURE READ of pushed state, zero fetch, zero re-derivation of time (entry.since is already server-formatted)
-  controlPending(),                   // → controlLedger() filtered to status === 'pending' (in flight, not yet resolved)
-  controlExecuted(),                  // → controlLedger() filtered to status !== 'pending' (reached a terminal outcome: acked, cancelled, or failed)
-  controlReceiptFields(receipt),      // → [{label,text}] — generic key:value pairing of a receipt object (STYLE_GUIDE §5), field ids shown as-is, no guessed meaning
+  controlLedger(),                    // → pacHostQueues[controlTarget] || [], filtered to kind==='command', newest-first by createdAt — PURE READ of pushed state, zero fetch, zero re-derivation of time (entry.since is already server-formatted)
+  controlPending(),                   // → controlLedger() filtered to state === 'queued' || 'trying' (in flight, not yet resolved)
+  controlExecuted(),                  // → controlLedger() filtered to everything else (done/sent/failed/expired/cancelled — reached a terminal outcome)
+  controlResultFields(result),        // → [{label,text}] — generic key:value pairing of a result object (STYLE_GUIDE §5), field ids shown as-is, no guessed meaning
 }
 ```
 
@@ -84,12 +96,22 @@ export const controlMixin = {
   5s, which is enough granularity for this display).
 - Newest-first ordering (`controlLedger()`) is a display-only sort over
   already-pushed data — pac-host's own ledger array is oldest-first (verified
-  live 2026-07-25), which read as "random" to Peter until sorted here.
+  live 2026-07-25), which read as "random" to Peter until sorted here. Sorts
+  on `createdAt` since the `ledger-field-rename` task (was `enqueuedAt`).
 - Pending/Executed split (`controlPending()`/`controlExecuted()`) replaces
   the single "Queue" list, 2026-07-25 — Peter: "queue is the wrong label...
-  that is executed. so we need pending and executed." Split is on
-  `entry.status === 'pending'` vs not, verified against the real live ledger
-  (observed values: pending, acked, cancelled, failed).
+  that is executed. so we need pending and executed." Split is on `state`
+  since the `ledger-field-rename` task (was `status`): `queued`/`trying` vs
+  everything else (`done`/`sent`/`failed`/`expired`/`cancelled`, all
+  terminal — verified against the real live ledger).
+- **A real failure is `state==='failed'||'expired'` — never inferred from
+  the mere presence of `entry.error`.** mt-transport's explicit correction,
+  xsession `[request-ledger]`: a `queued` entry can still carry a stale
+  `error` object from a previous retry attempt, so gating error display on
+  "error is truthy" (the original design, and the fix for the earlier
+  "first miss ≠ failure" bug) would have shown a stale error on a healthy
+  in-flight entry once real retries started happening. Both card templates
+  gate the error `<p>` on the explicit state check.
 - **`CONTROL_SHORTCUTS` IS a hardcoded guess, disclosed not hidden — and
   confirmed the right call for now.** Copied from the archived design's own
   placeholder ("v1 shortcut verbs — Peter to redraw"), which was never
@@ -117,14 +139,27 @@ directly. `present:false` dimming (`tab-control.html`) verified by code
 inspection only — both real units were `present:true` throughout testing,
 never observed rendered in the dimmed state.
 
+Ledger field-rename fix re-verified live 2026-07-25, same day mt-transport's
+rewrite shipped: sent a fresh real `ping` to BNCH, watched the raw
+`GET /mesh/queue/:target` response confirm `state`/`createdAt`/`kind` on
+every entry with the old fields (`status`/`enqueuedAt`) `null`; confirmed
+the pushed `pac_host_queues` WS message carries the correctly-computed
+`since` from `createdAt`; screenshotted both themes on BNCH (Pending:
+`queued` badge, Executed: `done` badges with full result grids, e.g.
+`interval 900` → `{secs:900, was:900, ok:true}`) and GARG (no confirm
+dialog on select, real historical `done` entries render correctly). No
+`kind:'text'` entries leaked into the Command view.
+
 ## Receipt rendering (task `control-receipt-readable`, 2026-07-25)
 
-`controlReceiptFields()` is generic key:value pairing — it does not know
-what `vbat`, `upt`, `agcr` etc. mean, and shows the raw field id as the
-label rather than inventing a translation. Raised on xsession
-([receipt-schema]) whether pac-host can publish a label/unit schema per
-verb, same shape as `[config-schema-api]`'s `fields` array; if/when that
-lands, only this function changes (id → label lookup), no template change.
+`controlResultFields()` (renamed from `controlReceiptFields()`, task
+`ledger-field-rename`, matching the shipped field name `result`) is generic
+key:value pairing — it does not know what `vbat`, `upt`, `agcr` etc. mean,
+and shows the raw field id as the label rather than inventing a
+translation. Raised on xsession ([receipt-schema]) whether pac-host can
+publish a label/unit schema per verb, same shape as `[config-schema-api]`'s
+`fields` array; if/when that lands, only this function changes (id → label
+lookup), no template change.
 
 ## Out of scope
 

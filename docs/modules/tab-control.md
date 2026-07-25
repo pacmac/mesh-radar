@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: 37bcefc56540f767b3d3fa0d725f51607f56509fbe6efcc677ef061ce8ebc90c
+source_hash: a072ad975692b97b0be089e1eec96337dd634a2bbe3f3a9b440269828f63fab3
 updated: 2026-07-25
 ---
 
@@ -59,26 +59,42 @@ executed."). Replaces the earlier single side-by-side "Queue" card.
   clickable, since queuing a command for a sleeping unit is valid (delivered
   next wake window).
 - **Pending** card (top, `max-height:40%`, own scroll): `controlPending()` —
-  entries with `status === 'pending'`, i.e. still in flight. Compact
-  rendering (verb+args, `entry.since`, a `badge-info` "pending" badge,
-  `lastError` if present) — no receipt yet, since a pending entry has none.
+  entries with `state === 'queued'` or `'trying'`, i.e. still in flight.
+  Compact rendering (verb+args, `entry.since`, a `badge-info` badge showing
+  the raw state text, an error line gated on `state==='failed'||'expired'`
+  — never on mere presence of `entry.error`, since a queued entry can carry
+  a stale error from a previous retry, mt-transport's explicit correction)
+  — no result yet, since a pending entry has none.
 - **Executed** card (below, fills remaining height): `controlExecuted()` —
-  every entry that has reached a terminal outcome (`acked`/`cancelled`/
-  `failed`). No refresh control of any kind — both cards are a pure read of
-  pushed state (task `control-queue-push-not-get`, 2026-07-25; an earlier
-  version had a manual refresh button, removed along with the GET it
-  triggered). Rendered **newest-first** (`controlLedger()` sorts by
-  `enqueuedAt` descending — pac-host's own ledger array is oldest-first,
+  every entry that has reached a terminal outcome (`done`/`sent`/`failed`/
+  `expired`/`cancelled`). No refresh control of any kind — both cards are a
+  pure read of pushed state (task `control-queue-push-not-get`, 2026-07-25;
+  an earlier version had a manual refresh button, removed along with the GET
+  it triggered). Rendered **newest-first** (`controlLedger()` sorts by
+  `createdAt` descending — pac-host's own ledger array is oldest-first,
   which read as "random" to Peter, 2026-07-25). Each entry is a
   `bg-base-200 rounded-xl p-3` sub-section (STYLE_GUIDE §5) showing verb+args
   (data role) plus the server-pushed relative timestamp (`entry.since`, e.g.
   "5m ago" — task `control-since-and-pending-split`, replaces the earlier
   client-formatted `YYMMDD-HHMMSS` stamp per BROWSER_CONTRACT: relative time
-  must be server-formatted and pushed, not computed by the browser), a status
-  badge (`acked`→success, `cancelled`→warning, `failed`→error, anything
-  else→ghost), the receipt as a key-value grid (`controlReceiptFields()` —
-  reuses `tab-node.html`'s `value_grid` pattern exactly, task
-  `control-receipt-readable`), and `lastError` when present.
+  must be server-formatted and pushed, not computed by the browser), a state
+  badge (`done`→success, `sent`→info — deliberately NOT success, since a
+  dispatched-but-unconfirmable text/command is a different claim than a
+  device-confirmed one, mt-transport's explicit design note — `cancelled`→
+  warning, `failed`/`expired`→error, anything else→ghost), the result as a
+  key-value grid (`controlResultFields()` — reuses `tab-node.html`'s
+  `value_grid` pattern exactly, task `control-receipt-readable`), and the
+  error message when `state==='failed'||'expired'` and `entry.error` is set.
+
+  **Field names (task `ledger-field-rename`, 2026-07-25):** mt-transport
+  shipped a full ledger rewrite the same day (commit `975449e`, xsession
+  `[request-ledger]`) with no old-shape fallback — `status`→`state`,
+  `enqueuedAt`→`createdAt`, `receipt`→`result`, `lastError` string→`error`
+  `{code,message}` object. The ledger also now holds text messages
+  (`kind:'text'`) alongside commands — `controlLedger()` filters to
+  `kind==='command'` so this page's own Invariant (below) stays true rather
+  than silently breaking. Peter caught the resulting breakage independently
+  ("now it only shows 1 line, the command") before this fix landed.
 
 ## Invariants
 

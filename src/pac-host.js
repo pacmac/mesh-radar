@@ -83,22 +83,26 @@ async function _poll() {
 // page data is WS-only, replayed on connect + pushed on change — no on-demand
 // GET, ever, regardless of how "interactive" the trigger looks from the UI
 // side). Runs on its own faster interval than health/roster, since a queued
-// command's status (pending -> sent -> acked) is what the Control page
-// actually needs to feel live. Polls every unit in _units — already scoped to
-// ours by /mesh/devices, no further filtering needed. Includes present:false
-// units too: the queue ledger is the butler's own service-side state, not a
-// device round-trip, so it's available even while the unit sleeps.
+// request's state (queued -> trying -> done/sent/failed) is what the Control
+// page actually needs to feel live. Polls every unit in _units — already
+// scoped to ours by /mesh/devices, no further filtering needed. Includes
+// present:false units too: the ledger is the butler's own service-side
+// state, not a device round-trip, so it's available even while the unit
+// sleeps.
 async function _pollQueues() {
   if (!isAvailable()) { _queues = {}; return; }
   const next = {};
   for (const u of _units) {
     try {
       const ledger = await getQueue(u.id);
-      // enqueuedAt is epoch ms (API.md §8); fmtAgo wants epoch seconds. Attached
-      // here, server-side, each poll cycle — a relative "since" string must be
-      // pushed, not computed by the browser with a timer (BROWSER_CONTRACT).
+      // createdAt is epoch ms (API.md §6.1 "The outbox"); fmtAgo wants epoch
+      // seconds. Attached here, server-side, each poll cycle — a relative
+      // "since" string must be pushed, not computed by the browser with a
+      // timer (BROWSER_CONTRACT). Field renamed from enqueuedAt, task
+      // ledger-field-rename, 2026-07-25 — mt-transport's ledger rewrite
+      // (commit 975449e, xsession [request-ledger]).
       next[u.num] = Array.isArray(ledger)
-        ? ledger.map(e => ({ ...e, since: fmtAgo(Math.floor((e.enqueuedAt ?? 0) / 1000)) }))
+        ? ledger.map(e => ({ ...e, since: fmtAgo(Math.floor((e.createdAt ?? 0) / 1000)) }))
         : [];
     } catch (e) {
       log.warn('pac-host', `queue fetch failed for ${u.id}: ${e.message}`);

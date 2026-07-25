@@ -1,7 +1,7 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 919559c1ab6f5f73c4f318b75ee9243ac7f1c9c1c14411c7c6b2c21dac1b3924
+source_hash: 38e48f21bfb60e8f1f7500e5b7a68152b546eb866ea923a6290356c2e54b9fbd
 updated: 2026-07-25
 ---
 
@@ -126,7 +126,7 @@ that defines the wire shape of "pac-host's current state."
 ## Relative "since" display (task `control-since-and-pending-split`, 2026-07-25)
 
 Each ledger entry gains a `since` field (`"5m ago"` etc.) computed by
-`_pollQueues()` via `fmtAgo()` (`format.js`) from `entry.enqueuedAt` (epoch
+`_pollQueues()` via `fmtAgo()` (`format.js`) from `entry.createdAt` (epoch
 ms → epoch seconds) every poll cycle, before push. Replaces an earlier
 browser-side `YYMMDD-HHMMSS` absolute stamp — BROWSER_CONTRACT requires
 relative-time values be server-formatted and re-pushed on change, not
@@ -135,6 +135,27 @@ queue-poll cadence rather than adding a new per-connection 1s timer (unlike
 `node_status_age` in `ws-relay.js`): queue data doesn't need second-level
 precision, and `since`'s bucket (s/m/h/d) changing is itself a real content
 change that already flows through the existing `queuesChanged` diff/emit.
+
+## Ledger field rename (task `ledger-field-rename`, 2026-07-25)
+
+mt-transport shipped a full command-ledger rewrite (commit `975449e`,
+xsession `[request-ledger]`) with no old-shape fallback — every field
+renamed, live, the moment it landed. `_pollQueues()` reads `entry.createdAt`
+(was `enqueuedAt`) to compute `since`; every other field rename
+(`status`→`state`, `attempts`/`maxAttempts`→`tries`/`maxTries`,
+`receipt`→`result`, `lastError` string→`error` `{code,message}` object, plus
+new `kind: 'command'|'text'`) passes through this module untouched — it's
+opaque here, only `app-control.js`/`tab-control.html` (Domain 2) interpret
+those fields. Peter caught the resulting breakage independently
+("now it only shows 1 line, the command") before this fix landed; root
+cause was confirmed via the live raw API (`status`/`enqueuedAt` were `null`
+on every entry) before responding to him.
+
+**A generic key-value receipt display was ALSO discussed with mt-transport
+for `receipt`/`result` field labels (xsession `[receipt-schema]`) — that
+remains unresolved and unrelated to this rename**: the labels question is
+about human-readable field names, this fix is about which field holds the
+data at all.
 
 ## State
 
@@ -165,4 +186,4 @@ change that already flows through the existing `queuesChanged` diff/emit.
 
 - Node data of any kind — see Purpose. Not staged for later; ruled out by design.
 - Verb validation, argument shaping, or any mesh-mechanics knowledge for commands — `queueCommand()` is a pure passthrough; pac-host owns what a verb means.
-- SSE (`GET /v1/events`) consumption. The queue-poll interval (5s) is the "real time" mechanism for now — a genuine future upgrade would subscribe to `mesh.reply` for sub-poll-interval latency, but polling backend-side (never browser-side) already satisfies the actual architectural requirement: the browser reacts to pushed state and never fetches.
+- SSE (`GET /v1/events`) consumption. The queue-poll interval (5s) is the "real time" mechanism for now — a genuine future upgrade would subscribe to the now-live `mesh.request-queued/-trying/-done/-sent/-failed/-expired/-cancelled` events (xsession `[request-ledger]`, 2026-07-25) for sub-poll-interval latency and zero polling overhead, but polling backend-side (never browser-side) already satisfies the actual architectural requirement: the browser reacts to pushed state and never fetches. Explicitly deferred to a separate follow-up task (Peter, 2026-07-25) rather than bundled with the urgent field-rename fix.

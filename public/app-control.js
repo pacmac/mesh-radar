@@ -62,33 +62,44 @@ export const controlMixin = {
   // is even selected. pac-host's own ledger array is oldest-first (verified
   // live against the running service); sorted newest-first here for display —
   // a pure presentation-order choice over already-pushed data, not a fetch.
+  //
+  // Filtered to kind==='command': mt-transport's ledger rewrite (commit
+  // 975449e, xsession [request-ledger], task ledger-field-rename, 2026-07-25)
+  // made the same ledger also hold text messages (kind:'text'). This page's
+  // own Invariant says command traffic must never render alongside chat
+  // (tab-control.md) — filtering here keeps that true rather than silently
+  // breaking it. Showing text entries (e.g. on a future Chat sub-tab) is a
+  // separate, not-yet-scoped task.
   controlLedger() {
     return [...(this.pacHostQueues?.[this.controlTarget] || [])]
-      .sort((a, b) => (b.enqueuedAt ?? 0) - (a.enqueuedAt ?? 0));
+      .filter(e => e.kind === 'command')
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
   },
 
-  // Split by pac-host's own `status` (verified live against the running
-  // service: observed values are pending, acked, cancelled, failed — pending
-  // is the only non-terminal one). "pending" = still in flight, not yet
-  // delivered/resolved; everything else has reached a terminal outcome,
-  // success or not, so it belongs under Executed.
+  // Split by pac-host's own `state` (renamed from `status` in the same
+  // rewrite; verified live against the running service). queued/trying are
+  // still in flight, not yet resolved; everything else (done/sent/failed/
+  // expired/cancelled) has reached a terminal outcome, success or not, so it
+  // belongs under Executed.
   controlPending() {
-    return this.controlLedger().filter(e => e.status === 'pending');
+    return this.controlLedger().filter(e => e.state === 'queued' || e.state === 'trying');
   },
 
   controlExecuted() {
-    return this.controlLedger().filter(e => e.status !== 'pending');
+    return this.controlLedger().filter(e => e.state !== 'queued' && e.state !== 'trying');
   },
 
-  // A receipt's fields have no local meaning (pac-host owns verb semantics —
+  // A result's fields have no local meaning (pac-host owns verb semantics —
   // see app-control.md Invariants), so this is generic key:value pairing,
   // STYLE_GUIDE §5 "key-value rows", NOT a translation of what a field means.
   // Raw ids are shown as-is rather than guessed at, until/unless pac-host
   // publishes a receipt-field schema (xsession item [receipt-schema]) — at
   // that point this becomes a label lookup, same shape, no template change.
-  controlReceiptFields(receipt) {
-    if (!receipt || typeof receipt !== 'object') return [];
-    return Object.entries(receipt)
+  // Renamed from controlReceiptFields/receipt to match the shipped field
+  // name (`result`, was `receipt`) — same generic pairing either way.
+  controlResultFields(result) {
+    if (!result || typeof result !== 'object') return [];
+    return Object.entries(result)
       .filter(([k]) => k !== 'type')
       .map(([k, v]) => ({ label: k, text: typeof v === 'object' ? JSON.stringify(v) : String(v) }));
   },
