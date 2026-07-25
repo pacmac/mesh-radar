@@ -1,7 +1,7 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 2c6a770833cabe86804a0852626ec35646fd95afeb06ff35336cc6b84aeeea08
+source_hash: 5a6458983de60f17329651974817cd634a2396a7b007d886fcd4e5a68c862881
 updated: 2026-07-25
 ---
 
@@ -81,7 +81,7 @@ export function start()          // begin polling; idempotent
 export function stop()           // clear the poll timer (tests/shutdown)
 export function isAvailable()    // boolean — true only when status is 'ready' or 'degraded'
 export function connectMessage() // → { type: 'pac_host_status', ...status() } — ready to JSON.stringify and send as-is
-export function queuesMessage()  // → { type: 'pac_host_queues', queues: {[unitNum]: entries[]} } — ready to JSON.stringify and send as-is
+export function queuesMessage()  // → { type: 'pac_host_queues', queues: {[unitNum]: entries[]} } — ready to JSON.stringify and send as-is; each entry carries a server-computed `since` (see below)
 export const events              // EventEmitter, emits 'change' (status) and 'queuesChanged' (queue data) separately
 export async function queueCommand({ unit, verb, args }) // → POST /v1/mesh/queue body, returns the raw JSON response ({id, ...}) or throws Error('pac-host <status>: <detail>')
 export async function getQueue(unit)                     // → GET /v1/mesh/queue/:target, returns the raw ledger array; throws the same way. Called internally by the queue-poll loop; not used by any HTTP route (there is none) — kept exported in case a future task needs a one-off lookup, but nothing browser-facing may call it directly.
@@ -115,6 +115,19 @@ that defines the wire shape of "pac-host's current state."
 - `src/pac-command-api.js` (task `pac-host-command-surface`) — thin Express router, `POST /nodes/:num/pac-command` only, calling `queueCommand()`. **No GET route** — see Invariants.
 - `public/app.js`/`public/app-ws.js`/`public/index.html` (task `pac-host-header-badge`) — render `pac_host_status` as a small navbar badge.
 - `public/app-control.js`/`public/partials/tab-control.html` (tasks `pac-host-command-surface`, `control-queue-push-not-get`) — Control page reads `pacHostQueues` (from `pac_host_queues`) as pure pushed state; zero fetch anywhere in that file.
+
+## Relative "since" display (task `control-since-and-pending-split`, 2026-07-25)
+
+Each ledger entry gains a `since` field (`"5m ago"` etc.) computed by
+`_pollQueues()` via `fmtAgo()` (`format.js`) from `entry.enqueuedAt` (epoch
+ms → epoch seconds) every poll cycle, before push. Replaces an earlier
+browser-side `YYMMDD-HHMMSS` absolute stamp — BROWSER_CONTRACT requires
+relative-time values be server-formatted and re-pushed on change, not
+recomputed client-side with a timer. Deliberately reuses the existing 5s
+queue-poll cadence rather than adding a new per-connection 1s timer (unlike
+`node_status_age` in `ws-relay.js`): queue data doesn't need second-level
+precision, and `since`'s bucket (s/m/h/d) changing is itself a real content
+change that already flows through the existing `queuesChanged` diff/emit.
 
 ## State
 

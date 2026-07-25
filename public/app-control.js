@@ -20,16 +20,6 @@ export const CONTROL_SHORTCUTS = ['ping', 'status', 'config', 'reboot'];
 // other part of the picker treats units identically.
 const CONFIRM_TARGETS = new Set(['!987ab80f']);
 
-// Compact local-time stamp, Peter's requested shape: YYMMDD-HHMMSS. pac-host's
-// timestamps are epoch ms (API.md §8); local time is their own stated
-// convention ("operators read local/BST — convert at the edge").
-function fmtCompactTime(ms) {
-  if (!ms) return '';
-  const d = new Date(ms);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${p(d.getFullYear() % 100)}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-}
-
 export const controlMixin = {
   // pac-host's own unit roster, filtered to role 200 (the PAC_ALARM firmware's
   // own self-declared Meshtastic role — task client-role-pac-alarm) so the
@@ -78,9 +68,25 @@ export const controlMixin = {
   // Pure read of server-pushed state — zero fetch. pacHostQueues is keyed by
   // node num, populated from pac_host_queues (replayed on connect, updated on
   // change), so this is live from the moment the WS connects, before any unit
-  // is even selected.
+  // is even selected. pac-host's own ledger array is oldest-first (verified
+  // live against the running service); sorted newest-first here for display —
+  // a pure presentation-order choice over already-pushed data, not a fetch.
   controlLedger() {
-    return this.pacHostQueues?.[this.controlTarget] || [];
+    return [...(this.pacHostQueues?.[this.controlTarget] || [])]
+      .sort((a, b) => (b.enqueuedAt ?? 0) - (a.enqueuedAt ?? 0));
+  },
+
+  // Split by pac-host's own `status` (verified live against the running
+  // service: observed values are pending, acked, cancelled, failed — pending
+  // is the only non-terminal one). "pending" = still in flight, not yet
+  // delivered/resolved; everything else has reached a terminal outcome,
+  // success or not, so it belongs under Executed.
+  controlPending() {
+    return this.controlLedger().filter(e => e.status === 'pending');
+  },
+
+  controlExecuted() {
+    return this.controlLedger().filter(e => e.status !== 'pending');
   },
 
   // A receipt's fields have no local meaning (pac-host owns verb semantics —
@@ -94,9 +100,5 @@ export const controlMixin = {
     return Object.entries(receipt)
       .filter(([k]) => k !== 'type')
       .map(([k, v]) => ({ label: k, text: typeof v === 'object' ? JSON.stringify(v) : String(v) }));
-  },
-
-  controlEntryTime(entry) {
-    return fmtCompactTime(entry.enqueuedAt);
   },
 };

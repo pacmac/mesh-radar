@@ -1,7 +1,7 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: 787cd5f725048a9ef4ed5b99202740c54fe1770ec97e7e4a92192d8feaba151e
+source_hash: ee75a6ea2a3d48d072c7b8d1dd3d0cef484906c7fde0319e47894a425d2a1081
 updated: 2026-07-25
 ---
 
@@ -33,9 +33,10 @@ export const controlMixin = {
   controlTargetLabel(),               // → selected unit's display label, or ''
   controlTargetNeedsConfirm(),        // → true iff the selected unit's node id is in the confirm-gate set
   sendControl(verb),                  // → POST /nodes/:num/pac-command {verb}; window.confirm() gate for confirm-targets. No manual refresh after — the pushed queue updates on its own within one poll cycle.
-  controlLedger(),                    // → pacHostQueues[controlTarget] || [] — PURE READ of pushed state, zero fetch
+  controlLedger(),                    // → pacHostQueues[controlTarget] || [], newest-first — PURE READ of pushed state, zero fetch, zero re-derivation of time (entry.since is already server-formatted)
+  controlPending(),                   // → controlLedger() filtered to status === 'pending' (in flight, not yet resolved)
+  controlExecuted(),                  // → controlLedger() filtered to status !== 'pending' (reached a terminal outcome: acked, cancelled, or failed)
   controlReceiptFields(receipt),      // → [{label,text}] — generic key:value pairing of a receipt object (STYLE_GUIDE §5), field ids shown as-is, no guessed meaning
-  controlEntryTime(entry),            // → 'YYMMDD-HHMMSS' local time from entry.enqueuedAt (Peter's requested compact format, 2026-07-25), '' if absent
 }
 ```
 
@@ -63,6 +64,23 @@ export const controlMixin = {
   a successful POST; the new entry appears when `pac-host.js`'s next queue
   poll picks it up and pushes `pac_host_queues` (≤5s). The queue is server
   state end to end; this file never constructs or guesses a row.
+- `entry.since` (the relative "Ns/Nm/Nh/Nd ago" display string) is pushed by
+  `pac-host.js` — computed server-side from `fmtAgo()` each 5s poll cycle,
+  never client-computed. Task `control-since-and-pending-split`, 2026-07-25:
+  Peter replaced the earlier `YYMMDD-HHMMSS` absolute stamp ("that is more
+  easily readable to a human") — BROWSER_CONTRACT requires relative-time
+  values be server-formatted and pushed, not recomputed by a browser timer,
+  so this reuses the existing `node_status_age`/`fmtAgo()` precedent rather
+  than adding a new per-connection timer (queue data already refreshes every
+  5s, which is enough granularity for this display).
+- Newest-first ordering (`controlLedger()`) is a display-only sort over
+  already-pushed data — pac-host's own ledger array is oldest-first (verified
+  live 2026-07-25), which read as "random" to Peter until sorted here.
+- Pending/Executed split (`controlPending()`/`controlExecuted()`) replaces
+  the single "Queue" list, 2026-07-25 — Peter: "queue is the wrong label...
+  that is executed. so we need pending and executed." Split is on
+  `entry.status === 'pending'` vs not, verified against the real live ledger
+  (observed values: pending, acked, cancelled, failed).
 - **`CONTROL_SHORTCUTS` IS a hardcoded guess, disclosed not hidden.** Copied
   from the archived design's own placeholder ("v1 shortcut verbs — Peter to
   redraw"), which was never finalised there either. It does not restrict

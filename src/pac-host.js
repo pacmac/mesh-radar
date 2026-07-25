@@ -8,6 +8,7 @@
 
 import { EventEmitter } from 'events';
 import { log } from './log.js';
+import { fmtAgo } from './format.js';
 
 const PAC_HOST_URL = process.env.PAC_HOST_URL || 'http://127.0.0.1:8787/v1';
 const HEALTH_POLL_MS = 30000;
@@ -88,7 +89,12 @@ async function _pollQueues() {
   for (const u of commandable) {
     try {
       const ledger = await getQueue(u.id);
-      next[u.num] = Array.isArray(ledger) ? ledger : [];
+      // enqueuedAt is epoch ms (API.md §8); fmtAgo wants epoch seconds. Attached
+      // here, server-side, each poll cycle — a relative "since" string must be
+      // pushed, not computed by the browser with a timer (BROWSER_CONTRACT).
+      next[u.num] = Array.isArray(ledger)
+        ? ledger.map(e => ({ ...e, since: fmtAgo(Math.floor((e.enqueuedAt ?? 0) / 1000)) }))
+        : [];
     } catch (e) {
       log.warn('pac-host', `queue fetch failed for ${u.id}: ${e.message}`);
       next[u.num] = _queues[u.num] ?? []; // keep last-known rather than blank on a transient error

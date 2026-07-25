@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: e2f5b8a6800a41db1e9e5ae09e4a27ca0e971ef31436890ac0a41804632aa6af
+source_hash: 8404c2cd60c019db98ef7abe219cfca09d541e0c478d011b7be2a146b93edbd3
 updated: 2026-07-25
 ---
 
@@ -23,22 +23,38 @@ Task `pac-host-command-surface`. New page, no prior version. Companion files:
 
 ## Layout
 
-Two-card grid (`lg:grid-cols-2`), matching `tab-messages.html`'s shape:
+Left/right grid (`lg:grid-cols-2`): **Command** card on the left; a
+vertically-stacked **Pending** + **Executed** pair on the right (task
+`control-since-and-pending-split`, 2026-07-25 — Peter: "the command /
+response should show any queued commands in probably a seperate panel / card
+above it. and queue is the wrong label for the existing one, that is
+executed."). Replaces the earlier single side-by-side "Queue" card.
 
 - **Command** card: unit picker (`.join` of buttons, one per
   `controlDevices()` entry), shortcut verbs (`.join`, disabled until a unit
   is selected), free-text verb input + Send. A warning line appears only
   when `controlTargetNeedsConfirm()` is true for the selected unit.
-- **Queue** card: no refresh control of any kind — `controlLedger()` is a
-  pure read of pushed state (task `control-queue-push-not-get`, 2026-07-25;
-  an earlier version had a manual refresh button, removed along with the GET
-  it triggered). Rendered newest-last (server order, unmodified), each entry
-  a `bg-base-200 rounded-xl p-3` sub-section (STYLE_GUIDE §5) showing
-  verb+args (data role) plus a compact timestamp (`controlEntryTime()`,
-  `YYMMDD-HHMMSS`), a status badge (`acked`→success, `pending`→info,
-  `cancelled`→warning, anything else→ghost), the receipt as a key-value grid
-  (`controlReceiptFields()` — reuses `tab-node.html`'s `value_grid` pattern
-  exactly, task `control-receipt-readable`), and `lastError` when present.
+- **Pending** card (top, `max-height:40%`, own scroll): `controlPending()` —
+  entries with `status === 'pending'`, i.e. still in flight. Compact
+  rendering (verb+args, `entry.since`, a `badge-info` "pending" badge,
+  `lastError` if present) — no receipt yet, since a pending entry has none.
+- **Executed** card (below, fills remaining height): `controlExecuted()` —
+  every entry that has reached a terminal outcome (`acked`/`cancelled`/
+  `failed`). No refresh control of any kind — both cards are a pure read of
+  pushed state (task `control-queue-push-not-get`, 2026-07-25; an earlier
+  version had a manual refresh button, removed along with the GET it
+  triggered). Rendered **newest-first** (`controlLedger()` sorts by
+  `enqueuedAt` descending — pac-host's own ledger array is oldest-first,
+  which read as "random" to Peter, 2026-07-25). Each entry is a
+  `bg-base-200 rounded-xl p-3` sub-section (STYLE_GUIDE §5) showing verb+args
+  (data role) plus the server-pushed relative timestamp (`entry.since`, e.g.
+  "5m ago" — task `control-since-and-pending-split`, replaces the earlier
+  client-formatted `YYMMDD-HHMMSS` stamp per BROWSER_CONTRACT: relative time
+  must be server-formatted and pushed, not computed by the browser), a status
+  badge (`acked`→success, `cancelled`→warning, `failed`→error, anything
+  else→ghost), the receipt as a key-value grid (`controlReceiptFields()` —
+  reuses `tab-node.html`'s `value_grid` pattern exactly, task
+  `control-receipt-readable`), and `lastError` when present.
 
 ## Invariants
 
@@ -56,6 +72,14 @@ bench unit: unit picker showed exactly BNCH/GARG, shortcut send round-tripped
 a real queued command visible in the ledger, both themes, 0 console errors.
 GARG's confirmation dialog fired with the correct message and was dismissed
 (not accepted) — confirmed no command reached GARG's ledger.
+
+Pending/Executed split + since + sort re-verified live 2026-07-25: sent two
+real commands to BNCH (`ping`, `status`) via the actual `/nodes/:num/pac-command`
+route; the second was screenshotted mid-flight showing `status:'pending'` in
+the Pending card with a live `since` value ("6s ago", "21s ago", "51s ago"
+across three reloads) before it resolved to `acked` and moved to Executed.
+Executed card confirmed newest-first ("1m ago" → "38m ago" → "59m ago" → "1h
+ago", strictly descending). Both themes screenshotted and read.
 
 ## Out of scope
 
