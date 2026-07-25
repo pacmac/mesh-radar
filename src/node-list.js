@@ -109,15 +109,26 @@ class NodeList extends EventEmitter {
     // (touchLastHeard, confirmScanContact, restoreDeviceAttribution);
     // attributing here tagged every node with every radio and made the
     // node_source filter a no-op.
+    // Replay-regression guard (task nodeinfo-replay-regression, 2026-07-25):
+    // node_info/node_update carries the RADIO's own cached last_heard, which
+    // is stale for any node it hasn't personally re-heard recently. Applying
+    // it unconditionally lets a BLE resync roll an already-fresher entry's
+    // identity/position backward. Absent last_heard still merges as before
+    // (unknown freshness — matches upsertNode's own gate in db.js).
+    const isStaleReplay = (existing) =>
+      node.last_heard != null && existing?.last_heard != null && node.last_heard < existing.last_heard;
+
     if (this._scanActive) {
       if (this._cache.has(node.num)) {
         // Already promoted by scan_contact — update in place
         const existing = this._cache.get(node.num);
+        if (isStaleReplay(existing)) return;
         this._cache.set(node.num, enrichFromCache({ ...existing, ...node }));
         this._scheduleEmit();
       } else {
         // Buffer — only promote when scan_contact confirms this node was actually heard
         const existing = this._pending.get(node.num) ?? {};
+        if (isStaleReplay(existing)) return;
         this._pending.set(node.num, enrichFromCache({ ...existing, ...node }));
       }
       return;
@@ -130,6 +141,7 @@ class NodeList extends EventEmitter {
     // (touchLastHeard), the opt-in boot seed, and confirmed scan contacts.
     if (!this._cache.has(node.num)) return;
     const existing = this._cache.get(node.num) ?? {};
+    if (isStaleReplay(existing)) return;
     this._cache.set(node.num, enrichFromCache({ ...existing, ...node }));
     this._scheduleEmit();
   }

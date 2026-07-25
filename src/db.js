@@ -211,7 +211,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_traceroute_ts     ON traceroute_history(ts DESC);
   CREATE INDEX IF NOT EXISTS idx_traceroute_to_num ON traceroute_history(to_num, ts DESC);
 `);
-
 // Migrations for columns added after initial schema
 {
   const thCols = db.prepare(`PRAGMA table_info(traceroute_history)`).all().map(r => r.name);
@@ -376,6 +375,15 @@ export const stmts = {
       updated_at = unixepoch()
   `),
 
+  // Monotonic last_heard gate (task nodeinfo-replay-regression, 2026-07-25):
+  // node_info/node_update is a BLE nodedb replay, not reception evidence — the
+  // radio replays its whole onboard cache on every BLE sync, which for any
+  // node it hasn't personally re-heard recently is itself stale. Without the
+  // WHERE guard, that replay applies unconditionally and can roll a fresher
+  // row's short_name/long_name/hw_model/position/last_heard BACKWARD to an
+  // old snapshot. A NULL excluded.last_heard (no caller currently sends one)
+  // or a NULL stored last_heard still allows the update — this only ever
+  // rejects an incoming row strictly OLDER than what's already stored.
   upsertNode: db.prepare(`
     INSERT INTO nodes (num, node_id, short_name, long_name, hw_model, role, last_heard, snr, rssi, hops,
                        lat, lon, alt, battery, voltage, channel_util, air_util_tx, uptime_seconds, device, updated_at)
@@ -401,6 +409,7 @@ export const stmts = {
       uptime_seconds = COALESCE(excluded.uptime_seconds, uptime_seconds),
       device         = COALESCE(excluded.device,         device),
       updated_at     = unixepoch()
+    WHERE excluded.last_heard IS NULL OR nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard
   `),
 
   insertEvent: db.prepare(`

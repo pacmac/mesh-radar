@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 436b30172c8ade737b0ead90b57974dfebd9f65840d96f9cf25ceb562de3d55b
+source_hash: 056ad3b9ed1c1734f332e25ed601d7f34edc1b8cb4d972703e9ee2e40be81fbe
 updated: 2026-07-08
 ---
 
@@ -219,6 +219,7 @@ restoreScanNodes(nodes)  — called on restart when scan was in progress
 - **`hopsAway()` guard**: `(3,3)→0`, `(3,1)→2`, `(0,3)→null`, `(null,3)→null`, `(2,3)→null`
 - **`setHopsAway`**: known value patches `_cache` entry `hops`; `null` leaves prior `hops` untouched; same value → no `'change'` emit
 - **gw hops stripped**: `handleNodeUpdate` with `ev.data.hops = 5` on a cached node → entry `hops` unchanged (not set to 5); `seed` node with `hops: 5` → seeded entry has no `hops` from the gw
+- **replay-regression guard**: cached node with `last_heard=200` → `handleNodeUpdate` with `node.last_heard=100` (older) → entry UNCHANGED, no `'change'` emitted; same with `node.last_heard=300` (newer) → entry enriched as before; `node.last_heard` absent → enriched as before (unknown freshness, unchanged legacy behavior)
 
 ## Out of scope
 
@@ -262,6 +263,30 @@ The gw's aggregate `node_info.data.hops` (and the REST `/nodes` `hops`) is
 `hop_start`/`hop_limit` to re-guard at the `node_info` layer. It is therefore
 **stripped on ingest**: `handleNodeUpdate` destructures `hops` off `ev.data`,
 and `seed()` destructures it off each REST node, before the entry is merged.
+
+## Replay-regression guard (task `nodeinfo-replay-regression`, 2026-07-25)
+
+Same root cause as the phantom-node guard above, one layer deeper: even
+restricted to *existing* entries, `handleNodeUpdate`'s enrich merge
+(`{ ...existing, ...node }`, both the scan-active `_cache`/`_pending`
+branches and the PASV/ACTV branch) applied replay data **unconditionally** —
+no comparison against the entry's own `last_heard`. Found via `/investigate`:
+a node_info/node_update nodedb replay carries the radio's own cached
+`last_heard`, which is stale for any node the radio hasn't personally
+re-heard recently, and every replay cycle (BLE resync — reconnects,
+restarts) re-applied that stale snapshot over whatever fresher direct
+reception had already produced, regressing `short_name`/`long_name`/
+`hw_model`/position/`last_heard` together, silently.
+
+Each of the three merge sites now checks: if `node.last_heard` is present
+and older than the entry's own `last_heard`, skip the merge (`return`
+without mutating `_cache`/`_pending`, no `'change'` emitted for that node).
+An incoming `node.last_heard` that is `null`/absent still merges as before
+(unknown freshness — matches this fix's sibling in `db.js`'s `upsertNode`,
+which treats an unset incoming timestamp the same way). This is the
+in-memory, live-WS-push counterpart to the equivalent fix in `db.js`'s
+`upsertNode` — that one protects the persisted `nodes` table; this one
+protects what's actually pushed to the browser right now.
 This is why the earlier badge read `1h` for almost every node regardless of
 its real distance (e.g. a 5-relay traceroute node showing `1h`).
 

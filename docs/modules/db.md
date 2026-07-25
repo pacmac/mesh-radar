@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 04075ae009302bf596a05dc6c287bafb9710434eab138c03db3eee2d97c3456d
+source_hash: ba0cc2f4ddd6965396f0178fdce93faf96eb6a7852a4b542014db515c27e9333
 updated: 2026-07-18
 ---
 
@@ -162,8 +162,8 @@ syncAlertedAt(packetId)             // → void  — writes alerted_at if alread
 | `insertRxMessage` | INSERT … ON CONFLICT(message_key) — upserts best SNR/RSSI, accumulates rx_devices |
 | `insertTxMessage` | INSERT OR IGNORE into messages (sent messages, message_key = 't-{id}', carries `category`) — called only via `mesh-send.js` |
 | `updateMessageStatus` | UPDATE messages SET status WHERE packet_id (TX rows only) |
-| `upsertNodeinfo` | INSERT … ON CONFLICT(node_id) — COALESCE merge into persistent nodeinfo |
-| `upsertNode` | INSERT … ON CONFLICT(num) — COALESCE merge into ephemeral nodes |
+| `upsertNodeinfo` | INSERT … ON CONFLICT(node_id) — COALESCE merge into persistent nodeinfo (freshness gated by the caller, `_upsertCache` in persist.js — see nodeinfo's own note) |
+| `upsertNode` | INSERT … ON CONFLICT(num) DO UPDATE ... WHERE — COALESCE merge into ephemeral nodes, gated so a stale (older-`last_heard`) incoming row cannot regress a fresher one (task `nodeinfo-replay-regression`) |
 | `insertEvent` | INSERT into events log |
 | `insertRangeTest` | INSERT into range_test_log |
 | `queryRangeTest` | SELECT … ORDER BY ts DESC LIMIT ? |
@@ -245,12 +245,55 @@ Unique index on `message_key` WHERE message_key IS NOT NULL (current dedup).
 Live node state from the bridge. COALESCE upsert — existing non-null values are never overwritten with null.
 Columns: num (PK), node_id, short_name, long_name, hw_model, role, last_heard, snr, rssi, hops, lat, lon, alt, battery, voltage, channel_util, air_util_tx, uptime_seconds, device, temperature, relative_humidity, barometric_pressure, updated_at.
 
+**Monotonic `last_heard` gate (task `nodeinfo-replay-regression`, 2026-07-25).**
+`upsertNode`'s `ON CONFLICT DO UPDATE` carries a `WHERE excluded.last_heard IS
+NULL OR nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard`
+guard. Found via `/investigate`: `node_info`/`node_update` events are a
+**BLE nodedb replay**, not reception evidence (`bridge-events.js`,
+`persist.js`'s own comments) — the radio replays its *entire* onboard cache
+on every BLE sync, which for any node it hasn't personally re-heard recently
+is itself stale. Before this gate, the old COALESCE-only upsert applied that
+replay unconditionally, so a resync could silently roll a node's
+`short_name`/`long_name`/`hw_model`/position/`last_heard` **backward** to an
+old snapshot even after fresher direct reception had already landed.
+Confirmed live: 5 real nodes had `nodes.last_heard`/`updated_at` stuck at a
+value strictly older than the most recent direct-reception `signal_history`
+entry for that node (`signal_history` is written only from `hops===0`
+packets — unambiguous real reception) — up to 4.4 days stale.
+
+The gate is on `upsertNode` alone (all 7 call sites in `persist.js` funnel
+through it), so every caller is protected uniformly regardless of whether
+the stale source was a typed `node_info`/`node_update` replay or a raw
+`packet` event carrying mesh-gw's own `_replay:true` flag (also found during
+investigation — `handlePacket`'s NODEINFO_APP/POSITION_APP/TELEMETRY_APP
+branches never checked that flag before this fix). Callers passing fresh
+wall-clock `last_heard` (direct reception, telemetry) are unaffected — the
+gate only ever rejects an incoming value that is *older* than what's stored.
+
+`nodeinfo` (below) has no `last_heard` column and cannot self-gate the same
+way — deliberately not given one (see `nodeinfo`'s own note) to avoid an
+`ALTER TABLE` migration, which this codebase has a documented incident with
+(see memory: sqlite-generated-column-migration-guard). It borrows the
+sibling `nodes` row's value instead, from `persist.js`'s `_upsertCache`.
+
 ### `nodeinfo` — persists
 
 Permanent node registry. Survives restarts. Primary key is `node_id` (string, e.g. `"!3f172791"`).
 Key columns beyond identity: lat, lon, alt, first_heard, updated_at, address (geocode cache),
 last_traceroute (JSON), yagi_last_targeted, yagi_target_count, yagi_last_contact, yagi_contact_count,
 yagi_best_rssi, yagi_best_snr, yagi_last_rssi, yagi_last_snr.
+
+**No `last_heard` column, deliberately (task `nodeinfo-replay-regression`,
+2026-07-25).** This table has the identical stale-nodedb-replay regression
+`nodes` had (same COALESCE-only `upsertNodeinfo`, same `_upsertCache`
+caller feeding it from replay data) — but adding a `last_heard` column here
+to self-gate would be a schema migration, which this codebase has a
+documented crash-loop incident with (memory:
+sqlite-generated-column-migration-guard). Instead, `_upsertCache`
+(`persist.js`) borrows the sibling `nodes` row's `last_heard` — which by
+construction was just written (or correctly rejected) by the caller's own
+`upsertNode.run()` moments earlier in the same function — and skips the
+`upsertNodeinfo` write when the incoming data is older than that.
 
 ### `config` — persists
 

@@ -9,8 +9,21 @@ function _validCoord(lat, lon) {
   return lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
 }
 
-function _upsertCache(num, nodeId, u, pos) {
+// lastHeard (task nodeinfo-replay-regression, 2026-07-25): nodeinfo has no
+// last_heard column of its own to self-gate with (deliberately — adding one
+// would be a schema migration; see docs/modules/db.md's nodeinfo note). This
+// borrows the sibling nodes row's last_heard instead, which by construction
+// was just written (or correctly rejected) by the caller's own
+// stmts.upsertNode.run() moments earlier in the same function, and skips the
+// nodeinfo write when the incoming data is strictly older than that — same
+// "unknown freshness still writes" behavior as upsertNode's own gate when
+// lastHeard is absent.
+function _upsertCache(num, nodeId, u, pos, lastHeard) {
   if (!num || (!u?.short_name && !u?.long_name)) return;
+  if (lastHeard != null) {
+    const current = stmts.getNodeByNum.get(num);
+    if (current?.last_heard != null && lastHeard < current.last_heard) return;
+  }
   const node_id = nodeId || u?.id || `!${num.toString(16).padStart(8, '0')}`;
   const lat = pos?.latitude_i  != null ? pos.latitude_i  / 1e7 : null;
   const lon = pos?.longitude_i != null ? pos.longitude_i / 1e7 : null;
@@ -127,7 +140,7 @@ export function handleEvent(event) {
         battery: null, voltage: null, channel_util: null, air_util_tx: null, uptime_seconds: null,
         device: rxDevice,
       });
-      _upsertCache(event.from_num, data.id, data, null);
+      _upsertCache(event.from_num, data.id, data, null, ts);
     }
   } else if (type === 'position') {
     // AppRouter decoded POSITION_APP
@@ -347,6 +360,7 @@ function handlePacket(packet, device, ts, replay) {
   if (portnum === 'NODEINFO_APP') {
     const u = packet.decoded.user;
     if (!u || !packet.from) return;
+    const nodeInfoTs = packet.rx_time || Math.floor(Date.now() / 1000);
     stmts.upsertNode.run({
       num:           packet.from,
       node_id:       u.id         ?? null,
@@ -354,7 +368,7 @@ function handlePacket(packet, device, ts, replay) {
       long_name:     u.long_name  ?? null,
       hw_model:      u.hw_model   ?? null,
       role:          u.role       ?? null,
-      last_heard:    packet.rx_time || Math.floor(Date.now() / 1000),
+      last_heard:    nodeInfoTs,
       snr:           pktSnr,
       rssi:          pktRssi,
       hops:          null,
@@ -368,7 +382,7 @@ function handlePacket(packet, device, ts, replay) {
       uptime_seconds: null,
       device,
     });
-    _upsertCache(packet.from, u.id, u, null);
+    _upsertCache(packet.from, u.id, u, null, nodeInfoTs);
     return;
   }
 
@@ -426,5 +440,5 @@ function handleNodeInfo(data, device) {
     uptime_seconds: m.uptime_seconds ?? null,
     device,
   });
-  _upsertCache(node.num, u.id, u, pos);
+  _upsertCache(node.num, u.id, u, pos, node.last_heard ?? null);
 }

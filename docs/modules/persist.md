@@ -1,7 +1,7 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: ab11662adb006b857b807f7f79db8ffa7b37eb14f412cb4946a8509313edbb5e
+source_hash: db44e2b643b37be5ff7a6c7405d4521adcf95c765836c40313e3c29aacfd2e00
 updated: 2026-07-19
 ---
 
@@ -120,6 +120,28 @@ one detection node must not break ingestion for every other node.
   value. Only real received packets (`packet`, `user`, `position`,
   `telemetry` branches) stamp `rxDevice`.
 - `traceroute`, `range_test`, `text` (plain), `device_snapshot`, `device_data`, `device_state`, and `hello` event types are **not** handled here. They belong to other modules.
+- **`_upsertCache` freshness gate (task `nodeinfo-replay-regression`,
+  2026-07-25).** Signature is now `_upsertCache(num, nodeId, u, pos,
+  lastHeard)` — every call site (`user` event, raw `packet` NODEINFO_APP, and
+  `handleNodeInfo`'s replay path) passes the same `last_heard` value it just
+  gave the sibling `upsertNode.run()` call. Before writing `nodeinfo`,
+  `_upsertCache` reads the `nodes` row for that `num` (`stmts.getNodeByNum`)
+  and skips the `nodeinfo` write entirely when `lastHeard` is older than the
+  stored `nodes.last_heard` — `nodeinfo` has no `last_heard` column of its
+  own to self-gate with (deliberately, see `db.md`'s `nodeinfo` note), so it
+  borrows the sibling table's, which `upsertNode`'s own gate (see `db.md`)
+  keeps authoritative. `upsertNode` itself gained the equivalent gate at the
+  SQL level, so it needs no JS-side change here — this note covers only the
+  `_upsertCache`/`nodeinfo` side of the same fix.
+- **`handlePacket`'s `replay` parameter was previously unused for anything
+  except the `TEXT_MESSAGE_APP` branch** (stamps `messages.replay`) — the
+  NODEINFO_APP/POSITION_APP/TELEMETRY_APP branches never checked it before
+  writing `nodes`/`nodeinfo`, so a replayed packet (mesh-gw's `_replay:true`,
+  "seeded from REST on boot, not live radio" per this file's own event-shape
+  doc above) could carry an old `rx_time` straight into `upsertNode`
+  unguarded. Fixed at the `upsertNode` SQL layer (see `db.md`), not by
+  branching on `replay` here — the monotonicity gate protects every caller
+  uniformly regardless of which flag marked the data as non-live.
 
 ## Test notes
 
