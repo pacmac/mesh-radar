@@ -1,7 +1,7 @@
 ---
 module: app-devices
 source: public/app-devices.js
-source_hash: 40756e04172966ed5809b3b2e0fc83587ac7b428f39f7e466348d1c7b7d180a9
+source_hash: 6b4636695a12b76328ebead4fab6098ccb8b960fc02e1d6a198f5a90fc45c102
 updated: 2026-07-16
 ---
 
@@ -91,6 +91,30 @@ BLE flows (`bleScan`, `bleConnect`, `submitPairPin`, `bleRemove`,
 `disconnectDevice`), OTA management (`loadOtaFiles`, `flashOta`, …).
 Known issues recorded in the 2026-07-16 device-management review (findings
 4, 6–8) are NOT addressed by this task.
+
+## `bleConnect()` now persists the PIN it uses (task `pin-save-path`, 2026-07-25)
+
+mesh-gw report (mcpp-chat `mesh-gw--node-dash`#5): its BLE agent reads a
+device's PIN via `GET /device-config/{mac}` → `ble_pin`, re-reading it on
+every reconnect/restart, not just once at pairing time. `bleConnect()` only
+ever sent the resolved PIN as a one-time value in the `POST /devices`
+connect request body — it never called `PUT /device-config/{mac}` to
+persist it, so mesh-gw's later re-reads got the OLD stored value (observed:
+`C7:1C:98:7A:B8:0F` — user entered `308130`, `GET /device-config` kept
+returning `123456`). `submitPairPin` (the NEED_PAIR-correction path)
+already did this correctly; `bleConnect` (the initial-connect path) did not.
+
+Fix: when `resolvedPin` is non-empty, `bleConnect()` now `PUT
+/device-config/{addr}` with `{ ble_pin: resolvedPin }` before the connect
+POST — same persist call `submitPairPin` makes, same backend route
+(`src/device-config.js`, MAC-keyed). An empty/omitted PIN (device already
+paired, no PIN needed) skips the write rather than clobbering a stored PIN
+with `null`.
+
+**Wake-on-save (part b of the same report) was already correct** —
+`submitPairPin` already calls `POST /ble/{address}/pair` right after saving
+the corrected PIN, resetting mesh-gw's auth backoff immediately. No change
+needed there.
 
 ## `bleConnect()` defers to the NEED_PAIR overlay (task `render-pair-message`, 2026-07-25)
 

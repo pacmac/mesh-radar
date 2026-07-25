@@ -302,6 +302,17 @@ export const devicesMixin = {
     this.bleError = '';
     try {
       const resolvedPin = pin ?? this.blePin ?? '';
+      if (resolvedPin) {
+        // Persist the PIN before connecting — the initial connect POST only
+        // sends it for THIS one-time attempt; mesh-gw's BLE agent re-reads
+        // it later from device-config (e.g. after a restart or reconnect),
+        // and without this it never landed there at all (task pin-save-path,
+        // 2026-07-25, mesh-gw report mcpp-chat mesh-gw--node-dash#5 —
+        // C7:1C:98:7A:B8:0F: user entered 308130, GET /device-config kept
+        // returning the old 123456). Same persist call submitPairPin already
+        // makes for the NEED_PAIR-correction path.
+        await fetchJSON(`/device-config/${encodeURIComponent(addr)}`, 'PUT', { ble_pin: resolvedPin });
+      }
       await fetchJSON('/devices', 'POST', { address: addr, pin: resolvedPin });
       const deadline = Date.now() + 60000;
       const bleKey = 'ble:' + addr.toUpperCase();
