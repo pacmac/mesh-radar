@@ -1,7 +1,7 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: be62bd7861cb12db5b6144f4664e8c2c1efe47fb6a065ef0b1ed918ebf5742b9
+source_hash: ae0eb237f48b65b7fd8a61d9c2607dc5f5c7aae46bdabd2e966b574e316291ed
 updated: 2026-07-25
 ---
 
@@ -158,3 +158,32 @@ operations) is a **second, separate toast implementation** — already
 bottom-right, already wraps correctly. Not touched here; the app has two
 parallel toast systems, which is itself a real inconsistency, filed
 separately in the bugs backlog rather than merged in this task.
+
+## Sidebar shortcut list: pac-host devices, not favourites (task `devices-shortcut-source`, 2026-07-25)
+
+Peter spotted "B12PAC CAR" (a node someone had starred, unrelated to
+pac-host) in this list and asked why — confirmed live the list was sourced
+from node-dash's own favourites mechanism (`nodeinfo.favourite`), not
+pac-host. His explicit decision after the tradeoff was flagged (this list
+is now empty on any install without pac-host running): *"Replace the whole
+list with pac-host's roster."*
+
+`<template x-for="f in favourites">` → `<template x-for="d in
+controlDevices()">` (`app-control.js`, already `GET /mesh/devices`-sourced,
+already ours-only). The star icon (implied a user's deliberate choice, no
+longer accurate) is replaced with a status dot reflecting `d.present` —
+green when present, dim when known-but-asleep, same semantic `present`
+already carries on the Control page's own unit picker.
+
+**The favourites mechanism itself is untouched** — `nodeinfo.favourite`,
+`PUT /nodes/:num/favourite`, and the Align target picker
+(`app-align.js`'s `alignTargets()`, task `yagi-align-rebuild`, same
+session) all still use it. Peter's correction was about this one list's
+data source, not a directive to remove general favourites — Align still
+needs a general node list, not a pac-host-only one.
+
+Verified live 2026-07-25: sidebar shows exactly BNCH/GARG with green
+status dots (both `present`), both themes, clicking still opens the node
+focus page. Empty-when-pac-host-unavailable behavior verified by code
+review of `controlDevices()`'s existing null-safety (`pacHostStatus?.units
+|| []`), not by stopping the live pac-host service mid-session.

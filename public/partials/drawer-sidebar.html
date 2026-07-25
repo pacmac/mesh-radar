@@ -104,22 +104,26 @@
             <span class="badge badge-sm ml-auto" :class="availableDevices.length ? 'badge-success' : 'badge-ghost'" x-text="availableDevices.length"></span>
           </a>
         </li>
-        <!-- Favourite nodes — server-computed list; each links to the focus
-             page. The browser filters nothing (BROWSER_CONTRACT). -->
-        <template x-for="f in favourites" :key="f.num">
+        <!-- pac-host alarm devices — server-pushed roster (GET /mesh/devices
+             via controlDevices(), already ours-only), each links to the node
+             focus page like any other node. Empty when pac-host is
+             unavailable, no separate x-show gate needed. Deliberately NOT the
+             general favourites list (task devices-shortcut-source, 2026-07-25
+             — Peter: "it should come from dev1/devices", after spotting an
+             unrelated starred node here). Favourites itself is untouched
+             elsewhere (still used by Align's target picker, app-align.js). -->
+        <template x-for="d in controlDevices()" :key="d.num">
           <li>
             <!-- min-w-0 on the flex parent is required for truncate to work
                  on the child: without it the flex item refuses to shrink below
                  its content width and the name overflows the 14rem sidebar. -->
             <a class="min-w-0"
-               :class="tab==='node' && nodeStatusNum===f.num && 'active'"
-               :title="f.label"
-               @click="openNodeStatusPage(f.num)">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-warning"
-                   fill="currentColor" viewBox="0 0 24 24">
-                <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
-              </svg>
-              <span class="truncate" x-text="f.label"></span>
+               :class="tab==='node' && nodeStatusNum===d.num && 'active'"
+               :title="d.label"
+               @click="openNodeStatusPage(d.num)">
+              <span class="inline-block w-2 h-2 rounded-full shrink-0"
+                    :class="d.present ? 'bg-success' : 'bg-base-content/30'"></span>
+              <span class="truncate" x-text="d.label"></span>
             </a>
           </li>
         </template>
