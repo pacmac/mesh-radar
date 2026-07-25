@@ -1,8 +1,8 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: d9d5ad472e28b971f0115739599bd7634c2102d15aa4d1ae4ef5c660da189973
-updated: 2026-07-20
+source_hash: c13b5401892528d54369082e60b8f937f082d86c68460c7d16270a3461aef555
+updated: 2026-07-25
 ---
 
 # Module: drawer-sidebar
@@ -11,6 +11,13 @@ updated: 2026-07-20
 
 Sidebar drawer: logo block, active-device indicator + selector, nav menu,
 device status footer, toast container. Presentation only.
+
+## Control nav item (task `pac-host-command-surface`, 2026-07-25)
+
+New nav `<li>`, `x-show="pacHostStatus?.available"` — invisible on a stock
+install with no pac-host running, matching the header badge's absence-safe
+pattern. Positioned above Messages, standard nav-item markup (no unread
+badge, unlike Messages/Devices — the Control page has no unread concept).
 
 ## Standard-node cleanup (2026-07-23)
 

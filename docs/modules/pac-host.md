@@ -1,7 +1,7 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 0b6b6c22735f6cb84c75b7d478eb0150fac1b8d0943cc77a6bb5478a19d6d3da
+source_hash: 8add038e374091e667ab9ac8abdc93bc3e6e094a18624bd0169af19d25cb6abe
 updated: 2026-07-25
 ---
 
@@ -46,6 +46,14 @@ the health/status signal.
   Pure passthrough — no verb validation, no mesh mechanics, per mt-transport's
   explicit instruction that node-dash should not need to know any (xsession,
   `[ownership-2-correction]`, archived 2026-07-25).
+- Fetch pac-host's unit roster (`GET /v1/mesh/nodes`) in the same poll cycle
+  as health, when available, and include it as `units` in `connectMessage()`.
+  This is the *only* legitimate node-list-shaped data this module carries —
+  it answers "which units can I command", a pac-host-owned fact, not "what
+  are this node's stats" (ruled out entirely, see Purpose). Note the roster
+  is pac-host's **whole** mesh-gw-observed view, not just its own units —
+  callers must filter (task `app-control.js` filters on `user.role === 200`,
+  the PAC_ALARM firmware's own self-declared role).
 
 ## Dependencies
 
@@ -82,6 +90,7 @@ that defines the wire shape of "pac-host's current state."
   available: boolean,       // false until first successful poll, or on any poll failure
   status: 'ready'|'degraded'|'down'|'unreachable', // 'unreachable' = our poll couldn't connect at all — not one of pac-host's own states, added here to distinguish "no service" from "service says down"
   modules: [{ name, status, error? }] | [],
+  units: [{ id, num, name, lastHeard, hops, raw }] | [], // pac-host's whole roster, empty when unavailable
   lastCheckedMs: number | null,
   error: string | null,     // set only when status === 'unreachable'
 }

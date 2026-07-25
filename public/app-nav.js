@@ -4,12 +4,12 @@ import { persistGet, persistSet } from './app-persist.js';
 const _PATH_TO_TAB = {
   '/': 'overview', '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
   '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/devices': 'devices',
-  '/device-config': 'devices', '/performance': 'perf',
+  '/device-config': 'devices', '/performance': 'perf', '/control': 'control',
 };
 const _TAB_TO_PATH = {
   overview: '/', radar: '/radar', nodes: '/nodes',
   cfg: '/config', range: '/range', messages: '/messages', devices: '/devices',
-  perf: '/performance',
+  perf: '/performance', control: '/control',
 };
 
 // /node/!hexid is parameterised, so it cannot live in the static map. A route

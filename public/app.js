@@ -14,6 +14,7 @@ import { telemetryMixin } from './app-telemetry.js';
 import { configMixin }      from './app-config.js';
 import { componentsMixin }  from './app-components.js';
 import { nodeStatusMixin }  from './app-node-status.js';
+import { controlMixin }     from './app-control.js';
 import { fetchJSON, themeColor, svgElem } from './app-helpers.js';
 import { initPersist, persistGet, persistSet } from './app-persist.js';
 
@@ -80,6 +81,12 @@ function dashboard() {
     bridgeConnected: true,
     pacHostStatus:   null,
     events:          [],
+
+    // -- pac-host command surface ---------------------------------------------
+    controlTarget:   null,
+    controlVerb:     '',
+    controlSending:  false,
+    controlLedger:   [],
 
     // -- Rotator / Yagi -------------------------------------------------------
     yagiAz:          null,
@@ -393,7 +400,7 @@ window.dashboard = function() {
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
     rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
-    componentsMixin, perfMixin, nodeStatusMixin,
+    componentsMixin, perfMixin, nodeStatusMixin, controlMixin,
   ];
   for (const mixin of mixins) {
     Object.defineProperties(state, Object.getOwnPropertyDescriptors(mixin));

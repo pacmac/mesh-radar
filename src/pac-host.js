@@ -16,11 +16,13 @@ export const events = new EventEmitter();
 
 let _timer = null;
 let _lastStatus = null; // null until the first poll resolves
+let _units = [];        // pac-host's own unit roster — only meaningful data source for "which nodes are commandable"
 
 function _statusesEqual(a, b) {
   return a.status === b.status
     && a.available === b.available
-    && JSON.stringify(a.modules) === JSON.stringify(b.modules);
+    && JSON.stringify(a.modules) === JSON.stringify(b.modules)
+    && JSON.stringify(a.units) === JSON.stringify(b.units);
 }
 
 async function _poll() {
@@ -44,10 +46,26 @@ async function _poll() {
     result = { available: false, status: 'unreachable', modules: [], lastCheckedMs: Date.now(), error: e.message };
   }
 
+  // Unit roster: only pac-host knows which nodes it can command. Fetched in the
+  // same poll cycle (not on page load — BROWSER_CONTRACT: page data is WS-only,
+  // and connectMessage() already replays on connect / pushes on change).
+  if (result.available) {
+    try {
+      const nodes = await _call('/mesh/nodes');
+      _units = Array.isArray(nodes) ? nodes : [];
+    } catch (e) {
+      log.warn('pac-host', `unit roster fetch failed: ${e.message}`);
+      _units = [];
+    }
+  } else {
+    _units = [];
+  }
+  result.units = _units;
+
   const changed = !_lastStatus || !_statusesEqual(_lastStatus, result);
   _lastStatus = result;
   if (changed) {
-    log.info('pac-host', `status: ${result.status}${result.error ? ` (${result.error})` : ''}`);
+    log.info('pac-host', `status: ${result.status}${result.error ? ` (${result.error})` : ''}, ${_units.length} unit(s)`);
     events.emit('change');
   }
 }
@@ -72,7 +90,7 @@ export function isAvailable() {
 }
 
 function _status() {
-  return _lastStatus ?? { available: false, status: 'unreachable', modules: [], lastCheckedMs: null, error: null };
+  return _lastStatus ?? { available: false, status: 'unreachable', modules: [], units: [], lastCheckedMs: null, error: null };
 }
 
 /** Ready-to-send WS message describing pac-host's current state. */

@@ -1,0 +1,77 @@
+        <!-- ===================== CONTROL (pac-host units) ===================== -->
+        <div x-show="tab==='control'" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
+          <div class="card bg-base-100 shadow flex flex-col min-h-0">
+            <div class="card-body flex flex-col min-h-0">
+              <h2 class="card-title shrink-0">Command</h2>
+              <div class="flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
+
+                <!-- Unit picker -->
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-sm text-base-content/60 w-12 shrink-0">Unit</span>
+                  <div class="join">
+                    <template x-for="d in controlDevices()" :key="d.num">
+                      <button class="join-item btn btn-sm"
+                              :class="controlTarget === d.num ? 'btn-primary' : 'btn-outline'"
+                              @click="controlTarget = d.num; refreshControlLedger()"
+                              x-text="d.label"></button>
+                    </template>
+                  </div>
+                  <span x-show="!controlDevices().length" class="text-xs text-base-content/50 italic">
+                    No pac-host units known — waiting for the service.
+                  </span>
+                </div>
+
+                <!-- Shortcuts -->
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-sm text-base-content/60 w-12 shrink-0">Verb</span>
+                  <div class="join">
+                    <template x-for="v in controlShortcuts()" :key="v">
+                      <button class="join-item btn btn-sm btn-outline"
+                              :disabled="controlTarget == null || controlSending"
+                              @click="sendControl(v)"
+                              x-text="v"></button>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- Free text -->
+                <div class="flex items-center gap-2">
+                  <input type="text" x-model="controlVerb" placeholder="custom verb…"
+                         class="input input-bordered input-sm flex-1"
+                         :disabled="controlTarget == null || controlSending"
+                         @keydown.enter="sendControl()">
+                  <button class="btn btn-sm btn-primary" :disabled="controlTarget == null || controlSending || !controlVerb.trim()"
+                          @click="sendControl()">Send</button>
+                </div>
+
+                <p class="text-xs text-base-content/50" x-show="controlTargetNeedsConfirm()">
+                  <span x-text="controlTargetLabel()"></span> is the live production alarm — every send asks to confirm.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card bg-base-100 shadow flex flex-col min-h-0">
+            <div class="card-body flex flex-col min-h-0">
+              <h2 class="card-title shrink-0 flex justify-between items-center">
+                Queue
+                <button class="btn btn-xs btn-ghost" :disabled="controlTarget == null" @click="refreshControlLedger()">refresh</button>
+              </h2>
+              <div class="flex flex-col gap-2 overflow-y-auto flex-1 min-h-0">
+                <template x-for="entry in controlLedger" :key="entry.id">
+                  <div class="text-xs font-mono border-b border-base-200 pb-1">
+                    <div class="flex justify-between">
+                      <span x-text="entry.verb + (entry.args?.length ? ' ' + entry.args.join(' ') : '')"></span>
+                      <span class="badge badge-xs"
+                            :class="{acked:'badge-success', pending:'badge-info', cancelled:'badge-warning'}[entry.status] || 'badge-ghost'"
+                            x-text="entry.status"></span>
+                    </div>
+                    <div x-show="entry.receipt" class="text-base-content/60" x-text="JSON.stringify(entry.receipt)"></div>
+                    <div x-show="entry.lastError" class="text-error" x-text="entry.lastError"></div>
+                  </div>
+                </template>
+                <span x-show="controlTarget != null && !controlLedger.length" class="text-xs text-base-content/50 italic">No commands sent yet.</span>
+              </div>
+            </div>
+          </div>
+        </div>
