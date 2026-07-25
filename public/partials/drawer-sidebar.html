@@ -146,16 +146,27 @@
 
     </aside>
 
-    <!-- Toast notifications — must be inside x-data scope -->
-    <div class="toast toast-top toast-end z-[9999] pointer-events-none top-16">
-      <template x-for="t in toasts" :key="t.id">
-        <div class="alert shadow-lg text-sm py-2 px-3 pointer-events-auto flex items-start gap-2 max-w-xs"
-             :class="t.type === 'error' ? 'alert-error' : 'alert-success'"
-             x-transition>
-          <span class="flex-1" x-text="t.message"></span>
-          <button @click="dismissToast(t.id)" class="btn btn-xs btn-ghost shrink-0 opacity-70 hover:opacity-100 -mr-1">✕</button>
-        </div>
-      </template>
-    </div>
+  </div>
 
+  <!-- Toast notifications — deliberately OUTSIDE .drawer-side (task
+       toast-redesign, 2026-07-25): DaisyUI slides every child of .drawer-side
+       off-screen via CSS transform whenever the mobile drawer is closed
+       (the default state on narrow viewports) — a toast nested in there was
+       invisible on mobile any time the drawer wasn't open, a real bug found
+       while redesigning this. Still inside the outer .drawer's x-data scope. -->
+  <div class="toast toast-bottom toast-end z-[9999] pointer-events-none gap-2 min-w-0 whitespace-normal max-w-[min(24rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] overflow-y-auto">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="alert shadow-lg rounded-lg text-sm py-2.5 px-3 pointer-events-auto flex items-start gap-2 w-full"
+           :class="{success:'alert-success', error:'alert-error', warning:'alert-warning', info:'alert-info'}[t.type] || 'alert-info'"
+           x-transition:enter="transition ease-out duration-200"
+           x-transition:enter-start="opacity-0 translate-y-2"
+           x-transition:enter-end="opacity-100 translate-y-0"
+           x-transition:leave="transition ease-in duration-150"
+           x-transition:leave-start="opacity-100"
+           x-transition:leave-end="opacity-0">
+        <span class="font-bold shrink-0" x-text="{success:'✓', error:'✕', warning:'⚠', info:'ℹ'}[t.type] || 'ℹ'"></span>
+        <span class="flex-1 min-w-0 break-words" x-text="t.message"></span>
+        <button @click="dismissToast(t.id)" class="btn btn-xs btn-ghost shrink-0 opacity-70 hover:opacity-100 -mr-1 -mt-0.5">✕</button>
+      </div>
+    </template>
   </div>

@@ -13,14 +13,6 @@ import { persistSet } from './app-persist.js';
 
 export const CONTROL_SHORTCUTS = ['ping', 'status', 'config', 'reboot'];
 
-// Node ids requiring an explicit confirmation before a command sends — keyed
-// on node id (stable), never short name (mutable, per xsession standing
-// rule). Today: !987ab80f/GARG, the live production alarm — mt-transport's
-// own guidance (2026-07-25): mechanically safe via the API, but ask Peter
-// first. This is a one-unit safety gate, not a general special-case: every
-// other part of the picker treats units identically.
-const CONFIRM_TARGETS = new Set(['!987ab80f']);
-
 export const controlMixin = {
   // Sub-tab switch (Summary/Command/Config/Stats/Yagi Align/Chat — task
   // control-section-ia, 2026-07-25). State + persist only, same shape as
@@ -45,23 +37,10 @@ export const controlMixin = {
 
   controlShortcuts() { return CONTROL_SHORTCUTS; },
 
-  controlTargetLabel() {
-    const d = this.controlDevices().find(d => d.num === this.controlTarget);
-    return d?.label || '';
-  },
-
-  controlTargetNeedsConfirm() {
-    const d = this.controlDevices().find(d => d.num === this.controlTarget);
-    return !!d && CONFIRM_TARGETS.has(d.id);
-  },
-
   async sendControl(verb) {
     const v = (verb ?? this.controlVerb ?? '').trim();
     if (!v) return;
     if (this.controlTarget == null) { this.showToast('Select a unit first', 'error', 0); return; }
-    if (this.controlTargetNeedsConfirm() && !window.confirm(
-      `${this.controlTargetLabel()} is the live production alarm. Send "${v}"?`
-    )) return;
 
     this.controlSending = true;
     try {

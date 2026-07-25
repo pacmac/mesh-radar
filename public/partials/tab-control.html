@@ -65,10 +65,6 @@
                   <button class="btn btn-sm btn-primary" :disabled="controlTarget == null || controlSending || !controlVerb.trim()"
                           @click="sendControl()">Send</button>
                 </div>
-
-                <p class="text-xs text-base-content/50" x-show="controlTargetNeedsConfirm()">
-                  <span x-text="controlTargetLabel()"></span> is the live production alarm — every send asks to confirm.
-                </p>
               </div>
             </div>
           </div>

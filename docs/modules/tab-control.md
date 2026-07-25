@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: 85a37ef2cb64f49d972ad6159a830b37dcd0c37d65a07ebd298fed96c8342692
+source_hash: 37bcefc56540f767b3d3fa0d725f51607f56509fbe6efcc677ef061ce8ebc90c
 updated: 2026-07-25
 ---
 
@@ -50,9 +50,11 @@ executed."). Replaces the earlier single side-by-side "Queue" card.
 
 - **Command** card: unit picker (`.join` of buttons, one per
   `controlDevices()` entry), shortcut verbs (`.join`, disabled until a unit
-  is selected), free-text verb input + Send. A warning line appears only
-  when `controlTargetNeedsConfirm()` is true for the selected unit. A unit
-  button dims (`opacity-60` + a title tooltip) when `!d.present` (task
+  is selected), free-text verb input + Send. **No confirmation gate before
+  sending, to any unit — removed 2026-07-25 (task `garg-confirm-removal`),
+  Peter's explicit request** ("please remove the popup confirmation when
+  sending to GARG"), reversing his own earlier directive. A unit button dims
+  (`opacity-60` + a title tooltip) when `!d.present` (task
   `control-devices-endpoint`, 2026-07-25) — known-but-asleep, still fully
   clickable, since queuing a command for a sleeping unit is valid (delivered
   next wake window).

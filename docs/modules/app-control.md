@@ -1,7 +1,7 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: 4799cd8373f3a1fd7c831a160ba578cef7a0dd586083e3c8f465604ab2fb055d
+source_hash: e46bfd96f35ab9e80ed8cd685a5fdaa8a80b64c91cf0f2f1502cf6b4bc2fb663
 updated: 2026-07-25
 ---
 
@@ -23,6 +23,15 @@ caught it ("nothing is displayed... until I send a command... NO GET in the
 UI for data streams") and it's gone. `controlLedger()` is now a pure read of
 `pacHostQueues`, which `pac-host.js` polls and pushes on its own.
 
+**No confirmation gate before sending, to any unit, including GARG — removed
+2026-07-25 (task `garg-confirm-removal`).** Peter explicitly asked to remove
+it ("please remove the popup confirmation when sending to GARG"), reversing
+his own earlier directive from the same session. `CONFIRM_TARGETS`,
+`controlTargetNeedsConfirm()`, and `controlTargetLabel()` (which had no
+other caller once the confirm-triggered warning paragraph in
+`tab-control.html` was removed alongside it) are gone — not disabled, fully
+deleted. `sendControl()` now sends immediately for every unit, uniformly.
+
 ## Public interface
 
 ```js
@@ -31,9 +40,7 @@ export const controlMixin = {
   switchControlTab(name),             // → sets controlTab + persists (task control-section-ia); Summary/Command/Config/Stats/Yagi Align/Chat sub-tabs, same shape as switchCfgTab. No data load — skeleton tabs have nothing to fetch.
   controlDevices(),                  // → [{id,num,label,present}] — pacHostStatus.units mapped directly (GET /mesh/devices is already ours-only, task control-devices-endpoint), never a hardcoded id list
   controlShortcuts(),                // → CONTROL_SHORTCUTS
-  controlTargetLabel(),               // → selected unit's display label, or ''
-  controlTargetNeedsConfirm(),        // → true iff the selected unit's node id is in the confirm-gate set
-  sendControl(verb),                  // → POST /nodes/:num/pac-command {verb}; window.confirm() gate for confirm-targets. No manual refresh after — the pushed queue updates on its own within one poll cycle.
+  sendControl(verb),                  // → POST /nodes/:num/pac-command {verb}, sends immediately, no confirmation gate for any unit (task garg-confirm-removal, 2026-07-25). No manual refresh after — the pushed queue updates on its own within one poll cycle.
   controlLedger(),                    // → pacHostQueues[controlTarget] || [], newest-first — PURE READ of pushed state, zero fetch, zero re-derivation of time (entry.since is already server-formatted)
   controlPending(),                   // → controlLedger() filtered to status === 'pending' (in flight, not yet resolved)
   controlExecuted(),                  // → controlLedger() filtered to status !== 'pending' (reached a terminal outcome: acked, cancelled, or failed)
@@ -62,11 +69,6 @@ export const controlMixin = {
   live one — per mt-transport (xsession `[devices-live]`): a device must not
   disappear from the picker because it slept, so `controlDevices()` never
   filters on `present`, only surfaces it for `tab-control.html` to dim.
-- The confirm-gate (`CONFIRM_TARGETS`, currently `{'!987ab80f'}` / GARG) is
-  keyed on **node id**, never short name — short names are mutable
-  (xsession standing rule) and node ids are not. This is a one-unit safety
-  gate Peter explicitly authorized 2026-07-25, not a general precedent for
-  special-casing nodes elsewhere.
 - No optimistic ledger row on send — `sendControl` does nothing further after
   a successful POST; the new entry appears when `pac-host.js`'s next queue
   poll picks it up and pushes `pac_host_queues` (≤5s). The queue is server

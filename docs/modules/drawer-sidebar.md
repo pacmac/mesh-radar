@@ -1,7 +1,7 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: ea9837f623f2593ac02556938b10a715445102982587e38509869d7c68be1d65
+source_hash: be62bd7861cb12db5b6144f4664e8c2c1efe47fb6a065ef0b1ed918ebf5742b9
 updated: 2026-07-25
 ---
 
@@ -102,3 +102,59 @@ The device selector binds `x-model="activeDevice"`; options carry
 `:value="d.addr"` and are keyed by `d.addr` (node_id can be null
 pre-sync — keying on it produced duplicate-null Alpine keys). Labels
 still render via deviceLabel until C3c bundles.
+
+## Toast redesign — bottom-right, wrapping, structural fix (task `toast-redesign`, 2026-07-25)
+
+Peter: *"the toast that is used everwre is awful, it is 1 line appears at the
+top, overflows the viewport and is amateur. should popup bottom right and it
+needs to be polished and professional... needs to wrap to multi lines while
+still being a proportional size for the viewport."*
+
+**Structural bug found and fixed, more serious than the styling complaint:**
+the toast container was nested inside `.drawer-side`, sibling to `<aside>`.
+DaisyUI's drawer CSS slides every child of `.drawer-side` off-screen via
+`transform` whenever the mobile drawer is closed — the default state on
+narrow viewports. A toast in there was **invisible on mobile** any time the
+drawer wasn't open, silently, the whole time this app has had toasts. Fixed
+by moving the toast container to be a sibling of `.drawer-side` instead of a
+child of it — still inside the outer `.drawer` div's `x-data` scope (this
+partial's entire top-level content lands there via `index.html`'s include
+point), so `toasts`/`dismissToast` remain reachable, but no longer subject to
+the drawer's off-canvas transform.
+
+**Styling fixes, all in the container/item classes (no JS change — `showToast()`
+in `app-ui.js` already passed `type` through untouched)**:
+- Position: `toast-bottom toast-end` (was `toast-top toast-end` + inline `top-16`).
+- Width: `max-w-[min(24rem,calc(100vw-2rem))]` — proportional to viewport,
+  capped at 24rem on desktop. DaisyUI's base `.toast` rule sets
+  `min-width:fit-content` and `white-space:nowrap`, both of which **fight**
+  a `max-width` and any wrap attempt on the children — discovered by direct
+  measurement (`getBoundingClientRect()`), not by eyeballing a screenshot,
+  after an initial "it looks fine" read turned out to be a container
+  rendering off the left edge of a 390px viewport. Fixed by explicitly
+  overriding both (`min-w-0 whitespace-normal`) on the container.
+- Wrap: `break-words` on the message span (was overflowing without it).
+- Color map: was `t.type === 'error' ? 'alert-error' : 'alert-success'` —
+  a real bug, not just cosmetic: a `warning` or `info` toast (both real,
+  used in `app-ws.js`) rendered **green** (`alert-success`), violating
+  STYLE_GUIDE §4's fixed status-color vocabulary. Now a full 4-way map
+  (`success`/`error`/`warning`/`info` → their matching `alert-*` class).
+- Icon glyph per type (✓/✕/⚠/ℹ) for quick scannability without reading color,
+  matching the existing icon-per-state precedent in `op-toast.js` (a
+  separate, untouched toast implementation — see Out of scope).
+- Motion: slide-up + fade entrance/exit (200ms/150ms), reinforcing the new
+  bottom anchor.
+- Defensive `max-h-[calc(100vh-2rem)] overflow-y-auto` on the container for
+  a large simultaneous burst (e.g. several persistent `duration:0` error
+  toasts) — added after an initial visual read suggested overflow at 4
+  stacked toasts; direct measurement then showed that read was wrong (nothing
+  was actually clipped), but the bound is kept anyway as a real, if rare,
+  edge case it did not previously guard against.
+
+## Out of scope
+
+`op-toast.js` (vanilla-DOM, used only by `op-flow.js` for device-write
+operations) is a **second, separate toast implementation** — already
+bottom-right, already wraps correctly. Not touched here; the app has two
+parallel toast systems, which is itself a real inconsistency, filed
+separately in the bugs backlog rather than merged in this task.
