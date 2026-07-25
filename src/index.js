@@ -21,6 +21,7 @@ import { startAlertPoller } from './alerts.js';
 import alertsRouter from './alerts-api.js';
 import rotatorRouter from './rotator-api.js';
 import messagesRouter from './messages-api.js';
+import pacCommandRouter from './pac-command-api.js';
 import tracerouteRouter from './traceroute-api.js';
 import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
@@ -196,6 +197,7 @@ app.use(tracerouteRouter);
 app.use(autoPurgeRouter);
 
 app.use(messagesRouter);
+app.use(pacCommandRouter);
 
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 

@@ -80,3 +80,29 @@ export function connectMessage() {
   return { type: 'pac_host_status', ..._status() };
 }
 
+async function _call(path, options) {
+  const res = await fetch(`${PAC_HOST_URL}${path}`, options);
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json())?.error ?? ''; } catch { /* non-JSON error body */ }
+    throw Object.assign(new Error(`pac-host ${res.status}${detail ? `: ${detail}` : ''}`), { status: res.status });
+  }
+  return res.json();
+}
+
+/** Queue a command for a pac-host unit. Pure passthrough — no verb validation,
+ *  no mesh mechanics; pac-host owns what a verb means (API.md §6.1). Throws
+ *  on any non-2xx, including 504 (unit asleep/out of range, not a bug). */
+export async function queueCommand({ unit, verb, args }) {
+  return _call('/mesh/queue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ unit, verb, ...(args !== undefined ? { args } : {}) }),
+  });
+}
+
+/** Fetch one unit's queue ledger — the receipt-polling primitive. */
+export async function getQueue(unit) {
+  return _call(`/mesh/queue/${encodeURIComponent(unit)}`);
+}
+

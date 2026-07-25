@@ -1,7 +1,7 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: e751fca948aa00141816935050941420464f724cf614eb8eb25b4545f08ed6e4
+source_hash: 0b6b6c22735f6cb84c75b7d478eb0150fac1b8d0943cc77a6bb5478a19d6d3da
 updated: 2026-07-25
 ---
 
@@ -9,18 +9,17 @@ updated: 2026-07-25
 
 ## Purpose
 
-Detects and monitors the optional external "pac-host" service (mt-transport's
-custom/alarm backend — see
-`/usr/share/pac/dev/pio/projects/mt-transport/clients/host/API.md`, DRAFT
-v1). Absence is the normal state: a machine with no pac-host running boots
-clean and serves every page identically to today.
+Detects, monitors and talks to the optional external "pac-host" service
+(mt-transport's custom/alarm backend — see
+`/usr/share/pac/dev/pio/projects/mt-transport/clients/host/API.md`, now
+**LIVE** v1). Absence is the normal state: a machine with no pac-host running
+boots clean and serves every page identically to today.
 
-This module owns exactly one thing: knowing whether pac-host is reachable and
-what it reports. It does **not** implement any pac-host feature surface
-(mesh node data, recorder status, commands) — those land in later, separate
-tasks once pac-host's `mesh`/`recorder` modules actually ship (currently
-DRAFT, not deployed; `mtmesh` still serves the old unversioned `:8787`
-daemon this replaces).
+This module is the **only** place in node-dash that knows pac-host's URL,
+routes or wire shapes. Everything else — status detection, and now command
+dispatch — is a small function call from here; no other file ever branches
+on pac-host's behalf (task `custom-app-extension-point`, hard-won over
+several design corrections this session — see its notes for the "why").
 
 **Node data is out of scope by design, not by staging.** pac-host's units
 (`!8cee336b`/BNCH, `!987ab80f`/GARG) are, by explicit architecture decision,
@@ -42,6 +41,11 @@ the health/status signal.
   `import()`-time capability negotiation (unlike the archived
   `transport-plugin.js` pattern, which loads an in-process npm module; this
   is a separate OS process reached over HTTP, a different problem).
+- Forward a command to a pac-host unit (`POST /v1/mesh/queue`) and fetch that
+  unit's queue ledger for receipt polling (`GET /v1/mesh/queue/:target`).
+  Pure passthrough — no verb validation, no mesh mechanics, per mt-transport's
+  explicit instruction that node-dash should not need to know any (xsession,
+  `[ownership-2-correction]`, archived 2026-07-25).
 
 ## Dependencies
 
@@ -62,6 +66,8 @@ export function stop()           // clear the poll timer (tests/shutdown)
 export function isAvailable()    // boolean — true only when status is 'ready' or 'degraded'
 export function connectMessage() // → { type: 'pac_host_status', ...status() } — ready to JSON.stringify and send as-is
 export const events              // EventEmitter, emits 'change' when status() changes
+export async function queueCommand({ unit, verb, args }) // → POST /v1/mesh/queue body, returns the raw JSON response ({id, ...}) or throws Error('pac-host <status>: <detail>')
+export async function getQueue(unit)                     // → GET /v1/mesh/queue/:target, returns the raw ledger array; throws the same way
 ```
 
 `status()` is internal (backs `connectMessage()`/`isAvailable()`) —
@@ -88,6 +94,7 @@ that defines the wire shape of "pac-host's current state."
   1. Import: `import * as pacHost from './pac-host.js';`
   2. In the connection handler, alongside the existing `bridge_connected` send: `ws.send(JSON.stringify(pacHost.connectMessage()));` — this is how a newly-connected browser gets the current status immediately.
   3. One wiring line near `broadcast()`'s definition: `pacHost.events.on('change', () => broadcast(pacHost.connectMessage()));` — this is how already-connected browsers get told when status changes.
+- `src/pac-command-api.js` (task `pac-host-command-surface`) — thin Express router, `POST /nodes/:num/pac-command` and `GET /nodes/:num/pac-command`, calling `queueCommand()`/`getQueue()`. Owns HTTP request/response shape only; no pac-host knowledge of its own.
 - `public/app.js`/`public/app-ws.js`/`public/index.html` (task `pac-host-header-badge`) — render `pac_host_status` as a small navbar badge. Pure presentation of what this module already sends; no other coupling.
 
 ## State
@@ -113,5 +120,5 @@ that defines the wire shape of "pac-host's current state."
 ## Out of scope
 
 - Node data of any kind — see Purpose. Not staged for later; ruled out by design.
-- Command/config for pac-host's units — future task, built against `POST /v1/mesh/queue` directly, not through this module (this module is status-only).
-- SSE (`GET /v1/events`) consumption — not needed for a health-poll-only capability flag; deferred to whichever future task actually needs live pac-host events.
+- Verb validation, argument shaping, or any mesh-mechanics knowledge for commands — `queueCommand()` is a pure passthrough; pac-host owns what a verb means.
+- SSE (`GET /v1/events`) consumption — not needed for health polling or the queue's REST ledger; deferred to whichever future task actually needs live pac-host events (e.g. `mesh.reply` for instant receipts instead of polling the ledger).

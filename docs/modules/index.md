@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: 6b56ff8f01903e67d1719923b6eea0d9e5ad08e00515e48daf5ef25317ff60a8
+source_hash: fb37eba2af0fbb116f401ab8ec9c1251438d4ed3c70005e8c4894559bf2fb205
 updated: 2026-07-25
 ---
 
@@ -37,7 +37,7 @@ the mesh-gw except to proxy (see `bridge.js`), or hold runtime state beyond the
 
 Routers mounted: `config-api`, `nodes-api`, `device-config`,
 `device-remove`, `rotator-api`, `performance-api`, `geocode`,
-`range-test-api`, `traceroute-api`, `auto-purge-api`, `messages-api`, `alerts-api`,
+`range-test-api`, `traceroute-api`, `auto-purge-api`, `messages-api`, `pac-command-api`, `alerts-api`,
 `op-manager`. Infrastructure: `bridge`, `pac-host` (`start`), `ws-relay` (`attachWsRelay`),
 `db` (config + migration statements), `rotator`, `scanner`,
 `node-list`, `alerts` (`startAlertPoller`), `imap-receiver`, `startup`,
