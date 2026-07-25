@@ -14,6 +14,16 @@ export const CONTROL_SHORTCUTS = ['ping', 'status', 'config', 'reboot'];
 // other part of the picker treats units identically.
 const CONFIRM_TARGETS = new Set(['!987ab80f']);
 
+// Compact local-time stamp, Peter's requested shape: YYMMDD-HHMMSS. pac-host's
+// timestamps are epoch ms (API.md §8); local time is their own stated
+// convention ("operators read local/BST — convert at the edge").
+function fmtCompactTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getFullYear() % 100)}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
 export const controlMixin = {
   // pac-host's own unit roster, filtered to role 200 (the PAC_ALARM firmware's
   // own self-declared Meshtastic role — task client-role-pac-alarm) so the
@@ -80,5 +90,9 @@ export const controlMixin = {
     return Object.entries(receipt)
       .filter(([k]) => k !== 'type')
       .map(([k, v]) => ({ label: k, text: typeof v === 'object' ? JSON.stringify(v) : String(v) }));
+  },
+
+  controlEntryTime(entry) {
+    return fmtCompactTime(entry.enqueuedAt);
   },
 };

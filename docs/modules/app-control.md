@@ -1,7 +1,7 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: 7466791063a8b157de3f51c0016550db933c3d7a0d0551fb0256b9b71635be50
+source_hash: 06df0e1ac0c03d5652b33529961072a6fa6a20da1d92ff7ed290df926088357f
 updated: 2026-07-25
 ---
 
@@ -28,6 +28,7 @@ export const controlMixin = {
   sendControl(verb),                  // → POST /nodes/:num/pac-command {verb}; window.confirm() gate for confirm-targets; refreshes the ledger on success
   refreshControlLedger(),             // → GET /nodes/:num/pac-command, assigns controlLedger
   controlReceiptFields(receipt),      // → [{label,text}] — generic key:value pairing of a receipt object (STYLE_GUIDE §5), field ids shown as-is, no guessed meaning
+  controlEntryTime(entry),            // → 'YYMMDD-HHMMSS' local time from entry.enqueuedAt (Peter's requested compact format, 2026-07-25), '' if absent
 }
 ```
 
@@ -54,6 +55,15 @@ export const controlMixin = {
   `refreshControlLedger()` after a successful POST rather than guessing the
   new entry's shape; the queue is server state, this file renders what it's
   given.
+- **`CONTROL_SHORTCUTS` IS a hardcoded guess, disclosed not hidden.** Copied
+  from the archived design's own placeholder ("v1 shortcut verbs — Peter to
+  redraw"), which was never finalised there either. It does not restrict
+  what can be sent — the free-text path passes any verb through unvalidated
+  — it only limits which 4 get a quick button. No known API exposes an
+  enumerable verb list (checked API.md, 2026-07-25); open question with
+  Peter on how to handle this (drop the shortcuts / keep as an admitted
+  guess / ask mt-transport if verbs are enumerable) as of 2026-07-25,
+  unresolved.
 
 ## Test notes
 

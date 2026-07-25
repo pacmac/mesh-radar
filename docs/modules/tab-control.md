@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: fe4528bf5511933478c1d863c92e517922a48fc8ae22261920f48bac90ca1441
+source_hash: 25ea51beb83c83ca88eb5e1d92ddffbb1411d99d12817670b4151ad1954b5bfe
 updated: 2026-07-25
 ---
 

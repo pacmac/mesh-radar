@@ -60,12 +60,15 @@
               <div class="flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
                 <template x-for="entry in controlLedger" :key="entry.id">
                   <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-2">
-                    <div class="flex justify-between items-baseline">
+                    <div class="flex justify-between items-baseline gap-3">
                       <span class="text-sm font-mono tabular-nums"
                             x-text="entry.verb + (entry.args?.length ? ' ' + entry.args.join(' ') : '')"></span>
-                      <span class="badge badge-sm"
-                            :class="{acked:'badge-success', pending:'badge-info', cancelled:'badge-warning'}[entry.status] || 'badge-ghost'"
-                            x-text="entry.status"></span>
+                      <span class="flex items-center gap-2 shrink-0">
+                        <span class="text-xs font-mono text-base-content/50" x-text="controlEntryTime(entry)"></span>
+                        <span class="badge badge-sm"
+                              :class="{acked:'badge-success', pending:'badge-info', cancelled:'badge-warning'}[entry.status] || 'badge-ghost'"
+                              x-text="entry.status"></span>
+                      </span>
                     </div>
                     <!-- Receipt — §5 key-value rows (same pattern as tab-node.html's
                          value_grid). Field ids shown as-is: pac-host owns their
