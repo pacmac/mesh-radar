@@ -63,7 +63,17 @@ export const wsMixin = {
     if (ev.type === 'config_op')           { handleConfigOp(ev); return; }
     if (ev.type === 'bridge_connected')    { this.bridgeConnected = true;  return; }
     if (ev.type === 'bridge_disconnected') { this.bridgeConnected = false; return; }
-    if (ev.type === 'pac_host_status')     { this.pacHostStatus = ev;      return; }
+    if (ev.type === 'pac_host_status')     {
+      this.pacHostStatus = ev;
+      // Default to the first known commandable unit so the Control page has
+      // something to show the moment units become known — never overrides an
+      // actual (even auto) choice already made, only fires while still null.
+      if (this.controlTarget == null) {
+        const first = this.controlDevices()[0];
+        if (first) this.controlTarget = first.num;
+      }
+      return;
+    }
     if (ev.type === 'pac_host_queues')     { this.pacHostQueues = ev.queues || {}; return; }
 
     if (ev.type === 'settings') {

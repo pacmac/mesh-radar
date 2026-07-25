@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 14268417e39f0793601f10ab7835f4a42beb2080b056385093c5f10f6e220a09
+source_hash: 492e6276dd986323d28b8796118ad5ec2ed01456ffa080b8fc8901a7bfb22dd2
 updated: 2026-07-25
 ---
 
@@ -148,6 +148,14 @@ assigns `ev.queues` to `this.pacHostQueues`, keyed by unit num. Pushed on
 connect and on every change by `src/pac-host.js`'s own 5s queue-poll loop —
 `app-control.js`'s `controlLedger()` is a pure read of this, no fetch
 anywhere in that file.
+
+**`pac_host_status`'s handler also defaults `controlTarget`** (task
+`control-default-unit-selection`, 2026-07-25 — fixes a second real bug: the
+push above was working, but nothing ever auto-selected a unit, so a fresh
+page load showed a blank Queue panel regardless). The first time units are
+known and `controlTarget` is still `null`, it's set to
+`controlDevices()[0].num`. Guarded on `== null` so it fires exactly once and
+never overrides a real (or already-auto) selection afterward.
 
 ## Live reply threading (task `live-reply-threading`, 2026-07-17)
 
