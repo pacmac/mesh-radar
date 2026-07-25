@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: 25ea51beb83c83ca88eb5e1d92ddffbb1411d99d12817670b4151ad1954b5bfe
+source_hash: e2f5b8a6800a41db1e9e5ae09e4a27ca0e971ef31436890ac0a41804632aa6af
 updated: 2026-07-25
 ---
 
@@ -29,13 +29,16 @@ Two-card grid (`lg:grid-cols-2`), matching `tab-messages.html`'s shape:
   `controlDevices()` entry), shortcut verbs (`.join`, disabled until a unit
   is selected), free-text verb input + Send. A warning line appears only
   when `controlTargetNeedsConfirm()` is true for the selected unit.
-- **Queue** card: `controlLedger` rendered newest-last (server order,
-  unmodified), each entry a `bg-base-200 rounded-xl p-3` sub-section
-  (STYLE_GUIDE §5) showing verb+args (data role), a status badge
-  (`acked`→success, `pending`→info, `cancelled`→warning, anything else→
-  ghost), the receipt as a key-value grid (`controlReceiptFields()` —
-  reuses `tab-node.html`'s `value_grid` pattern exactly, task
-  `control-receipt-readable`), and `lastError` when present.
+- **Queue** card: no refresh control of any kind — `controlLedger()` is a
+  pure read of pushed state (task `control-queue-push-not-get`, 2026-07-25;
+  an earlier version had a manual refresh button, removed along with the GET
+  it triggered). Rendered newest-last (server order, unmodified), each entry
+  a `bg-base-200 rounded-xl p-3` sub-section (STYLE_GUIDE §5) showing
+  verb+args (data role) plus a compact timestamp (`controlEntryTime()`,
+  `YYMMDD-HHMMSS`), a status badge (`acked`→success, `pending`→info,
+  `cancelled`→warning, anything else→ghost), the receipt as a key-value grid
+  (`controlReceiptFields()` — reuses `tab-node.html`'s `value_grid` pattern
+  exactly, task `control-receipt-readable`), and `lastError` when present.
 
 ## Invariants
 
@@ -56,5 +59,5 @@ GARG's confirmation dialog fired with the correct message and was dismissed
 
 ## Out of scope
 
-- SSE-based live receipts — this page polls the REST ledger on send/refresh
-  only (matches `pac-command-api.js`'s scope).
+- Any fetch of any kind — see Layout. This page has never made a network GET
+  and must not gain one; all data is `pacHostStatus`/`pacHostQueues`, pushed.

@@ -1,7 +1,7 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 8add038e374091e667ab9ac8abdc93bc3e6e094a18624bd0169af19d25cb6abe
+source_hash: 2c6a770833cabe86804a0852626ec35646fd95afeb06ff35336cc6b84aeeea08
 updated: 2026-07-25
 ---
 
@@ -41,11 +41,19 @@ the health/status signal.
   `import()`-time capability negotiation (unlike the archived
   `transport-plugin.js` pattern, which loads an in-process npm module; this
   is a separate OS process reached over HTTP, a different problem).
-- Forward a command to a pac-host unit (`POST /v1/mesh/queue`) and fetch that
-  unit's queue ledger for receipt polling (`GET /v1/mesh/queue/:target`).
-  Pure passthrough — no verb validation, no mesh mechanics, per mt-transport's
+- Forward a command to a pac-host unit (`POST /v1/mesh/queue`). Pure
+  passthrough — no verb validation, no mesh mechanics, per mt-transport's
   explicit instruction that node-dash should not need to know any (xsession,
   `[ownership-2-correction]`, archived 2026-07-25).
+- Keep every commandable unit's queue ledger fresh by polling
+  `GET /v1/mesh/queue/:target` on its own faster interval (`QUEUE_POLL_MS`,
+  5s — separate from the 30s health/roster poll) and push it over WS. This is
+  backend-to-pac-host traffic, not browser-facing — the browser has **no**
+  route to fetch this itself (fixed as a real bug, task
+  `control-queue-push-not-get`, 2026-07-25: a GET route existed briefly and
+  the Control page silently went stale between clicks — BROWSER_CONTRACT
+  requires push, not on-demand fetch, regardless of how "interactive" the
+  trigger looks).
 - Fetch pac-host's unit roster (`GET /v1/mesh/nodes`) in the same poll cycle
   as health, when available, and include it as `units` in `connectMessage()`.
   This is the *only* legitimate node-list-shaped data this module carries —
@@ -73,9 +81,10 @@ export function start()          // begin polling; idempotent
 export function stop()           // clear the poll timer (tests/shutdown)
 export function isAvailable()    // boolean — true only when status is 'ready' or 'degraded'
 export function connectMessage() // → { type: 'pac_host_status', ...status() } — ready to JSON.stringify and send as-is
-export const events              // EventEmitter, emits 'change' when status() changes
+export function queuesMessage()  // → { type: 'pac_host_queues', queues: {[unitNum]: entries[]} } — ready to JSON.stringify and send as-is
+export const events              // EventEmitter, emits 'change' (status) and 'queuesChanged' (queue data) separately
 export async function queueCommand({ unit, verb, args }) // → POST /v1/mesh/queue body, returns the raw JSON response ({id, ...}) or throws Error('pac-host <status>: <detail>')
-export async function getQueue(unit)                     // → GET /v1/mesh/queue/:target, returns the raw ledger array; throws the same way
+export async function getQueue(unit)                     // → GET /v1/mesh/queue/:target, returns the raw ledger array; throws the same way. Called internally by the queue-poll loop; not used by any HTTP route (there is none) — kept exported in case a future task needs a one-off lookup, but nothing browser-facing may call it directly.
 ```
 
 `status()` is internal (backs `connectMessage()`/`isAvailable()`) —
@@ -101,33 +110,39 @@ that defines the wire shape of "pac-host's current state."
 - `src/index.js` — imports and calls `start()` at boot, alongside `bridge.start()`.
 - `src/ws-relay.js`:
   1. Import: `import * as pacHost from './pac-host.js';`
-  2. In the connection handler, alongside the existing `bridge_connected` send: `ws.send(JSON.stringify(pacHost.connectMessage()));` — this is how a newly-connected browser gets the current status immediately.
-  3. One wiring line near `broadcast()`'s definition: `pacHost.events.on('change', () => broadcast(pacHost.connectMessage()));` — this is how already-connected browsers get told when status changes.
-- `src/pac-command-api.js` (task `pac-host-command-surface`) — thin Express router, `POST /nodes/:num/pac-command` and `GET /nodes/:num/pac-command`, calling `queueCommand()`/`getQueue()`. Owns HTTP request/response shape only; no pac-host knowledge of its own.
-- `public/app.js`/`public/app-ws.js`/`public/index.html` (task `pac-host-header-badge`) — render `pac_host_status` as a small navbar badge. Pure presentation of what this module already sends; no other coupling.
+  2. On connect: `ws.send(JSON.stringify(pacHost.connectMessage()))` then `ws.send(JSON.stringify(pacHost.queuesMessage()))` — a newly-connected browser has full status AND queue data before it does anything at all.
+  3. Two change-listeners near `broadcast()`'s definition: `pacHost.events.on('change', () => broadcast(pacHost.connectMessage()))` and `pacHost.events.on('queuesChanged', () => broadcast(pacHost.queuesMessage()))` — kept as separate events/broadcasts so a queue tick (every 5s while pac-host is up) doesn't force-resend the larger, rarer-changing status payload.
+- `src/pac-command-api.js` (task `pac-host-command-surface`) — thin Express router, `POST /nodes/:num/pac-command` only, calling `queueCommand()`. **No GET route** — see Invariants.
+- `public/app.js`/`public/app-ws.js`/`public/index.html` (task `pac-host-header-badge`) — render `pac_host_status` as a small navbar badge.
+- `public/app-control.js`/`public/partials/tab-control.html` (tasks `pac-host-command-surface`, `control-queue-push-not-get`) — Control page reads `pacHostQueues` (from `pac_host_queues`) as pure pushed state; zero fetch anywhere in that file.
 
 ## State
 
-- `_timer` — the poll interval handle (module scope, not exported).
+- `_timer` — the health/roster poll interval handle.
+- `_queueTimer` — the queue poll interval handle, separate cadence (5s vs 30s).
 - `_lastStatus` — cached `status()` result, compared each poll to decide whether to emit `change`.
+- `_queues` — `{[unitNum]: entries[]}`, compared each queue poll to decide whether to emit `queuesChanged`. On a transient per-unit fetch error, keeps that unit's last-known entries rather than blanking it (a momentary pac-host hiccup should not flash the Control page empty).
 
 ## Events emitted
 
-- `change` — fired when `status()`'s shape changes (state transition or `modules` list changes). Not fired on every poll if nothing changed (avoids a `pac_host_status` broadcast storm every interval).
+- `change` — fired when `status()`'s shape changes (state transition, `modules`, or `units` list). Not fired on every poll if nothing changed.
+- `queuesChanged` — fired when any commandable unit's queue ledger changes. Separate from `change` deliberately (see Dependents).
 
 ## Invariants
 
 - Never throws on an unreachable host — a connection failure resolves to `status: 'unreachable'`, not a rejected promise a caller has to catch.
 - Never blocks startup — `start()` fires the first poll asynchronously; node-dash serves every page before the first poll resolves.
 - `PAC_HOST_URL` follows house convention (`process.env.PAC_HOST_URL || 'http://127.0.0.1:8787/v1'`), same shape as `BRIDGE_URL` — auto-probes by default, no separate on/off flag. Absence of a running service, not absence of config, is what disables the integration.
+- **The queue ledger has no browser-facing GET, ever, anywhere.** `_pollQueues()` (polling `getQueue()`) is the only reader of pac-host's queue REST endpoint; the browser only ever receives `pac_host_queues` pushed over WS. A GET route for this existed for a few commits and was a real, reported bug — see `control-queue-push-not-get`. Do not reintroduce one; if a future page needs different query semantics (e.g. filtered/paginated), extend the push shape, don't add a fetch.
+- Queue polling only runs `while isAvailable()` — no wasted requests when pac-host is down, and `_queues` is cleared (pushed as empty) rather than left stale when it goes unreachable.
 
 ## Test notes
 
-- Functional check available now (pac-host not deployed): `PAC_HOST_URL` pointing at nothing running → `connectMessage()` reports `status: 'unreachable'` within one poll interval, node-dash boots and serves normally.
-- Verified live 2026-07-25 against the real running pac-host service: `connectMessage()` correctly reports `status: 'ready'`, `mesh`/`recorder` both `ready`.
+- Functional check available now (pac-host not deployed): `PAC_HOST_URL` pointing at nothing running → `connectMessage()` reports `status: 'unreachable'` within one poll interval, `queuesMessage()` reports `{}`, node-dash boots and serves normally.
+- Verified live 2026-07-25 against the real running pac-host service: `connectMessage()` reports `status: 'ready'`; `queuesMessage()` correctly returns both known units' real ledgers, keyed by node num, pushed on connect before any client interaction — confirmed via a raw WS script (bypassing the browser entirely) and via Playwright's network panel (zero requests fired on unit-click, confirming no fetch anywhere in the click path).
 
 ## Out of scope
 
 - Node data of any kind — see Purpose. Not staged for later; ruled out by design.
 - Verb validation, argument shaping, or any mesh-mechanics knowledge for commands — `queueCommand()` is a pure passthrough; pac-host owns what a verb means.
-- SSE (`GET /v1/events`) consumption — not needed for health polling or the queue's REST ledger; deferred to whichever future task actually needs live pac-host events (e.g. `mesh.reply` for instant receipts instead of polling the ledger).
+- SSE (`GET /v1/events`) consumption. The queue-poll interval (5s) is the "real time" mechanism for now — a genuine future upgrade would subscribe to `mesh.reply` for sub-poll-interval latency, but polling backend-side (never browser-side) already satisfies the actual architectural requirement: the browser reacts to pushed state and never fetches.

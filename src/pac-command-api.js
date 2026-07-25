@@ -3,7 +3,7 @@
 // direct mesh-gw send. See docs/modules/pac-host.md.
 
 import { Router } from 'express';
-import { queueCommand, getQueue } from './pac-host.js';
+import { queueCommand } from './pac-host.js';
 import { numToNodeId } from './utils.js';
 
 const router = Router();
@@ -26,17 +26,11 @@ router.post('/nodes/:num/pac-command', async (req, res) => {
   }
 });
 
-// GET /nodes/:num/pac-command — receipt polling: that unit's queue ledger.
-router.get('/nodes/:num/pac-command', async (req, res) => {
-  const num = Number(req.params.num);
-  if (!Number.isInteger(num)) return res.status(400).json({ error: 'invalid num' });
-  try {
-    const ledger = await getQueue(numToNodeId(num));
-    res.json(ledger);
-  } catch (err) {
-    const status = err.status ?? 502;
-    res.status(status).json({ error: err.message });
-  }
-});
+// NOTE: deliberately no GET route here. Queue/receipt data is page data —
+// BROWSER_CONTRACT: it arrives over WS only (pac-host.js polls + pushes
+// pac_host_queues, replayed on connect, broadcast on change). A GET route for
+// this was here briefly and was a real bug (Peter, 2026-07-25): the browser
+// fetched it on click, which is not real-time and not permitted. Do not
+// re-add it — see docs/modules/pac-command-api.md.
 
 export default router;

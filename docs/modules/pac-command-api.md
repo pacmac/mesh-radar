@@ -1,7 +1,7 @@
 ---
 module: pac-command-api
 source: src/pac-command-api.js
-source_hash: 606d5340dd4b415e37db920a877ed27517af0e2ac03316630abf24d3643e0a6b
+source_hash: c0dad3a16222e66a77ca47f0384c663c50cb6689bbc704e88518b9ea65849ea9
 updated: 2026-07-25
 ---
 
@@ -15,6 +15,8 @@ a direct mesh-gw send. Owns request/response shape only; carries zero
 knowledge of pac-host's URL, verbs, or mesh mechanics — that all lives in
 `pac-host.js` (see docs/modules/pac-host.md).
 
+**POST only, deliberately.** This module has no GET route — see Invariants.
+
 ## Responsibilities
 
 - Resolve a node num to pac-host's `!hex` unit id and forward the command
@@ -24,7 +26,7 @@ knowledge of pac-host's URL, verbs, or mesh mechanics — that all lives in
 
 ## Dependencies
 
-- `pac-host.js` — `queueCommand`, `getQueue`.
+- `pac-host.js` — `queueCommand`.
 - `utils.js` — `numToNodeId`.
 
 ## Public interface
@@ -38,18 +40,14 @@ export default router   // Express router, mounted at app root (src/index.js)
 Body: `{ verb: string, args?: any }`. `verb`/`args` pass through to
 `queueCommand()` unchanged — no validation beyond "verb is a non-empty
 string" (pac-host owns verb semantics). Response: pac-host's raw queue-entry
-JSON (`{id, unit, verb, args, status, ...}`), passed straight through.
+JSON (`{id, unit, verb, args, status, ...}`), passed straight through. This
+is a sanctioned browser write (an action, not page data) — BROWSER_CONTRACT's
+"GET is form-only" rule has no bearing on it.
 
 `400` — missing/invalid `num` or empty `verb`. Any other non-2xx is
 pac-host's own status code, forwarded as-is (`502` if pac-host threw without
 a status, e.g. connection refused) — includes `504` (unit asleep/out of
 range, not a node-dash fault) and `503` (pac-host's mesh module down).
-
-### `GET /nodes/:num/pac-command`
-
-No body. Resolves `:num` the same way, returns that unit's full queue ledger
-(array) from `getQueue()` — the receipt-polling primitive for a command sent
-via the POST route above. Same error-passthrough behavior.
 
 ## State
 
@@ -61,18 +59,27 @@ _N/A — stateless request/response._
 - Never validates or interprets a verb — GARG-specific confirmation (if a
   caller wants one) is a Domain-2 concern, enforced in the browser before
   this route is ever called, not here.
+- **No GET route, and none should be added.** A `GET /nodes/:num/pac-command`
+  (returning the queue ledger) existed for a few commits and was a real,
+  reported bug (Peter, 2026-07-25): "nothing is displayed... until I send a
+  command... NO GET in the UI for data streams." The ledger is page data —
+  BROWSER_CONTRACT requires it arrive over WS, replayed on connect and pushed
+  on change, same as everything else. `pac-host.js` now polls and pushes it
+  directly (`pac_host_queues`, task `control-queue-push-not-get`); this
+  router only ever needs the one write route.
 
 ## Test notes
 
 - Verified live 2026-07-25 against the real running pac-host service and the
   real bench unit (`!8cee336b`/BNCH): `POST {verb:"status"}` returned a real
-  queued entry (`id`, `status:"pending"`); `GET` on the same node returned
-  the full ledger including that entry and prior history from other
-  sessions. Did not test against GARG (`!987ab80f`) — live production unit,
-  per standing xsession safety rule.
+  queued entry (`id`, `status:"pending"`), which then appeared in the pushed
+  `pac_host_queues` WS message within one queue-poll cycle — no request from
+  the browser at any point. Did not test against GARG (`!987ab80f`) — live
+  production unit, per standing xsession safety rule.
 
 ## Out of scope
 
 - Any UI (device picker, shortcuts, confirmation gating) — Domain 2, separate
   task per the two-domain rule.
-- SSE-based receipts (`mesh.reply`) — this route polls the REST ledger only.
+- Queue/receipt reads of any kind — see Invariants. Entirely `pac-host.js`'s
+  job now.

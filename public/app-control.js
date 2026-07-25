@@ -1,7 +1,13 @@
 // Control page mixin: pac-host unit picker + command shortcuts + free text.
-// Presentation only — posts to /nodes/:num/pac-command, decides nothing about
-// what a verb means (BROWSER_CONTRACT). Units come from pacHostStatus.units
-// (server-pushed, task custom-app-extension-point) — never a page-load GET.
+// Presentation only — POSTs to /nodes/:num/pac-command (the one sanctioned
+// browser write, an action not page data), decides nothing about what a verb
+// means (BROWSER_CONTRACT). Units AND queue/receipt history both come over
+// WS — pacHostStatus.units and pacHostQueues (server-pushed, replayed on
+// connect, updated on change — task control-queue-push-not-get). There is no
+// GET anywhere in this file, and must never be: a GET-on-click version of the
+// queue existed briefly and was a real bug (Peter, 2026-07-25) — it went
+// stale the moment the queue changed without another click, which is not
+// "real time" regardless of how interactive the trigger looked.
 import { fetchJSON } from './app-helpers.js';
 
 export const CONTROL_SHORTCUTS = ['ping', 'status', 'config', 'reboot'];
@@ -60,7 +66,8 @@ export const controlMixin = {
       const result = await fetchJSON(`/nodes/${this.controlTarget}/pac-command`, 'POST', { verb: v });
       this.controlVerb = '';
       this.showToast(`Queued: ${result.id}`, 'success', 3000);
-      this.refreshControlLedger();
+      // No manual refresh — src/pac-host.js polls pac-host every 5s and
+      // pushes pac_host_queues on change; the new entry appears on its own.
     } catch (e) {
       this.showToast(e.message || 'Command failed', 'error', 0);
     } finally {
@@ -68,15 +75,12 @@ export const controlMixin = {
     }
   },
 
-  // Receipts are polled (pac-host's REST ledger), not WS-pushed — there is no
-  // command_history feed anymore (that was the archived mesh-gw-text design).
-  async refreshControlLedger() {
-    if (this.controlTarget == null) { this.controlLedger = []; return; }
-    try {
-      this.controlLedger = await fetchJSON(`/nodes/${this.controlTarget}/pac-command`);
-    } catch {
-      this.controlLedger = [];
-    }
+  // Pure read of server-pushed state — zero fetch. pacHostQueues is keyed by
+  // node num, populated from pac_host_queues (replayed on connect, updated on
+  // change), so this is live from the moment the WS connects, before any unit
+  // is even selected.
+  controlLedger() {
+    return this.pacHostQueues?.[this.controlTarget] || [];
   },
 
   // A receipt's fields have no local meaning (pac-host owns verb semantics —

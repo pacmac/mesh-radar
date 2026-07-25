@@ -86,7 +86,7 @@ function dashboard() {
     controlTarget:   null,
     controlVerb:     '',
     controlSending:  false,
-    controlLedger:   [],
+    pacHostQueues:   {},
 
     // -- Rotator / Yagi -------------------------------------------------------
     yagiAz:          null,

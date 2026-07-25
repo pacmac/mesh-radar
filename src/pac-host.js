@@ -11,12 +11,15 @@ import { log } from './log.js';
 
 const PAC_HOST_URL = process.env.PAC_HOST_URL || 'http://127.0.0.1:8787/v1';
 const HEALTH_POLL_MS = 30000;
+const QUEUE_POLL_MS = 5000;
 
 export const events = new EventEmitter();
 
 let _timer = null;
+let _queueTimer = null;
 let _lastStatus = null; // null until the first poll resolves
 let _units = [];        // pac-host's own unit roster — only meaningful data source for "which nodes are commandable"
+let _queues = {};       // unit num -> queue ledger array, kept fresh by _pollQueues so the browser never fetches this itself
 
 function _statusesEqual(a, b) {
   return a.status === b.status
@@ -70,19 +73,54 @@ async function _poll() {
   }
 }
 
+// Keeps _queues fresh so the browser never has to ask for it (BROWSER_CONTRACT:
+// page data is WS-only, replayed on connect + pushed on change — no on-demand
+// GET, ever, regardless of how "interactive" the trigger looks from the UI
+// side). Runs on its own faster interval than health/roster, since a queued
+// command's status (pending -> sent -> acked) is what the Control page
+// actually needs to feel live. Only polls units pac-host itself can command
+// (role 200 — mirrors app-control.js's controlDevices() filter; duplicated
+// intentionally rather than shared across the Node/browser runtime boundary).
+async function _pollQueues() {
+  if (!isAvailable()) { _queues = {}; return; }
+  const commandable = _units.filter(u => u.raw?.user?.role === 200);
+  const next = {};
+  for (const u of commandable) {
+    try {
+      const ledger = await getQueue(u.id);
+      next[u.num] = Array.isArray(ledger) ? ledger : [];
+    } catch (e) {
+      log.warn('pac-host', `queue fetch failed for ${u.id}: ${e.message}`);
+      next[u.num] = _queues[u.num] ?? []; // keep last-known rather than blank on a transient error
+    }
+  }
+  const changed = JSON.stringify(next) !== JSON.stringify(_queues);
+  _queues = next;
+  if (changed) events.emit('queuesChanged');
+}
+
+/** Ready-to-send WS message describing every commandable unit's queue. */
+export function queuesMessage() {
+  return { type: 'pac_host_queues', queues: _queues };
+}
+
 /** Begin polling. Idempotent — a second call is a no-op. Never blocks: the
  *  first poll runs asynchronously, so node-dash serves pages before it resolves. */
 export function start() {
   if (_timer) return;
   _poll();
   _timer = setInterval(_poll, HEALTH_POLL_MS);
+  _queueTimer = setInterval(_pollQueues, QUEUE_POLL_MS);
 }
 
 /** Stop polling and clear cached status (tests, shutdown). */
 export function stop() {
   if (_timer) clearInterval(_timer);
+  if (_queueTimer) clearInterval(_queueTimer);
   _timer = null;
+  _queueTimer = null;
   _lastStatus = null;
+  _queues = {};
 }
 
 export function isAvailable() {

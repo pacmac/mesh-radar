@@ -328,6 +328,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // pac-host status changes (module owns all polling/derivation — see
   // docs/modules/pac-host.md); rebroadcast its ready-made message on change.
   pacHost.events.on('change', () => broadcast(pacHost.connectMessage()));
+  // Command queues — same shape, separate event so a queue tick (every 5s
+  // while pac-host is up) doesn't force-resend the larger, rarer-changing
+  // status payload.
+  pacHost.events.on('queuesChanged', () => broadcast(pacHost.queuesMessage()));
 
   bridge.on('connected',    () => { _seenLivePktIds.clear(); broadcast({ type: 'bridge_connected' }); });
   bridge.on('disconnected', () => {
@@ -752,6 +756,9 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     }
     // pac-host status — absence is normal; connectMessage() reports 'unreachable' cleanly
     if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.connectMessage()));
+    // pac-host command queues — replayed immediately so the Control page has
+    // data from the moment it connects, never from a browser-triggered GET.
+    if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.queuesMessage()));
     // Settings replay — page state never comes from a GET (settings-via-ws)
     if (ws.readyState === 1) ws.send(JSON.stringify(settingsEvent()));
     // Client→server RPC. geocode: on-demand address lookup — the Nominatim

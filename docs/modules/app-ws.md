@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 7e7c55d2da66083f15b882b4df5ed8ae670b4cae51144771edfa489a83b5bf32
+source_hash: 14268417e39f0793601f10ab7835f4a42beb2080b056385093c5f10f6e220a09
 updated: 2026-07-25
 ---
 
@@ -140,6 +140,14 @@ change) assigns the whole event to `this.pacHostStatus`. No derivation —
 `null` until the first message arrives, matching the backend's absence-safe
 design: a stock install with no pac-host running never sends this event, so
 the badge simply never appears (`x-show="pacHostStatus?.available"`).
+
+`pac_host_queues` (task `control-queue-push-not-get`, 2026-07-25 — fixes a
+real bug: the Control page previously fetched this via a browser GET on
+unit-click, which went stale between clicks and violated BROWSER_CONTRACT)
+assigns `ev.queues` to `this.pacHostQueues`, keyed by unit num. Pushed on
+connect and on every change by `src/pac-host.js`'s own 5s queue-poll loop —
+`app-control.js`'s `controlLedger()` is a pure read of this, no fetch
+anywhere in that file.
 
 ## Live reply threading (task `live-reply-threading`, 2026-07-17)
 
