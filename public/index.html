@@ -215,6 +215,10 @@
                @click="setNav('perf')"
                x-text="'RF ' + perfSignedDb(perfScore(), 1, true)"></div>
         </template>
+        <div class="badge badge-sm" x-show="pacHostStatus?.available"
+             :class="pacHostStatus?.status === 'ready' ? 'badge-success' : 'badge-warning'"
+             title="Custom backend (pac-host) connected"
+             x-text="'custom'"></div>
         <div class="badge badge-sm" :class="wsConnected ? 'badge-primary' : 'badge-ghost'" x-text="wsConnected ? 'live' : 'offline'"></div>
       </div>
     </div>

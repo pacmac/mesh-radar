@@ -78,6 +78,7 @@ function dashboard() {
     wsConnected:    false,
     serverReachable: true,
     bridgeConnected: true,
+    pacHostStatus:   null,
     events:          [],
 
     // -- Rotator / Yagi -------------------------------------------------------

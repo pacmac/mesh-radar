@@ -1,8 +1,8 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 3144454ff60ab0f93c1d5c62bea862e17dd95a7621ee5dc36b2ceeccbf85c2e3
-updated: 2026-07-24
+source_hash: 7e7c55d2da66083f15b882b4df5ed8ae670b4cae51144771edfa489a83b5bf32
+updated: 2026-07-25
 ---
 
 # Module: app-ws
@@ -131,6 +131,15 @@ The dismissal branch now handles success regardless of `busy`: when
 gated on `!needPairBusy` so a transient dropout during a busy retry doesn't
 kill the modal prematurely; the wrong-PIN/OFFLINE feedback in the
 `device_state` handler is unchanged.
+
+## pac-host status badge (task `pac-host-header-badge`, 2026-07-25)
+
+`pac_host_status` (sent by `src/pac-host.js` on connect and on every status
+change) assigns the whole event to `this.pacHostStatus`. No derivation —
+`index.html`'s badge reads `pacHostStatus?.available`/`?.status` directly.
+`null` until the first message arrives, matching the backend's absence-safe
+design: a stock install with no pac-host running never sends this event, so
+the badge simply never appears (`x-show="pacHostStatus?.available"`).
 
 ## Live reply threading (task `live-reply-threading`, 2026-07-17)
 

@@ -63,6 +63,7 @@ export const wsMixin = {
     if (ev.type === 'config_op')           { handleConfigOp(ev); return; }
     if (ev.type === 'bridge_connected')    { this.bridgeConnected = true;  return; }
     if (ev.type === 'bridge_disconnected') { this.bridgeConnected = false; return; }
+    if (ev.type === 'pac_host_status')     { this.pacHostStatus = ev;      return; }
 
     if (ev.type === 'settings') {
       // Page state arrives over WS only (settings-via-ws) — replayed on
