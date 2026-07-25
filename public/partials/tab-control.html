@@ -57,20 +57,32 @@
                 Queue
                 <button class="btn btn-xs btn-ghost" :disabled="controlTarget == null" @click="refreshControlLedger()">refresh</button>
               </h2>
-              <div class="flex flex-col gap-2 overflow-y-auto flex-1 min-h-0">
+              <div class="flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
                 <template x-for="entry in controlLedger" :key="entry.id">
-                  <div class="text-xs font-mono border-b border-base-200 pb-1">
-                    <div class="flex justify-between">
-                      <span x-text="entry.verb + (entry.args?.length ? ' ' + entry.args.join(' ') : '')"></span>
-                      <span class="badge badge-xs"
+                  <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-2">
+                    <div class="flex justify-between items-baseline">
+                      <span class="text-sm font-mono tabular-nums"
+                            x-text="entry.verb + (entry.args?.length ? ' ' + entry.args.join(' ') : '')"></span>
+                      <span class="badge badge-sm"
                             :class="{acked:'badge-success', pending:'badge-info', cancelled:'badge-warning'}[entry.status] || 'badge-ghost'"
                             x-text="entry.status"></span>
                     </div>
-                    <div x-show="entry.receipt" class="text-base-content/60" x-text="JSON.stringify(entry.receipt)"></div>
-                    <div x-show="entry.lastError" class="text-error" x-text="entry.lastError"></div>
+                    <!-- Receipt — §5 key-value rows (same pattern as tab-node.html's
+                         value_grid). Field ids shown as-is: pac-host owns their
+                         meaning, node-dash does not guess labels — see app-control.md. -->
+                    <div x-show="entry.receipt" class="grid gap-x-6 gap-y-1 justify-start"
+                         style="grid-template-columns:repeat(auto-fill,minmax(11rem,16rem))">
+                      <template x-for="f in controlReceiptFields(entry.receipt)" :key="f.label">
+                        <div class="flex items-baseline justify-between gap-3 border-b border-base-300 py-0.5">
+                          <span class="text-xs text-base-content/50" x-text="f.label"></span>
+                          <span class="text-sm font-mono tabular-nums" x-text="f.text"></span>
+                        </div>
+                      </template>
+                    </div>
+                    <p x-show="entry.lastError" class="text-sm text-error" x-text="entry.lastError"></p>
                   </div>
                 </template>
-                <span x-show="controlTarget != null && !controlLedger.length" class="text-xs text-base-content/50 italic">No commands sent yet.</span>
+                <span x-show="controlTarget != null && !controlLedger.length" class="text-sm text-base-content/50 italic">No commands sent yet.</span>
               </div>
             </div>
           </div>

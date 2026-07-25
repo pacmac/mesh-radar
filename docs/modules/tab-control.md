@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: 6e52a4eae56d359dd43ad6506501e309e1895a7678316e24887053520c079ee3
+source_hash: fe4528bf5511933478c1d863c92e517922a48fc8ae22261920f48bac90ca1441
 updated: 2026-07-25
 ---
 
@@ -30,9 +30,12 @@ Two-card grid (`lg:grid-cols-2`), matching `tab-messages.html`'s shape:
   is selected), free-text verb input + Send. A warning line appears only
   when `controlTargetNeedsConfirm()` is true for the selected unit.
 - **Queue** card: `controlLedger` rendered newest-last (server order,
-  unmodified), each entry showing verb+args, a status badge
+  unmodified), each entry a `bg-base-200 rounded-xl p-3` sub-section
+  (STYLE_GUIDE §5) showing verb+args (data role), a status badge
   (`acked`→success, `pending`→info, `cancelled`→warning, anything else→
-  ghost), and `receipt`/`lastError` when present.
+  ghost), the receipt as a key-value grid (`controlReceiptFields()` —
+  reuses `tab-node.html`'s `value_grid` pattern exactly, task
+  `control-receipt-readable`), and `lastError` when present.
 
 ## Invariants
 

@@ -68,4 +68,17 @@ export const controlMixin = {
       this.controlLedger = [];
     }
   },
+
+  // A receipt's fields have no local meaning (pac-host owns verb semantics —
+  // see app-control.md Invariants), so this is generic key:value pairing,
+  // STYLE_GUIDE §5 "key-value rows", NOT a translation of what a field means.
+  // Raw ids are shown as-is rather than guessed at, until/unless pac-host
+  // publishes a receipt-field schema (xsession item [receipt-schema]) — at
+  // that point this becomes a label lookup, same shape, no template change.
+  controlReceiptFields(receipt) {
+    if (!receipt || typeof receipt !== 'object') return [];
+    return Object.entries(receipt)
+      .filter(([k]) => k !== 'type')
+      .map(([k, v]) => ({ label: k, text: typeof v === 'object' ? JSON.stringify(v) : String(v) }));
+  },
 };

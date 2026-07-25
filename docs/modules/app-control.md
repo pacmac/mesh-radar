@@ -1,7 +1,7 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: 7de97edc499b5b3c8c09ee00db4ace2185c72d2a288a1920de388388403b5c11
+source_hash: 7466791063a8b157de3f51c0016550db933c3d7a0d0551fb0256b9b71635be50
 updated: 2026-07-25
 ---
 
@@ -27,6 +27,7 @@ export const controlMixin = {
   controlTargetNeedsConfirm(),        // → true iff the selected unit's node id is in the confirm-gate set
   sendControl(verb),                  // → POST /nodes/:num/pac-command {verb}; window.confirm() gate for confirm-targets; refreshes the ledger on success
   refreshControlLedger(),             // → GET /nodes/:num/pac-command, assigns controlLedger
+  controlReceiptFields(receipt),      // → [{label,text}] — generic key:value pairing of a receipt object (STYLE_GUIDE §5), field ids shown as-is, no guessed meaning
 }
 ```
 
@@ -63,7 +64,17 @@ BNCH round-tripped with no dialog; `sendControl('ping')` on GARG raised
 accepting) left GARG's ledger unchanged — confirmed via the backend route
 directly.
 
+## Receipt rendering (task `control-receipt-readable`, 2026-07-25)
+
+`controlReceiptFields()` is generic key:value pairing — it does not know
+what `vbat`, `upt`, `agcr` etc. mean, and shows the raw field id as the
+label rather than inventing a translation. Raised on xsession
+([receipt-schema]) whether pac-host can publish a label/unit schema per
+verb, same shape as `[config-schema-api]`'s `fields` array; if/when that
+lands, only this function changes (id → label lookup), no template change.
+
 ## Out of scope
 
 - Verb validation / autocomplete — pac-host owns verb semantics, this file
   never inspects them beyond "non-empty string".
+- Guessing receipt field meaning — see above.
