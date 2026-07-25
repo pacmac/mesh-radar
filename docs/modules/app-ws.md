@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 30c76cb6262445a81f54026aa8aba20769d469398fcacf2050f74b332d7fb0e6
+source_hash: d54e0ccde7a8b92ca7075d88890a755908a2592194473cbf606b349be2178244
 updated: 2026-07-25
 ---
 
@@ -131,6 +131,30 @@ The dismissal branch now handles success regardless of `busy`: when
 gated on `!needPairBusy` so a transient dropout during a busy retry doesn't
 kill the modal prematurely; the wrong-PIN/OFFLINE feedback in the
 `device_state` handler is unchanged.
+
+## NEED_PAIR overlay covers a rejected stored PIN, not just a missing one (task `render-pair-message`, 2026-07-25)
+
+mesh-gw report (mcpp-chat `mesh-gw--node-dash`#4): it now distinguishes a
+credential rejection (`AuthenticationFailed`/`Rejected`/`Canceled`) from a
+transient pairing error, surfacing `device_state` with `state: NEED_PAIR`,
+`message: "PIN rejected — check the stored PIN"`, `action_text`, and
+`action_required: true` — see `docs/gw/modules/pair_auth_failed_surfacing.md`.
+These fields ride flat on every `device_list` entry (mesh-gw's own event
+fields spread onto `lastDeviceState`, `src/ws-relay.js`).
+
+The overlay trigger was `d.ble_state === 'need_pair' && d.has_pin === false`
+— written for first-time pairing (no PIN yet) and never matched the
+rejected-stored-PIN case (`has_pin === true`), so that scenario had NO
+overlay trigger at all; the only feedback the user ever saw was
+`bleConnect()`'s generic 60s-timeout message (`app-devices.js`, see its own
+spec), which explains nothing about *why*.
+
+Now `needPairDev = devices.find(d => d.ble_state === 'need_pair')` — no
+`has_pin` gate — and `needPairError` is pre-filled with
+`needPairDev.message || needPairDev.action_text` whenever `has_pin` is
+true, so the overlay opens immediately with the gateway's real reason
+instead of a blank "enter a PIN" form. `has_pin === false` keeps the
+original blank-form behaviour (nothing to explain yet).
 
 ## pac-host status badge (task `pac-host-header-badge`, 2026-07-25)
 

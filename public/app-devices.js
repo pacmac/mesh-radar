@@ -307,6 +307,7 @@ export const devicesMixin = {
       const bleKey = 'ble:' + addr.toUpperCase();
       const addrUpper = addr.toUpperCase();
       let connected = false;
+      let needPair  = false;
       while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, 1000));
         const pending = this.deviceBleStates[bleKey];
@@ -326,9 +327,18 @@ export const devicesMixin = {
             connected = true;
             break;
           }
+          if (devState?.ble_state === 'need_pair') {
+            // The device_list watcher (app-ws.js) already opens the NEED_PAIR
+            // overlay with the gateway's real reason — stop polling silently
+            // rather than falling through to a generic timeout that would
+            // fight the overlay for attention (task render-pair-message,
+            // 2026-07-25, mcpp-chat mesh-gw--node-dash#4).
+            needPair = true;
+            break;
+          }
         }
       }
-      if (!connected && !this.bleError) {
+      if (!connected && !needPair && !this.bleError) {
         this.bleError = 'Connect timed out — check device and try again';
       }
     } catch (e) {

@@ -184,11 +184,18 @@ export const wsMixin = {
 
       // NEED_PAIR overlay — driven from device_list (always reflects current state).
       // device_state replay on page load can be stale; device_list is authoritative.
-      const needPairDev = devices.find(d => d.ble_state === 'need_pair' && d.has_pin === false);
+      // Covers BOTH first-time pairing (has_pin===false, no reason to show) and
+      // a stored-but-rejected PIN (has_pin===true, mesh-gw's own message/
+      // action_text explain why) — task render-pair-message, 2026-07-25:
+      // the has_pin===false-only gate previously never opened for a rejected
+      // stored PIN, so the only feedback was bleConnect()'s generic 60s
+      // timeout, mesh-gw report mcpp-chat mesh-gw--node-dash#4.
+      const needPairDev = devices.find(d => d.ble_state === 'need_pair');
       if (needPairDev && !this.needPairBusy) {
         if (this.needPairAddr !== needPairDev.addr) {
           this.needPairAddr  = needPairDev.addr;
-          this.needPairError = '';
+          this.needPairError = needPairDev.has_pin
+            ? (needPairDev.message || needPairDev.action_text || '') : '';
           this.needPairPin   = this.deviceConfigs[needPairDev.node_id]?.ble_pin || '';
         }
       } else if (!needPairDev && this.needPairAddr) {

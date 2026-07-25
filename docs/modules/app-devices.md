@@ -1,7 +1,7 @@
 ---
 module: app-devices
 source: public/app-devices.js
-source_hash: e6e073de8cfff9a49ab204b97e602bd9003f52dba2b1688af9970044ac9b634f
+source_hash: 40756e04172966ed5809b3b2e0fc83587ac7b428f39f7e466348d1c7b7d180a9
 updated: 2026-07-16
 ---
 
@@ -91,6 +91,22 @@ BLE flows (`bleScan`, `bleConnect`, `submitPairPin`, `bleRemove`,
 `disconnectDevice`), OTA management (`loadOtaFiles`, `flashOta`, …).
 Known issues recorded in the 2026-07-16 device-management review (findings
 4, 6–8) are NOT addressed by this task.
+
+## `bleConnect()` defers to the NEED_PAIR overlay (task `render-pair-message`, 2026-07-25)
+
+The 60s polling loop only special-cased `ble_state === 'error'` and
+`'ready'` — a device that transitions to `need_pair` mid-connect (e.g. a
+rejected stored PIN, mesh-gw report mcpp-chat `mesh-gw--node-dash`#4) was
+never recognised, so the loop always ran out the full deadline and set the
+generic `bleError = 'Connect timed out — check device and try again'`,
+explaining nothing about the actual cause.
+
+The loop now breaks immediately on `devState?.ble_state === 'need_pair'`
+(tracked via a local `needPair` flag) without setting `bleError` — the
+`device_list`-driven watcher in `app-ws.js` already opens the NEED_PAIR
+overlay with the gateway's real `message`/`action_text` (see
+`docs/modules/app-ws.md`), so `bleConnect()` steps back rather than racing
+it with a second, less informative message.
 
 ## Test notes
 
