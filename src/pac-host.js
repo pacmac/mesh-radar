@@ -80,27 +80,3 @@ export function connectMessage() {
   return { type: 'pac_host_status', ..._status() };
 }
 
-// Per-node data lookup — explicit stub. pac-host's `mesh` module (the only
-// source of real per-node data) is DRAFT and not deployed. Always returns
-// undefined until that module ships and this function is implemented for
-// real — see docs/modules/pac-host.md "Out of scope".
-function _forNode(_num) {
-  return undefined;
-}
-
-/** The only function outside this module ever needs for outbound enrichment.
- *  Owns all type-checking for "does pac-host care about this event" — callers
- *  never branch on pac-host's behalf. Anything unrecognised passes through
- *  unchanged. */
-export function enrichOutbound(ev) {
-  if (ev.type === 'node_list' && Array.isArray(ev.nodes)) {
-    return {
-      ...ev,
-      nodes: ev.nodes.map(n => {
-        const pac_host = _forNode(n.num);
-        return pac_host === undefined ? n : { ...n, pac_host };
-      }),
-    };
-  }
-  return ev;
-}

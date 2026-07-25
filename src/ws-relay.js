@@ -315,14 +315,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   }
 
   function broadcast(msg) {
-    const data = JSON.stringify(pacHost.enrichOutbound(enrichEvent(msg)));
+    const data = JSON.stringify(enrichEvent(msg));
     for (const client of wss.clients) {
       if (client.readyState === 1) client.send(data);
     }
   }
 
   function sendEnriched(ws, msg) {
-    if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.enrichOutbound(enrichEvent(msg))));
+    if (ws.readyState === 1) ws.send(JSON.stringify(enrichEvent(msg)));
   }
 
   // pac-host status changes (module owns all polling/derivation — see
