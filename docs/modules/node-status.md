@@ -1,7 +1,7 @@
 ---
 module: node-status
 source: src/node-status.js
-source_hash: b7aef893417ace2d68a5a30a144b0fc4eece82fb4f246dbdd7b3704026196862
+source_hash: d68af2c565bee1e6664012c564ecf53856e88057258d78eaf4637ce25f7f80d8
 updated: 2026-07-24
 ---
 
@@ -80,12 +80,25 @@ header emits the server-owned `—` bearing placeholder.
 - Nothing here is sourced from a text command reply.
 - Header shows values, never verdicts: no health pill, no "battery low".
 - Header signal bars/labels and position/bearing are computed server-side.
+- **`buildSignal`'s `desc` carries staleness provenance (task
+  `node-signal-freeze`, 2026-07-25).** `node.rssi`/`node.snr` are gated
+  direct-only at write time and freeze indefinitely once a node goes
+  relay-only (see `docs/modules/db.md`'s `nodes` note); `desc` is
+  `"direct {fmtAgo(latestSignalTs)}"` from `stmts.latestSignalTs` (most
+  recent `signal_history` row for the node) so the card always shows how
+  old the displayed reading actually is, same provenance treatment as
+  `hopsField`'s "verified"/"reported" desc. `null` only if the node has no
+  `signal_history` row at all, which should not happen whenever
+  `rssi`/`snr` are non-null since both share the same `isDirect` gate.
 
 ## Test notes
 
 - Env-only sensor node → `environment`, header position when known, no `device_vitals`
 - Unknown num → `{found:false, sections:[]}`, no throw
 - Empty array value → field omitted, not a blank row
+- Verified live 2026-07-25 (GARG, num 2364420971, relay-only for ~5h):
+  `signal.desc` = `"direct 5h ago"`, confirming a frozen -39dBm/Excellent
+  reading is correctly flagged as stale rather than shown as current.
 
 ## Out of scope
 

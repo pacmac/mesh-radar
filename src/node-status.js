@@ -230,7 +230,15 @@ function buildDetectionsSection(rows) {
 // so the server runs the same function the rest of the UI does — one algorithm,
 // no second copy to drift. Tiers mirror app-nodes.js:219-226 exactly so this
 // looks identical to every other signal indicator.
-function buildSignal(rssi, snr) {
+// `rssi`/`snr` on `nodes` are written ONLY from genuinely-direct reception
+// (persist.js isDirect/COALESCE) but carry no timestamp of their own — once a
+// node goes relay-only they freeze at their last direct value forever and
+// nothing on the card said so, reading as a healthy current link indefinitely
+// (task node-signal-freeze, 2026-07-25 — mt-transport chat report, real link
+// was 2.5km/relayed while the card showed a bench-proximity reading). `sigTs`
+// is the most recent `signal_history` row for this node — the same
+// direct-only-gated table, so its age IS the age of the displayed rssi/snr.
+function buildSignal(rssi, snr, sigTs) {
   if (rssi == null && snr == null) return null;
   const pct = signalQuality(rssi, snr);
   const label = pct >= 76 ? 'Excellent' : pct >= 51 ? 'Good' : pct >= 26 ? 'Fair' : 'Poor';
@@ -245,6 +253,11 @@ function buildSignal(rssi, snr) {
     snr_text: fmtSnr(snr),
     // Which of the four bars are lit — a decision, so the server makes it.
     bars: [0, 1, 2, 3].map(i => pct > i * 25),
+    // "direct 3h ago" — same provenance treatment hopsField gives verified vs
+    // reported. Absent only if this node has never had a direct capture
+    // recorded (signal_history empty), which should not happen once rssi/snr
+    // are non-null since they share the same isDirect gate.
+    desc: sigTs != null ? `direct ${fmtAgo(sigTs)}` : null,
   };
 }
 
@@ -410,7 +423,7 @@ export function buildNodeStatus(num, windowHours) {
       field('Chan util',   node?.channel_util,   fmtUtil(node?.channel_util),    lastHeard),
       field('Air util TX', node?.air_util_tx,    fmtUtil(node?.air_util_tx),     lastHeard),
     ]),
-    signal: buildSignal(node?.rssi ?? null, node?.snr ?? null),
+    signal: buildSignal(node?.rssi ?? null, node?.snr ?? null, stmts.latestSignalTs.get(num)?.ts ?? null),
     position: compact([
       field('Latitude', lat, lat?.toFixed(5)),
       field('Longitude', lon, lon?.toFixed(5)),

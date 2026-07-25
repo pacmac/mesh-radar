@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: ba0cc2f4ddd6965396f0178fdce93faf96eb6a7852a4b542014db515c27e9333
+source_hash: 8d6f363401828c7342f9b8d0da2363ed4a4e9ac0fdb789823975eb37900204f0
 updated: 2026-07-18
 ---
 
@@ -164,6 +164,7 @@ syncAlertedAt(packetId)             // → void  — writes alerted_at if alread
 | `updateMessageStatus` | UPDATE messages SET status WHERE packet_id (TX rows only) |
 | `upsertNodeinfo` | INSERT … ON CONFLICT(node_id) — COALESCE merge into persistent nodeinfo (freshness gated by the caller, `_upsertCache` in persist.js — see nodeinfo's own note) |
 | `upsertNode` | INSERT … ON CONFLICT(num) DO UPDATE ... WHERE — COALESCE merge into ephemeral nodes, gated so a stale (older-`last_heard`) incoming row cannot regress a fresher one (task `nodeinfo-replay-regression`) |
+| `latestSignalTs` | SELECT ts FROM signal_history WHERE num = ? ORDER BY ts DESC LIMIT 1 — most recent genuinely-direct capture, used to age-stamp the frozen direct-only `nodes.rssi`/`nodes.snr` (task `node-signal-freeze`) |
 | `insertEvent` | INSERT into events log |
 | `insertRangeTest` | INSERT into range_test_log |
 | `queryRangeTest` | SELECT … ORDER BY ts DESC LIMIT ? |
@@ -275,6 +276,23 @@ way — deliberately not given one (see `nodeinfo`'s own note) to avoid an
 `ALTER TABLE` migration, which this codebase has a documented incident with
 (see memory: sqlite-generated-column-migration-guard). It borrows the
 sibling `nodes` row's value instead, from `persist.js`'s `_upsertCache`.
+
+**Frozen direct-only `rssi`/`snr`, no timestamp of their own (task
+`node-signal-freeze`, 2026-07-25 — mt-transport chat report,
+mcpp-chat `mt-transport--node-dash`#13/#17).** `nodes.rssi`/`nodes.snr` are
+written only from genuinely-direct reception (`persist.js`'s `isDirect`
+gate feeding `pktRssi`/`pktSnr`/`evRssi`/`evSnr`); a relayed packet passes
+`null` for both, and the COALESCE upsert above then keeps whatever was
+there. So once a node goes relay-only, `nodes.rssi`/`nodes.snr` freeze at
+their last direct value **forever** with nothing recording when that was —
+a node 2.5km away and relayed could display a bench-proximity reading as
+if current, indefinitely. Rather than add a `rssi_ts` column (same
+migration-avoidance reasoning as `nodeinfo.last_heard` above), the fix
+reuses `signal_history` — already the direct-only-gated ground truth table
+— via the new `latestSignalTs` statement: its most recent row's `ts` for a
+node IS the age of that node's currently-displayed `rssi`/`snr`, with no
+schema change. Consumed by `node-status.js`'s `buildSignal` (see
+`docs/modules/node-status.md`).
 
 ### `nodeinfo` — persists
 

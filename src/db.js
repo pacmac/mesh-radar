@@ -629,6 +629,15 @@ export const stmts = {
     ORDER BY ts ASC
   `),
 
+  // Most recent genuinely-direct capture for a node — `nodes.rssi`/`nodes.snr`
+  // are themselves gated to direct reception (see persist.js isDirect/COALESCE)
+  // but carry no timestamp of their own, so this is how the Signal card knows
+  // how stale that frozen value is once the node goes relay-only (task
+  // node-signal-freeze, 2026-07-25).
+  latestSignalTs: db.prepare(`
+    SELECT ts FROM signal_history WHERE num = ? ORDER BY ts DESC LIMIT 1
+  `),
+
   // One-shot backfill: messages carry the envelope rssi/snr recorded at
   // reception, so they are the same datum, not a second source.
   backfillSignalFromMessages: db.prepare(`
