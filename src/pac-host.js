@@ -19,7 +19,7 @@ export const events = new EventEmitter();
 let _timer = null;
 let _queueTimer = null;
 let _lastStatus = null; // null until the first poll resolves
-let _units = [];        // pac-host's own unit roster — only meaningful data source for "which nodes are commandable"
+let _units = [];        // pac-host's own alarm-device roster (GET /mesh/devices) — already scoped to ours, no downstream filter needed
 let _queues = {};       // unit num -> queue ledger array, kept fresh by _pollQueues so the browser never fetches this itself
 
 function _statusesEqual(a, b) {
@@ -50,15 +50,20 @@ async function _poll() {
     result = { available: false, status: 'unreachable', modules: [], lastCheckedMs: Date.now(), error: e.message };
   }
 
-  // Unit roster: only pac-host knows which nodes it can command. Fetched in the
-  // same poll cycle (not on page load — BROWSER_CONTRACT: page data is WS-only,
-  // and connectMessage() already replays on connect / pushes on change).
+  // Unit roster: GET /mesh/devices (task control-devices-endpoint, 2026-07-25;
+  // superseded the earlier GET /mesh/nodes + user.role===200 filter, since
+  // /devices IS already "ours only" — no downstream filtering needed anywhere).
+  // Includes present:false units (declared but not currently in the gateway
+  // roster, e.g. asleep since our last restart) — callers must render these,
+  // not drop them (mt-transport, xsession [devices-live]). Fetched in the same
+  // poll cycle (not on page load — BROWSER_CONTRACT: page data is WS-only, and
+  // connectMessage() already replays on connect / pushes on change).
   if (result.available) {
     try {
-      const nodes = await _call('/mesh/nodes');
-      _units = Array.isArray(nodes) ? nodes : [];
+      const devices = await _call('/mesh/devices');
+      _units = Array.isArray(devices) ? devices : [];
     } catch (e) {
-      log.warn('pac-host', `unit roster fetch failed: ${e.message}`);
+      log.warn('pac-host', `device roster fetch failed: ${e.message}`);
       _units = [];
     }
   } else {
@@ -79,14 +84,14 @@ async function _poll() {
 // GET, ever, regardless of how "interactive" the trigger looks from the UI
 // side). Runs on its own faster interval than health/roster, since a queued
 // command's status (pending -> sent -> acked) is what the Control page
-// actually needs to feel live. Only polls units pac-host itself can command
-// (role 200 — mirrors app-control.js's controlDevices() filter; duplicated
-// intentionally rather than shared across the Node/browser runtime boundary).
+// actually needs to feel live. Polls every unit in _units — already scoped to
+// ours by /mesh/devices, no further filtering needed. Includes present:false
+// units too: the queue ledger is the butler's own service-side state, not a
+// device round-trip, so it's available even while the unit sleeps.
 async function _pollQueues() {
   if (!isAvailable()) { _queues = {}; return; }
-  const commandable = _units.filter(u => u.raw?.user?.role === 200);
   const next = {};
-  for (const u of commandable) {
+  for (const u of _units) {
     try {
       const ledger = await getQueue(u.id);
       // enqueuedAt is epoch ms (API.md §8); fmtAgo wants epoch seconds. Attached

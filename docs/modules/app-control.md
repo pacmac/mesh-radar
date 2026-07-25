@@ -1,7 +1,7 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: acf2803f76320b0ddbf1972e50abaa73ff7a3ba38db2bff1e9d5d22a09db70f0
+source_hash: 4799cd8373f3a1fd7c831a160ba578cef7a0dd586083e3c8f465604ab2fb055d
 updated: 2026-07-25
 ---
 
@@ -29,7 +29,7 @@ UI for data streams") and it's gone. `controlLedger()` is now a pure read of
 export const CONTROL_SHORTCUTS       // ['ping','status','config','reboot'] — v1 shortcut verbs
 export const controlMixin = {
   switchControlTab(name),             // → sets controlTab + persists (task control-section-ia); Summary/Command/Config/Stats/Yagi Align/Chat sub-tabs, same shape as switchCfgTab. No data load — skeleton tabs have nothing to fetch.
-  controlDevices(),                  // → [{id,num,label}] — pacHostStatus.units filtered to user.role===200 (PAC_ALARM firmware's own self-declared role, task client-role-pac-alarm), never a hardcoded id list
+  controlDevices(),                  // → [{id,num,label,present}] — pacHostStatus.units mapped directly (GET /mesh/devices is already ours-only, task control-devices-endpoint), never a hardcoded id list
   controlShortcuts(),                // → CONTROL_SHORTCUTS
   controlTargetLabel(),               // → selected unit's display label, or ''
   controlTargetNeedsConfirm(),        // → true iff the selected unit's node id is in the confirm-gate set
@@ -50,12 +50,18 @@ export const controlMixin = {
 
 ## Invariants
 
-- `controlDevices()` is the **only** filter for "which units are
-  commandable" — never a hardcoded node-id list. `GET /v1/mesh/nodes` (what
-  `pacHostStatus.units` is sourced from) returns pac-host's *entire*
-  mesh-gw-observed roster, not just its own units — verified live 2026-07-25
-  (it included node-dash's own gateway radio and an unrelated node, TA2m).
-  The `user.role === 200` filter is what narrows it correctly.
+- `controlDevices()` reads `pacHostStatus.units` directly — never a hardcoded
+  node-id list. Source is `GET /v1/mesh/devices` (task
+  `control-devices-endpoint`, 2026-07-25), which pac-host already scopes to
+  our alarm devices only — no local filter needed. Supersedes the earlier
+  approach (`GET /v1/mesh/nodes`, pac-host's *entire* mesh-gw-observed
+  roster — it once included node-dash's own gateway radio and an unrelated
+  node, TA2m — narrowed here via a `user.role === 200` filter). `present`
+  (`u.present !== false`, defaults true if the field is ever absent) is
+  threaded through so the UI can distinguish a known-but-asleep unit from a
+  live one — per mt-transport (xsession `[devices-live]`): a device must not
+  disappear from the picker because it slept, so `controlDevices()` never
+  filters on `present`, only surfaces it for `tab-control.html` to dim.
 - The confirm-gate (`CONFIRM_TARGETS`, currently `{'!987ab80f'}` / GARG) is
   keyed on **node id**, never short name — short names are mutable
   (xsession standing rule) and node ids are not. This is a one-unit safety
@@ -82,24 +88,32 @@ export const controlMixin = {
   that is executed. so we need pending and executed." Split is on
   `entry.status === 'pending'` vs not, verified against the real live ledger
   (observed values: pending, acked, cancelled, failed).
-- **`CONTROL_SHORTCUTS` IS a hardcoded guess, disclosed not hidden.** Copied
-  from the archived design's own placeholder ("v1 shortcut verbs — Peter to
-  redraw"), which was never finalised there either. It does not restrict
-  what can be sent — the free-text path passes any verb through unvalidated
-  — it only limits which 4 get a quick button. No known API exposes an
-  enumerable verb list (checked API.md, 2026-07-25); open question with
-  Peter on how to handle this (drop the shortcuts / keep as an admitted
-  guess / ask mt-transport if verbs are enumerable) as of 2026-07-25,
-  unresolved.
+- **`CONTROL_SHORTCUTS` IS a hardcoded guess, disclosed not hidden — and
+  confirmed the right call for now.** Copied from the archived design's own
+  placeholder ("v1 shortcut verbs — Peter to redraw"), which was never
+  finalised there either. It does not restrict what can be sent — the
+  free-text path passes any verb through unvalidated — it only limits which
+  4 get a quick button. Raised on xsession 2026-07-25: no verb-enumeration
+  API exists (device `help`/`cmds` is known stale — omits the cam/chunk/
+  push/camu surface, tracked as mt-transport's `command-help-sync`); their
+  explicit answer was **"keep your 4 shortcuts for now."** A future
+  `GET /v1/mesh/verbs` is possible but not started — node-dash's stated
+  preference (also on xsession) is UI-sensible verbs only (no transfer
+  internals like `chunk`/`push`) and a flat no-arg list, no per-verb args
+  schema, since free text already covers arg-taking verbs.
 
 ## Test notes
 
 Verified live 2026-07-25: `controlDevices()` correctly returned exactly
-BNCH/GARG despite the roster containing 4 nodes; `sendControl('ping')` on
-BNCH round-tripped with no dialog; `sendControl('ping')` on GARG raised
+BNCH/GARG (originally despite the `/mesh/nodes` roster containing 4 nodes,
+role-filtered; re-verified after the `/mesh/devices` swap the same day, now
+returning exactly 2 with no filter needed); `sendControl('ping')` on BNCH
+round-tripped with no dialog; `sendControl('ping')` on GARG raised
 `window.confirm` with the expected message, and dismissing it (not
 accepting) left GARG's ledger unchanged — confirmed via the backend route
-directly.
+directly. `present:false` dimming (`tab-control.html`) verified by code
+inspection only — both real units were `present:true` throughout testing,
+never observed rendered in the dimmed state.
 
 ## Receipt rendering (task `control-receipt-readable`, 2026-07-25)
 

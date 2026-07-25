@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: da2d789c193bca52276c7460a46f635c8367e8a689147d4b5d64ecc97d652ef0
+source_hash: 85a37ef2cb64f49d972ad6159a830b37dcd0c37d65a07ebd298fed96c8342692
 updated: 2026-07-25
 ---
 
@@ -51,7 +51,11 @@ executed."). Replaces the earlier single side-by-side "Queue" card.
 - **Command** card: unit picker (`.join` of buttons, one per
   `controlDevices()` entry), shortcut verbs (`.join`, disabled until a unit
   is selected), free-text verb input + Send. A warning line appears only
-  when `controlTargetNeedsConfirm()` is true for the selected unit.
+  when `controlTargetNeedsConfirm()` is true for the selected unit. A unit
+  button dims (`opacity-60` + a title tooltip) when `!d.present` (task
+  `control-devices-endpoint`, 2026-07-25) — known-but-asleep, still fully
+  clickable, since queuing a command for a sleeping unit is valid (delivered
+  next wake window).
 - **Pending** card (top, `max-height:40%`, own scroll): `controlPending()` —
   entries with `status === 'pending'`, i.e. still in flight. Compact
   rendering (verb+args, `entry.since`, a `badge-info` "pending" badge,

@@ -32,7 +32,8 @@
                   <div class="join">
                     <template x-for="d in controlDevices()" :key="d.num">
                       <button class="join-item btn btn-sm"
-                              :class="controlTarget === d.num ? 'btn-primary' : 'btn-outline'"
+                              :class="(controlTarget === d.num ? 'btn-primary' : 'btn-outline') + (d.present ? '' : ' opacity-60')"
+                              :title="d.present ? '' : 'Not currently in the gateway roster (asleep) — commands still queue'"
                               @click="controlTarget = d.num"
                               x-text="d.label"></button>
                     </template>

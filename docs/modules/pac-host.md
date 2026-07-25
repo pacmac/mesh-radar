@@ -1,7 +1,7 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 5a6458983de60f17329651974817cd634a2396a7b007d886fcd4e5a68c862881
+source_hash: 919559c1ab6f5f73c4f318b75ee9243ac7f1c9c1c14411c7c6b2c21dac1b3924
 updated: 2026-07-25
 ---
 
@@ -54,14 +54,19 @@ the health/status signal.
   the Control page silently went stale between clicks — BROWSER_CONTRACT
   requires push, not on-demand fetch, regardless of how "interactive" the
   trigger looks).
-- Fetch pac-host's unit roster (`GET /v1/mesh/nodes`) in the same poll cycle
-  as health, when available, and include it as `units` in `connectMessage()`.
+- Fetch pac-host's unit roster (`GET /v1/mesh/devices`, task
+  `control-devices-endpoint`, 2026-07-25 — supersedes the earlier
+  `GET /v1/mesh/nodes` + `user.role === 200` filter) in the same poll cycle as
+  health, when available, and include it as `units` in `connectMessage()`.
   This is the *only* legitimate node-list-shaped data this module carries —
   it answers "which units can I command", a pac-host-owned fact, not "what
-  are this node's stats" (ruled out entirely, see Purpose). Note the roster
-  is pac-host's **whole** mesh-gw-observed view, not just its own units —
-  callers must filter (task `app-control.js` filters on `user.role === 200`,
-  the PAC_ALARM firmware's own self-declared role).
+  are this node's stats" (ruled out entirely, see Purpose). `/mesh/devices`
+  is **already scoped to our alarm devices only** (mt-transport, xsession
+  `[devices-live]`) — no downstream filter needed anywhere, unlike the old
+  `/mesh/nodes` roster which was pac-host's whole mesh-gw-observed view.
+  Includes `present: false` units (declared but not currently in the gateway
+  roster, e.g. asleep since pac-host's last restart) — callers must render
+  these, never drop them.
 
 ## Dependencies
 
@@ -99,7 +104,9 @@ that defines the wire shape of "pac-host's current state."
   available: boolean,       // false until first successful poll, or on any poll failure
   status: 'ready'|'degraded'|'down'|'unreachable', // 'unreachable' = our poll couldn't connect at all — not one of pac-host's own states, added here to distinguish "no service" from "service says down"
   modules: [{ name, status, error? }] | [],
-  units: [{ id, num, name, lastHeard, hops, raw }] | [], // pac-host's whole roster, empty when unavailable
+  units: [{ id, num, name, shortName, label, source, present, mode, awake, slp,
+             lastHeard, lastHeardMs, fw, position, hops, rssi, snr }] | [],
+  // GET /v1/mesh/devices — our alarm devices only, empty when unavailable
   lastCheckedMs: number | null,
   error: string | null,     // set only when status === 'unreachable'
 }

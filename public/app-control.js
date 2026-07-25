@@ -32,14 +32,15 @@ export const controlMixin = {
     persistSet('controlTab', name);
   },
 
-  // pac-host's own unit roster, filtered to role 200 (the PAC_ALARM firmware's
-  // own self-declared Meshtastic role — task client-role-pac-alarm) so the
-  // picker shows only commandable units, not every node pac-host's mesh-gw
-  // view happens to include (its /mesh/nodes roster is the whole mesh).
+  // pac-host's own alarm-device roster (GET /mesh/devices, task
+  // control-devices-endpoint, 2026-07-25) — already scoped to ours, no local
+  // filter needed (supersedes the earlier user.role===200 filter on the whole
+  // mesh-gw roster). present:false means known but not currently in the
+  // gateway roster (e.g. asleep) — rendered, never dropped, per mt-transport
+  // (xsession [devices-live]): a device must not disappear because it slept.
   controlDevices() {
     return (this.pacHostStatus?.units || [])
-      .filter(u => u.raw?.user?.role === 200)
-      .map(u => ({ id: u.id, num: u.num, label: u.raw?.user?.short_name || u.name || u.id }));
+      .map(u => ({ id: u.id, num: u.num, label: u.shortName || u.name || u.id, present: u.present !== false }));
   },
 
   controlShortcuts() { return CONTROL_SHORTCUTS; },
