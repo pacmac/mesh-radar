@@ -83,6 +83,7 @@ function dashboard() {
     events:          [],
 
     // -- pac-host command surface ---------------------------------------------
+    controlTab:      persistGet('controlTab', 'command'),
     controlTarget:   null,
     controlVerb:     '',
     controlSending:  false,

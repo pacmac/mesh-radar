@@ -9,6 +9,7 @@
 // stale the moment the queue changed without another click, which is not
 // "real time" regardless of how interactive the trigger looked.
 import { fetchJSON } from './app-helpers.js';
+import { persistSet } from './app-persist.js';
 
 export const CONTROL_SHORTCUTS = ['ping', 'status', 'config', 'reboot'];
 
@@ -21,6 +22,16 @@ export const CONTROL_SHORTCUTS = ['ping', 'status', 'config', 'reboot'];
 const CONFIRM_TARGETS = new Set(['!987ab80f']);
 
 export const controlMixin = {
+  // Sub-tab switch (Summary/Command/Config/Stats/Yagi Align/Chat — task
+  // control-section-ia, 2026-07-25). State + persist only, same shape as
+  // switchCfgTab (app-config.js). No per-tab data load: Command's data is
+  // already WS-pushed regardless of which sub-tab is active, and the other
+  // sub-tabs are skeleton placeholders with nothing to fetch yet.
+  switchControlTab(name) {
+    this.controlTab = name;
+    persistSet('controlTab', name);
+  },
+
   // pac-host's own unit roster, filtered to role 200 (the PAC_ALARM firmware's
   // own self-declared Meshtastic role — task client-role-pac-alarm) so the
   // picker shows only commandable units, not every node pac-host's mesh-gw

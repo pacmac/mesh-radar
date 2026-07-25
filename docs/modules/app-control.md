@@ -1,7 +1,7 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: ee75a6ea2a3d48d072c7b8d1dd3d0cef484906c7fde0319e47894a425d2a1081
+source_hash: acf2803f76320b0ddbf1972e50abaa73ff7a3ba38db2bff1e9d5d22a09db70f0
 updated: 2026-07-25
 ---
 
@@ -28,6 +28,7 @@ UI for data streams") and it's gone. `controlLedger()` is now a pure read of
 ```js
 export const CONTROL_SHORTCUTS       // ['ping','status','config','reboot'] — v1 shortcut verbs
 export const controlMixin = {
+  switchControlTab(name),             // → sets controlTab + persists (task control-section-ia); Summary/Command/Config/Stats/Yagi Align/Chat sub-tabs, same shape as switchCfgTab. No data load — skeleton tabs have nothing to fetch.
   controlDevices(),                  // → [{id,num,label}] — pacHostStatus.units filtered to user.role===200 (PAC_ALARM firmware's own self-declared role, task client-role-pac-alarm), never a hardcoded id list
   controlShortcuts(),                // → CONTROL_SHORTCUTS
   controlTargetLabel(),               // → selected unit's display label, or ''

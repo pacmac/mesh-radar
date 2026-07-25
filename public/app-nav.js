@@ -50,13 +50,17 @@ export const navMixin = {
     if (this.tab === 'node' && t !== 'node') this._destroyNodeCharts();
     this.tab = t;
     persistSet('activeTab', t);
-    const cfg = c === 'radio' ? 'bridge' : c;
+    // 'radio' shim only applies to the Config sub-tab, not Control's — see
+    // cfgTab's own comment in app.js for why the legacy value needs mapping.
+    const cfg = t === 'cfg' ? (c === 'radio' ? 'bridge' : c) : null;
     if (cfg) { this.cfgTab = cfg; persistSet('cfgTab', cfg); }
+    if (t === 'control' && c) { this.controlTab = c; persistSet('controlTab', c); }
     this.drawerOpen = false;
     const p = _TAB_TO_PATH[t] || '/';
     if (window.location.pathname !== p) history.pushState({ tab: t }, '', p);
     if (t === 'radar') this.$nextTick(() => this.initRadar());
     else if (t === 'cfg') this.switchCfgTab(cfg || this.cfgTab || 'bridge');
+    else if (t === 'control') this.switchControlTab(c || this.controlTab || 'command');
     else if (t === 'range') { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
     else if (t === 'messages') this.unreadMessages = 0;
     else if (t === 'perf') { this.adoptPerfLoraCfg(); this.perfHistory = this.perfHistorySlice(); this.$nextTick(() => this.initPerfCharts()); }

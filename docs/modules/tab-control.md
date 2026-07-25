@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: 8404c2cd60c019db98ef7abe219cfca09d541e0c478d011b7be2a146b93edbd3
+source_hash: da2d789c193bca52276c7460a46f635c8367e8a689147d4b5d64ecc97d652ef0
 updated: 2026-07-25
 ---
 
@@ -21,7 +21,25 @@ Task `pac-host-command-surface`. New page, no prior version. Companion files:
 `public/partials/drawer-sidebar.html` (nav item, `x-show`-gated on
 `pacHostStatus?.available`), `public/app-nav.js` (`control` path map).
 
-## Layout
+## Sub-tabs (task `control-section-ia`, 2026-07-25)
+
+Peter: "I think it's time you added the menu / submenu, even if they are
+skeleton pages." Six sub-tabs, `controlTab`-gated, `.tabs` bar mirroring
+`tab-cfg.html`'s pattern exactly (same shape as `cfgTab`, driven by
+`switchControlTab()` in `app-control.js`, routed through `setNav('control',
+name)` in `app-nav.js`, mirrored in `drawer-sidebar.html`'s Control
+`<details>` submenu): **Summary, Command, Config, Stats, Yagi Align, Chat**.
+Only **Command** has real content today — the other five are skeleton cards
+(Section-label title + Caption-role "Coming soon.", STYLE_GUIDE §5), no
+functionality, per Peter's explicit "even if they are skeleton pages."
+`controlTab` persists (default `'command'`, the only sub-tab with content).
+
+Do not confuse "Yagi Align" here with the archived
+`reference/alarm-integration/` align feature — that depended on the
+auto-reply/custom-firmware path and was correctly removed; this is an empty
+placeholder tab, not a revival.
+
+## Layout — Command sub-tab
 
 Left/right grid (`lg:grid-cols-2`): **Command** card on the left; a
 vertically-stacked **Pending** + **Executed** pair on the right (task

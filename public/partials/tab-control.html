@@ -1,5 +1,26 @@
         <!-- ===================== CONTROL (pac-host units) ===================== -->
-        <div x-show="tab==='control'" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
+        <div x-show="tab==='control'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
+          <div class="tabs tabs-bordered grid grid-cols-6 w-full sm:w-fit shrink-0">
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='summary' && 'tab-active font-semibold'" @click="switchControlTab('summary')">Summary</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='command' && 'tab-active font-semibold'" @click="switchControlTab('command')">Command</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='config'  && 'tab-active font-semibold'" @click="switchControlTab('config')">Config</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='stats'   && 'tab-active font-semibold'" @click="switchControlTab('stats')">Stats</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='align'   && 'tab-active font-semibold'" @click="switchControlTab('align')">Yagi Align</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='chat'    && 'tab-active font-semibold'" @click="switchControlTab('chat')">Chat</a>
+          </div>
+
+          <!-- ==================== SUMMARY (skeleton) ==================== -->
+          <div x-show="controlTab==='summary'" class="flex-1 min-h-0 max-w-2xl">
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title">Summary</h2>
+                <p class="text-xs text-base-content/50">Coming soon.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== COMMAND ==================== -->
+          <div x-show="controlTab==='command'" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
           <div class="card bg-base-100 shadow flex flex-col min-h-0">
             <div class="card-body flex flex-col min-h-0">
               <h2 class="card-title shrink-0">Command</h2>
@@ -107,6 +128,47 @@
                   </template>
                   <span x-show="controlTarget != null && !controlExecuted().length" class="text-sm text-base-content/50 italic">No commands sent yet.</span>
                 </div>
+              </div>
+            </div>
+          </div>
+          </div>
+
+          <!-- ==================== CONFIG (skeleton) ==================== -->
+          <div x-show="controlTab==='config'" class="flex-1 min-h-0 max-w-2xl">
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title">Config</h2>
+                <p class="text-xs text-base-content/50">Coming soon.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== STATS (skeleton) ==================== -->
+          <div x-show="controlTab==='stats'" class="flex-1 min-h-0 max-w-2xl">
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title">Stats</h2>
+                <p class="text-xs text-base-content/50">Coming soon.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== YAGI ALIGN (skeleton) ==================== -->
+          <div x-show="controlTab==='align'" class="flex-1 min-h-0 max-w-2xl">
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title">Yagi Align</h2>
+                <p class="text-xs text-base-content/50">Coming soon.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== CHAT (skeleton) ==================== -->
+          <div x-show="controlTab==='chat'" class="flex-1 min-h-0 max-w-2xl">
+            <div class="card bg-base-100 shadow">
+              <div class="card-body py-3">
+                <h2 class="card-title">Chat</h2>
+                <p class="text-xs text-base-content/50">Coming soon.</p>
               </div>
             </div>
           </div>
