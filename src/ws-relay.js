@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { bridge } from './bridge.js';
+import * as pacHost from './pac-host.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
@@ -314,15 +315,19 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   }
 
   function broadcast(msg) {
-    const data = JSON.stringify(enrichEvent(msg));
+    const data = JSON.stringify(pacHost.enrichOutbound(enrichEvent(msg)));
     for (const client of wss.clients) {
       if (client.readyState === 1) client.send(data);
     }
   }
 
   function sendEnriched(ws, msg) {
-    if (ws.readyState === 1) ws.send(JSON.stringify(enrichEvent(msg)));
+    if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.enrichOutbound(enrichEvent(msg))));
   }
+
+  // pac-host status changes (module owns all polling/derivation — see
+  // docs/modules/pac-host.md); rebroadcast its ready-made message on change.
+  pacHost.events.on('change', () => broadcast(pacHost.connectMessage()));
 
   bridge.on('connected',    () => { _seenLivePktIds.clear(); broadcast({ type: 'bridge_connected' }); });
   bridge.on('disconnected', () => {
@@ -745,6 +750,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: bridge.connected ? 'bridge_connected' : 'bridge_disconnected' }));
     }
+    // pac-host status — absence is normal; connectMessage() reports 'unreachable' cleanly
+    if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.connectMessage()));
     // Settings replay — page state never comes from a GET (settings-via-ws)
     if (ws.readyState === 1) ws.send(JSON.stringify(settingsEvent()));
     // Client→server RPC. geocode: on-demand address lookup — the Nominatim

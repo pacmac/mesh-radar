@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: b1ab6b4af5e9c06249cfb00fbab45876cdbdf6640ae16585a0fcf9c25f903681
-updated: 2026-07-24
+source_hash: 65311fecb9748229ff1b694623c2bebe92338ce9b2614bb880d8cfdcff2459fa
+updated: 2026-07-25
 ---
 
 # Module: ws-relay
@@ -32,6 +32,7 @@ to every newly connected client so the browser is immediately consistent.
 
 - `ws` — `WebSocketServer`
 - `bridge.js` — `bridge` (events: `connected`, `disconnected`, `event`)
+- `pac-host.js` — `enrichOutbound` (piped after `enrichEvent` in `broadcast`/`sendEnriched`), `connectMessage`, `events` (`change`) — see docs/modules/pac-host.md
 - `rotator.js` — `rotator` (events: `status`, `point_target`, `signal_update`)
 - `scanner.js` — `scanner` (events: `start`, `progress`, `contact`, `end`)
 - `node-list.js` — `nodeList` (event: `change`; fields: `nodes`, `ownDeviceNodes`, `homePos`, `_cache`)

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { bridge } from './bridge.js';
+import * as pacHost from './pac-host.js';
 import configRouter from './config-api.js';
 import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
 import deviceRemoveRouter from './device-remove.js';
@@ -300,6 +301,7 @@ if (!getConfig('migrations.node_device_mac', false)) {
 server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);
   bridge.start();
+  pacHost.start();
   rotator.start();
   startAlertPoller(nodeList);
   startImapReceiver();
