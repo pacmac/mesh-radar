@@ -100,14 +100,25 @@ async function _pollQueues() {
   for (const u of _units) {
     try {
       const ledger = await getQueue(u.id);
-      // createdAt is epoch ms (API.md §6.1 "The outbox"); fmtAgo wants epoch
+      // Timestamps are epoch ms (API.md §6.1 "The outbox"); fmtAgo wants epoch
       // seconds. Attached here, server-side, each poll cycle — a relative
       // "since" string must be pushed, not computed by the browser with a
       // timer (BROWSER_CONTRACT). Field renamed from enqueuedAt, task
       // ledger-field-rename, 2026-07-25 — mt-transport's ledger rewrite
       // (commit 975449e, xsession [request-ledger]).
+      //
+      // Live (unsettled: queued/trying) rows age from createdAt — how long
+      // it has been waiting. Settled rows (done/failed/expired) age from
+      // settledAt — when it actually finished — not createdAt, or a reply
+      // that took 66 minutes to arrive reads as though it landed the moment
+      // it was queued (task settled-age-wrong-timestamp, 2026-07-25,
+      // mt-transport chat item, mcpp-chat mt-transport--node-dash#25).
       next[u.num] = Array.isArray(ledger)
-        ? ledger.map(e => ({ ...e, since: fmtAgo(Math.floor((e.createdAt ?? 0) / 1000)) }))
+        ? ledger.map(e => {
+            const live = e.state === 'queued' || e.state === 'trying';
+            const ts = live ? e.createdAt : (e.settledAt ?? e.createdAt);
+            return { ...e, since: fmtAgo(Math.floor((ts ?? 0) / 1000)) };
+          })
         : [];
     } catch (e) {
       log.warn('pac-host', `queue fetch failed for ${u.id}: ${e.message}`);

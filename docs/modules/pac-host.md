@@ -1,7 +1,7 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: f1c75a25930f3c779d111d7b353b423ddd4efeb0ab82cd91c1db67085d45b57d
+source_hash: 731cafa5a87dead99ca87a06536ad9090a2b96ad5796bfb978e3299363982334
 updated: 2026-07-25
 ---
 
@@ -146,15 +146,28 @@ that defines the wire shape of "pac-host's current state."
 ## Relative "since" display (task `control-since-and-pending-split`, 2026-07-25)
 
 Each ledger entry gains a `since` field (`"5m ago"` etc.) computed by
-`_pollQueues()` via `fmtAgo()` (`format.js`) from `entry.createdAt` (epoch
-ms → epoch seconds) every poll cycle, before push. Replaces an earlier
-browser-side `YYMMDD-HHMMSS` absolute stamp — BROWSER_CONTRACT requires
-relative-time values be server-formatted and re-pushed on change, not
-recomputed client-side with a timer. Deliberately reuses the existing 5s
-queue-poll cadence rather than adding a new per-connection 1s timer (unlike
-`node_status_age` in `ws-relay.js`): queue data doesn't need second-level
-precision, and `since`'s bucket (s/m/h/d) changing is itself a real content
-change that already flows through the existing `queuesChanged` diff/emit.
+`_pollQueues()` via `fmtAgo()` (`format.js`) every poll cycle, before push.
+Replaces an earlier browser-side `YYMMDD-HHMMSS` absolute stamp —
+BROWSER_CONTRACT requires relative-time values be server-formatted and
+re-pushed on change, not recomputed client-side with a timer. Deliberately
+reuses the existing 5s queue-poll cadence rather than adding a new
+per-connection 1s timer (unlike `node_status_age` in `ws-relay.js`): queue
+data doesn't need second-level precision, and `since`'s bucket (s/m/h/d)
+changing is itself a real content change that already flows through the
+existing `queuesChanged` diff/emit.
+
+**Source field depends on settlement (task `settled-age-wrong-timestamp`,
+2026-07-25 — mt-transport chat report, mcpp-chat
+`mt-transport--node-dash`#25).** A live row (`state` is `queued`/`trying`)
+ages from `entry.createdAt` — how long it has been waiting, the useful
+number for something not yet settled. A settled row (`done`/`failed`/
+`expired`) ages from `entry.settledAt` instead — when it actually finished
+— falling back to `createdAt` only if `settledAt` is absent. Before this
+fix every row used `createdAt` unconditionally, so a settled command that
+waited a long time for a reply (normal for a sleeping unit — mt-transport's
+own `nextTryAt`/wake-window semantics, above) showed its reply as having
+landed the moment it was queued. `settledAt` is a genuinely new field on
+mt-transport's ledger, confirmed present on live data as of tonight.
 
 ## Ledger field rename (task `ledger-field-rename`, 2026-07-25)
 
