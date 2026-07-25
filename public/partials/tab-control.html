@@ -157,13 +157,124 @@
             </div>
           </div>
 
-          <!-- ==================== YAGI ALIGN (skeleton) ==================== -->
-          <div x-show="controlTab==='align'" class="flex-1 min-h-0 max-w-2xl">
-            <div class="card bg-base-100 shadow">
-              <div class="card-body py-3">
-                <h2 class="card-title">Yagi Align</h2>
-                <p class="text-xs text-base-content/50">Coming soon.</p>
+          <!-- ==================== YAGI ALIGN ==================== -->
+          <div x-show="controlTab==='align'" class="flex-1 min-h-0 max-w-2xl flex flex-col gap-3">
+
+            <!-- Controls row -->
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+              <select x-model.number="alignTarget" class="select select-bordered select-sm font-display flex-1 min-w-[10rem]"
+                      :disabled="alignBursting() || alignSending" aria-label="Node to align">
+                <option value="" disabled selected>Star a node to align it</option>
+                <template x-for="t in alignTargets()" :key="t.num">
+                  <option :value="t.num" x-text="t.label"></option>
+                </template>
+              </select>
+              <span class="badge badge-sm" :class="alignRunning() ? 'badge-success' : 'badge-ghost'"
+                    x-text="alignRunning() ? 'RUNNING' : 'READY'"></span>
+              <div class="join">
+                <span class="join-item btn btn-xs btn-disabled no-animation font-display">avg</span>
+                <select x-model.number="alignNBurst" class="join-item select select-bordered select-xs font-mono"
+                        :disabled="alignBursting() || alignSending"
+                        x-init="$nextTick(() => { $el.value = String(alignNBurst) })">
+                  <template x-for="n in [1,2,3,4,5]" :key="n"><option :value="n" x-text="n"></option></template>
+                </select>
               </div>
+              <div class="join" title="Seconds to wait for a reply (persisted)">
+                <span class="join-item btn btn-xs btn-disabled no-animation font-display">wait s</span>
+                <input type="number" min="5" max="120" step="5" x-model.number="alignReplyWinInput"
+                       @change="alignSetReplyWindow()"
+                       :disabled="alignBursting() || alignSending"
+                       class="join-item input input-bordered input-xs w-16 font-mono">
+              </div>
+            </div>
+
+            <p x-show="alignModel?.warning" class="alert alert-warning py-2 text-sm shrink-0" x-text="alignModel?.warning"></p>
+
+            <!-- Current reading -->
+            <div class="card bg-base-100 shadow border-2 shrink-0"
+                 :class="alignModel?.current?.isBest ? 'border-success' : 'border-base-300'">
+              <div class="card-body py-4 gap-1 items-center text-center">
+                <div x-show="!alignModel?.current" class="py-4 text-sm text-base-content/50">Press PING to take a reading.</div>
+
+                <template x-if="alignModel?.current">
+                  <div class="flex flex-col items-center gap-1 w-full">
+                    <div class="flex items-baseline gap-2">
+                      <span class="text-2xl font-mono font-bold tabular-nums" :class="'text-' + alignModel.current.cls" x-text="alignModel.current.quality"></span>
+                      <span class="text-lg text-base-content/50">%</span>
+                    </div>
+                    <div class="font-display font-semibold" :class="'text-' + alignModel.current.cls" x-text="alignModel.current.label"></div>
+
+                    <div class="text-xs font-mono text-base-content/50">
+                      via <span x-text="alignModel.tx"></span>
+                      · ±<span x-text="alignModel.current.spread"></span>
+                      · <span x-text="alignModel.current.got"></span>/<span x-text="alignModel.current.of"></span> pings
+                    </div>
+
+                    <div class="text-sm font-display font-semibold mt-1"
+                         :class="alignModel.current.trendDir===null ? 'text-base-content/50' : alignModel.current.trendDir==='up' ? 'text-success' : alignModel.current.trendDir==='down' ? 'text-error' : 'text-base-content/60'">
+                      <span x-show="alignModel.current.trendDir===null">First reading</span>
+                      <span x-show="alignModel.current.trendDir==='up'" x-text="'▲ BETTER +' + alignModel.current.trendDelta"></span>
+                      <span x-show="alignModel.current.trendDir==='down'" x-text="'▼ worse ' + alignModel.current.trendDelta"></span>
+                      <span x-show="alignModel.current.trendDir!==null && alignModel.current.trendDir!=='up' && alignModel.current.trendDir!=='down'">■ same as last</span>
+                    </div>
+
+                    <span x-show="alignModel.current.isBest" class="badge badge-success gap-1 font-display">★ BEST YET</span>
+                    <span x-show="!alignModel.current.isBest" class="text-sm text-base-content/70"
+                          x-text="'−' + alignModel.current.gapToBest + ' below best — reading #' + alignModel.current.bestN + ', ' + (alignModel.current.bestAgo===1 ? 'the one before' : alignModel.current.bestAgo + ' readings ago')"></span>
+
+                    <div class="text-xs font-mono text-base-content/40 mt-1">
+                      YAGI <span x-text="alignModel.current.yagi_q==null ? '—' : alignModel.current.yagi_q"></span>
+                      · OMNI <span x-text="alignModel.current.omni_q==null ? '—' : alignModel.current.omni_q"></span>
+                      &nbsp;·&nbsp; <span x-text="alignModel.current.rssi"></span> dBm / <span x-text="alignModel.current.snr"></span> dB
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Every reading -->
+            <div class="card bg-base-100 shadow flex-1 min-h-0">
+              <div class="card-body py-3 gap-2 flex flex-col min-h-0">
+                <div class="flex items-baseline justify-between shrink-0">
+                  <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Every reading</h2>
+                  <span class="text-xs text-base-content/40">tallest = strongest · ★ best</span>
+                </div>
+
+                <div x-show="!alignModel?.readings?.length" class="flex-1 flex items-center justify-center text-sm text-base-content/40 text-center px-4">
+                  Point the antenna, then press PING. Each press averages
+                  <span class="mx-1 font-mono" x-text="alignNBurst"></span> pings into one reading.
+                </div>
+
+                <div x-show="alignModel?.readings?.length" class="flex-1 min-h-0 flex items-stretch gap-1.5 overflow-x-auto pt-1">
+                  <template x-for="r in (alignModel?.readings || [])" :key="r.n">
+                    <div class="flex flex-col items-center gap-1 shrink-0 h-full w-9">
+                      <div class="text-sm leading-none h-4 text-warning" x-text="r.isBest ? '★' : ''"></div>
+                      <div class="flex-1 w-full flex items-end min-h-0">
+                        <div class="w-full rounded-t transition-[height] duration-300"
+                             :class="r.isBest ? 'bg-success' : (r.isCurrent ? 'bg-primary' : 'bg-base-content/30')"
+                             :style="'height:' + r.barPct + '%'"></div>
+                      </div>
+                      <div class="text-xs font-mono tabular-nums leading-none" :class="r.isCurrent ? 'font-bold text-primary' : 'text-base-content/60'" x-text="r.quality"></div>
+                      <div class="text-[0.6rem] font-mono text-base-content/30 leading-none" x-text="'#' + r.n"></div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="grid grid-cols-3 gap-2 shrink-0">
+              <button class="btn btn-lg col-span-2 font-display"
+                      :class="!alignBursting() && !alignSending && alignTarget ? 'btn-primary' : 'btn-disabled'"
+                      :disabled="alignBursting() || alignSending || !alignTarget"
+                      @click="alignPing()">
+                <span x-show="!alignBursting()">PING</span>
+                <span x-show="alignBursting()" class="flex items-center gap-2">
+                  <span class="loading loading-spinner loading-sm"></span>
+                  <span x-text="'GATHERING ' + (alignModel?.burst?.got ?? 0) + '/' + (alignModel?.burst?.of ?? 0)"></span>
+                </span>
+              </button>
+              <button class="btn btn-lg btn-outline font-display" :disabled="!alignRunning()" @click="alignEnd()">End</button>
             </div>
           </div>
 

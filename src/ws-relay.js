@@ -332,6 +332,9 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // while pac-host is up) doesn't force-resend the larger, rarer-changing
   // status payload.
   pacHost.events.on('queuesChanged', () => broadcast(pacHost.queuesMessage()));
+  // Antenna-alignment view-model — separate event/message, own 2s poll
+  // cadence (task yagi-align-rebuild, 2026-07-25).
+  pacHost.events.on('alignChanged', () => broadcast(pacHost.alignMessage()));
 
   bridge.on('connected',    () => { _seenLivePktIds.clear(); broadcast({ type: 'bridge_connected' }); });
   bridge.on('disconnected', () => {
@@ -759,6 +762,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // pac-host command queues — replayed immediately so the Control page has
     // data from the moment it connects, never from a browser-triggered GET.
     if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.queuesMessage()));
+    // pac-host align view-model — same replay-on-connect rule.
+    if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.alignMessage()));
     // Settings replay — page state never comes from a GET (settings-via-ws)
     if (ws.readyState === 1) ws.send(JSON.stringify(settingsEvent()));
     // Client→server RPC. geocode: on-demand address lookup — the Nominatim

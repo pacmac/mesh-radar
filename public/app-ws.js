@@ -75,6 +75,15 @@ export const wsMixin = {
       return;
     }
     if (ev.type === 'pac_host_queues')     { this.pacHostQueues = ev.queues || {}; return; }
+    if (ev.type === 'pac_host_align')      {
+      this.alignModel = ev.model;
+      // Adopt the session's own target once it has one (mirrors the archived
+      // app-align.js's adoptModel — "Adopt target from it"). Same never-override
+      // guard as controlTarget above: only fires while still null.
+      if (this.alignTarget == null && ev.model?.target != null) this.alignTarget = ev.model.target;
+      if (typeof ev.model?.replyWindowSec === 'number') this.alignReplyWinInput = ev.model.replyWindowSec;
+      return;
+    }
 
     if (ev.type === 'settings') {
       // Page state arrives over WS only (settings-via-ws) — replayed on
@@ -368,6 +377,10 @@ export const wsMixin = {
     if (ev.type === 'node_list') {
       // Server-computed nav entries — the browser never scans for favourites.
       this.favourites = ev.favourites ?? [];
+      // Default the align target to the first favourite, same never-override
+      // guard as controlTarget/alignTarget-from-model above — only fires
+      // while nothing (neither a user pick nor a running session) has set it.
+      if (this.alignTarget == null && this.favourites.length) this.alignTarget = this.favourites[0].num;
       this.nodes = ev.nodes ?? [];
       this.nodeCount = this.nodes.length;
       this.nodeTotal = ev.total ?? this.nodes.length;

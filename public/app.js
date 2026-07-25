@@ -15,6 +15,7 @@ import { configMixin }      from './app-config.js';
 import { componentsMixin }  from './app-components.js';
 import { nodeStatusMixin }  from './app-node-status.js';
 import { controlMixin }     from './app-control.js';
+import { alignMixin }       from './app-align.js';
 import { fetchJSON, themeColor, svgElem } from './app-helpers.js';
 import { initPersist, persistGet, persistSet } from './app-persist.js';
 
@@ -88,6 +89,13 @@ function dashboard() {
     controlVerb:     '',
     controlSending:  false,
     pacHostQueues:   {},
+
+    // -- pac-host antenna alignment --------------------------------------------
+    alignModel:          null,
+    alignTarget:         null,
+    alignNBurst:         4,
+    alignReplyWinInput:  30,
+    alignSending:        false,
 
     // -- Rotator / Yagi -------------------------------------------------------
     yagiAz:          null,
@@ -401,7 +409,7 @@ window.dashboard = function() {
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
     rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
-    componentsMixin, perfMixin, nodeStatusMixin, controlMixin,
+    componentsMixin, perfMixin, nodeStatusMixin, controlMixin, alignMixin,
   ];
   for (const mixin of mixins) {
     Object.defineProperties(state, Object.getOwnPropertyDescriptors(mixin));

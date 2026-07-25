@@ -9,18 +9,23 @@
 import { EventEmitter } from 'events';
 import { log } from './log.js';
 import { fmtAgo } from './format.js';
+import { dashMode } from './dash-mode.js';
 
 const PAC_HOST_URL = process.env.PAC_HOST_URL || 'http://127.0.0.1:8787/v1';
 const HEALTH_POLL_MS = 30000;
 const QUEUE_POLL_MS = 5000;
+const ALIGN_POLL_MS = 2000; // faster than the queue poll — burst progress (~30s) should feel live
 
 export const events = new EventEmitter();
 
 let _timer = null;
 let _queueTimer = null;
+let _alignTimer = null;
 let _lastStatus = null; // null until the first poll resolves
 let _units = [];        // pac-host's own alarm-device roster (GET /mesh/devices) — already scoped to ours, no downstream filter needed
 let _queues = {};       // unit num -> queue ledger array, kept fresh by _pollQueues so the browser never fetches this itself
+let _alignModel = null; // last pushed align view-model (GET /mesh/align), null until first poll
+let _alignPrevMode = null; // dash mode saved when we forced PASV for an align session; null when not holding it
 
 function _statusesEqual(a, b) {
   return a.status === b.status
@@ -119,6 +124,54 @@ export function queuesMessage() {
   return { type: 'pac_host_queues', queues: _queues };
 }
 
+// Keeps the antenna-alignment view-model fresh via the documented polling
+// fallback (GET /mesh/align) — SSE (mesh.align) is live on pac-host's side
+// but node-dash has no SSE client yet (same deferral as the command ledger,
+// task ledger-field-rename, 2026-07-25: a separate follow-up, not bundled
+// here). Polls regardless of _units/isAvailable-per-unit, since align is a
+// single session, not per-unit like the queue.
+//
+// PASV interlock (task yagi-align-rebuild, 2026-07-25): the OLD align-api.js
+// forced dash mode to PASV for the session's duration so the Yagi would not
+// auto-swing mid-burst, and restored the previous mode on stop. mt-transport
+// no longer drives our rotator at all ("we do NOT drive the rotator,
+// deliberately") and explicitly flagged this as ours alone to replicate:
+// "If the Yagi moves during a burst, the readings are silently wrong rather
+// than obviously broken, which is the worst kind of wrong." Reproduced here
+// by watching the pushed model's `running` transition, the only signal we
+// have now that a session is active.
+async function _pollAlign() {
+  if (!isAvailable()) { _alignModel = null; return; }
+  let next;
+  try {
+    next = await _call('/mesh/align');
+  } catch (e) {
+    log.warn('pac-host', `align poll failed: ${e.message}`);
+    return; // keep last-known model rather than blanking on a transient error
+  }
+
+  const wasRunning = !!_alignModel?.running;
+  const nowRunning = !!next?.running;
+  if (nowRunning && !wasRunning && _alignPrevMode == null) {
+    _alignPrevMode = dashMode.value;
+    dashMode.set(0); // force PASV — see comment above
+    log.info('pac-host', `align session started, forced PASV (was ${_alignPrevMode})`);
+  } else if (!nowRunning && wasRunning && _alignPrevMode != null) {
+    dashMode.set(_alignPrevMode);
+    log.info('pac-host', `align session ended, restored mode ${_alignPrevMode}`);
+    _alignPrevMode = null;
+  }
+
+  const changed = JSON.stringify(next) !== JSON.stringify(_alignModel);
+  _alignModel = next;
+  if (changed) events.emit('alignChanged');
+}
+
+/** Ready-to-send WS message describing the current align view-model. */
+export function alignMessage() {
+  return { type: 'pac_host_align', model: _alignModel };
+}
+
 /** Begin polling. Idempotent — a second call is a no-op. Never blocks: the
  *  first poll runs asynchronously, so node-dash serves pages before it resolves. */
 export function start() {
@@ -126,16 +179,21 @@ export function start() {
   _poll();
   _timer = setInterval(_poll, HEALTH_POLL_MS);
   _queueTimer = setInterval(_pollQueues, QUEUE_POLL_MS);
+  _alignTimer = setInterval(_pollAlign, ALIGN_POLL_MS);
 }
 
 /** Stop polling and clear cached status (tests, shutdown). */
 export function stop() {
   if (_timer) clearInterval(_timer);
   if (_queueTimer) clearInterval(_queueTimer);
+  if (_alignTimer) clearInterval(_alignTimer);
   _timer = null;
   _queueTimer = null;
+  _alignTimer = null;
   _lastStatus = null;
   _queues = {};
+  _alignModel = null;
+  _alignPrevMode = null;
 }
 
 export function isAvailable() {
@@ -175,5 +233,31 @@ export async function queueCommand({ unit, verb, args }) {
 /** Fetch one unit's queue ledger — the receipt-polling primitive. */
 export async function getQueue(unit) {
   return _call(`/mesh/queue/${encodeURIComponent(unit)}`);
+}
+
+/** Open/retarget an align session and fire one burst. Pure passthrough —
+ *  target/n are raw node-dash-originated input (the browser's only
+ *  originated values for this feature, per the archived app-align.md
+ *  invariant carried forward). Throws 409 if a burst is already active. */
+export async function alignPing({ target, n }) {
+  return _call('/mesh/align/ping', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target, ...(n !== undefined ? { n } : {}) }),
+  });
+}
+
+/** End the current align session. */
+export async function alignStop() {
+  return _call('/mesh/align/stop', { method: 'POST' });
+}
+
+/** Set the server-persisted reply-wait window (5-120s). */
+export async function alignConfig({ replyWindowSec }) {
+  return _call('/mesh/align/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ replyWindowSec }),
+  });
 }
 

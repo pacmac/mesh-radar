@@ -22,6 +22,7 @@ import alertsRouter from './alerts-api.js';
 import rotatorRouter from './rotator-api.js';
 import messagesRouter from './messages-api.js';
 import pacCommandRouter from './pac-command-api.js';
+import pacAlignRouter from './pac-align-api.js';
 import tracerouteRouter from './traceroute-api.js';
 import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
@@ -198,6 +199,7 @@ app.use(autoPurgeRouter);
 
 app.use(messagesRouter);
 app.use(pacCommandRouter);
+app.use(pacAlignRouter);
 
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 

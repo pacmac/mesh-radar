@@ -1,7 +1,7 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 38e48f21bfb60e8f1f7500e5b7a68152b546eb866ea923a6290356c2e54b9fbd
+source_hash: f1c75a25930f3c779d111d7b353b423ddd4efeb0ab82cd91c1db67085d45b57d
 updated: 2026-07-25
 ---
 
@@ -67,6 +67,16 @@ the health/status signal.
   Includes `present: false` units (declared but not currently in the gateway
   roster, e.g. asleep since pac-host's last restart) — callers must render
   these, never drop them.
+- Keep the antenna-alignment view-model fresh by polling `GET /v1/mesh/align`
+  on its own cadence (`ALIGN_POLL_MS`, 2s — faster than the queue poll, since
+  burst progress over a ~30s burst should feel live) and push it over WS
+  (task `yagi-align-rebuild`, 2026-07-25). Also runs the **PASV interlock**:
+  watches the pushed model's `running` field and forces dash mode to PASV
+  for the session's duration, restoring the prior mode on stop — mt-transport
+  no longer drives our rotator at all and explicitly flagged this as ours
+  alone to replicate ("If the Yagi moves during a burst, the readings are
+  silently wrong rather than obviously broken, which is the worst kind of
+  wrong"). See the dedicated section below.
 
 ## Dependencies
 
@@ -74,6 +84,10 @@ the health/status signal.
   convention `bridge.js`/archived `transport-plugin.js` use.
 - Global `fetch` (Node 18+, already relied on by `bridge.js` — no new
   dependency).
+- `dash-mode.js` — `dashMode.value`/`dashMode.set()`, for the align PASV
+  interlock only (task `yagi-align-rebuild`, 2026-07-25). No circular import:
+  `dash-mode.js`'s own dependencies (`db.js`, `device-config.js`) do not
+  import `pac-host.js`.
 
 ## Public interface
 
@@ -90,6 +104,10 @@ export function queuesMessage()  // → { type: 'pac_host_queues', queues: {[uni
 export const events              // EventEmitter, emits 'change' (status) and 'queuesChanged' (queue data) separately
 export async function queueCommand({ unit, verb, args }) // → POST /v1/mesh/queue body, returns the raw JSON response ({id, ...}) or throws Error('pac-host <status>: <detail>')
 export async function getQueue(unit)                     // → GET /v1/mesh/queue/:target, returns the raw ledger array; throws the same way. Called internally by the queue-poll loop; not used by any HTTP route (there is none) — kept exported in case a future task needs a one-off lookup, but nothing browser-facing may call it directly.
+export function alignMessage()                           // → { type: 'pac_host_align', model } — ready to JSON.stringify and send as-is
+export async function alignPing({ target, n })            // → POST /v1/mesh/align/ping body, returns the raw JSON response; throws (incl. 409 if a burst is already active)
+export async function alignStop()                         // → POST /v1/mesh/align/stop, returns the raw JSON response
+export async function alignConfig({ replyWindowSec })     // → POST /v1/mesh/align/config body, returns the raw JSON response
 ```
 
 `status()` is internal (backs `connectMessage()`/`isAvailable()`) —
@@ -120,8 +138,10 @@ that defines the wire shape of "pac-host's current state."
   2. On connect: `ws.send(JSON.stringify(pacHost.connectMessage()))` then `ws.send(JSON.stringify(pacHost.queuesMessage()))` — a newly-connected browser has full status AND queue data before it does anything at all.
   3. Two change-listeners near `broadcast()`'s definition: `pacHost.events.on('change', () => broadcast(pacHost.connectMessage()))` and `pacHost.events.on('queuesChanged', () => broadcast(pacHost.queuesMessage()))` — kept as separate events/broadcasts so a queue tick (every 5s while pac-host is up) doesn't force-resend the larger, rarer-changing status payload.
 - `src/pac-command-api.js` (task `pac-host-command-surface`) — thin Express router, `POST /nodes/:num/pac-command` only, calling `queueCommand()`. **No GET route** — see Invariants.
+- `src/pac-align-api.js` (task `yagi-align-rebuild`, 2026-07-25) — thin Express router, `POST /align/ping|stop|config`, calling `alignPing()`/`alignStop()`/`alignConfig()`. **No GET route**, same reasoning.
 - `public/app.js`/`public/app-ws.js`/`public/index.html` (task `pac-host-header-badge`) — render `pac_host_status` as a small navbar badge.
 - `public/app-control.js`/`public/partials/tab-control.html` (tasks `pac-host-command-surface`, `control-queue-push-not-get`) — Control page reads `pacHostQueues` (from `pac_host_queues`) as pure pushed state; zero fetch anywhere in that file.
+- `public/app-align.js`/`public/partials/tab-control.html` (task `yagi-align-rebuild`) — Yagi Align sub-tab reads `alignModel` (from `pac_host_align`) as pure pushed state.
 
 ## Relative "since" display (task `control-since-and-pending-split`, 2026-07-25)
 
@@ -157,17 +177,53 @@ remains unresolved and unrelated to this rename**: the labels question is
 about human-readable field names, this fix is about which field holds the
 data at all.
 
+## Antenna alignment + PASV interlock (task `yagi-align-rebuild`, 2026-07-25)
+
+`_pollAlign()` polls `GET /v1/mesh/align` every `ALIGN_POLL_MS` (2s) and
+pushes `pac_host_align` on change, the same poll-and-push shape as
+`_pollQueues()`. SSE (`mesh.align`) is live on pac-host's side but not
+consumed here — same deferral as the command ledger's SSE swap, a separate
+follow-up task, not bundled with this one.
+
+**PASV interlock**: the archived `src/align-api.js` forced `dashMode.set(0)`
+for a session's duration and restored the previous mode on stop, so the
+Yagi would not auto-swing mid-burst. mt-transport's align module does not
+drive our rotator ("we do NOT drive the rotator, deliberately... If pointing
+is to be automated later it must talk to the hardware directly") and
+explicitly named this as node-dash's sole responsibility to replicate.
+Reproduced here by watching `_alignModel.running`'s transition (the only
+signal available now — pac-host owns the session, not us):
+
+- `false → true`: `_alignPrevMode = dashMode.value; dashMode.set(0)`.
+- `true → false`: `dashMode.set(_alignPrevMode); _alignPrevMode = null`.
+- Guarded on `_alignPrevMode == null` so a poll tick can't double-save/
+  double-restore.
+
+**Known limitation, same class as the archived bugs-backlog item #29** (align
+session PASV-forced-forever on a mid-session process restart): `_alignPrevMode`
+lives only in memory. If node-dash restarts while a session it force-PASV'd
+is still running, the saved prior mode is lost — the persisted dash-mode
+value already reads PASV (that part survives, since `dashMode.set()`
+persists to `db.js`), but there is no way to know what to restore to when
+the session eventually ends. Not solved here; accepted as a narrow,
+pre-existing-class edge case rather than expanding this task's scope to fix
+session-restart durability.
+
 ## State
 
 - `_timer` — the health/roster poll interval handle.
 - `_queueTimer` — the queue poll interval handle, separate cadence (5s vs 30s).
+- `_alignTimer` — the align poll interval handle, separate cadence again (2s).
 - `_lastStatus` — cached `status()` result, compared each poll to decide whether to emit `change`.
 - `_queues` — `{[unitNum]: entries[]}`, compared each queue poll to decide whether to emit `queuesChanged`. On a transient per-unit fetch error, keeps that unit's last-known entries rather than blanking it (a momentary pac-host hiccup should not flash the Control page empty).
+- `_alignModel` — last pushed align view-model, compared each poll to decide whether to emit `alignChanged`. `null` until the first successful poll.
+- `_alignPrevMode` — dash mode saved when the PASV interlock engaged; `null` when not currently holding it.
 
 ## Events emitted
 
 - `change` — fired when `status()`'s shape changes (state transition, `modules`, or `units` list). Not fired on every poll if nothing changed.
 - `queuesChanged` — fired when any commandable unit's queue ledger changes. Separate from `change` deliberately (see Dependents).
+- `alignChanged` — fired when the align view-model changes. Separate again, same reasoning — a 2s align tick must not force-resend the larger status/queue payloads.
 
 ## Invariants
 
@@ -181,9 +237,13 @@ data at all.
 
 - Functional check available now (pac-host not deployed): `PAC_HOST_URL` pointing at nothing running → `connectMessage()` reports `status: 'unreachable'` within one poll interval, `queuesMessage()` reports `{}`, node-dash boots and serves normally.
 - Verified live 2026-07-25 against the real running pac-host service: `connectMessage()` reports `status: 'ready'`; `queuesMessage()` correctly returns both known units' real ledgers, keyed by node num, pushed on connect before any client interaction — confirmed via a raw WS script (bypassing the browser entirely) and via Playwright's network panel (zero requests fired on unit-click, confirming no fetch anywhere in the click path).
+- Align + PASV interlock verified live 2026-07-25 against a real, already-running align session (not one this task opened): `_pollAlign()`'s very first tick logged `align session started, forced PASV (was 0)`, confirming the interlock engaged correctly on observing `running:true`. `alignMessage()` correctly returned the live model via a raw WS script. A real `/align/ping` against BNCH opened a burst (`burst.active:true`, confirmed via the raw API mid-burst), which resolved to `warning:"No replies — try again."` after the burst window — expected, not a bug (see `docs/modules/app-align.md`). Session-end/PASV-restore was **not** exercised (the live session tested against was not this task's to stop) — restore-path logic is verified by code review only.
 
 ## Out of scope
 
 - Node data of any kind — see Purpose. Not staged for later; ruled out by design.
 - Verb validation, argument shaping, or any mesh-mechanics knowledge for commands — `queueCommand()` is a pure passthrough; pac-host owns what a verb means.
-- SSE (`GET /v1/events`) consumption. The queue-poll interval (5s) is the "real time" mechanism for now — a genuine future upgrade would subscribe to the now-live `mesh.request-queued/-trying/-done/-sent/-failed/-expired/-cancelled` events (xsession `[request-ledger]`, 2026-07-25) for sub-poll-interval latency and zero polling overhead, but polling backend-side (never browser-side) already satisfies the actual architectural requirement: the browser reacts to pushed state and never fetches. Explicitly deferred to a separate follow-up task (Peter, 2026-07-25) rather than bundled with the urgent field-rename fix.
+- SSE (`GET /v1/events`) consumption. The queue-poll interval (5s) is the "real time" mechanism for now — a genuine future upgrade would subscribe to the now-live `mesh.request-queued/-trying/-done/-sent/-failed/-expired/-cancelled` events (xsession `[request-ledger]`, 2026-07-25) for sub-poll-interval latency and zero polling overhead, but polling backend-side (never browser-side) already satisfies the actual architectural requirement: the browser reacts to pushed state and never fetches. Explicitly deferred to a separate follow-up task (Peter, 2026-07-25) rather than bundled with the urgent field-rename fix. Same deferral applies to `mesh.align`.
+- Rotator hardware control of any kind, beyond the PASV interlock's mode
+  switch — mt-transport does not drive it and neither does this module;
+  the operator turns the antenna by hand.

@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 492e6276dd986323d28b8796118ad5ec2ed01456ffa080b8fc8901a7bfb22dd2
+source_hash: 30c76cb6262445a81f54026aa8aba20769d469398fcacf2050f74b332d7fb0e6
 updated: 2026-07-25
 ---
 
@@ -156,6 +156,16 @@ page load showed a blank Queue panel regardless). The first time units are
 known and `controlTarget` is still `null`, it's set to
 `controlDevices()[0].num`. Guarded on `== null` so it fires exactly once and
 never overrides a real (or already-auto) selection afterward.
+
+`pac_host_align` (task `yagi-align-rebuild`, 2026-07-25) assigns `ev.model`
+to `this.alignModel`. Also adopts `alignTarget` from `ev.model.target` when
+still `null` (same never-override guard shape as `controlTarget` above), and
+syncs `alignReplyWinInput` from `ev.model.replyWindowSec` whenever pushed —
+that field IS meant to track the server's persisted value continuously
+(unlike `alignTarget`, which is adopted once then left to the user/session).
+`node_list`'s handler carries a second, complementary default for
+`alignTarget`: first favourite, same guard, for whichever of the two
+(model push or node_list) arrives first.
 
 ## Live reply threading (task `live-reply-threading`, 2026-07-17)
 

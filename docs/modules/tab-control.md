@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: a072ad975692b97b0be089e1eec96337dd634a2bbe3f3a9b440269828f63fab3
+source_hash: 464b9f4f98519b1ee873ec200d0cd15d886a68ba2e1bc261c170fca16c6fa0f9
 updated: 2026-07-25
 ---
 
@@ -34,10 +34,14 @@ Only **Command** has real content today — the other five are skeleton cards
 functionality, per Peter's explicit "even if they are skeleton pages."
 `controlTab` persists (default `'command'`, the only sub-tab with content).
 
-Do not confuse "Yagi Align" here with the archived
-`reference/alarm-integration/` align feature — that depended on the
-auto-reply/custom-firmware path and was correctly removed; this is an empty
-placeholder tab, not a revival.
+**Yagi Align is no longer a skeleton — rebuilt live, task `yagi-align-rebuild`,
+2026-07-25**, after mt-transport shipped the align backend and Peter
+confirmed the go-ahead ("so have you built the aligne frontend as I dont see
+it?"). It is a rebuild of the archived `reference/alarm-integration/` feature
+against the NEW pac-host-owned backend (`GET/POST /v1/mesh/align/*`), not a
+revival of the old one — the old backend (`src/align-api.js`) depended on
+this repo owning the mesh connection directly, which it no longer does. See
+its own Layout section below and `docs/modules/app-align.md`.
 
 ## Layout — Command sub-tab
 
@@ -96,6 +100,38 @@ executed."). Replaces the earlier single side-by-side "Queue" card.
   than silently breaking. Peter caught the resulting breakage independently
   ("now it only shows 1 line, the command") before this fix landed.
 
+## Layout — Yagi Align sub-tab (task `yagi-align-rebuild`, 2026-07-25)
+
+Single column, ported from the archive's `align.html` structure into
+STYLE_GUIDE-compliant markup (Alpine bindings replacing raw DOM element
+lookups, `text-2xl font-mono font-bold tabular-nums` Display-value role
+replacing the archive's oversized `text-6xl` — that page was a full-screen
+mobile field tool, this is an embedded dashboard card):
+
+- **Controls row**: target `<select>` (options from `alignTargets()` —
+  node-dash's own `favourites`, same source the archived `/align/targets`
+  route used server-side via `listFavourites()`; no new backend route
+  needed), RUNNING/READY badge, N-burst `<select>` (1-5, `x-model.number`),
+  reply-wait `<input type=number>` (5-120s, `@change="alignSetReplyWindow()"`).
+  All three controls disable while `alignBursting()||alignSending`.
+- **Warning line**: `x-show="alignModel?.warning"` — e.g. `"No replies — try
+  again."` when a burst lands nothing. No reading is invented for a silent burst.
+- **Current reading card**: border flips to `border-success` when
+  `current.isBest`. Quality (Display value), label, tone class (`cls`) all
+  read directly off `alignModel.current` — no local computation. Trend line
+  (`trendDir`/`trendDelta`), best-line (`gapToBest`/`bestN`/`bestAgo`),
+  YAGI/OMNI secondary quality (`yagi_q`/`omni_q`, rendered `—` when `null`,
+  **never `0`** — a radio hearing nothing is a gap, not a zero, mt-transport's
+  explicit instruction), raw rssi/snr.
+- **Reading bars**: one per `alignModel.readings[]` entry, height =
+  `barPct%` (the one place this file computes a CSS value from data, per
+  STYLE_GUIDE §7's inline-style exception for genuinely runtime-computed
+  values) — `bg-success` when `isBest`, `bg-primary` when `isCurrent`, else
+  neutral. ★ marks the best.
+- **Actions**: PING (disabled while bursting/sending/no target; shows a
+  spinner + `"GATHERING got/of"` while a burst is active) and End (disabled
+  unless `alignRunning()`).
+
 ## Invariants
 
 - Never renders as, or alongside, the chat message feed (`tab-messages.html`)
@@ -104,6 +140,9 @@ executed."). Replaces the earlier single side-by-side "Queue" card.
   `custom-app-extension-point` notes).
 - Renders exactly what `controlMixin` computes; no verb list, unit filter, or
   confirmation logic lives in this file.
+- Yagi Align renders exactly what `alignMixin` computes — no quality/trend/
+  best/bar math anywhere in this file, same discipline as the Command
+  sub-tab, per `docs/modules/app-align.md`.
 
 ## Test notes
 
@@ -120,6 +159,23 @@ the Pending card with a live `since` value ("6s ago", "21s ago", "51s ago"
 across three reloads) before it resolved to `acked` and moved to Executed.
 Executed card confirmed newest-first ("1m ago" → "38m ago" → "59m ago" → "1h
 ago", strictly descending). Both themes screenshotted and read.
+
+Yagi Align verified live 2026-07-25 against a real, already-running align
+session: target picker adopted the live target without a click, RUNNING
+badge correct, a real PING against BNCH showed the bursting UI (disabled
+controls, "GATHERING 0/4" spinner) and recovered correctly to the
+"No replies — try again." warning state (BNCH's wake window is narrow —
+expected per mt-transport, not a bug). Both themes screenshotted and read.
+A real landed reading and its bar/quality rendering were not observed — no
+on-air reading has landed for either test unit yet (mt-transport's own
+caveat); re-verify once one does.
+
+**Real bug found and fixed during this task**: the N-burst `<select>`
+displayed `1` instead of its actual state value (`4`) on initial load — an
+`x-model` vs nested `x-for`-generated `<option>` timing race, confirmed via
+direct DOM inspection (`.value`), not a screenshot guess. Fixed with an
+`x-init` post-mount resync; see `docs/modules/app-align.md` for the full
+diagnosis.
 
 ## Out of scope
 

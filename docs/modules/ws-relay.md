@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 54d9f8488a1487118597f8ffc6edb8d6f871974e40738d378ef0d9054ce31faa
+source_hash: 55f3a364246fa2f826372ba6f62d2337f7fa05a2df2373271b553055acc64393
 updated: 2026-07-25
 ---
 
@@ -32,7 +32,7 @@ to every newly connected client so the browser is immediately consistent.
 
 - `ws` — `WebSocketServer`
 - `bridge.js` — `bridge` (events: `connected`, `disconnected`, `event`)
-- `pac-host.js` — `connectMessage`/`queuesMessage` (both sent on connect; rebroadcast on `events` `change`/`queuesChanged` respectively) — see docs/modules/pac-host.md
+- `pac-host.js` — `connectMessage`/`queuesMessage`/`alignMessage` (all three sent on connect; rebroadcast on `events` `change`/`queuesChanged`/`alignChanged` respectively, task `yagi-align-rebuild` 2026-07-25 added the third) — see docs/modules/pac-host.md
 - `rotator.js` — `rotator` (events: `status`, `point_target`, `signal_update`)
 - `scanner.js` — `scanner` (events: `start`, `progress`, `contact`, `end`)
 - `node-list.js` — `nodeList` (event: `change`; fields: `nodes`, `ownDeviceNodes`, `homePos`, `_cache`)
