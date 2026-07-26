@@ -1,8 +1,8 @@
 ---
 module: db
 source: src/db.js
-source_hash: 8d6f363401828c7342f9b8d0da2363ed4a4e9ac0fdb789823975eb37900204f0
-updated: 2026-07-18
+source_hash: fe0bac51dfa3243408de7a4cb82b87ea5d0e0f224c5c8dee1ffd5612370ffe97
+updated: 2026-07-26
 ---
 
 # Module: db
@@ -415,3 +415,52 @@ same MAC vocabulary the `node_source` filter compares against.
 MACs in `traceroute_history.tx_device`, `messages.device`, and inside
 `messages.rx_devices` comma-lists (string REPLACE per registry pair).
 Unmappable ids are left as-is per IDENTITY.md §7 amnesty.
+
+## signal_history per-radio attribution (task `signal-provenance-mixed-source`)
+
+`signal_history` was written as ONE row per `(num, packet_id)`, enforced by
+`idx_sig_dedup UNIQUE(num, packet_id) WHERE packet_id IS NOT NULL` plus
+`INSERT OR IGNORE`. `persist.js` stated the intent outright: *"Deduped by
+(num, packet_id) so N gateway radios hearing one broadcast yield one row."*
+
+That is wrong for a two-radio gateway. When OMNI and YAGI both hear the same
+broadcast, their two RSSI/SNR readings are an A/B comparison of the two
+antennas on an identical packet — the single most useful measurement the
+deployment produces, and exactly what antenna work needs. The old shape threw
+the second one away, and *which* survived was arbitrary (arrival order). The
+table also carried no radio column, so the surviving row could not say which
+antenna measured it.
+
+`messages` already solved this problem the other way: `upsertMessage`
+accumulates a comma-separated `rx_devices` list on conflict rather than
+discarding (`db.js:339-343`). Same repo, same situation, opposite answer.
+Signal needs per-radio *values*, not just a list of which radios heard it, so
+the fix here is one row per radio rather than a concatenated column.
+
+### Change
+
+- Migration (guarded `PRAGMA table_info(signal_history)` block, same pattern as
+  the `traceroute_history` / `environment_history` ALTERs above):
+  `ALTER TABLE signal_history ADD COLUMN rx_device TEXT`.
+- Drop `idx_sig_dedup`; recreate as
+  `UNIQUE(num, packet_id, rx_device) WHERE packet_id IS NOT NULL`.
+  Dedup still suppresses a genuine duplicate from the *same* radio; it no
+  longer suppresses a second radio's independent reading.
+- `insertSignalHistory` gains `@rx_device`.
+- `querySignalHistory` returns `rx_device` alongside `ts, rssi, snr`. Purely
+  additive — `node-status.js`'s `buildSignalSection` reads `r.rssi`/`r.snr` by
+  key and is unaffected.
+
+### Deliberately NOT changed here
+
+- `latestSignalTs` — still "most recent capture for this node, any radio". It
+  age-stamps `nodes.rssi`/`nodes.snr`, which remain single per-node scalars.
+  De-scalarising those is a follow-up task; doing it here would drag the read
+  path and then the browser into a single change, and the browser half is
+  Domain 2 (CLAUDE.md: no fix may span domains).
+- The `isDirect` hop-arithmetic gate in `persist.js`. It is separately broken —
+  1014 of GARG's `hops=0` rows average −39.7 dBm on a 2.5 km link whose
+  physical best case is ~−59 dBm — but the fix depends on mesh-gw's answer to
+  xsession item [inbound-relay-attribution]. Not guessed at here. Existing rows
+  are therefore NOT backfilled or purged: they are a mix of true direct and
+  mis-gated relay traffic, and nothing currently distinguishes them.

@@ -159,10 +159,12 @@ db.exec(`
     packet_id INTEGER,
     rssi      REAL,
     snr       REAL,
-    hops      INTEGER
+    hops      INTEGER,
+    rx_device TEXT
   );
 
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_sig_dedup  ON signal_history(num, packet_id) WHERE packet_id IS NOT NULL;
+  -- idx_sig_dedup is created in the migration block below, not here: on an
+  -- existing database rx_device does not exist until that block's ALTER runs.
   -- hops is recorded so the direct-only rule stays auditable rather than merely
   -- asserted: any row with hops != 0 is a bug, and can be found.
   CREATE INDEX        IF NOT EXISTS idx_sig_num_ts ON signal_history(num, ts DESC);
@@ -230,6 +232,28 @@ db.exec(`
   // unrecoverable, so history for gas begins here.
   if (!envCols.includes('gas_resistance')) db.exec(`ALTER TABLE environment_history ADD COLUMN gas_resistance REAL`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_env_dedup ON environment_history(num, packet_id) WHERE packet_id IS NOT NULL`);
+}
+// signal_history predates the two-radio gateway. The dedup key was
+// (num, packet_id), so when OMNI and YAGI both heard one broadcast the second
+// radio's INSERT OR IGNORE was silently dropped and the survivor was whichever
+// arrived first — arbitrary, and unattributed since the table had no radio
+// column (task `signal-provenance-mixed-source`). Two antennas measuring the
+// same packet is the most useful reading the deployment produces, not a
+// duplicate. rx_device attributes each measurement and joins the key, so a
+// genuine repeat from the SAME radio is still suppressed.
+//
+// Existing rows are left as-is: they are a mix of true direct reception and
+// relay traffic mis-admitted by the hop-arithmetic gate in persist.js, and
+// nothing currently distinguishes them. Backfilling rx_device would fabricate
+// attribution we do not have.
+{
+  const sigCols = db.prepare(`PRAGMA table_info(signal_history)`).all().map(r => r.name);
+  if (!sigCols.includes('rx_device')) db.exec(`ALTER TABLE signal_history ADD COLUMN rx_device TEXT`);
+  // Rebuild the index only when it is still the old 2-column shape. Idempotent
+  // across restarts, and never drops an already-correct index.
+  const sigKeyCols = db.prepare(`PRAGMA index_info(idx_sig_dedup)`).all().length;
+  if (sigKeyCols && sigKeyCols !== 3) db.exec(`DROP INDEX idx_sig_dedup`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sig_dedup ON signal_history(num, packet_id, rx_device) WHERE packet_id IS NOT NULL`);
 }
 // Favourites live on nodeinfo (persistent), NOT nodes (wiped by clearNodeCache).
 {
@@ -610,8 +634,8 @@ export const stmts = {
   getNodeByNum: db.prepare(`SELECT * FROM nodes WHERE num = ? LIMIT 1`),
 
   insertSignalHistory: db.prepare(`
-    INSERT OR IGNORE INTO signal_history (ts, num, packet_id, rssi, snr, hops)
-    VALUES (@ts, @num, @packet_id, @rssi, @snr, @hops)
+    INSERT OR IGNORE INTO signal_history (ts, num, packet_id, rssi, snr, hops, rx_device)
+    VALUES (@ts, @num, @packet_id, @rssi, @snr, @hops, @rx_device)
   `),
 
   // Reference range for a node's BME680. Returns the ordered values so the
@@ -625,7 +649,7 @@ export const stmts = {
   `),
 
   querySignalHistory: db.prepare(`
-    SELECT ts, rssi, snr FROM signal_history WHERE num = ? AND ts >= ?
+    SELECT ts, rssi, snr, rx_device FROM signal_history WHERE num = ? AND ts >= ?
     ORDER BY ts ASC
   `),
 
@@ -731,7 +755,7 @@ export function listFavouriteNodes() {
 }
 
 export function insertSignalHistory(entry) {
-  stmts.insertSignalHistory.run(_finAll({ packet_id: null, rssi: null, snr: null, hops: null, ...entry }, ['rssi', 'snr']));
+  stmts.insertSignalHistory.run(_finAll({ packet_id: null, rssi: null, snr: null, hops: null, rx_device: null, ...entry }, ['rssi', 'snr']));
 }
 
 export function insertDetectionEvent(entry) {

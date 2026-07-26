@@ -89,14 +89,19 @@ function deviceTime(t, arrivalTs) {
 const isDirect = hops => hops === 0;
 
 // Signal comes from the packet ENVELOPE, never a payload (iron rule 4).
-// Deduped by (num, packet_id) so N gateway radios hearing one broadcast yield
-// one row.
-function _captureSignal(num, packetId, rssi, snr, ts, hops) {
+// Deduped by (num, packet_id, rx_device): one row PER RADIO, so when OMNI and
+// YAGI both hear a broadcast we keep both readings. They are not duplicates —
+// two antennas measuring one identical packet is a direct A/B of the two, and
+// the old (num, packet_id) key discarded whichever arrived second (task
+// `signal-provenance-mixed-source`). A repeat from the same radio is still
+// suppressed. rxDevice is a MAC (nodes.device vocabulary, IDENTITY.md); null
+// is permitted and means "not attributed" — it dedups against other nulls.
+function _captureSignal(num, packetId, rssi, snr, ts, hops, rxDevice) {
   if (!num) return;
   if (!isDirect(hops)) return;
   if (rssi == null && snr == null) return;
   try {
-    insertSignalHistory({ ts, num, packet_id: packetId ?? null, rssi: fin(rssi), snr: fin(snr), hops });
+    insertSignalHistory({ ts, num, packet_id: packetId ?? null, rssi: fin(rssi), snr: fin(snr), hops, rx_device: rxDevice ?? null });
   } catch (e) {
     console.error(`[signal] insert failed for ${num}: ${e.message}`);
   }
@@ -113,7 +118,7 @@ export function handleEvent(event) {
   // Typed AppRouter events carry the envelope alongside their payload.
   const evHops = event.hops ?? null;
   if (event.from_num && (event.rx_rssi != null || event.rx_snr != null)) {
-    _captureSignal(event.from_num, event.packet_id ?? null, event.rx_rssi, event.rx_snr, event.rx_time || ts, evHops);
+    _captureSignal(event.from_num, event.packet_id ?? null, event.rx_rssi, event.rx_snr, event.rx_time || ts, evHops, rxDevice);
   }
   // Only a direct reception may set a node's live signal. upsertNode COALESCEs,
   // so the last DIRECT value is retained instead of being overwritten by relay
@@ -261,7 +266,7 @@ function handlePacket(packet, device, ts, replay) {
   const pktHops = (packet.hop_start != null && packet.hop_limit != null)
     ? Math.max(0, packet.hop_start - packet.hop_limit) : null;
   _captureSignal(packet.from, packet.id ?? null, packet.rx_rssi, packet.rx_snr,
-                 packet.rx_time || ts, pktHops);
+                 packet.rx_time || ts, pktHops, device);
   const pktRssi = isDirect(pktHops) ? (packet.rx_rssi ?? null) : null;
   const pktSnr  = isDirect(pktHops) ? (packet.rx_snr  ?? null) : null;
 

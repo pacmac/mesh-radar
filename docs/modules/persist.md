@@ -1,8 +1,8 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: db44e2b643b37be5ff7a6c7405d4521adcf95c765836c40313e3c29aacfd2e00
-updated: 2026-07-19
+source_hash: 202f34ede9c40da729146081907bf27ff799750b57fd3e505a481db58192110d
+updated: 2026-07-26
 ---
 
 # Module: persist
@@ -169,3 +169,26 @@ All tests use an in-memory SQLite DB (`:memory:`) with the same schema as `db.js
 - Tilt writes — `ws-relay.js` (leaked concern, to be moved in ws-relay refactor task)
 - Event delivery / bridge listener wiring — `index.js` / future `event-handler.js`
 - Browser WebSocket broadcast — `ws-relay.js`
+
+## Signal capture carries the receiving radio (task `signal-provenance-mixed-source`)
+
+`_captureSignal` wrote `signal_history` with no record of WHICH gateway radio
+made the measurement, and the `(num, packet_id)` dedup index meant the second
+radio to report a shared broadcast was silently dropped. See
+`docs/modules/db.md` for the storage-side reasoning.
+
+`_captureSignal` gains an `rxDevice` parameter, threaded from the value each
+call site already holds:
+
+- `handleEvent` (persist.js:116) — passes `rxDevice`, computed at :110 as
+  `event.__ble_addr ?? event.addr ?? event.device ?? null`.
+- `handlePacket` (persist.js:263) — passes its own `device` parameter.
+
+Both are MACs, matching `nodes.device` vocabulary (IDENTITY.md). A null
+`rx_device` is permitted and means "radio not attributed" — it does not block
+the insert, and with the new three-column dedup key a null attribution simply
+dedups against other nulls.
+
+No change to the `isDirect` gate, to which packets are captured, or to
+`nodes.rssi`/`nodes.snr`. This task makes the stored measurement say where it
+came from; it does not yet change what is displayed.
