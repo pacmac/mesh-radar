@@ -1,8 +1,8 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: 202f34ede9c40da729146081907bf27ff799750b57fd3e505a481db58192110d
-updated: 2026-07-26
+source_hash: a544b60b217191d22a806a210ba582521dc60e819f063abb11c6fc3b9cc19b71
+updated: 2026-07-27
 ---
 
 # Module: persist
@@ -192,3 +192,53 @@ dedups against other nulls.
 No change to the `isDirect` gate, to which packets are captured, or to
 `nodes.rssi`/`nodes.snr`. This task makes the stored measurement say where it
 came from; it does not yet change what is displayed.
+
+## Direct-ness gates on relay_node, not hop arithmetic (task `direct-gate-relay-node`)
+
+The `isDirect(hops)` predicate tested `hops === 0` and nothing else. mesh-gw
+confirmed that is unsafe (xsession [inbound-relay-attribution], 2026-07-26):
+they pass the MeshPacket through verbatim and compute nothing, and a RELAYED
+packet can present `hop_start - hop_limit == 0`.
+
+`isDirectPacket(pkt)` replaces it:
+
+    direct  iff  (relay_node absent or 0)  AND  hop_start present
+                 AND  hop_start - (hop_limit ?? 0) === 0
+
+- `relay_node` is MeshPacket field 19, the low byte of the relaying node's num.
+  It lives INSIDE `data.packet` — measured live, never at event top level.
+- Proto3 default-omission: a zero field is omitted from the serialised dict, so
+  `relay_node` ABSENT means "== 0", i.e. NOT relayed. It must never be read as
+  "unknown". `hop_limit` is omitted the same way, hence the `?? 0` default.
+- Low-byte-only means ~1-in-256 of genuine direct packets are rejected because
+  some other node shares the last byte. Accepted deliberately: a lost sample is
+  a gap, an admitted relay corrupts stored link quality.
+- `hop_start` stays REQUIRED — absent gives no basis to judge, and the existing
+  unknown-hops evidence (average -100.1 dBm) says treat that as not-direct.
+
+Observed live: GARG (2.5 km) heard at -45 dBm via a YAGI relay, `relay_node`
+= 0xB4. Physically impossible as a direct reading — free-space best case on that
+path is about -59 dBm.
+
+### Typed events no longer write signal at all
+
+A typed AppRouter event (`position`, `user`, `telemetry`) carries the envelope
+but NOT `relay_node` — measured across live traffic, absent at both top level
+and inside `data`. It therefore cannot establish direct-ness, so it writes
+neither `signal_history` nor `nodes.rssi/snr`.
+
+Nothing is lost: every reception carrying signal also arrives as a `packet`
+event for the same `packet_id` on the same radio, because a typed event IS an
+AppRouter decode of that packet. Sampled live: 12 packet-only, 2 packet+typed
+pairs, ZERO typed-only. `handlePacket` does the capture with relay_node
+available to gate it.
+
+### Scope note — what this does NOT fix
+
+This closes a real but rare leak. It is NOT established that it was the cause of
+strong readings being attributed to distant nodes. Measured over ~160 live
+packets, the dangerous variant (relayed AND hop arithmetic 0) did not occur
+once; the relayed packets seen were already rejected by arithmetic. A separate,
+still-open defect — `nodes.rssi/snr` freezing at the last direct value with no
+staleness bound (bug ledger #34) — remains a likelier explanation for a stale
+strong value persisting on a panel.

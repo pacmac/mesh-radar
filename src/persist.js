@@ -86,7 +86,37 @@ function deviceTime(t, arrivalTs) {
 // Unknown hops count as NOT direct: their average (-100.1) matches the relayed
 // population, not the direct one, so recording them would repeat the error with
 // less evidence.
-const isDirect = hops => hops === 0;
+//
+// Hop arithmetic ALONE is not sufficient, and the first version of this gate
+// (which tested only `hops === 0`) did not actually fix the bug above. mesh-gw
+// confirmed it (xsession [inbound-relay-attribution], 2026-07-26): they pass the
+// MeshPacket through verbatim and compute nothing, and a relayed packet CAN
+// present hop_start - hop_limit == 0. Measured here before the fix: 1014 of one
+// node's 8269 `hops === 0` rows averaged -39.7 dBm on a 2.5 km link whose
+// free-space best case is about -59 dBm, with the strong and weak populations
+// splitting exactly at -59/-60. That is relay traffic stored as direct.
+//
+// `relay_node` (MeshPacket field 19, top-level INSIDE data.packet — never on a
+// typed event) is the discriminator: the low byte of the relaying node's num.
+//
+// TRAP: mesh-gw serialises with proto3 default-omission, so a zero-valued field
+// is OMITTED entirely. `relay_node` absent therefore means "== 0" — NOT relayed
+// — and must not be read as "unknown". The same applies to hop_limit.
+//
+// Being only a low byte, relay_node is an indicator and not a unique id: two
+// nodes sharing a last byte are indistinguishable, so a genuine direct packet
+// can be rejected roughly 1 time in 256. That is the right side to err on —
+// a lost sample costs a gap, whereas admitting relay traffic corrupts the
+// stored link quality, which is the bug being fixed.
+//
+// hop_start remains REQUIRED. Absent hop_start is no basis on which to judge,
+// and the -100.1 evidence above says treat that as not-direct.
+function isDirectPacket(pkt) {
+  if (!pkt) return false;
+  if ((pkt.relay_node ?? 0) !== 0) return false;
+  if (pkt.hop_start == null) return false;
+  return pkt.hop_start - (pkt.hop_limit ?? 0) === 0;
+}
 
 // Signal comes from the packet ENVELOPE, never a payload (iron rule 4).
 // Deduped by (num, packet_id, rx_device): one row PER RADIO, so when OMNI and
@@ -98,7 +128,6 @@ const isDirect = hops => hops === 0;
 // is permitted and means "not attributed" — it dedups against other nulls.
 function _captureSignal(num, packetId, rssi, snr, ts, hops, rxDevice) {
   if (!num) return;
-  if (!isDirect(hops)) return;
   if (rssi == null && snr == null) return;
   try {
     insertSignalHistory({ ts, num, packet_id: packetId ?? null, rssi: fin(rssi), snr: fin(snr), hops, rx_device: rxDevice ?? null });
@@ -115,16 +144,18 @@ export function handleEvent(event) {
   const rxDevice = event.__ble_addr ?? event.addr ?? event.device ?? null;
   const ts = Math.floor(Date.now() / 1000);
 
-  // Typed AppRouter events carry the envelope alongside their payload.
-  const evHops = event.hops ?? null;
-  if (event.from_num && (event.rx_rssi != null || event.rx_snr != null)) {
-    _captureSignal(event.from_num, event.packet_id ?? null, event.rx_rssi, event.rx_snr, event.rx_time || ts, evHops, rxDevice);
-  }
-  // Only a direct reception may set a node's live signal. upsertNode COALESCEs,
-  // so the last DIRECT value is retained instead of being overwritten by relay
-  // traffic from a different link.
-  const evRssi = isDirect(evHops) ? (event.rx_rssi ?? null) : null;
-  const evSnr  = isDirect(evHops) ? (event.rx_snr  ?? null) : null;
+  // A typed AppRouter event carries the envelope alongside its payload, but NOT
+  // `relay_node` — measured across live position/user/telemetry events, it is
+  // absent at both the top level and inside data. So a typed event cannot
+  // establish that a reception was direct, and must not write signal at all.
+  //
+  // Nothing is lost by that. Every reception carrying signal also arrives as a
+  // `packet` event for the same packet_id on the same radio (sampled live:
+  // 12 packet-only, 2 packet+typed pairs, ZERO typed-only), because a typed
+  // event IS an AppRouter decode of that same packet. handlePacket does the
+  // capture, with relay_node available to gate it.
+  const evRssi = null;
+  const evSnr  = null;
 
   if (type === 'packet') {
     handlePacket(data?.packet, rxDevice, ts, !!_replay);
@@ -200,8 +231,10 @@ function handleDetectionEvent(event, ts) {
 function handleTelemetryEvent(event, rxDevice) {
   const { data, from_num, rx_snr, rx_rssi, packet_id } = event;
   // Same rule as everywhere else: only a direct reception describes this node's
-  // link, so a relayed telemetry packet must not set its signal.
-  const direct = isDirect(event.hops ?? null);
+  // link. A telemetry event is a typed event and carries no relay_node, so it
+  // cannot prove directness and never sets signal — the paired `packet` event
+  // does that. See the evRssi/evSnr note in handleEvent.
+  const direct = false;
   if (!from_num || !data) return;
   const ts = Math.floor(Date.now() / 1000);
   if (data.device_metrics) {
@@ -263,12 +296,17 @@ function handlePacket(packet, device, ts, replay) {
 
   // Envelope signal for every DIRECT packet, regardless of portnum — the
   // densest honest source of a node's own link quality over time.
-  const pktHops = (packet.hop_start != null && packet.hop_limit != null)
-    ? Math.max(0, packet.hop_start - packet.hop_limit) : null;
-  _captureSignal(packet.from, packet.id ?? null, packet.rx_rssi, packet.rx_snr,
-                 packet.rx_time || ts, pktHops, device);
-  const pktRssi = isDirect(pktHops) ? (packet.rx_rssi ?? null) : null;
-  const pktSnr  = isDirect(pktHops) ? (packet.rx_snr  ?? null) : null;
+  // hop_limit omitted means 0 (proto3 default-omission), so it is defaulted here
+  // rather than making the whole computation null — see isDirectPacket.
+  const pktDirect = isDirectPacket(packet);
+  const pktHops = packet.hop_start != null
+    ? Math.max(0, packet.hop_start - (packet.hop_limit ?? 0)) : null;
+  if (pktDirect) {
+    _captureSignal(packet.from, packet.id ?? null, packet.rx_rssi, packet.rx_snr,
+                   packet.rx_time || ts, pktHops, device);
+  }
+  const pktRssi = pktDirect ? (packet.rx_rssi ?? null) : null;
+  const pktSnr  = pktDirect ? (packet.rx_snr  ?? null) : null;
 
   const { portnum } = packet.decoded;
 
