@@ -5,7 +5,7 @@ import { dashMode, transmitterForMode, isListenerForMode } from './dash-mode.js'
 import { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
 import { FF } from './feature-flags.js';
-import { traceroute } from './traceroute.js';
+import { traceroute, tracerouteEnabled } from './traceroute.js';
 
 const log = {
   info: (...a) => console.log('[passive-tracer]', ...a),
@@ -90,6 +90,12 @@ class PassiveTracer extends EventEmitter {
 
     // Only trigger new traces in PASV mode (0)
     if (dashMode.value !== 0) return;
+    // Master switch. Checked HERE as well as inside dispatch() — not redundant:
+    // the .catch below records _failed and emits an empty `traced` result, so a
+    // gated dispatch arriving as a rejection would mark every skipped node as
+    // FAILED and push bogus empty routes to the browser (task
+    // `traceroute-manual-enable`).
+    if (!tracerouteEnabled()) return;
     if (this._busy) return;
     const rxDevice = ev.addr ?? ev.device ?? null;
     if (!pkt?.from || !rxDevice) return;

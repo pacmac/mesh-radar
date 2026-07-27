@@ -26,6 +26,7 @@ export const DEFAULTS = {
   'packet_sources':           [],
   'range_test.duration':      10,
   'perf.failure_epoch':       null,   // read-only stamp: when traceroute failure recording began
+  'traceroute.enabled':       true,   // master switch for AUTOMATIC dispatch; a manual request is never gated
 };
 
 router.get('/', (req, res) => {

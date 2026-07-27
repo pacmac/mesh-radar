@@ -1,8 +1,8 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 8c84a9f0a50e7159ea32fd4c1c443f862bd9947e31e5502b4126ab41cb8465de
-updated: 2026-07-19
+source_hash: c6006a2c89e587e8ce1293f7ae33fed6586fb634ffe273bf51bc8c222f68d5d3
+updated: 2026-07-27
 ---
 
 # Module: traceroute
@@ -162,3 +162,46 @@ stored as given (never guessed).
 recorded failure row (with DB `id`). Results carry `id` (the history row
 id returned by `nodeList.setTraceroute`) so WS consumers key live rows
 exactly like replayed ones.
+
+## Master switch — `traceroute.enabled` (task `traceroute-manual-enable`)
+
+Before this, there was no mode in which automatic traceroute was off. Each mode
+had its own dispatcher, so switching mode swapped the trigger rather than
+stopping it:
+
+| mode | dispatch site | trigger |
+|---|---|---|
+| PASV | `passive-tracer.js` | every qualifying heard packet |
+| ACTV | `lifecycle.js` | `rotator.on('point_target')` |
+| SCAN | `lifecycle.js` | `scanner.on('contact')` |
+
+Measured while enabled: 8 dispatches in 10 minutes, 25 in 30 minutes.
+
+`tracerouteEnabled()` reads the persisted config key `traceroute.enabled`
+(declared in `config-api.js` DEFAULTS, so it survives restart and is broadcast
+to the browser on the settings WS). Default `true` — shipping this changes no
+behaviour until it is switched off.
+
+### Gated at `dispatch()`, deliberately
+
+`dispatch()` is the one chokepoint every caller passes through, so the gate
+lives there rather than at each call site: a future caller cannot accidentally
+bypass it. That is the failure mode that let `imap-receiver` and `op-manager`
+post around `mesh-send`'s "single send path" — same shape, avoided here.
+
+Checked BEFORE the cooldown guard. A gated dispatch must not consume the
+cooldown slot, or re-enabling would silently skip the next attempt for that key.
+
+### `manual: true` is never gated
+
+A user-initiated request (`traceroute-api.js`) passes `manual: true`. Turning
+automatic traceroute off must not disable *asking* for one. Verified live with
+the switch off: the manual route returned `timeout !987ab80f`, i.e. it reached
+dispatch and transmitted, rather than `traceroute disabled`.
+
+### Known NOT covered
+
+The `[V1] LEGACY` paths behind `FF.SSOT_TRACEROUTE` in `passive-tracer.js` and
+`lifecycle.js` post to the bridge directly and bypass `dispatch()` entirely, so
+they bypass this gate too. Dormant — `FF.SSOT_TRACEROUTE` is `true`. Recorded in
+the bug ledger; removing them is a separate task.

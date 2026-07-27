@@ -44,6 +44,15 @@ function extractRelayPositions(route) {
   return relay_positions;
 }
 
+// Is AUTOMATIC traceroute dispatch enabled? Persisted (config key
+// `traceroute.enabled`, declared in config-api DEFAULTS so it survives restarts
+// and reaches the browser on the settings WS). Exported so a caller can skip
+// before dispatching rather than treat a gated dispatch as a failed one —
+// passive-tracer needs that, since its catch path records a failure.
+export function tracerouteEnabled() {
+  return getConfig('traceroute.enabled', true) !== false;
+}
+
 class TracerouteManager extends EventEmitter {
   constructor() {
     super();
@@ -54,11 +63,25 @@ class TracerouteManager extends EventEmitter {
     this._cooldowns = new Map();
   }
 
-  // ── dispatch({ to, device, timeoutMs?, cooldownMs?, cooldownKey? }) ────────
+  // ── dispatch({ to, device, timeoutMs?, cooldownMs?, cooldownKey?, manual? }) ─
   // Returns a Promise that resolves with the result or rejects on timeout/error.
   // cooldownKey + cooldownMs: skip dispatch if key was dispatched within cooldownMs.
-  dispatch({ to, device, timeoutMs, cooldownMs, cooldownKey } = {}) {
+  // manual: a user-initiated request. Never gated by the master switch.
+  dispatch({ to, device, timeoutMs, cooldownMs, cooldownKey, manual = false } = {}) {
     if (!to || !device) return Promise.reject(new Error('to and device are required'));
+
+    // Master switch (task `traceroute-manual-enable`). Before this existed there
+    // was no mode in which traceroute was off: PASV traced every heard packet,
+    // ACTV traced each rotator point_target, SCAN traced each contact. Gated
+    // HERE because dispatch() is the one chokepoint all callers pass through, so
+    // a future caller cannot accidentally bypass it — the failure that let
+    // imap-receiver and op-manager post around mesh-send's "single send path".
+    //
+    // Checked BEFORE the cooldown guard: a disabled dispatch must not consume
+    // the cooldown slot, or re-enabling would silently skip the next attempt.
+    if (!manual && !tracerouteEnabled()) {
+      return Promise.reject(new Error('traceroute disabled'));
+    }
 
     // Cooldown guard — caller's responsibility to pass the right key/window
     if (cooldownMs != null && cooldownKey != null) {

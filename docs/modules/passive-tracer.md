@@ -1,8 +1,8 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: 9092ab025573f4a44f464e3a850803a53b4e677f358a2206fb2b06c570f789ae
-updated: 2026-07-09
+source_hash: 5d03fe589f10623c68f1206a14ce62391f2c028ef2ff5769946ff8175f2ccfd1
+updated: 2026-07-27
 ---
 
 # Module: passive-tracer
@@ -146,3 +146,17 @@ _trace(from_num, device)
 - Broadcasting to browser — `ws-relay.js` listens to `'tracing'`/`'traced'` events
 - Active scan traceroute — `active-tracker.js` / `index.js` own that
 - V1 legacy path details — to be deleted when `SSOT_TRACEROUTE` flag is removed
+
+## Master-switch early return (task `traceroute-manual-enable`)
+
+`tracerouteEnabled()` is checked alongside the existing `dashMode.value !== 0`
+gate, before dispatching.
+
+This is NOT redundant with the gate inside `traceroute.dispatch()`. The catch
+attached to the dispatch promise records `_failed.set(from_num, ...)` and emits
+a `traced` event with an empty route. If "disabled" arrived as a rejection,
+every skipped node would be recorded as a FAILED traceroute and bogus empty
+routes would be pushed to the browser. Returning early avoids that.
+
+The two `lifecycle.js` dispatch sites need no equivalent: they use
+`.catch(() => {})` and discard the rejection harmlessly.

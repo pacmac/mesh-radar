@@ -1,8 +1,8 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 8e22f7b426b1ec752400c665c901687ba9e62c2ba8b7b932afa379153efdf6bf
-updated: 2026-07-18
+source_hash: 7d264a23eb8984bcf968840fd3e096d969a18d91a40f78aa9b52c621411c5a3d
+updated: 2026-07-27
 ---
 
 # Module: config-api
@@ -187,3 +187,16 @@ Every write path (PUT `/:key`, PUT `/`, PUT `/radar`) calls
 GET `/config` (exact path) is WS-only-blocked; `/config/:section` form
 reads remain.
 
+
+## `traceroute.enabled` (task `traceroute-manual-enable`)
+
+Master switch for AUTOMATIC traceroute dispatch. Default `true`.
+
+Declared in `DEFAULTS`, so it persists in `config`, is served by `GET /config`,
+and is broadcast to every connected browser by the settings WS event
+(`ws-relay.js` iterates `DEFAULTS`). Writable via the existing
+`PUT /config/:key` route — no new endpoint. That is the route the Domain 2
+header button will use.
+
+Consumed by `traceroute.js` `tracerouteEnabled()`; see `docs/modules/traceroute.md`
+for why the gate sits at `dispatch()` and why manual requests are exempt.

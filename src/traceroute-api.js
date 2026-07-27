@@ -25,7 +25,9 @@ router.post('/:nodeId/traceroute', async (req, res) => {
       res.json(result);
     // ── [V2] SSOT — traceroute.js owns dispatch ────────────────────────────
     } else {
-      const result = await traceroute.dispatch({ to: targetNum, device: sender });
+      // manual: a user pressed the button. Never gated by the master switch —
+      // turning automatic traceroute off must not disable asking for one.
+      const result = await traceroute.dispatch({ to: targetNum, device: sender, manual: true });
       res.json(result);
     }
     // ───────────────────────────────────────────────────────────────────────

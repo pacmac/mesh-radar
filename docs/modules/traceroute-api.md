@@ -1,8 +1,8 @@
 ---
 module: traceroute-api
 source: src/traceroute-api.js
-source_hash: 578564905663f8dae5682fbc0118d911aafe84eb03ee57acd8d9586997c0e881
-updated: 2026-07-09
+source_hash: 819d527f60da306ca1274a7b801d01a6a790002cb5a91fecfb8f060b56d6e29e
+updated: 2026-07-27
 ---
 
 # Module: traceroute-api
@@ -80,3 +80,9 @@ sends MACs from Phase B on; `!hex` stays valid for manual/legacy callers.
 
 `GET /traceroute_history` is in `WS_ONLY_ROUTES` — browser fetches get
 410; curl/server-side reads still work (debug tool, not page transport).
+
+## Manual dispatch bypasses the master switch (task `traceroute-manual-enable`)
+
+`POST /:nodeId/traceroute` passes `manual: true` to `traceroute.dispatch()`.
+The `traceroute.enabled` switch gates AUTOMATIC dispatch only — a user asking
+for a traceroute is always honoured, whatever the switch says.
