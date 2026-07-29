@@ -306,6 +306,11 @@ server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);
   bridge.start();
   pacHost.start();
+  // ALARM PLUGIN wiring. The composition root is the ONE place allowed to know
+  // a plugin exists; the import registers a node_status section provider and
+  // nothing in core references it. Delete this line and the alarm's own files
+  // and node-dash is unchanged (docs/PLUGIN_BOUNDARY_SPEC.md).
+  import('./alarm-sections.js');
   rotator.start();
   startAlertPoller(nodeList);
   startImapReceiver();

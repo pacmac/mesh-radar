@@ -1,7 +1,7 @@
 ---
 module: node-status
 source: src/node-status.js
-source_hash: 56eb8946df311c18213f1fefc0e7a56706ddb1d92ab93cd66f1c7de421601f9f
+source_hash: b71a9254080e8d4c7db6f74b78d1f5b9ffb0427fce6f19cf9eba81077cb260ec
 updated: 2026-07-29
 ---
 
@@ -52,7 +52,7 @@ the browser is never touched again.
 
 | id | kind | source | present when |
 |---|---|---|---|
-| `reachability` | `value_grid` | pac-host `_units` for wake/acks/radio state; **our `signal_history`** for the per-radio `Heard by …` rows | pac-host holds a unit for this num |
+| *(plugin-contributed)* | *(any)* | **not this module** — see the extension point below | a plugin is installed and has something to say |
 | `device_vitals` | `series` | `device_metrics_history` | ≥1 row in window |
 | `signal` | `series` | `signal_history` | ≥1 usable row in window |
 | `environment` | `series` | `environment_history` | ≥1 row in window |
@@ -61,68 +61,36 @@ the browser is never touched again.
 
 Grouping is source-based and follows `NODE_STATUS_SPEC`.
 
-### `reachability` — task `node-page-reachability`, 2026-07-29
+### Host extension point — plugins contribute sections (task `alarm-plugin-boundary-restore`, 2026-07-29)
 
-Full contract in `docs/REACHABILITY_SPEC.md`. The essentials that must not be
-re-derived:
+```js
+export function registerNodeSection(fn) { _sectionProviders.push(fn); }
+```
 
-**Ordered FIRST.** The other sections answer what a unit *is*; this one answers
-whether we can *reach* it, which is the only reason anyone opens this page for an
-alarm unit.
+Providers run **before** the core sections and receive `(num, { perRadio, now, since })`.
+A provider returning `null` contributes nothing — which makes *"no plugin installed"*
+and *"this plugin has nothing to say about this node"* the same code path, so core
+needs no `if (pluginPresent)` anywhere.
 
-**Wake/delivery/radio state comes from pac-host**, joined here via
-`pac-host.unitForNum()` and **never in the browser** — pac-host's roster reaches
-the browser on a different WS message, so merging the two client-side to decide
-what a tile says would be the browser deciding, and would create a second code
-path for one displayed value.
+**Core knows nothing about what a provider is for.** It must never import, name or
+branch on a plugin. This point exists because `1f8842b` put a hard `pac-host` import
+and 164 lines of alarm logic directly in this file, breaching
+`reference/alarm-integration/INVENTORY.md` (*"code must not be copied back into shared
+dashboard modules"*). Peter, 2026-07-29: *"the alarm is a plugin … node dash must be
+able to exist with or without it."*
 
-**The `Heard by …` rows are OURS, from `signal_history`** — corrected 2026-07-29
-(`signal-ssot-header`). They originally rendered pac-host's `radios{}`, which
-added a *third* signal source to a page that already had two too many, and covers
-only the alarm units. services conceded the field to us
-(xsession `[data-ownership-3categories]`): *"we retain a per-radio model
-internally because it drives RADIO SELECTION — that is a mesh decision, not a
-display one. It is not published for rendering and it is not a competing answer
-to yours."*
+`ctx.perRadio` is passed in, never re-queried by a provider: it is the same
+`stmts.latestDirectPerRadio` array the header's Signal tile is built from, and
+re-querying would turn the header↔section agreement (`cc2e55f`) back into a
+coincidence.
 
-**Time units.** Every pac-host instant is epoch **milliseconds**; `fmtAgo`,
-`fmtUntil` and `fmtStamp` take epoch **seconds**. `msToSec()` does the divide
-once, at this boundary. Missing it is silent and yields a plausible wrong answer.
+The `reachability` section is now contributed by `src/alarm-sections.js` — see
+`docs/modules/alarm-sections.md` and `docs/PLUGIN_BOUNDARY_SPEC.md`. Its full data
+contract remains in `docs/REACHABILITY_SPEC.md`.
 
-**`nextWake` uses `fmtUntil`, never `fmtAgo`** — see `docs/modules/format.md`.
-
-**Fields that carry NO age, deliberately:** `Beat`, `Window`, `Awake`,
-`TX radio`. pac-host does not record when those were established and will not
-invent a timestamp; under the mechanical `<field>At` convention an absent sibling
-is *detectable*, so they render undated rather than borrowing another field's
-instant or being stamped with `now()`.
-
-**Three cases where a wrong rendering would be worse than none:**
-
-- `acks: null` → `"not yet asked"` + *"no command has been sent to this unit"*.
-  Never a blank, never a failure state. Peter must be able to tell *not yet
-  asked* from *asked and got nothing* at a glance.
-- `wakesExpected: null` → the field is **omitted entirely**. An always-listening
-  unit does not wake, so there is no denominator and no percentage exists.
-  `wakesExpected: 0` is different — a real denominator that happens to be zero —
-  and renders `"<n> seen"` + *"none expected in this window yet"*. Both make a
-  percentage impossible for different reasons, so they must not print the same
-  string. Neither path divides.
-- Delivery keeps **five numbers, never one boolean**. `sends` counts POSTs
-  mesh-gw *accepted*, not transmissions: 15 of GARG's 131 sends in one day never
-  left the radio and every one was counted as a send. `transmitted < sends` is
-  stated explicitly; equality is left unsaid because "1/1 left the radio" is
-  noise and the gap is the point.
-
-**Radio naming** goes through `node-label.resolveDeviceLabel`, the app's SSOT —
-user alias, then `short_name`, then an honest fallback. It accepts a BLE MAC or a
-`!hex` id, so the same radio cannot be called two different things on two parts
-of one page. Without it the section printed `!2687afb1` and `TA2y` beside a
-sidebar reading OMNI and YAGI.
-
-Verified live 2026-07-29 against `GET /v1/mesh/devices` for both units, plus two
-non-pac-host nodes confirming the section is absent and their own sections are
-unaffected.
+**Verified 2026-07-29:** with the plugin unwired, GARG returned
+`[device_vitals, signal, environment, air_quality, detections]` and two core nodes were
+section-identical to their pre-change baseline.
 
 Position is part of `header.position`, not a section. Latitude and longitude
 use nodeinfo-first precedence; bearing is computed server-side from configured

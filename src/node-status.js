@@ -16,12 +16,32 @@
 import { stmts, getConfig } from './db.js';
 import {
   fmtVoltage, fmtPercent, fmtUtil, fmtTemp, fmtHumidity, fmtPressure,
-  fmtRssi, fmtSnr, fmtUptime, fmtTimestamp, fmtStamp, fmtAgo, fmtUntil,
+  fmtRssi, fmtSnr, fmtUptime, fmtTimestamp, fmtStamp, fmtAgo,
   fmtAxisTick, fmtCount,
 } from './format.js';
+// NOTE: fmtUntil is deliberately NOT imported here. Core has no future-dated
+// value to render; `nextWake` belongs to the alarm plugin, which imports it
+// directly. An unused import would imply core does countdowns.
 import { numToNodeId, signalQuality, bearing } from './utils.js';
-import { unitForNum } from './pac-host.js';
 import { resolveDeviceLabel } from './node-label.js';
+
+// ─── Host extension point ────────────────────────────────────────────────────
+//
+// Core knows NOTHING about what a provider is for. It calls each registered
+// function with the node num and a context of already-computed CORE data, and
+// splices whatever comes back into `sections`. A provider returning null
+// contributes nothing — which makes "no plugin installed" and "this plugin has
+// nothing to say about this node" the same code path.
+//
+// This exists because 1f8842b put a `pac-host` import and 164 lines of alarm
+// logic directly in this file. The alarm is a PLUGIN: additive, self-contained,
+// and node-dash must run identically without it (docs/PLUGIN_BOUNDARY_SPEC.md).
+// Nothing in this module may import, name or branch on it again.
+const _sectionProviders = [];
+
+/** Register a provider that may contribute node_status sections.
+ *  Providers run BEFORE the core sections, preserving section order. */
+export function registerNodeSection(fn) { _sectionProviders.push(fn); }
 
 // Window is chosen by the user (1/4/24/72 HR) and travels with the request.
 // The SERVER slices to it and computes the axis labels for it — the browser
@@ -38,7 +58,7 @@ const EVENT_WINDOW_DAYS = 30;
 // Every displayed field carries raw + text + ts. A field whose value is absent
 // returns null and is dropped by the caller — an absent value is absent, not a
 // placeholder.
-function field(label, raw, text, ts = null, desc = null) {
+export function field(label, raw, text, ts = null, desc = null) {
   if (raw == null || text == null || text === '') return null;
   return { label, raw, text, ts, ...(desc ? { desc } : {}) };
 }
@@ -102,7 +122,7 @@ function verifiedHopsField(info, num) {
   return field('Verified hops', verified, fmtCount(verified), verifiedTs, bits.join(' · '));
 }
 
-const compact = arr => arr.filter(Boolean);
+export const compact = arr => arr.filter(Boolean);
 
 // Evenly thin a series to MAX_POINTS. Keeps first and last so the visible time
 // axis still spans the true window.
@@ -423,170 +443,6 @@ function buildAirQualitySection(num, envRows, since) {
   return section;
 }
 
-// ─── Reachability ────────────────────────────────────────────────────────────
-//
-// The ONE section not sourced from our own SQLite. pac-host owns every fact
-// here; we render them and add nothing (docs/REACHABILITY_SPEC.md). Present
-// only when pac-host holds a unit for this num — absent for every other node,
-// per the existing rule that a section appears only if it has data.
-//
-// JOINED HERE, NOT IN THE BROWSER. pac-host's roster reaches the browser on a
-// different WS message (pac_host_status); merging the two client-side to decide
-// what a tile says would be the browser deciding, and would create a second code
-// path for one displayed value — exactly what the node_status RPC exists to
-// prevent.
-//
-// EVERY FIELD STATES ITS KIND AND ITS AGE, OR STATES THAT IT HAS NEITHER. The
-// counter-example is on this same page: the Hops tile renders a value verified
-// on 14 Jul at live-data weight. Several fields below carry NO age because
-// pac-host does not record when they were established — under the mechanical
-// <field>At convention an absent sibling is detectable, so they render undated
-// rather than borrowing another field's instant or being stamped with now().
-
-// pac-host instants are epoch MILLISECONDS; fmtAgo/fmtUntil/fmtStamp take epoch
-// SECONDS. The divide happens once, here, at the boundary. Missing it is silent
-// and produces a plausible wrong answer — it has cost this repo a day before.
-const msToSec = ms =>
-  (typeof ms === 'number' && Number.isFinite(ms) && ms > 0) ? Math.floor(ms / 1000) : null;
-
-const WAKE_SOURCE_TEXT = {
-  'always-listening': 'never sleeps — a command goes now',
-  'device':           'schedule reported by the device',
-  'measured':         'schedule derived from observed wakes',
-  'unknown':          'never measured, never reported',
-};
-
-// The four states are NOT equally strong, and the page must not flatten them.
-// A config claim is not evidence that anything reached the unit — the argument
-// that got services to split this field (their commit 35b274a).
-const AWAKE_SOURCE_TEXT = {
-  'heard':         'heard inside its window',
-  'device-stated': 'device says sleep is off — not proof we reached it',
-  'inferred':      'inferred from silence',
-  'unknown':       'never heard',
-};
-
-// pac-host names radios by !hex or BLE MAC; every other surface in this app
-// says OMNI / YAGI. resolveDeviceLabel is that SSOT — user alias first, then
-// short_name, then an honest fallback — and it takes either form, so the same
-// radio cannot be called two different things on two parts of one page.
-
-// acks is a SINGLE object summarising the most recent request of ANY verb —
-// which is what "can we reach it" asks. NULL means NEVER COMMANDED, and renders
-// as unknown, never as failure: Peter must be able to tell "not yet asked" from
-// "asked and got nothing" at a glance.
-function deliveryField(acks) {
-  if (!acks) {
-    return field('Delivery', 'never', 'not yet asked', null,
-                 'no command has been sent to this unit');
-  }
-  const { verb, sends = 0, transmitted = 0, notSent = 0, unknownSent = 0,
-          delivered = 0, settledAt } = acks;
-
-  // FIVE numbers, never one boolean. `sends` counts POSTs mesh-gw ACCEPTED, not
-  // transmissions: 15 of GARG's 131 sends in one day never left the radio and
-  // every one was counted as a send (services, 2026-07-29). A single success
-  // flag would have shown a green tick through the whole of 2026-07-28, while
-  // every send was being refused.
-  let text;
-  if (delivered   > 0) text = 'delivered';
-  else if (transmitted > 0) text = 'sent, no ack';
-  else if (notSent     > 0) text = 'refused';
-  else if (unknownSent > 0) text = 'sent, status unknown';
-  else                      text = 'queued';
-
-  const bits = [];
-  if (verb) bits.push(verb);
-  // Only stated when it disagrees — "1/1 left the radio" is noise, and the gap
-  // is the whole point.
-  if (sends > 0 && transmitted < sends) bits.push(`${transmitted}/${sends} left the radio`);
-  const ago = fmtAgo(msToSec(settledAt));
-  if (ago) bits.push(ago);
-
-  return field('Delivery', text, text, null, bits.join(' · ') || null);
-}
-
-// nextWake:null has TWO meanings and wakeSource is what tells them apart.
-// "always-listening" means send NOW; "unknown" means we have no idea. Treating
-// them the same is a real bug — it is why the field exists.
-function nextWindowField(u) {
-  if (u.wakeSource === 'always-listening') {
-    return field('Next window', 'always', 'always listening', null,
-                 WAKE_SOURCE_TEXT['always-listening']);
-  }
-  const until = fmtUntil(msToSec(u.nextWake));
-  if (until) {
-    return field('Next window', u.nextWake, until, null, WAKE_SOURCE_TEXT[u.wakeSource] ?? null);
-  }
-  return field('Next window', 'unknown', 'unknown', null,
-               WAKE_SOURCE_TEXT[u.wakeSource] ?? 'no schedule measured or reported');
-}
-
-// null and 0 mean DIFFERENT things and must not print the same string.
-//   null — a category statement: an always-listening unit does not wake, so
-//          there is no denominator and no percentage exists to compute. The old
-//          110% came from counting telemetry transmissions against expected
-//          wakes, comparing two different things. Render nothing at all.
-//   0    — a real denominator that happens to be zero: nothing expected yet.
-// Dividing by either is a defect, so neither path computes a percentage.
-function wakeReliabilityField(u) {
-  const exp  = u.wakesExpected;
-  if (exp == null) return null;
-  const seen  = u.wakesSeen ?? 0;
-  const since = fmtAgo(msToSec(u.wakesSince));
-  if (exp === 0) {
-    return field('Wake reliability', seen, `${seen} seen`, null,
-                 since ? `none expected yet · since ${since}` : 'none expected in this window yet');
-  }
-  return field('Wake reliability', seen, `${seen} of ${exp}`, null,
-               since ? `since ${since}` : null);
-}
-
-// perRadio is passed in rather than re-queried: the header's Signal tile is
-// computed from the SAME array, which is what makes header and section agree by
-// construction instead of by convention.
-function buildReachabilitySection(num, perRadio) {
-  const u = unitForNum(num);
-  if (!u) return null;
-
-  const fields = compact([
-    deliveryField(u.acks),
-    nextWindowField(u),
-    // No age: pac-host does not record when beat was established. Priority-one
-    // on our ask to them, because nextWake is computed FROM beat — a stale beat
-    // yields a confidently wrong countdown, which is worse than no answer.
-    field('Beat', u.beat, fmtUptime(msToSec(u.beat)), null,
-          u.beatSource ? `${u.beatSource}-reported` : null),
-    field('Window', u.windowMs, fmtUptime(msToSec(u.windowMs)), null,
-          // Published rather than omitted even when merely assumed: a blank is
-          // indistinguishable from "we never asked", so an assumed value that
-          // SAYS it is assumed is strictly more information than nothing.
-          u.windowMsSource ?? u.windowSource ?? null),
-    wakeReliabilityField(u),
-    field('Awake', u.awake == null ? 'unknown' : u.awake,
-          u.awake == null ? 'unknown' : (u.awake ? 'yes' : 'no'), null,
-          AWAKE_SOURCE_TEXT[u.awakeSource] ?? null),
-    field('TX radio', u.txRadio?.id ?? null,
-          resolveDeviceLabel(u.txRadio?.addr || u.txRadio?.id) || null, null,
-          u.txRadio?.state ? String(u.txRadio.state).toLowerCase() : null),
-    // OUR signal_history, not pac-host's radios{}. services conceded per-radio
-    // rssi/snr to us (xsession [data-ownership-3categories]): "we retain a
-    // per-radio model internally because it drives RADIO SELECTION — that is a
-    // mesh decision, not a display one. It is not published for rendering and it
-    // is not a competing answer to yours." Rendering theirs added a third source
-    // to a page that already had two too many, and it covers only the alarm
-    // units. These are the same rows the header's Signal tile is computed from.
-    ...perRadio.map(r => {
-      const text = compact([fmtRssi(r.rssi), fmtSnr(r.snr)]).join(' · ');
-      return field(`Heard by ${resolveDeviceLabel(r.rx_device)}`, text || null, text || null,
-                   r.ts, `direct ${fmtAgo(r.ts)}`);
-    }),
-  ]);
-
-  if (!fields.length) return null;
-  return { id: 'reachability', kind: 'value_grid', title: 'Reachability', fields };
-}
-
 export function buildNodeStatus(num, windowHours) {
   const node = stmts.getNodeByNum.get(num) ?? null;
   const info = stmts.getNodeinfoByNum.get(num) ?? null;
@@ -668,7 +524,9 @@ export function buildNodeStatus(num, windowHours) {
   // answers whether we can REACH it — which is the only reason anyone opens
   // this page for an alarm unit.
   const sections = compact([
-    buildReachabilitySection(num, perRadio),
+    // Plugin-contributed sections, if any plugin is installed. Core does not
+    // know what they are or whether any exist.
+    ..._sectionProviders.map(fn => fn(num, { perRadio, now, since })),
     buildSeriesSection('device_vitals', 'Device vitals', dmRows, [
       { key: 'voltage',             label: 'Voltage',            unit: 'V' },
       { key: 'battery_level',       label: 'Battery',            unit: '%' },
