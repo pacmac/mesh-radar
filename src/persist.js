@@ -470,8 +470,19 @@ function handleNodeInfo(data, device) {
     hw_model:      u.hw_model    ?? null,
     role:          u.role        ?? null,
     last_heard:    node.last_heard ?? null,
-    snr:           node.snr      ?? null,
-    rssi:          node.rssi     ?? null,
+    // NEVER the nodedb aggregate. RSSI_ATTRIBUTION_SPEC's invariant is that
+    // nodes.rssi/snr hold the last DIRECT reception; every other write path here
+    // gates on that, and this one did not. node.snr/node.rssi come from mesh-gw's
+    // nodedb — a cached figure from whichever radio last saw the node, direct or
+    // relayed, with no attribution and no timestamp of its own. Combined with
+    // upsertNode's COALESCE (a null never clears), one bad write persisted
+    // indefinitely: GARG's header read "-98 dBm / +6.8 dB" while signal_history
+    // held zero positive-SNR rows in 24h and nothing near -98 on either radio.
+    // null here means "this event is not reception evidence", which is true —
+    // COALESCE then keeps the last genuinely-direct value. See
+    // docs/SIGNAL_SSOT_SPEC.md §1a.
+    snr:           null,
+    rssi:          null,
     hops:          node.hops     ?? null,
     lat:           pos.latitude_i  != null ? pos.latitude_i  / 1e7 : null,
     lon:           pos.longitude_i != null ? pos.longitude_i / 1e7 : null,

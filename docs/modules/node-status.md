@@ -1,7 +1,7 @@
 ---
 module: node-status
 source: src/node-status.js
-source_hash: f6f0baf38c9a491a9ac95a3f3357789e0f4358f56b5e1e73cf79eee66ab07070
+source_hash: 56eb8946df311c18213f1fefc0e7a56706ddb1d92ab93cd66f1c7de421601f9f
 updated: 2026-07-29
 ---
 
@@ -52,7 +52,7 @@ the browser is never touched again.
 
 | id | kind | source | present when |
 |---|---|---|---|
-| `reachability` | `value_grid` | **pac-host `_units`** (not SQLite) | pac-host holds a unit for this num |
+| `reachability` | `value_grid` | pac-host `_units` for wake/acks/radio state; **our `signal_history`** for the per-radio `Heard by …` rows | pac-host holds a unit for this num |
 | `device_vitals` | `series` | `device_metrics_history` | ≥1 row in window |
 | `signal` | `series` | `signal_history` | ≥1 usable row in window |
 | `environment` | `series` | `environment_history` | ≥1 row in window |
@@ -70,11 +70,20 @@ re-derived:
 whether we can *reach* it, which is the only reason anyone opens this page for an
 alarm unit.
 
-**The only section not sourced from our own SQLite.** Joined here, via
-`pac-host.unitForNum()`, and **never in the browser** — pac-host's roster reaches
+**Wake/delivery/radio state comes from pac-host**, joined here via
+`pac-host.unitForNum()` and **never in the browser** — pac-host's roster reaches
 the browser on a different WS message, so merging the two client-side to decide
 what a tile says would be the browser deciding, and would create a second code
 path for one displayed value.
+
+**The `Heard by …` rows are OURS, from `signal_history`** — corrected 2026-07-29
+(`signal-ssot-header`). They originally rendered pac-host's `radios{}`, which
+added a *third* signal source to a page that already had two too many, and covers
+only the alarm units. services conceded the field to us
+(xsession `[data-ownership-3categories]`): *"we retain a per-radio model
+internally because it drives RADIO SELECTION — that is a mesh decision, not a
+display one. It is not published for rendering and it is not a competing answer
+to yours."*
 
 **Time units.** Every pac-host instant is epoch **milliseconds**; `fmtAgo`,
 `fmtUntil` and `fmtStamp` take epoch **seconds**. `msToSec()` does the divide
@@ -135,16 +144,41 @@ header emits the server-owned `—` bearing placeholder.
 - Nothing here is sourced from a text command reply.
 - Header shows values, never verdicts: no health pill, no "battery low".
 - Header signal bars/labels and position/bearing are computed server-side.
-- **`buildSignal`'s `desc` carries staleness provenance (task
-  `node-signal-freeze`, 2026-07-25).** `node.rssi`/`node.snr` are gated
-  direct-only at write time and freeze indefinitely once a node goes
-  relay-only (see `docs/modules/db.md`'s `nodes` note); `desc` is
-  `"direct {fmtAgo(latestSignalTs)}"` from `stmts.latestSignalTs` (most
-  recent `signal_history` row for the node) so the card always shows how
-  old the displayed reading actually is, same provenance treatment as
-  `hopsField`'s "verified"/"reported" desc. `null` only if the node has no
-  `signal_history` row at all, which should not happen whenever
-  `rssi`/`snr` are non-null since both share the same `isDirect` gate.
+- **SUPERSEDED 2026-07-29 (task `signal-ssot-header`).** This invariant used to
+  read *"`node.rssi`/`node.snr` are gated direct-only at write time"*. **That was
+  false** — `handleNodeInfo` wrote mesh-gw's ungated nodedb aggregate straight
+  in, so the header could display a value that matched no measurement we held
+  (GARG: `-98 dBm / +6.8 dB` against zero positive-SNR rows in 24 h). Left
+  recorded rather than deleted: a spec asserting an invariant that the code broke
+  is why nobody looked.
+- **The header's Signal tile is the BEST of each radio's LATEST direct
+  reading**, from `stmts.latestDirectPerRadio` — never `nodes.rssi/snr`. `desc`
+  names the radio and its age (`best of 2 · YAGI · direct 6m ago`), because a
+  headline dBm figure is meaningless when two radios sit 15 dB apart.
+  - Latest per radio, **not best-ever**: GARG's best-ever is −17 dBm from 27 Jul,
+    when it sat on the bench beside the radios.
+  - `best of N` appears only when N > 1, otherwise it implies a comparison that
+    never happened.
+  - Falls back to `stmts.latestDirectAny` (no radio named) when a node has no
+    attributed rows — 18,681 of 29,897 `signal_history` rows predate `rx_device`,
+    so most of the mesh is in that state. The reading is still direct-gated; only
+    the antenna is unknown, and withholding the tile entirely would hide a fact
+    we hold.
+- **`Least hops` comes from `messages`, not `signal_history`.** The latter is
+  100 % `hops = 0` by construction (direct receptions only), so a least-hops
+  derived from it would always be 0. `desc` carries the radio and the
+  direct/total split — `OMNI · 434 of 464 direct` — because a best-case hop count
+  without its typicality is how a 2.5 km link once rendered as `-36 dBm / hops 0`.
+  Window is a fixed 7 days, deliberately NOT the chart selector's window: the
+  header must not change meaning when someone clicks 1HR.
+- **`Verified hops` states when its refresh path is dead.** A traceroute value can
+  be correct and ancient at once — GARG's is `route: []` from 14 Jul followed by
+  886 consecutive timeouts. `desc` is `traceroute {stamp} · {N} failed since`,
+  from `stmts.tracerouteHealth`. The number is right; presenting it as current is
+  the defect.
+- **The header can only show a number the Reachability section also shows.** Both
+  are computed from one `perRadio` array read once in `buildNodeStatus` and
+  passed down — agreement by construction, not by convention.
 
 ## Test notes
 

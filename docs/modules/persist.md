@@ -1,8 +1,8 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: a544b60b217191d22a806a210ba582521dc60e819f063abb11c6fc3b9cc19b71
-updated: 2026-07-27
+source_hash: e03810eadf025fb41f0c995485bbb149380be5dbda9bce390efd119c7ba56b1a
+updated: 2026-07-29
 ---
 
 # Module: persist
@@ -242,3 +242,48 @@ once; the relayed packets seen were already rejected by arithmetic. A separate,
 still-open defect — `nodes.rssi/snr` freezing at the last direct value with no
 staleness bound (bug ledger #34) — remains a likelier explanation for a stale
 strong value persisting on a panel.
+
+## handleNodeInfo no longer writes rssi/snr (task `signal-ssot-header`, 2026-07-29)
+
+`docs/RSSI_ATTRIBUTION_SPEC.md` states the invariant plainly:
+
+> **`nodes.rssi` / `nodes.snr`**: pass `null` when not direct.
+> **Invariant:** `nodes.rssi/snr` reflect the last **direct** reception.
+
+Every write path in this file obeyed it **except one**:
+
+| path | gate |
+|---|---|
+| `handleMessage` | `direct ? rx_snr : null` ✓ |
+| `handlePacket` ×3 | `pktDirect ? … : null` ✓ |
+| typed `user` / `position` | `evRssi = evSnr = null` ✓ |
+| **`handleNodeInfo`** | **`node.snr ?? null` — ungated ✗** |
+
+`node.snr`/`node.rssi` on a NodeInfo are mesh-gw's **nodedb aggregate**: a cached
+figure from whichever radio last saw the node, direct or relayed, with no
+attribution and no timestamp of its own. Combined with `upsertNode`'s `COALESCE`
+(a null never clears), one bad write persisted **indefinitely**.
+
+**Measured consequence.** GARG's header rendered `-98 dBm · Good · +6.8 dB`
+while `signal_history` held, across 24 h, **zero positive-SNR rows** and nothing
+near −98 on either radio (OMNI best −125 over 211 rows; YAGI best −112 over 300).
+The displayed value corresponded to no measurement we held.
+
+**Fix:** pass `null`. That is not data loss — it is the honest statement that a
+nodedb replay is *not reception evidence*. `COALESCE` then preserves the last
+genuinely-direct value, which is exactly what the invariant asks for.
+
+**Verified reached, not merely present.** Two identical 100 s windows, summing
+`nodes.rssi` across all rows:
+
+| | Σ rssi |
+|---|---|
+| with the gate | `-93384` → `-93384` (unchanged) |
+| gate reverted | `-93384` → `-93386` (**changed**) |
+
+Ungated writes resume the moment the gate is removed.
+
+**The gate stops new damage; it does not repair old.** 865 of 877 `nodes.rssi`
+values still match no `signal_history` row. The node page no longer reads them
+(`node-status.js` now uses `latestDirectPerRadio`), but `node-list`/radar still
+do — recorded against task `signal-provenance-mixed-source`, not fixed here.

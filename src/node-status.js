@@ -53,24 +53,53 @@ function field(label, raw, text, ts = null, desc = null) {
 // DEV1 currently reports 1 while its traceroute shows route:[] — direct. So the
 // card must say WHICH it is quoting rather than printing a bare number that is
 // right half the time. Verified wins when present.
-function hopsField(node, info) {
+// Typicality window for the hops split. Fixed, NOT the chart selector's window:
+// the header must not change meaning when someone clicks 1HR.
+const HOPS_WINDOW_DAYS = 7;
+
+// LEAST HOPS — the shortest path actually observed, and how typical it is.
+//
+// Sourced from `messages`, not signal_history: the latter is 100% hops=0 by
+// construction (direct receptions only, per RSSI_ATTRIBUTION_SPEC), so a
+// least-hops derived from it would always be 0 and mean nothing. `messages` is
+// the only store holding relayed receptions with the radio that heard them.
+//
+// The proportion is what stops a best-case number being a lie. "433 of 463
+// direct" says direct is typical; "2 of 463" says the opposite while the
+// headline stays 0 — which is how a 2.5 km link once rendered as
+// "-36 dBm / hops 0".
+function leastHopsField(num, now) {
+  const rows = stmts.hopsByRadio.all(num, now - HOPS_WINDOW_DAYS * 86400);
+  if (!rows.length) return null;
+  const best = rows.reduce((a, b) => (b.min_hops < a.min_hops ? b : a));
+  return field('Least hops', best.min_hops, fmtCount(best.min_hops), best.last_ts,
+               `${resolveDeviceLabel(best.rx_device)} · ${best.direct_n} of ${best.total_n} direct`);
+}
+
+// VERIFIED HOPS — a traceroute's route length. Authoritative about the path,
+// and potentially very old.
+//
+// A verified value can be CORRECT and ANCIENT at once. GARG's is `route: []`
+// (genuinely direct) from 14 Jul, followed by 880 consecutive timeouts — so the
+// number is right and it will never update. Presenting it as current is the
+// defect, not the number. `N failed since` is the honest qualifier and it is a
+// measured count, not an adjective.
+function verifiedHopsField(info, num) {
+  if (!info?.last_traceroute) return null;
   let verified = null, verifiedTs = null;
-  if (info?.last_traceroute) {
-    try {
-      const tr = JSON.parse(info.last_traceroute);
-      if (Array.isArray(tr?.route)) {
-        verified = tr.route.length;
-        verifiedTs = tr.ts ? Math.floor(tr.ts / 1000) : null;
-      }
-    } catch { /* unparseable — fall back to reported */ }
-  }
-  if (verified != null) {
-    return field('Hops', verified, fmtCount(verified), verifiedTs,
-                 verifiedTs ? `verified ${fmtStamp(verifiedTs)}` : 'verified by traceroute');
-  }
-  const reported = node?.hops ?? info?.hops_away ?? null;
-  if (reported == null) return null;
-  return field('Hops', reported, fmtCount(reported), null, 'reported — not verified');
+  try {
+    const tr = JSON.parse(info.last_traceroute);
+    if (Array.isArray(tr?.route)) {
+      verified   = tr.route.length;
+      verifiedTs = tr.ts ? Math.floor(tr.ts / 1000) : null;
+    }
+  } catch { return null; }
+  if (verified == null) return null;
+  const health = stmts.tracerouteHealth.get({ num }) ?? {};
+  const failed = health.failed_since ?? 0;
+  const bits = [verifiedTs ? `traceroute ${fmtStamp(verifiedTs)}` : 'by traceroute'];
+  if (failed > 0) bits.push(`${failed} failed since`);
+  return field('Verified hops', verified, fmtCount(verified), verifiedTs, bits.join(' · '));
 }
 
 const compact = arr => arr.filter(Boolean);
@@ -241,7 +270,7 @@ function buildDetectionsSection(rows) {
 // was 2.5km/relayed while the card showed a bench-proximity reading). `sigTs`
 // is the most recent `signal_history` row for this node — the same
 // direct-only-gated table, so its age IS the age of the displayed rssi/snr.
-function buildSignal(rssi, snr, sigTs) {
+function buildSignal(rssi, snr, sigTs, radioLabel = null, radioCount = 0) {
   if (rssi == null && snr == null) return null;
   const pct = signalQuality(rssi, snr);
   const label = pct >= 76 ? 'Excellent' : pct >= 51 ? 'Good' : pct >= 26 ? 'Fair' : 'Poor';
@@ -256,11 +285,18 @@ function buildSignal(rssi, snr, sigTs) {
     snr_text: fmtSnr(snr),
     // Which of the four bars are lit — a decision, so the server makes it.
     bars: [0, 1, 2, 3].map(i => pct > i * 25),
-    // "direct 3h ago" — same provenance treatment hopsField gives verified vs
-    // reported. Absent only if this node has never had a direct capture
-    // recorded (signal_history empty), which should not happen once rssi/snr
-    // are non-null since they share the same isDirect gate.
-    desc: sigTs != null ? `direct ${fmtAgo(sigTs)}` : null,
+    // Provenance in full: WHICH radio, and how old. The value is the BEST of
+    // each radio's latest direct reading, so the tile names the radio that
+    // produced it — a headline "-112 dBm" is meaningless when the two radios
+    // sit 15 dB apart. `best of N` is stated only when there is more than one
+    // radio to be best of, otherwise it implies a comparison that never
+    // happened. Every part of this string is a row the Reachability section
+    // also lists (docs/SIGNAL_SSOT_SPEC.md §2).
+    desc: compact([
+      radioCount > 1 ? `best of ${radioCount}` : null,
+      radioLabel,
+      sigTs != null ? `direct ${fmtAgo(sigTs)}` : null,
+    ]).join(' · ') || null,
   };
 }
 
@@ -506,7 +542,10 @@ function wakeReliabilityField(u) {
                since ? `since ${since}` : null);
 }
 
-function buildReachabilitySection(num) {
+// perRadio is passed in rather than re-queried: the header's Signal tile is
+// computed from the SAME array, which is what makes header and section agree by
+// construction instead of by convention.
+function buildReachabilitySection(num, perRadio) {
   const u = unitForNum(num);
   if (!u) return null;
 
@@ -530,14 +569,17 @@ function buildReachabilitySection(num) {
     field('TX radio', u.txRadio?.id ?? null,
           resolveDeviceLabel(u.txRadio?.addr || u.txRadio?.id) || null, null,
           u.txRadio?.state ? String(u.txRadio.state).toLowerCase() : null),
-    ...Object.entries(u.radios ?? {}).map(([addr, r]) => {
-      const text = compact([fmtRssi(r?.direct?.rssi), fmtSnr(r?.direct?.snr)]).join(' · ');
-      const bits = [];
-      const ago = fmtAgo(msToSec(r?.direct?.at));
-      if (ago) bits.push(`direct ${ago}`);
-      if (r?.counts) bits.push(`${r.counts.direct ?? 0} direct, ${r.counts.relayed ?? 0} relayed`);
-      return field(`Heard by ${resolveDeviceLabel(addr || r?.id)}`, text || null, text || null,
-                   null, bits.join(' · ') || null);
+    // OUR signal_history, not pac-host's radios{}. services conceded per-radio
+    // rssi/snr to us (xsession [data-ownership-3categories]): "we retain a
+    // per-radio model internally because it drives RADIO SELECTION — that is a
+    // mesh decision, not a display one. It is not published for rendering and it
+    // is not a competing answer to yours." Rendering theirs added a third source
+    // to a page that already had two too many, and it covers only the alarm
+    // units. These are the same rows the header's Signal tile is computed from.
+    ...perRadio.map(r => {
+      const text = compact([fmtRssi(r.rssi), fmtSnr(r.snr)]).join(' · ');
+      return field(`Heard by ${resolveDeviceLabel(r.rx_device)}`, text || null, text || null,
+                   r.ts, `direct ${fmtAgo(r.ts)}`);
     }),
   ]);
 
@@ -556,6 +598,9 @@ export function buildNodeStatus(num, windowHours) {
   const since = now - hours * 3600;
   const src   = info ?? {};
   const lastHeard = node?.last_heard ?? info?.last_heard ?? null;
+  // Read ONCE and shared by the header's Signal tile and the Reachability
+  // section's "Heard by …" rows — the mechanism by which the two agree.
+  const perRadio = stmts.latestDirectPerRadio.all(num);
   const lat = info?.lat ?? node?.lat ?? null;
   const lon = info?.lon ?? node?.lon ?? null;
   const homeLat = getConfig('home.lat', null);
@@ -580,11 +625,29 @@ export function buildNodeStatus(num, windowHours) {
       field('Battery',     node?.battery,        fmtPercent(node?.battery),      lastHeard),
       field('Voltage',     node?.voltage,        fmtVoltage(node?.voltage),      lastHeard),
       field('Uptime',      node?.uptime_seconds, fmtUptime(node?.uptime_seconds), lastHeard),
-      hopsField(node, info),
+      leastHopsField(num, now),
+      verifiedHopsField(info, num),
       field('Chan util',   node?.channel_util,   fmtUtil(node?.channel_util),    lastHeard),
       field('Air util TX', node?.air_util_tx,    fmtUtil(node?.air_util_tx),     lastHeard),
     ]),
-    signal: buildSignal(node?.rssi ?? null, node?.snr ?? null, stmts.latestSignalTs.get(num)?.ts ?? null),
+    // BEST of each radio's LATEST direct reading — never nodes.rssi/snr, which
+    // was ungated until 2026-07-29 and showed GARG at "-98 dBm / +6.8 dB" while
+    // signal_history held nothing of the kind. Computed from the exact rows the
+    // Reachability section lists, so header and section cannot disagree
+    // (docs/SIGNAL_SSOT_SPEC.md §2).
+    signal: (() => {
+      if (perRadio.length) {
+        const best = perRadio.reduce((a, b) => ((b.rssi ?? -Infinity) > (a.rssi ?? -Infinity) ? b : a));
+        return buildSignal(best.rssi, best.snr, best.ts,
+                           resolveDeviceLabel(best.rx_device), perRadio.length);
+      }
+      // No ATTRIBUTED row. Still a direct-gated reading — only the radio is
+      // unknown — so it renders without a radio name rather than not at all.
+      // Most of the mesh is in this state: 18,681 of 29,897 rows predate
+      // rx_device and are deliberately not backfilled.
+      const any = stmts.latestDirectAny.get(num);
+      return any ? buildSignal(any.rssi, any.snr, any.ts, null, 0) : null;
+    })(),
     position: compact([
       field('Latitude', lat, lat?.toFixed(5)),
       field('Longitude', lon, lon?.toFixed(5)),
@@ -605,7 +668,7 @@ export function buildNodeStatus(num, windowHours) {
   // answers whether we can REACH it — which is the only reason anyone opens
   // this page for an alarm unit.
   const sections = compact([
-    buildReachabilitySection(num),
+    buildReachabilitySection(num, perRadio),
     buildSeriesSection('device_vitals', 'Device vitals', dmRows, [
       { key: 'voltage',             label: 'Voltage',            unit: 'V' },
       { key: 'battery_level',       label: 'Battery',            unit: '%' },

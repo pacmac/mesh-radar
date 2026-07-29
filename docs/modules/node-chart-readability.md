@@ -1,8 +1,8 @@
 ---
 module: node-chart-readability
 source: src/node-status.js
-source_hash: f6f0baf38c9a491a9ac95a3f3357789e0f4358f56b5e1e73cf79eee66ab07070
-updated: 2026-07-24
+source_hash: 56eb8946df311c18213f1fefc0e7a56706ddb1d92ab93cd66f1c7de421601f9f
+updated: 2026-07-29
 ---
 
 # Node chart readability

@@ -653,13 +653,83 @@ export const stmts = {
     ORDER BY ts ASC
   `),
 
-  // Most recent genuinely-direct capture for a node — `nodes.rssi`/`nodes.snr`
-  // are themselves gated to direct reception (see persist.js isDirect/COALESCE)
-  // but carry no timestamp of their own, so this is how the Signal card knows
-  // how stale that frozen value is once the node goes relay-only (task
-  // node-signal-freeze, 2026-07-25).
+  // Most recent genuinely-direct capture for a node, any radio.
+  //
+  // The comment that stood here claimed `nodes.rssi`/`nodes.snr` "are themselves
+  // gated to direct reception". THAT WAS FALSE — handleNodeInfo wrote mesh-gw's
+  // ungated nodedb aggregate straight in (fixed 2026-07-29, task
+  // `signal-ssot-header`). The invariant is documented in
+  // docs/RSSI_ATTRIBUTION_SPEC.md; it was broken while the comment asserted it
+  // held, which is why nobody looked. Left as a warning, not tidied away.
   latestSignalTs: db.prepare(`
     SELECT ts FROM signal_history WHERE num = ? ORDER BY ts DESC LIMIT 1
+  `),
+
+  // Each radio's MOST RECENT direct reading of a node — the row set the node
+  // page's header summarises and the Reachability section lists, so the two
+  // cannot disagree (docs/SIGNAL_SSOT_SPEC.md §2).
+  //
+  // rx_device IS NOT NULL is not a tidy-up: 18,681 of 29,897 rows predate the
+  // per-radio key (635139d) and carry no attribution at all. Including them
+  // would put an unattributable reading in a per-radio table. They are not
+  // backfilled — inventing attribution we do not have is the defect this whole
+  // task removes.
+  //
+  // LATEST per radio, never best-ever: GARG's best-ever is -17 dBm from 27 Jul,
+  // when it sat on the bench beside the radios.
+  latestDirectPerRadio: db.prepare(`
+    SELECT rx_device, ts, rssi, snr FROM (
+      SELECT rx_device, ts, rssi, snr,
+             ROW_NUMBER() OVER (PARTITION BY rx_device ORDER BY ts DESC) rn
+      FROM signal_history
+      WHERE num = ? AND rx_device IS NOT NULL AND (rssi IS NOT NULL OR snr IS NOT NULL)
+    ) WHERE rn = 1
+  `),
+
+  // Fallback for the header when a node has NO attributed rows: 18,681 of
+  // 29,897 signal_history rows predate rx_device, and for a node last heard
+  // before 635139d that can be all of them. The reading is still direct-gated —
+  // only the RADIO is unknown — so dropping the Signal tile entirely would
+  // withhold a fact we hold. Rendered without a radio name, which is the honest
+  // shape: we know it arrived directly, we do not know on which antenna.
+  latestDirectAny: db.prepare(`
+    SELECT ts, rssi, snr FROM signal_history
+    WHERE num = ? AND (rssi IS NOT NULL OR snr IS NOT NULL)
+    ORDER BY ts DESC LIMIT 1
+  `),
+
+  // Hop counts per radio. From `messages`, NOT signal_history — the latter is
+  // 100% hops=0 by construction (it stores direct receptions only, per
+  // RSSI_ATTRIBUTION_SPEC), so a "least hops" derived from it would always be 0
+  // and mean nothing. `messages` is the only store holding RELAYED receptions
+  // with the radio that heard them.
+  //
+  // Returns the minimum and the direct/total split per radio, because a
+  // best-case hop count without its typicality is how a 2.5 km link came to
+  // render as "-36 dBm / hops 0".
+  hopsByRadio: db.prepare(`
+    SELECT device AS rx_device,
+           MIN(hops)                                   AS min_hops,
+           SUM(CASE WHEN hops = 0 THEN 1 ELSE 0 END)   AS direct_n,
+           COUNT(*)                                    AS total_n,
+           MAX(ts)                                     AS last_ts
+    FROM messages
+    WHERE from_num = ? AND ts >= ? AND hops IS NOT NULL AND device IS NOT NULL
+    GROUP BY device
+  `),
+
+  // Traceroute outcomes since a node's last SUCCESSFUL trace. A verified hop
+  // count can be correct and ancient at the same time; what the page must not
+  // do is present it as current when the refresh path is dead. GARG: 8 ok (last
+  // 14 Jul 17:51), then 880 timeouts. That count is the honest qualifier and it
+  // is measured, not an adjective.
+  tracerouteHealth: db.prepare(`
+    SELECT
+      (SELECT MAX(ts) FROM traceroute_history WHERE to_num = @num AND status = 'ok') AS last_ok_ts,
+      (SELECT COUNT(*) FROM traceroute_history
+         WHERE to_num = @num AND status != 'ok'
+           AND ts > COALESCE((SELECT MAX(ts) FROM traceroute_history
+                                WHERE to_num = @num AND status = 'ok'), 0)) AS failed_since
   `),
 
   // One-shot backfill: messages carry the envelope rssi/snr recorded at
