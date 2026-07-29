@@ -36,6 +36,19 @@ import { startImapReceiver } from './imap-receiver.js';
 import { resolveNodeLabel, registerMacResolver, registerNodeIdResolver } from './node-label.js';
 import { OpManager } from './op-manager.js';
 
+// ─── ALARM PLUGIN ────────────────────────────────────────────────────────────
+// The composition root is the ONE place allowed to know a plugin exists. These
+// imports register a node_status section provider and the WS wiring; nothing in
+// core references either file. Delete these two lines and the alarm's own files
+// and node-dash is unchanged (docs/PLUGIN_BOUNDARY_SPEC.md).
+//
+// STATIC, not dynamic-inside-listen(): registerWsWiring is read ONCE by
+// attachWsRelay (line ~250), so a late registration silently never fires.
+// Measured when it was late — connect replays still worked, but ZERO live
+// pac_host_* broadcasts arrived in 110s. Load order is load-bearing here.
+import './alarm-sections.js';
+import './alarm-ws.js';
+
 registerNodeIdToMacResolver(getLiveMacByNodeId);
 registerMacToNodeIdResolver(getLiveNodeIdByMac);
 registerMacResolver(getLiveMacByNodeId);
@@ -306,11 +319,6 @@ server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);
   bridge.start();
   pacHost.start();
-  // ALARM PLUGIN wiring. The composition root is the ONE place allowed to know
-  // a plugin exists; the import registers a node_status section provider and
-  // nothing in core references it. Delete this line and the alarm's own files
-  // and node-dash is unchanged (docs/PLUGIN_BOUNDARY_SPEC.md).
-  import('./alarm-sections.js');
   rotator.start();
   startAlertPoller(nodeList);
   startImapReceiver();

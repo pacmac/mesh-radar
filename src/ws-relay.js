@@ -1,6 +1,5 @@
 import { WebSocketServer } from 'ws';
 import { bridge } from './bridge.js';
-import * as pacHost from './pac-host.js';
 import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
@@ -71,6 +70,32 @@ export function pruneDevice(mac, nodeId = null) {
 // after every config write so all tabs see filter/radar changes immediately.
 let _broadcastSettings = () => {};
 export function broadcastSettings() { _broadcastSettings(); }
+
+// ─── Plugin hooks ────────────────────────────────────────────────────────────
+//
+// This module is CORE — it serves the WebSocket for every page. It must not
+// import, name or branch on a plugin. It used to do all three for pac-host,
+// seven times, and deleting the alarm therefore meant editing core.
+//
+// Peter, 2026-07-29, on being told six of the seven pre-dated that day's work:
+// "makes no difference if they were added today or not they break the rules and
+// need fixing."
+//
+// A plugin needs exactly three things from here, all generic: broadcast to every
+// client, contribute messages to each new connection, and hint node_status for a
+// num. Core learns nothing about what a plugin is for.
+const _wsWirings     = [];
+const _connectReplays = [];
+
+/** Wire a plugin's own event sources to the WS. Called ONCE from
+ *  attachWsRelay with the host services — deferred because `broadcast` is a
+ *  closure that does not exist at import time. */
+export function registerWsWiring(fn) { _wsWirings.push(fn); }
+
+/** Contribute messages replayed to every NEW connection. Returns an array.
+ *  An empty array contributes nothing, which makes "no plugin installed" and
+ *  "this plugin has nothing to say yet" the same code path. */
+export function registerConnectReplay(fn) { _connectReplays.push(fn); }
 
 // Seed from persisted mapping so ownDeviceNums() is correct immediately on cold start.
 for (const [mac, nodeId] of loadNodeMacMap()) {
@@ -325,28 +350,12 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     if (ws.readyState === 1) ws.send(JSON.stringify(enrichEvent(msg)));
   }
 
-  // pac-host status changes (module owns all polling/derivation — see
-  // docs/modules/pac-host.md); rebroadcast its ready-made message on change.
-  //
-  // ALSO hint node_status for every unit it holds. The node page's Reachability
-  // section is built from this roster (node-status.js), and _hintNodeStatus was
-  // otherwise driven ONLY by mesh-gw packet events — so those facts would have
-  // refreshed exactly when a packet arrived, i.e. when the unit is reachable,
-  // and frozen while it was silent. That is backwards: a sleeping unit's
-  // countdown to its next window matters precisely BECAUSE nothing is arriving
-  // from it. A hint carries only a num, so this stays one code path producing
-  // displayed values.
-  pacHost.events.on('change', () => {
-    broadcast(pacHost.connectMessage());
-    for (const num of pacHost.unitNums()) _hintNodeStatus(num, broadcast);
-  });
-  // Command queues — same shape, separate event so a queue tick (every 5s
-  // while pac-host is up) doesn't force-resend the larger, rarer-changing
-  // status payload.
-  pacHost.events.on('queuesChanged', () => broadcast(pacHost.queuesMessage()));
-  // Antenna-alignment view-model — separate event/message, own 2s poll
-  // cadence (task yagi-align-rebuild, 2026-07-25).
-  pacHost.events.on('alignChanged', () => broadcast(pacHost.alignMessage()));
+  // Plugin wiring. Core hands over its host services and learns nothing about
+  // what any plugin does with them. Called here rather than at import time
+  // because `broadcast` is a closure created above.
+  for (const wire of _wsWirings) {
+    wire({ broadcast, hintNodeStatus: (num) => _hintNodeStatus(num, broadcast) });
+  }
 
   bridge.on('connected',    () => { _seenLivePktIds.clear(); broadcast({ type: 'bridge_connected' }); });
   bridge.on('disconnected', () => {
@@ -769,13 +778,19 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: bridge.connected ? 'bridge_connected' : 'bridge_disconnected' }));
     }
-    // pac-host status — absence is normal; connectMessage() reports 'unreachable' cleanly
-    if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.connectMessage()));
-    // pac-host command queues — replayed immediately so the Control page has
-    // data from the moment it connects, never from a browser-triggered GET.
-    if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.queuesMessage()));
-    // pac-host align view-model — same replay-on-connect rule.
-    if (ws.readyState === 1) ws.send(JSON.stringify(pacHost.alignMessage()));
+    // Plugin replays, spliced at EXACTLY this position — between bridge state
+    // and settings. Order is part of the contract: a page's first paint depends
+    // on it, and moving these after `settings` would change what the Control
+    // page shows on connect.
+    //
+    // Deliberately NOT routed through sendEnriched: broadcast() applies
+    // enrichEvent, this path never has, and quietly enriching a replay would
+    // change the payload (docs/WS_PLUGIN_HOOKS_SPEC.md §4).
+    for (const replay of _connectReplays) {
+      for (const msg of replay()) {
+        if (ws.readyState === 1) ws.send(JSON.stringify(msg));
+      }
+    }
     // Settings replay — page state never comes from a GET (settings-via-ws)
     if (ws.readyState === 1) ws.send(JSON.stringify(settingsEvent()));
     // Client→server RPC. geocode: on-demand address lookup — the Nominatim

@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: a5d32e851583ef0581ffe29797c3f68cd21429f05f5c622ec0ea19f60019934a
+source_hash: 4f62e08b9e7992cf3e8e82e7722ca37bd24aeb5ce0017b6e248139caf8a556db
 updated: 2026-07-29
 ---
 
@@ -667,3 +667,59 @@ Adjacent files explicitly not changed:
 - `docs/BROWSER_CONTRACT.md`: the design complies without an exception; the
   browser formats nothing and page data remains WebSocket-only.
 - `src/index.js`: no HTTP route or GET is added.
+
+## Plugin hooks — core no longer names pac-host (task `ws-relay-plugin-boundary`, 2026-07-29)
+
+This module is core: it serves the WS for every page. It used to name `pac-host`
+**seven** times — an import, three event handlers, three replay sends — so
+deleting the alarm meant editing core.
+
+```js
+export function registerWsWiring(fn)      { _wsWirings.push(fn); }
+export function registerConnectReplay(fn) { _connectReplays.push(fn); }
+```
+
+A plugin needs exactly three things, all generic: `broadcast`, a replay
+contribution, and `hintNodeStatus(num)` (a bound wrapper — `_hintNodeStatus`
+stays private). Core learns nothing about what a plugin is for.
+
+`registerWsWiring` is called ONCE inside `attachWsRelay`, because `broadcast` is
+a closure that does not exist at import time:
+
+```js
+for (const wire of _wsWirings) {
+  wire({ broadcast, hintNodeStatus: (num) => _hintNodeStatus(num, broadcast) });
+}
+```
+
+### Two constraints that break silently if moved
+
+**Replay position.** The loop sits exactly where the three `pac_host_*` sends
+were — between the bridge-state message and `settings`. Order is part of the
+contract; a page's first paint depends on it. Verified unchanged:
+`bridge_connected, pac_host_status, pac_host_queues, pac_host_align, settings, …`
+
+**Replays are NOT enriched.** `broadcast()` applies `enrichEvent`; this path never
+has. Routing replays through `sendEnriched` would quietly change the payload.
+
+### Registration timing is load-bearing — measured, not theorised
+
+`_wsWirings` is read ONCE; `_connectReplays` is read per connection. So a late
+registration still delivers replays but **never wires live pushes**, and the
+symptom is invisible from the UI: the page paints correctly on load and then
+never updates.
+
+| plugin import | connect replay | live broadcasts / 110 s |
+|---|---|---|
+| dynamic, inside `server.listen()` | worked | **0** |
+| static, top-level | worked | **21** |
+
+Plugin imports in `index.js` must therefore be static and above the
+`attachWsRelay` call. See `docs/modules/alarm-ws.md`.
+
+### Plugin-absent test
+
+Both `alarm-*` imports commented out: **0** `pac_host_*` messages, no load
+errors, full core set intact (`packet`, `node_list`, `device_list`, `rotator`,
+`tilt_cal`, `message_history`, `env_history`, `range_test_log`,
+`node_status_update`).
