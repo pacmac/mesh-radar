@@ -142,6 +142,10 @@ function dashboard() {
     homePos:        null,
     geocoding:      false,
     radarCrosshair: true,
+    // Master switch for AUTOMATIC traceroute dispatch (backend config key
+    // `traceroute.enabled`). Display cache only — the server owns it and pushes
+    // it on the settings WS event; the browser never decides it.
+    tracerouteEnabled: true,
     heatmapMaxAge:  3600,
     nodeInfo:       null,
     // Node focus page (NODE_FOCUS_PAGE_SPEC). nodeStatus holds the last payload

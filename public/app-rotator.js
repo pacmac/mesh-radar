@@ -84,6 +84,24 @@ export const rotatorMixin = {
     await fetchJSON('/rotator/mode', 'POST', { mode: m });
   },
 
+  // Master switch for automatic traceroute (backend `traceroute.enabled`).
+  // Lives here because this file already owns the header's action handlers,
+  // though traceroute itself is unrelated to the rotator.
+  //
+  // Optimistic so the button responds immediately; the server's settings WS
+  // echo is what actually confirms it. Reverted on failure — a button that
+  // stays switched after a write that did not land is worse than no button.
+  async toggleTraceroute() {
+    const next = !this.tracerouteEnabled;
+    this.tracerouteEnabled = next;
+    try {
+      await fetchJSON('/config/traceroute.enabled', 'PUT', { value: next });
+    } catch (e) {
+      this.tracerouteEnabled = !next;
+      this.showToast('Could not change traceroute', 'error', 4000);
+    }
+  },
+
   // Switch the active rotator device (v4/v5). Optimistic: reflect the choice
   // immediately; the WS stream confirms and supplies the detected variant.
   async selectRotatorTarget(name) {

@@ -105,6 +105,7 @@ export const wsMixin = {
       this.radarRange     = String(cfg['radar.max_range_km'] ?? 50);
       this.radarLogScale  = cfg['radar.log_scale']  ?? false;
       this.radarCrosshair = cfg['radar.crosshair']  ?? true;
+      this.tracerouteEnabled = cfg['traceroute.enabled'] ?? true;
       this.packetSources  = cfg['packet_sources']   ?? [];
       if (cfg['perf.failure_epoch'] != null) this.perfFailureEpoch = cfg['perf.failure_epoch'];
       if (cfg['range_test.duration']) this.rangeDuration = cfg['range_test.duration'];

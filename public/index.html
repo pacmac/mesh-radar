@@ -184,6 +184,16 @@
                     x-text="scanMode ? 'ABORT' : 'SCAN'"></button>
           </div>
         </div>
+        <!-- Traceroute master switch. Deliberately OUTSIDE the rotator group's
+             x-show above: traceroute is unrelated to the rotator, and hiding
+             this when the rotator is disconnected would remove the control at
+             exactly the moment you still want to stop traceroutes. -->
+        <div class="hidden sm:flex items-center pl-1">
+          <button class="btn btn-xs font-mono tracking-widest px-2"
+                  :class="tracerouteEnabled ? 'btn-outline btn-success' : 'btn-ghost opacity-40'"
+                  :title="tracerouteEnabled ? 'Automatic traceroute ON — click to disable' : 'Automatic traceroute OFF — click to enable'"
+                  @click="toggleTraceroute()">TRACE</button>
+        </div>
       </div>
 
       <!-- Mobile title + permanent spacer -->
