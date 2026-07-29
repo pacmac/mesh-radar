@@ -886,12 +886,21 @@ footer {
   line-height: 1.35rem;
   white-space: nowrap;
 }
+/* desc WRAPS. It used to be nowrap/hidden/ellipsis, which silently truncated
+   the provenance the desc exists to carry: in a ~171px box,
+   "traceroute 14 Jul 17:51 · 886 failed since" needs 228px and
+   "Poor · -9.0 dB · best of 2 · YAGI · direct 24m ago" needs 275px, so the
+   clipped remainder was "886 failed since" — the words that say the value is
+   FROZEN — and "direct 24m ago" — the words that say how old it is. A qualifier
+   that only appears when it happens to be short is worse than none, because it
+   reads as complete (task `stat-desc-clipped`, 2026-07-29).
+
+   The value keeps nowrap: it is one short figure by construction, and wrapping
+   it would break the tile's rhythm. Only the desc is prose. */
 .perf-stats-grid .stat-desc {
   font-size: 0.68rem;
   line-height: 0.95rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .perf-chart {

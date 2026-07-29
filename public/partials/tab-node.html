@@ -74,7 +74,10 @@
                 <div class="stat-title" x-text="f.label"></div>
                 <div class="stat-value text-2xl font-mono tabular-nums" x-text="f.text"></div>
                 <!-- desc carries provenance where a value has more than one
-                     possible source (hops: verified vs reported). -->
+                     possible source, or where it can be stale — "OMNI · 434 of
+                     464 direct", "traceroute 14 Jul · 886 failed since". It
+                     WRAPS; see .perf-stats-grid .stat-desc in style.css for why
+                     a Tailwind utility could not do this here. -->
                 <div class="stat-desc" x-text="f.desc || (f.edit ? f.edit.name : '')"></div>
               </div>
             </template>
