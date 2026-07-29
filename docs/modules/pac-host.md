@@ -1,8 +1,8 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 731cafa5a87dead99ca87a06536ad9090a2b96ad5796bfb978e3299363982334
-updated: 2026-07-25
+source_hash: 621bdd8d8b9a7e22175542a6c8e02e8db94ff420a596e75b2513173355ea8763
+updated: 2026-07-29
 ---
 
 # Module: pac-host
@@ -252,9 +252,30 @@ session-restart durability.
 - Verified live 2026-07-25 against the real running pac-host service: `connectMessage()` reports `status: 'ready'`; `queuesMessage()` correctly returns both known units' real ledgers, keyed by node num, pushed on connect before any client interaction — confirmed via a raw WS script (bypassing the browser entirely) and via Playwright's network panel (zero requests fired on unit-click, confirming no fetch anywhere in the click path).
 - Align + PASV interlock verified live 2026-07-25 against a real, already-running align session (not one this task opened): `_pollAlign()`'s very first tick logged `align session started, forced PASV (was 0)`, confirming the interlock engaged correctly on observing `running:true`. `alignMessage()` correctly returned the live model via a raw WS script. A real `/align/ping` against BNCH opened a burst (`burst.active:true`, confirmed via the raw API mid-burst), which resolved to `warning:"No replies — try again."` after the burst window — expected, not a bug (see `docs/modules/app-align.md`). Session-end/PASV-restore was **not** exercised (the live session tested against was not this task's to stop) — restore-path logic is verified by code review only.
 
+### `unitForNum(num)` / `unitNums()` — task `node-page-reachability`, 2026-07-29
+
+Read-only views of `_units`, the LAST POLL's roster. Never a fetch, so a caller
+on a request path (`node-status.js`'s Reachability section) costs nothing and
+cannot block. Staleness is bounded by `HEALTH_POLL_MS`.
+
+`unitNums()` exists so `ws-relay` can hint `node_status` for every unit when the
+`change` event fires. Before that, `_hintNodeStatus` was driven **only** by
+mesh-gw packet events, so a pac-host unit's reachability facts would have
+refreshed exactly when a packet arrived — i.e. when the unit is reachable — and
+frozen while it was silent. Measured: with the hint removed, a sleeping GARG
+received **0** `node_status_update` in 68 s; with it, 2, exactly 30 s apart.
+
+Measured while verifying this: `change` now fires on **essentially every 30 s
+poll**, because services' per-fact `<field>At` siblings advance whenever a packet
+is heard. The 1 s per-node throttle in `_hintNodeStatus` absorbs it. Recorded in
+the `bugs` ledger (step 42) as a thing to watch, not a fault found.
+
 ## Out of scope
 
 - Node data of any kind — see Purpose. Not staged for later; ruled out by design.
+  **`unitForNum`/`unitNums` do not breach this**: they hand back pac-host's own
+  unit objects unchanged. This module still interprets nothing and formats
+  nothing; `node-status.js` owns the reading of those fields.
 - Verb validation, argument shaping, or any mesh-mechanics knowledge for commands — `queueCommand()` is a pure passthrough; pac-host owns what a verb means.
 - SSE (`GET /v1/events`) consumption. The queue-poll interval (5s) is the "real time" mechanism for now — a genuine future upgrade would subscribe to the now-live `mesh.request-queued/-trying/-done/-sent/-failed/-expired/-cancelled` events (xsession `[request-ledger]`, 2026-07-25) for sub-poll-interval latency and zero polling overhead, but polling backend-side (never browser-side) already satisfies the actual architectural requirement: the browser reacts to pushed state and never fetches. Explicitly deferred to a separate follow-up task (Peter, 2026-07-25) rather than bundled with the urgent field-rename fix. Same deferral applies to `mesh.align`.
 - Rotator hardware control of any kind, beyond the PASV interlock's mode

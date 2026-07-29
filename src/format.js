@@ -100,3 +100,20 @@ export function fmtAgo(ts, nowSec = Math.floor(Date.now() / 1000)) {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
+
+// Countdown to a SCHEDULED instant. The mirror of fmtAgo, and deliberately a
+// separate function rather than a flag on it: fmtAgo clamps with Math.max(0,…),
+// so a future timestamp silently returns "0s ago". For pac-host's `nextWake`
+// that would read as "the unit is awake right now" — the exact opposite of the
+// truth, and unfalsifiable from the page (bug ledger step 41). A flag would
+// have let every existing caller change meaning, and all of them want the
+// historical clamp.
+//
+// A passed nextWake is 'overdue', never 'now'. The predicted window having
+// elapsed is a fact; the window being open is a claim we cannot make — services
+// recomputes on its own schedule and we do not know what happened in between.
+export function fmtUntil(ts, nowSec = Math.floor(Date.now() / 1000)) {
+  if (!n(ts) || ts <= 0) return null;
+  const s = ts - nowSec;
+  return s <= 0 ? 'overdue' : `in ${fmtUptime(s)}`;
+}

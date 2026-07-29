@@ -220,6 +220,22 @@ export function connectMessage() {
   return { type: 'pac_host_status', ..._status() };
 }
 
+/** The unit pac-host holds for a node num, or null if it holds none.
+ *  Read-only view of the LAST POLL — never a fetch, so callers on a request
+ *  path (node-status's reachability section) cost nothing and cannot block.
+ *  Staleness is bounded by HEALTH_POLL_MS and is why `change` hints
+ *  node_status (see ws-relay). */
+export function unitForNum(num) {
+  return _units.find(u => Number(u.num) === Number(num)) ?? null;
+}
+
+/** Node nums of every unit pac-host holds, present or not. Used to hint
+ *  node_status when the roster changes — a sleeping unit's reachability facts
+ *  must keep refreshing precisely BECAUSE no packet is arriving from it. */
+export function unitNums() {
+  return _units.map(u => Number(u.num)).filter(Number.isFinite);
+}
+
 async function _call(path, options) {
   const res = await fetch(`${PAC_HOST_URL}${path}`, options);
   if (!res.ok) {

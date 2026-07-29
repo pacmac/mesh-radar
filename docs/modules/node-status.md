@@ -1,8 +1,8 @@
 ---
 module: node-status
 source: src/node-status.js
-source_hash: d68af2c565bee1e6664012c564ecf53856e88057258d78eaf4637ce25f7f80d8
-updated: 2026-07-24
+source_hash: f6f0baf38c9a491a9ac95a3f3357789e0f4358f56b5e1e73cf79eee66ab07070
+updated: 2026-07-29
 ---
 
 # Module: node-status
@@ -52,6 +52,7 @@ the browser is never touched again.
 
 | id | kind | source | present when |
 |---|---|---|---|
+| `reachability` | `value_grid` | **pac-host `_units`** (not SQLite) | pac-host holds a unit for this num |
 | `device_vitals` | `series` | `device_metrics_history` | ≥1 row in window |
 | `signal` | `series` | `signal_history` | ≥1 usable row in window |
 | `environment` | `series` | `environment_history` | ≥1 row in window |
@@ -59,6 +60,60 @@ the browser is never touched again.
 | `detections` | `event_log` | `detection_events` | ≥1 row in window |
 
 Grouping is source-based and follows `NODE_STATUS_SPEC`.
+
+### `reachability` — task `node-page-reachability`, 2026-07-29
+
+Full contract in `docs/REACHABILITY_SPEC.md`. The essentials that must not be
+re-derived:
+
+**Ordered FIRST.** The other sections answer what a unit *is*; this one answers
+whether we can *reach* it, which is the only reason anyone opens this page for an
+alarm unit.
+
+**The only section not sourced from our own SQLite.** Joined here, via
+`pac-host.unitForNum()`, and **never in the browser** — pac-host's roster reaches
+the browser on a different WS message, so merging the two client-side to decide
+what a tile says would be the browser deciding, and would create a second code
+path for one displayed value.
+
+**Time units.** Every pac-host instant is epoch **milliseconds**; `fmtAgo`,
+`fmtUntil` and `fmtStamp` take epoch **seconds**. `msToSec()` does the divide
+once, at this boundary. Missing it is silent and yields a plausible wrong answer.
+
+**`nextWake` uses `fmtUntil`, never `fmtAgo`** — see `docs/modules/format.md`.
+
+**Fields that carry NO age, deliberately:** `Beat`, `Window`, `Awake`,
+`TX radio`. pac-host does not record when those were established and will not
+invent a timestamp; under the mechanical `<field>At` convention an absent sibling
+is *detectable*, so they render undated rather than borrowing another field's
+instant or being stamped with `now()`.
+
+**Three cases where a wrong rendering would be worse than none:**
+
+- `acks: null` → `"not yet asked"` + *"no command has been sent to this unit"*.
+  Never a blank, never a failure state. Peter must be able to tell *not yet
+  asked* from *asked and got nothing* at a glance.
+- `wakesExpected: null` → the field is **omitted entirely**. An always-listening
+  unit does not wake, so there is no denominator and no percentage exists.
+  `wakesExpected: 0` is different — a real denominator that happens to be zero —
+  and renders `"<n> seen"` + *"none expected in this window yet"*. Both make a
+  percentage impossible for different reasons, so they must not print the same
+  string. Neither path divides.
+- Delivery keeps **five numbers, never one boolean**. `sends` counts POSTs
+  mesh-gw *accepted*, not transmissions: 15 of GARG's 131 sends in one day never
+  left the radio and every one was counted as a send. `transmitted < sends` is
+  stated explicitly; equality is left unsaid because "1/1 left the radio" is
+  noise and the gap is the point.
+
+**Radio naming** goes through `node-label.resolveDeviceLabel`, the app's SSOT —
+user alias, then `short_name`, then an honest fallback. It accepts a BLE MAC or a
+`!hex` id, so the same radio cannot be called two different things on two parts
+of one page. Without it the section printed `!2687afb1` and `TA2y` beside a
+sidebar reading OMNI and YAGI.
+
+Verified live 2026-07-29 against `GET /v1/mesh/devices` for both units, plus two
+non-pac-host nodes confirming the section is absent and their own sections are
+unaffected.
 
 Position is part of `header.position`, not a section. Latitude and longitude
 use nodeinfo-first precedence; bearing is computed server-side from configured

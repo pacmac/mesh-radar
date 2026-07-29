@@ -1,8 +1,8 @@
 ---
 module: format
 source: src/format.js
-source_hash: c476c3a903f0da438dbe71d5ad17b7c52b058b1933f42df9742387455a52a1ed
-updated: 2026-07-18
+source_hash: b2b92bfa7f5c834bb8a9ccca13e6a370bbc1ae9659e4b8af3c822c56ffdd2370
+updated: 2026-07-29
 ---
 
 # Module: format
@@ -62,6 +62,22 @@ fmtAgo(ts, now?) // → "3m ago"
 - `fmtUptime`: 190000 → "2d 4h"; 4000 → "1h 6m"; 40 → "40s"; -1 → null
 - `fmtVoltage(4.296702)` → "4.30 V" (2 dp, rounded not truncated)
 - `fmtTimestamp(0)` → null (0 is not a valid observation time)
+- `fmtUntil` (task `node-page-reachability`, 2026-07-29): future → `"in 4m 12s"`;
+  past or now → `"overdue"`; null/0/negative → `null`. Verified live on the node
+  page's Reachability section against pac-host's `nextWake` for GARG, counting
+  down 55s → 36s across two renders.
+
+### Why `fmtUntil` is a separate function and not a flag on `fmtAgo`
+
+`fmtAgo` clamps with `Math.max(0, nowSec - ts)`, so **a future timestamp silently
+returns `"0s ago"`** — not null, not an error. For pac-host's `nextWake` that
+reads as *"the unit is awake right now"*, the exact opposite of the truth and
+unfalsifiable from the page (bug ledger step 41). A flag would have let every
+existing caller change meaning; all of them pass historical instants and want the
+clamp, so the two cases are two functions.
+
+`'overdue'`, never `'now'`, for a passed instant: the predicted window having
+elapsed is a fact; the window being open is a claim we cannot make.
 
 ## Out of scope
 

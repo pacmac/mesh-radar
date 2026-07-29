@@ -327,7 +327,19 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
 
   // pac-host status changes (module owns all polling/derivation — see
   // docs/modules/pac-host.md); rebroadcast its ready-made message on change.
-  pacHost.events.on('change', () => broadcast(pacHost.connectMessage()));
+  //
+  // ALSO hint node_status for every unit it holds. The node page's Reachability
+  // section is built from this roster (node-status.js), and _hintNodeStatus was
+  // otherwise driven ONLY by mesh-gw packet events — so those facts would have
+  // refreshed exactly when a packet arrived, i.e. when the unit is reachable,
+  // and frozen while it was silent. That is backwards: a sleeping unit's
+  // countdown to its next window matters precisely BECAUSE nothing is arriving
+  // from it. A hint carries only a num, so this stays one code path producing
+  // displayed values.
+  pacHost.events.on('change', () => {
+    broadcast(pacHost.connectMessage());
+    for (const num of pacHost.unitNums()) _hintNodeStatus(num, broadcast);
+  });
   // Command queues — same shape, separate event so a queue tick (every 5s
   // while pac-host is up) doesn't force-resend the larger, rarer-changing
   // status payload.

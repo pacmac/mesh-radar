@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 55f3a364246fa2f826372ba6f62d2337f7fa05a2df2373271b553055acc64393
-updated: 2026-07-25
+source_hash: a5d32e851583ef0581ffe29797c3f68cd21429f05f5c622ec0ea19f60019934a
+updated: 2026-07-29
 ---
 
 # Module: ws-relay
@@ -573,6 +573,36 @@ On any bridge event carrying a node num (`ev.from_num`, else
 ```js
 { type: 'node_status_update', num }
 ```
+
+**Also on pac-host's `change` event, for every unit it holds** (task
+`node-page-reachability`, 2026-07-29):
+
+```js
+pacHost.events.on('change', () => {
+  broadcast(pacHost.connectMessage());
+  for (const num of pacHost.unitNums()) _hintNodeStatus(num, broadcast);
+});
+```
+
+This is not tidiness. The node page's Reachability section is built from
+pac-host's roster, and the hint was otherwise driven **only** by mesh-gw packet
+events — so those facts would have refreshed exactly when a packet arrived, i.e.
+when the unit is reachable, and frozen while it was silent. That is backwards: a
+sleeping unit's countdown to its next window matters *because* nothing is
+arriving from it.
+
+Measured 2026-07-29, over 68 s, watching `node_status_update` for both units:
+
+| | GARG (silent, sleeping) | BNCH (nearby, transmitting) |
+|---|---|---|
+| with the loop | **2** — 30 s apart, matching `HEALTH_POLL_MS` | 3 |
+| loop removed | **0** | 3 (from mesh packets) |
+
+GARG refreshes *only* because of this. BNCH is unaffected either way, which is
+why a packet-driven hint alone looked sufficient and was not.
+
+Still a hint: it carries only a `num`, so the browser re-requests and there
+remains exactly one code path producing displayed values.
 
 **It carries only `num` — never a value.** The browser re-requests the RPC, so
 there is exactly one code path producing displayed values and no chance of a
