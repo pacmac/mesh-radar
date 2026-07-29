@@ -27,6 +27,13 @@ ARTIFACT_DIR = Path(os.environ.get("PLAYWRIGHT_ARTIFACT_DIR", ".playwright-mcp/a
 LIVE_CHANNEL = os.environ.get("PLAYWRIGHT_LIVE_CHANNEL", "").strip()
 OMNI_NODE_ID = os.environ.get("PLAYWRIGHT_OMNI_NODE_ID", "!2687afb1")
 OMNI_MAC = os.environ.get("PLAYWRIGHT_OMNI_MAC", "E9:B0:3F:17:27:91").upper()
+# Plugin-boundary audit. ALARM = a unit pac-host knows about; CORE = an ordinary
+# mesh node it does not. Env-overridable so the test is not wired to one install.
+ALARM_NODE_ID = os.environ.get("PLAYWRIGHT_ALARM_NODE_ID", "!987ab80f")
+# A real mesh node: NOT a gateway radio and NOT an alarm unit. Both matter — a
+# gateway would not prove the plugin leaves ordinary nodes alone. The route
+# takes !hexid, never a decimal num.
+CORE_NODE_ID = os.environ.get("PLAYWRIGHT_CORE_NODE_ID", "!30327710")
 VISUAL = os.environ.get("PLAYWRIGHT_VISUAL", "1") != "0"
 
 VIEWPORTS = {
@@ -54,6 +61,10 @@ ROUTES = (
     RouteCase("/devices", "devices", ("Connected radios",), "devices"),
     RouteCase("/range", "range", ("Range Test Log",), "range"),
     RouteCase("/performance", "perf", ("Performance", "Traceroute History"), "performance"),
+    # /control was absent from this list entirely — a real page with six
+    # sub-tabs, never audited. Tokens are the sub-tab labels, which exist
+    # whether or not a given sub-tab is built out yet.
+    RouteCase("/control", "control", ("Command", "Config", "Yagi Align"), "control"),
     RouteCase(f"/node/{OMNI_NODE_ID}", "node", (), "node-focus"),
     RouteCase("/debug", None, ("mt-radar debug", "mesh-gw", "node-dash"), "debug"),
 )
@@ -529,6 +540,111 @@ async def audit_live_channel(browser) -> None:
         await context.close()
 
 
+async def _node_page_facts(page, path: str) -> dict:
+    """Section ids on a node page, plus whether any stat-desc is truncated."""
+    await page.goto(BASE + path, wait_until="domcontentloaded")
+    await settle_app(page)
+    await page.wait_for_timeout(1200)  # node_status is an RPC — let the reply land
+    return await page.evaluate(
+        """() => {
+            const d = Alpine.$data(document.querySelector('[x-data]'));
+            const s = d.nodeStatus || {};
+            return {
+              found: !!s.found,
+              sections: (s.sections || []).map(x => x.id),
+              headerFields: ((s.header || {}).fields || []).map(f => f.label),
+              clippedDescs: [...document.querySelectorAll('.stat-desc')]
+                .filter(e => e.scrollWidth > e.clientWidth + 1)
+                .map(e => e.textContent.replace(/\\s+/g, ' ').trim().slice(0, 60)),
+            };
+        }"""
+    )
+
+
+async def audit_plugin_boundary(browser) -> None:
+    """The alarm is a PLUGIN: additive, and it must never alter core.
+
+    Peter, 2026-07-29: "node-dash exists with or without the alarm. alarm is
+    addative, it changes nothing about node communications, stats, messages."
+
+    Verified from the browser without unwiring anything: an alarm unit gains a
+    section an ordinary node does not, and every CORE section behaves the same
+    on both. If a future change makes core branch on the plugin, the core-node
+    assertions here are what break.
+
+    Also guards `stat-desc` truncation (2dd2540): a clipped desc silently hides
+    the provenance qualifier — that is how "886 failed since" disappeared.
+    """
+    print("\nPLUGIN BOUNDARY (alarm is additive)")
+    context = await browser.new_context(viewport=VIEWPORTS["desktop"])
+    page = await context.new_page()
+    page.set_default_timeout(TIMEOUT)
+    try:
+        alarm = await _node_page_facts(page, f"/node/{ALARM_NODE_ID}")
+        core = await _node_page_facts(page, f"/node/{CORE_NODE_ID}")
+
+        RESULTS.check(alarm["found"], "alarm node page found", json.dumps(alarm))
+        RESULTS.check(core["found"], "core node page found", json.dumps(core))
+
+        # The plugin ADDS.
+        RESULTS.check(
+            "reachability" in alarm["sections"],
+            "alarm node has plugin section",
+            f"sections={alarm['sections']}",
+        )
+        # ...and only for its own units.
+        RESULTS.check(
+            "reachability" not in core["sections"],
+            "core node has NO plugin section",
+            f"sections={core['sections']}",
+        )
+        # ...and never alters core. Every core section a node qualifies for is
+        # present regardless of whether the plugin contributed anything.
+        core_only = [s for s in alarm["sections"] if s != "reachability"]
+        RESULTS.check(
+            "device_vitals" in core_only,
+            "core sections unaffected on an alarm node",
+            f"sections={alarm['sections']}",
+        )
+        RESULTS.check(
+            "device_vitals" in core["sections"],
+            "core sections present on a core node",
+            f"sections={core['sections']}",
+        )
+        # The plugin contributes SECTIONS, never header fields. Asserting a
+        # specific field would be wrong: `Least hops` comes from `messages`, so
+        # a node that sends no text has none — that is correct behaviour, and an
+        # earlier version of this check failed on it. The real property is that
+        # NO plugin-owned label ever reaches the header, on either node.
+        plugin_labels = {
+            "Delivery", "Next window", "Beat", "Window",
+            "Wake reliability", "Awake", "TX radio",
+        }
+        for label, facts in (("alarm", alarm), ("core", core)):
+            leaked = sorted(plugin_labels.intersection(facts["headerFields"]))
+            RESULTS.check(
+                not leaked,
+                f"{label} node header free of plugin fields",
+                f"leaked={leaked} fields={facts['headerFields']}",
+            )
+            RESULTS.check(
+                bool(facts["headerFields"]),
+                f"{label} node header has core fields",
+                f"fields={facts['headerFields']}",
+            )
+
+        # Provenance qualifiers must be readable, not ellipsised away.
+        for label, facts in (("alarm", alarm), ("core", core)):
+            RESULTS.check(
+                not facts["clippedDescs"],
+                f"{label} node stat-desc not truncated",
+                " | ".join(facts["clippedDescs"]),
+            )
+    except Exception as exc:
+        RESULTS.check(False, "plugin boundary audit completed", str(exc))
+    await context.close()
+
+
 def root_artifacts() -> list[str]:
     suffixes = {".png", ".jpg", ".jpeg", ".webp", ".zip", ".trace"}
     return [p.name for p in Path(".").iterdir() if p.is_file() and p.suffix.lower() in suffixes]
@@ -541,6 +657,7 @@ async def main() -> int:
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=HEADLESS)
         await audit_routes(browser)
+        await audit_plugin_boundary(browser)
         await audit_invalid_persisted_tab(browser)
         await audit_safe_interactions(browser)
         await audit_live_channel(browser)

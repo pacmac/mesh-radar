@@ -28,7 +28,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: a6460fb2c956ed0c2f6b7847cd5b5565ac6b18599b2ae0a451db5ab8cef1b956
+source_hash: c453b15b26a1432f01907ce9ff1001b76d6ac310f99934d7842618d2121d69ce
 updated: 2026-07-29
 ---
 
@@ -99,6 +99,10 @@ python3 tests/test_playwright.py
 - `PLAYWRIGHT_OMNI_NODE_ID` — expected OMNI node id; live default
   `!2687afb1`.
 - `PLAYWRIGHT_OMNI_MAC` — optional stronger identity assertion.
+- `PLAYWRIGHT_ALARM_NODE_ID` — a unit pac-host knows about; default `!987ab80f`.
+- `PLAYWRIGHT_CORE_NODE_ID` — an ordinary mesh node, **not** a gateway radio and
+  **not** an alarm unit; default `!30327710`. Both properties matter: a gateway
+  would not prove the plugin leaves ordinary nodes alone.
 
 The default run is passive and safe. Supplying `PLAYWRIGHT_LIVE_CHANNEL`
 enables exactly the reversible OMNI channel test and no other live write.
@@ -365,3 +369,45 @@ The first run must reproduce, and implementation must remove:
 - Testing YAGI while its intermittent brownout remains unresolved.
 - Changing the Browser Contract or adding browser-owned business decisions.
 - Interpreting application-specific/custom alarm payloads.
+
+
+## Plugin boundary audit (task `ws-relay-plugin-boundary`, 2026-07-29)
+
+`audit_plugin_boundary` makes the alarm's additivity a **repeatable** check
+rather than one done by hand. Peter, 2026-07-29: *"node-dash exists with or
+without the alarm. alarm is addative, it changes nothing about node
+communications, stats, messages."*
+
+Verified from the browser without unwiring anything:
+
+| assertion | property |
+|---|---|
+| alarm node has `reachability` | the plugin ADDS |
+| core node has NO `reachability` | ...only for its own units |
+| core sections present on BOTH | ...and never alters core |
+| header free of plugin labels on BOTH | the plugin contributes SECTIONS, never header fields |
+| no `.stat-desc` truncated | regression cover for `2dd2540` |
+
+**Do not assert a specific header field.** An earlier version required
+`Least hops`, which comes from `messages` — so a node that sends no text
+legitimately has none, and the check failed on correct behaviour. The property
+is the *absence* of plugin-owned labels (`Delivery`, `Next window`, `Beat`,
+`Window`, `Wake reliability`, `Awake`, `TX radio`), plus a non-empty header.
+
+**Choose the core node carefully.** The first attempt used `646426545`, which is
+`0x2687afb1` — OMNI, one of our own gateway radios — and passed it as a decimal
+when the route takes `!hexid`. Both wrong.
+
+### `/control` added to `ROUTES`
+
+It was **absent entirely**: a real page with six sub-tabs, never audited. Now
+covered at both viewports (24 checks).
+
+### Known pre-existing failure — not this audit's doing
+
+`invalid activeTab is replaced` fails. Its premise is stale: it treats `control`
+as a *removed* tab, but Control was rebuilt (task `control-section-ia`,
+2026-07-25), so the app correctly keeps `activeTab: 'control'` instead of
+rewriting it to `overview`. Confirmed unrelated to the 2026-07-29 changes —
+`audit_invalid_persisted_tab` is untouched by them and fails in isolation.
+**The test is wrong, not the app.**
