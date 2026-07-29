@@ -147,14 +147,31 @@
 
             <!-- value_grid — §5 key-value rows: caption key left, data value
                  right. Columns are BOUNDED so a pair never stretches apart at
-                 desktop width. -->
+                 desktop width.
+
+                 `desc` carries the value's KIND and AGE, on its own line under
+                 the pair — the same role it plays on the header stat cards
+                 above, and the same pattern as the SIGNAL tile's
+                 "direct 45m ago". A bare number that cannot say how old it is
+                 or where it came from is how the HOPS tile ended up showing a
+                 14 Jul value with live-data weight.
+
+                 Optional, and server-supplied like every other value here: no
+                 field carried a `desc` when this was added, so nothing on
+                 screen changed until a section started sending one. -->
             <template x-if="section.kind === 'value_grid'">
               <div class="grid gap-x-8 gap-y-1 justify-start"
                    style="grid-template-columns:repeat(auto-fill,minmax(15rem,22rem))">
                 <template x-for="f in section.fields" :key="f.label">
-                  <div class="flex items-baseline justify-between gap-3 border-b border-base-200 py-1">
-                    <span class="text-xs text-base-content/50" x-text="f.label"></span>
-                    <span class="text-sm font-mono tabular-nums" x-text="f.text"></span>
+                  <div class="border-b border-base-200 py-1">
+                    <div class="flex items-baseline justify-between gap-3">
+                      <span class="text-xs text-base-content/50" x-text="f.label"></span>
+                      <span class="text-sm font-mono tabular-nums" x-text="f.text"></span>
+                    </div>
+                    <!-- Right-aligned so it reads as belonging to the value, not
+                         to the label. -->
+                    <div x-show="f.desc" class="text-xs text-base-content/50 text-right"
+                         x-text="f.desc"></div>
                   </div>
                 </template>
               </div>

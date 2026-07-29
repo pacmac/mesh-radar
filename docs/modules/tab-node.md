@@ -1,8 +1,8 @@
 ---
 module: tab-node
 source: public/partials/tab-node.html
-source_hash: 01cf337ee391e6bd65ac4ef679f5be4d546608706da295ae2e7d06c686b9a049
-updated: 2026-07-25
+source_hash: 28c3d5d725c235f4a22a54df871aff157c410ee85971324bafa6333b2c02de11
+updated: 2026-07-29
 ---
 
 # Module: tab-node
@@ -56,6 +56,14 @@ it stands today, not a historical record of every prior change.
   RSSI/SNR reading is never mistaken for a live current one once a node
   goes relay-only — see `docs/modules/node-status.md` and `docs/modules/db.md`
   for the write-path/query side of this fix.
+- `value_grid` rows carry the SAME provenance slot: an optional `f.desc`
+  rendered on its own line under the label/value pair, right-aligned so it
+  reads as belonging to the value rather than the label (task
+  `node-page-value-grid-desc`, 2026-07-29). Optional and server-supplied like
+  every other value here — a field without a `desc` renders exactly as before.
+  Rationale in `docs/REACHABILITY_SPEC.md` §3 and §7: a bare number that
+  cannot state its kind or its age is how the Hops tile came to show a 14 Jul
+  value at live-data weight.
 - `flex-1 min-h-0 overflow-y-auto` on the root: the parent is a flex column
   with `overflow-hidden`; without `min-h-0` this content clips instead of
   scrolling and lower sections become unreachable.
@@ -69,6 +77,14 @@ it stands today, not a historical record of every prior change.
   now shows a third desc segment ("direct Xs/m/h/d ago") sourced from
   `signal_history`'s most recent row for the node, alongside the existing
   label/SNR text.
+- 2026-07-29 (task `node-page-value-grid-desc`), `value_grid` desc slot:
+  regression verified live at 1600×1000 in BOTH themes on `!987ab80f` —
+  all five sections unchanged, 0 console errors, outer scroller 1496/935
+  and the detections log 769/408 both still scrolling. The POSITIVE case is
+  **not** proven here and was deliberately not faked with an injected
+  fixture: `node-status.js` emits only `series` and `event_log` today, so no
+  live `value_grid` exists to carry a `desc`. That proof runs in task
+  `node-page-reachability` against real pac-host data.
 
 ## Out of scope
 
