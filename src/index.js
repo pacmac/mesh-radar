@@ -48,6 +48,7 @@ import { OpManager } from './op-manager.js';
 // pac_host_* broadcasts arrived in 110s. Load order is load-bearing here.
 import './alarm-sections.js';
 import './alarm-ws.js';
+import './alarm-images.js';
 
 registerNodeIdToMacResolver(getLiveMacByNodeId);
 registerMacToNodeIdResolver(getLiveNodeIdByMac);

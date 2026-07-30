@@ -37,6 +37,39 @@ export const controlMixin = {
 
   controlShortcuts() { return CONTROL_SHORTCUTS; },
 
+  // ── ALARM PLUGIN: Camera ───────────────────────────────────────────────────
+  // Pure reads of server-pushed state (alarm_images, replayed on connect and
+  // broadcast on change). Zero fetch, zero derivation — every count, percentage
+  // and elapsed string was computed by src/alarm-images.js.
+
+  /** The pushed model for the selected unit, or null. */
+  cameraUnit() { return this.alarmImages?.[this.controlTarget] ?? null; },
+
+  /** Server-supplied "SHORT !hexid". Both units currently report shortName
+   *  GARG — one firmware image flashed to two boards, same root cause as the
+   *  PKI failure — so the id is what tells them apart and it is shown. */
+  cameraLabel(num) { return this.alarmImages?.[num]?.label ?? null; },
+
+  /** Take a NEW photo. This REPLACES the image in the device's flash and puts a
+   *  command on air, so it confirms first — services pulled a stale frame
+   *  believing it was fresh, which is the mistake this wording prevents.
+   *  Reuses the existing pac-command route; no new endpoint. The receipt is the
+   *  Command tab's queue ledger, already pushed. */
+  async cameraGrab() {
+    if (this.controlTarget == null) { this.showToast('Select a unit first', 'error', 0); return; }
+    const label = this.cameraLabel(this.controlTarget) || this.controlTarget;
+    if (!confirm(`Take a new photo on ${label}?\n\nThis REPLACES the image stored on the device and transmits on the Private channel. It is delivered at the unit's next wake window.`)) return;
+    this.cameraGrabbing = true;
+    try {
+      const result = await fetchJSON(`/nodes/${this.controlTarget}/pac-command`, 'POST', { verb: 'cam' });
+      this.showToast(`Queued: ${result.id}`, 'success', 3000);
+    } catch (e) {
+      this.showToast(e.message || 'Could not queue the photo', 'error', 0);
+    } finally {
+      this.cameraGrabbing = false;
+    }
+  },
+
   async sendControl(verb) {
     const v = (verb ?? this.controlVerb ?? '').trim();
     if (!v) return;

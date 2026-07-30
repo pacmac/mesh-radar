@@ -1,8 +1,8 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: 464b9f4f98519b1ee873ec200d0cd15d886a68ba2e1bc261c170fca16c6fa0f9
-updated: 2026-07-25
+source_hash: 7331cb1fb6935bc02c15070e1e933c80a1e1ef75aceccd3c2e4372ac1bc1d575
+updated: 2026-07-30
 ---
 
 # Module: tab-control
@@ -28,7 +28,9 @@ skeleton pages." Six sub-tabs, `controlTab`-gated, `.tabs` bar mirroring
 `tab-cfg.html`'s pattern exactly (same shape as `cfgTab`, driven by
 `switchControlTab()` in `app-control.js`, routed through `setNav('control',
 name)` in `app-nav.js`, mirrored in `drawer-sidebar.html`'s Control
-`<details>` submenu): **Summary, Command, Config, Stats, Yagi Align, Chat**.
+`<details>` submenu): **Summary, Command, Camera, Config, Stats, Yagi Align,
+Chat** — Camera added 2026-07-30, seven in total, grid widened to
+`grid-cols-7`.
 Only **Command** has real content today — the other five are skeleton cards
 (Section-label title + Caption-role "Coming soon.", STYLE_GUIDE §5), no
 functionality, per Peter's explicit "even if they are skeleton pages."
@@ -132,8 +134,48 @@ mobile field tool, this is an embedded dashboard card):
   spinner + `"GATHERING got/of"` while a burst is active) and End (disabled
   unless `alignRunning()`).
 
+## Layout — Camera sub-tab (**ALARM PLUGIN**, task `camera-page`, 2026-07-30)
+
+Peter: *"so I have some visibility"* — the successor to the archived
+`push.html`. Three stacked cards, single column, `max-w-3xl`:
+
+- **Unit card**: unit `<select>` (`controlTarget`, options from
+  `controlDevices()`, labelled `cameraLabel(num) || d.label` so the **id is
+  visible** — short names are not unique), and a **Take photo** button
+  (`cameraGrab()`, disabled while `cameraGrabbing`). Caption states plainly that
+  it takes a NEW photo, **replaces** the one in flash, transmits on the Private
+  channel, and is delivered at the unit's next wake window.
+- **Transfer card** (`x-if="cameraUnit()"`): `RUNNING`/`IDLE` badge, then either
+  `idle_text` ("no transfer in flight") or one block per transfer —
+  `chunks_text`, `percent_text`, a `<progress>` bar, `counts_text`,
+  `started_text`, optional device cursor, `last_rx_text`, and an `aborted` flag.
+  **Two bars, mutually exclusive**: a determinate one when `percent !== null`,
+  an indeterminate one when it is null. The page never invents a proportion it
+  was not given.
+- **Image card**: currently the honest placeholder "Not available yet."
+
+**Every string on this page is server-computed** by `src/alarm-images.js`. This
+file formats no counts, no percentages and no elapsed times.
+
+### Image card status
+
+The placeholder text is **accurate as written but now out of date**. It says a
+local read of stored images "is being built"; services shipped it on 2026-07-30
+in `160a4a1` (`GET /v1/mesh/images/<t>/stored`, plus `/<t>/<pid>` serving from
+disk in ~3 ms). **node-dash does not call either yet** — wiring the real image
+panel is a separate task, and the placeholder stays until it lands rather than
+being quietly reworded to imply something that does not exist.
+
 ## Invariants
 
+- **Camera renders only what `alarm-images.js` pushed.** No count, percentage or
+  elapsed time is computed here, and elapsed times must not tick locally.
+- **A percentage is shown only when the server sent one.** `count` is null until
+  the manifest arrives — measured as half the transfer on pid 17602 — and
+  `"6 chunks, total unknown"` is the correct rendering in that window. Never
+  `"6 / 0"`, never `"100%"`.
+- **Take photo confirms before transmitting.** It replaces the device's stored
+  image and puts a command on air.
 - Never renders as, or alongside, the chat message feed (`tab-messages.html`)
   — command traffic is not chat, even though it rides on Meshtastic text
   messages underneath (Peter, 2026-07-25 — see task

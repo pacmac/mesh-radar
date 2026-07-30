@@ -1,8 +1,9 @@
         <!-- ===================== CONTROL (pac-host units) ===================== -->
         <div x-show="tab==='control'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
-          <div class="tabs tabs-bordered grid grid-cols-6 w-full sm:w-fit shrink-0">
+          <div class="tabs tabs-bordered grid grid-cols-7 w-full sm:w-fit shrink-0">
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='summary' && 'tab-active font-semibold'" @click="switchControlTab('summary')">Summary</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='command' && 'tab-active font-semibold'" @click="switchControlTab('command')">Command</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='camera'  && 'tab-active font-semibold'" @click="switchControlTab('camera')">Camera</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='config'  && 'tab-active font-semibold'" @click="switchControlTab('config')">Config</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='stats'   && 'tab-active font-semibold'" @click="switchControlTab('stats')">Stats</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="controlTab==='align'   && 'tab-active font-semibold'" @click="switchControlTab('align')">Yagi Align</a>
@@ -286,5 +287,106 @@
                 <p class="text-xs text-base-content/50">Coming soon.</p>
               </div>
             </div>
+          </div>
+
+          <!-- ==================== CAMERA ====================
+               Successor to the archived push.html. Every value is bound verbatim
+               from the server's alarm_images message (docs/CAMERA_PAGE_SPEC.md);
+               nothing here computes a count, a percentage or an elapsed time.
+
+               The IMAGE itself is deliberately absent, not stubbed: both of
+               pac-host's image routes are radio round-trips (75s measured), so a
+               page cannot open on either. The panel says so rather than showing
+               a placeholder that implies one is coming. -->
+          <div x-show="controlTab==='camera'" class="flex-1 min-h-0 overflow-y-auto max-w-3xl flex flex-col gap-3">
+
+            <div class="card bg-base-100 shadow shrink-0">
+              <div class="card-body py-3 gap-3">
+                <div class="flex flex-wrap items-end gap-3">
+                  <label class="form-control">
+                    <span class="label-text text-xs opacity-60">Unit</span>
+                    <!-- Keyed and labelled by id: both units currently report
+                         shortName GARG (one firmware image on two boards, same
+                         root as the PKI failure). The id is what distinguishes
+                         them, so it is shown. -->
+                    <select class="select select-sm select-bordered font-mono" x-model="controlTarget">
+                      <template x-for="d in controlDevices()" :key="d.num">
+                        <option :value="d.num" x-text="cameraLabel(d.num) || d.label"></option>
+                      </template>
+                    </select>
+                  </label>
+                  <button class="btn btn-primary btn-sm" @click="cameraGrab()"
+                          :disabled="controlTarget == null || cameraGrabbing"
+                          x-text="cameraGrabbing ? 'sending…' : 'Take photo'"></button>
+                </div>
+                <!-- Truthful label: a grab CAPTURES A NEW IMAGE AND REPLACES the
+                     one in flash. services pulled a stale frame believing it was
+                     fresh; the button says what it does and confirms first. -->
+                <p class="text-xs text-base-content/50">
+                  Takes a NEW photo and replaces the one stored on the device. Transmits on the
+                  Private channel and is delivered at the unit's next wake window — from the
+                  garage a full image is roughly a 20 minute operation. Watch the Command tab for
+                  the delivery receipt.
+                </p>
+              </div>
+            </div>
+
+            <template x-if="cameraUnit()">
+              <div class="card bg-base-100 shadow shrink-0">
+                <div class="card-body py-3 gap-2">
+                  <div class="flex items-baseline justify-between gap-3">
+                    <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Transfer</h2>
+                    <span class="badge badge-sm"
+                          :class="cameraUnit().state === 'running' ? 'badge-primary' : 'badge-ghost'"
+                          x-text="cameraUnit().state"></span>
+                  </div>
+
+                  <!-- [] means IDLE — 200 and nothing in flight. Not an error and
+                       not unknown; the operator must be able to tell those apart. -->
+                  <p class="text-sm opacity-60" x-show="cameraUnit().idle_text"
+                     x-text="cameraUnit().idle_text"></p>
+
+                  <template x-for="t in cameraUnit().transfers" :key="t.pid">
+                    <div class="flex flex-col gap-1 border-t border-base-200 pt-2 first:border-0">
+                      <div class="flex items-baseline justify-between gap-3">
+                        <span class="text-sm font-mono tabular-nums" x-text="t.chunks_text"></span>
+                        <span class="text-sm font-mono tabular-nums opacity-70" x-text="t.percent_text"></span>
+                      </div>
+                      <!-- A bar only when the server gave a percentage. Before the
+                           manifest arrives count is null, and inventing a
+                           proportion we were not given is the defect this whole
+                           page is careful about. -->
+                      <progress class="progress progress-primary w-full" x-show="t.percent !== null"
+                                :value="t.percent" max="100"></progress>
+                      <progress class="progress progress-primary w-full" x-show="t.percent === null"></progress>
+                      <div class="text-xs text-base-content/50" x-text="t.counts_text"></div>
+                      <div class="text-xs text-base-content/50">
+                        <span x-text="t.started_text"></span>
+                        <span x-show="t.cursor_text"> · device cursor <span x-text="t.cursor_text"></span></span>
+                        <!-- Elapsed time, NOT a stall verdict. -->
+                        <span x-show="t.last_rx_text"> · last chunk <span x-text="t.last_rx_text"></span></span>
+                        <span x-show="t.aborted" class="text-error"> · aborted</span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+
+            <div class="card bg-base-100 shadow shrink-0">
+              <div class="card-body py-3 gap-2">
+                <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Image</h2>
+                <p class="text-sm">Not available yet.</p>
+                <p class="text-xs text-base-content/50">
+                  Both of pac-host's image routes are radio round-trips aimed at a unit that
+                  listens about 8 seconds in every 300, so fetching the picture — or even the
+                  list of stored pictures — can take minutes and cannot be done while a page is
+                  open. A local read of what is already stored is being built; this panel is
+                  wired for it and shows nothing until it exists, rather than a placeholder that
+                  implies otherwise.
+                </p>
+              </div>
+            </div>
+
           </div>
         </div>

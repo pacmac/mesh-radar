@@ -75,6 +75,7 @@ export const wsMixin = {
       return;
     }
     if (ev.type === 'pac_host_queues')     { this.pacHostQueues = ev.queues || {}; return; }
+    if (ev.type === 'alarm_images')        { this.alarmImages = ev.units || {}; return; }
     if (ev.type === 'pac_host_align')      {
       this.alignModel = ev.model;
       // Adopt the session's own target once it has one (mirrors the archived

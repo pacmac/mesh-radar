@@ -1,8 +1,8 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 621bdd8d8b9a7e22175542a6c8e02e8db94ff420a596e75b2513173355ea8763
-updated: 2026-07-29
+source_hash: 8d9c16085da6401b6abfcc6def830c41c3b64bb16eefab4d7c2543dfe6b93c0a
+updated: 2026-07-30
 ---
 
 # Module: pac-host
@@ -104,6 +104,7 @@ export function queuesMessage()  // → { type: 'pac_host_queues', queues: {[uni
 export const events              // EventEmitter, emits 'change' (status) and 'queuesChanged' (queue data) separately
 export async function queueCommand({ unit, verb, args }) // → POST /v1/mesh/queue body, returns the raw JSON response ({id, ...}) or throws Error('pac-host <status>: <detail>')
 export async function getQueue(unit)                     // → GET /v1/mesh/queue/:target, returns the raw ledger array; throws the same way. Called internally by the queue-poll loop; not used by any HTTP route (there is none) — kept exported in case a future task needs a one-off lookup, but nothing browser-facing may call it directly.
+export async function getImagesProgress(unit)            // → GET /v1/mesh/images/:target/progress, returns { target, transfers: [...] }. LOCAL read of pac-host's own memory — synchronous, measured 1.2 ms — so it is safe on a poll path. `transfers: []` means IDLE, not unknown. Called only by the alarm-images plugin.
 export function alignMessage()                           // → { type: 'pac_host_align', model } — ready to JSON.stringify and send as-is
 export async function alignPing({ target, n })            // → POST /v1/mesh/align/ping body, returns the raw JSON response; throws (incl. 409 if a burst is already active)
 export async function alignStop()                         // → POST /v1/mesh/align/stop, returns the raw JSON response
@@ -245,6 +246,27 @@ session-restart durability.
 - `PAC_HOST_URL` follows house convention (`process.env.PAC_HOST_URL || 'http://127.0.0.1:8787/v1'`), same shape as `BRIDGE_URL` — auto-probes by default, no separate on/off flag. Absence of a running service, not absence of config, is what disables the integration.
 - **The queue ledger has no browser-facing GET, ever, anywhere.** `_pollQueues()` (polling `getQueue()`) is the only reader of pac-host's queue REST endpoint; the browser only ever receives `pac_host_queues` pushed over WS. A GET route for this existed for a few commits and was a real, reported bug — see `control-queue-push-not-get`. Do not reintroduce one; if a future page needs different query semantics (e.g. filtered/paginated), extend the push shape, don't add a fetch.
 - Queue polling only runs `while isAvailable()` — no wasted requests when pac-host is down, and `_queues` is cleared (pushed as empty) rather than left stale when it goes unreachable.
+- **Only `/images/<t>/progress` is safe on a poll path.** It is a local read of pac-host's own memory. The other image routes are not — see below.
+
+## The image routes and what each one costs
+
+`getImagesProgress()` is the only image call this module makes, and the only one
+anything on a page path may make.
+
+| route | cost | safe on a page path? |
+|---|---|---|
+| `/mesh/images/<t>/progress` | local, ~1.2 ms | **yes** — this module polls it |
+| `/mesh/images/<t>/stored` | local, measured 1.8 ms | yes (added by services `160a4a1`, 2026-07-30; **not yet called from node-dash**) |
+| `/mesh/images/<t>/<pid>` | local when cached, measured 3.3 ms; **radio otherwise** | only when cached |
+| `/mesh/images/<t>/<pid>?refresh=1` | radio round-trip, minutes | **no** — costs a wake window |
+| `/mesh/images/<t>` | radio round-trip | **no** |
+
+The inline comment on `getImagesProgress()` predates services' `160a4a1` and
+still says both non-progress image routes are radio round-trips. That was true
+when written and is now only half true — `/<pid>` serves from disk when the bytes
+are already held. **Correcting that comment and adding a `/stored` call belongs to
+the Image-card task, not here**; it is recorded rather than silently fixed so the
+next reader does not trust a stale claim.
 
 ## Test notes
 

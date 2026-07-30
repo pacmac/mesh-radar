@@ -1,8 +1,8 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: ae0eb237f48b65b7fd8a61d9c2607dc5f5c7aae46bdabd2e966b574e316291ed
-updated: 2026-07-25
+source_hash: bc82925b00a9a606047a5e60a9cff64032327a5c90dfc4be725206897d69448f
+updated: 2026-07-30
 ---
 
 # Module: drawer-sidebar
@@ -18,6 +18,21 @@ New nav `<li>`, `x-show="pacHostStatus?.available"` — invisible on a stock
 install with no pac-host running, matching the header badge's absence-safe
 pattern. Positioned above Messages, standard nav-item markup (no unread
 badge, unlike Messages/Devices — the Control page has no unread concept).
+
+## Camera sub-tab (task `camera-page`, 2026-07-30)
+
+One `<li>` added to the Control sub-nav between Command and Config, same markup
+as its siblings: `setNav('control','camera')`.
+
+**This is a knowing plugin-boundary exception, recorded rather than hidden.** The
+Camera page is alarm-only, and this file is core — but the Control sub-nav
+already hardcodes all six sub-tabs and `tab-control.html` is already 100% alarm
+UI in a core file. There is no hook for a plugin-contributed browser page; the
+three hooks built 2026-07-29 (`registerNodeSection`, `registerWsWiring`,
+`registerConnectReplay`) are all server-side. Adding Camera here is consistent
+with a pre-existing breach at full strength rather than a new one. Peter's
+decision, recorded: *"A now"*. A browser plugin-descriptor mechanism is its own
+task, logged in the `bugs` ledger.
 
 ## Standard-node cleanup (2026-07-23)
 

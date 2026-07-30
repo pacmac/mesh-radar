@@ -1,8 +1,8 @@
 ---
 module: index
 source: src/index.js
-source_hash: beddeac6d2e6c87c837c4b26668a65af63cf0640045d88a0c182c2940a47e1e4
-updated: 2026-07-29
+source_hash: d56a0823cbdade4641d97d9b7e0586973e2e05cdf1090155ee0da07a2f81791e
+updated: 2026-07-30
 ---
 
 # Module: index
@@ -118,6 +118,15 @@ once the rotator reports status). After the listener: `registerBridgeEvents(brid
   must be added to `WS_ONLY_ROUTES`/`WS_ONLY_EXACT`.
 - **`broadcastAll` is defined after `wss`**; the `_broadcast` closure bridges the
   forward reference for `OpManager`.
+- **Alarm-plugin imports are STATIC and top-level, and that is load-bearing.**
+  `./alarm-sections.js`, `./alarm-ws.js` and `./alarm-images.js` are imported as
+  bare side-effect imports near the top of the file, above `attachWsRelay`.
+  `registerWsWiring` is read exactly ONCE at attach time, so a registration
+  arriving later silently never fires — measured 0 live broadcasts in 110 s with
+  a dynamic import, while the connect replay still worked, which makes the
+  failure invisible from the UI. These three lines are the **only** permitted
+  reference to the alarm plugin anywhere in core; removing them must leave
+  node-dash fully functional.
 
 ## Test notes
 

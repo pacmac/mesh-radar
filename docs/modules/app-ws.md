@@ -1,8 +1,8 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: e3852d74bf64054aebb04db163d99c626c655f062f1734ac9727189dc82474cb
-updated: 2026-07-29
+source_hash: 0a172df8ead4e249ad15549be8ad92aa89d97ca920eafb625a7dc852813d03b4
+updated: 2026-07-30
 ---
 
 # Module: app-ws
@@ -172,6 +172,14 @@ assigns `ev.queues` to `this.pacHostQueues`, keyed by unit num. Pushed on
 connect and on every change by `src/pac-host.js`'s own 5s queue-poll loop —
 `app-control.js`'s `controlLedger()` is a pure read of this, no fetch
 anywhere in that file.
+
+`alarm_images` (**ALARM PLUGIN**, task `camera-page`, 2026-07-30) assigns
+`ev.units` to `this.alarmImages`, keyed by unit num. Pushed on connect and on
+change by `src/alarm-images.js`'s 2 s progress poll. Every string in it —
+`"6 / 12 chunks"`, `"50%"`, `"started 1m 4s ago"` — is computed server-side;
+this handler stores and derives nothing, and the Camera panel must not tick the
+elapsed times locally. Core's WS never names this message: it arrives through
+the plugin hooks, and with the plugin unwired it simply never appears.
 
 **`pac_host_status`'s handler also defaults `controlTarget`** (task
 `control-default-unit-selection`, 2026-07-25 — fixes a second real bug: the

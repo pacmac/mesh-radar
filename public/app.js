@@ -81,6 +81,11 @@ function dashboard() {
     serverReachable: true,
     bridgeConnected: true,
     pacHostStatus:   null,
+    // ALARM PLUGIN display cache — server-pushed image transfer progress
+    // (alarm_images). Display only: every count, percentage and elapsed time in
+    // it is computed by src/alarm-images.js. See docs/CAMERA_PAGE_SPEC.md.
+    alarmImages:     {},
+    cameraGrabbing:  false,
     events:          [],
 
     // -- pac-host command surface ---------------------------------------------

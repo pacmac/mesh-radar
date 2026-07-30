@@ -262,6 +262,21 @@ export async function getQueue(unit) {
   return _call(`/mesh/queue/${encodeURIComponent(unit)}`);
 }
 
+/** In-flight image transfers for a unit. LOCAL READ, no radio: pac-host reads
+ *  its own in-memory state and answers synchronously — measured 1.2 ms.
+ *
+ *  This is the ONLY image route safe to call from anything a page depends on.
+ *  `/mesh/images/<t>` and `/mesh/images/<t>/<pid>` are BOTH radio round-trips
+ *  aimed at a unit that listens ~8 s in every 300, so both can legitimately take
+ *  MINUTES — measured at 75.02 s before services added a pid range-check, and
+ *  25 s with no response at all. Do not call either on a page path.
+ *
+ *  `transfers: []` means IDLE — 200 and nothing in flight. It is not an error
+ *  and not "unknown" (services, xsession [ui-gaps-control-images]). */
+export async function getImagesProgress(unit) {
+  return _call(`/mesh/images/${encodeURIComponent(unit)}/progress`);
+}
+
 /** Open/retarget an align session and fire one burst. Pure passthrough —
  *  target/n are raw node-dash-originated input (the browser's only
  *  originated values for this feature, per the archived app-align.md

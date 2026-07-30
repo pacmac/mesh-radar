@@ -1,8 +1,8 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: 21e1f88b81e5faa6a01f92533edeeb4ae90e49d75fd21d3b106e63488889ae96
-updated: 2026-07-25
+source_hash: 86ad4cf53d46aea3516a07ffdf89538c0b00a8a703eb40f5fe91c8e357d82f5c
+updated: 2026-07-30
 ---
 
 # Module: app-control
@@ -49,7 +49,7 @@ split on `state` now (`queued`/`trying` vs everything else).
 ```js
 export const CONTROL_SHORTCUTS       // ['ping','status','config','reboot'] — v1 shortcut verbs
 export const controlMixin = {
-  switchControlTab(name),             // → sets controlTab + persists (task control-section-ia); Summary/Command/Config/Stats/Yagi Align/Chat sub-tabs, same shape as switchCfgTab. No data load — skeleton tabs have nothing to fetch.
+  switchControlTab(name),             // → sets controlTab + persists (task control-section-ia); Summary/Command/Camera/Config/Stats/Yagi Align/Chat sub-tabs, same shape as switchCfgTab. No data load — skeleton tabs have nothing to fetch, and Camera's data is WS-pushed regardless of which sub-tab is active.
   controlDevices(),                  // → [{id,num,label,present}] — pacHostStatus.units mapped directly (GET /mesh/devices is already ours-only, task control-devices-endpoint), never a hardcoded id list
   controlShortcuts(),                // → CONTROL_SHORTCUTS
   sendControl(verb),                  // → POST /nodes/:num/pac-command {verb}, sends immediately, no confirmation gate for any unit (task garg-confirm-removal, 2026-07-25). No manual refresh after — the pushed queue updates on its own within one poll cycle.
@@ -57,15 +57,22 @@ export const controlMixin = {
   controlPending(),                   // → controlLedger() filtered to state === 'queued' || 'trying' (in flight, not yet resolved)
   controlExecuted(),                  // → controlLedger() filtered to everything else (done/sent/failed/expired/cancelled — reached a terminal outcome)
   controlResultFields(result),        // → [{label,text}] — generic key:value pairing of a result object (STYLE_GUIDE §5), field ids shown as-is, no guessed meaning
+
+  // ── ALARM PLUGIN: Camera (task camera-page, 2026-07-30) ──────────────────
+  cameraUnit(),                       // → alarmImages[controlTarget] ?? null — PURE READ of pushed state, zero fetch, zero derivation
+  cameraLabel(num),                   // → alarmImages[num].label ?? null — server-supplied "SHORT !hexid"; the id is shown because short names are not unique
+  async cameraGrab(),                 // → confirm(), then POST /nodes/:num/pac-command {verb:'cam'}. REPLACES the image in the device's flash and transmits on the Private channel. Reuses the existing route; no new endpoint. Receipt is the Command tab's pushed ledger.
 }
 ```
 
 ## State (declared in `app.js`, this mixin's methods read/write it)
 
 `controlTarget` (selected unit num, null initially), `controlVerb`
-(free-text input), `controlSending` (bool, disables Send while in flight).
-`pacHostQueues` (server-pushed, keyed by unit num) lives at the root — see
-`app-ws.js` — not owned by this mixin, only read by `controlLedger()`.
+(free-text input), `controlSending` (bool, disables Send while in flight),
+`cameraGrabbing` (bool, disables Take photo while in flight).
+`pacHostQueues` and `alarmImages` (both server-pushed, keyed by unit num) live
+at the root — see `app-ws.js` — not owned by this mixin, only read by
+`controlLedger()` and `cameraUnit()`/`cameraLabel()`.
 
 ## Invariants
 

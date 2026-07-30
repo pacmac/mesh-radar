@@ -28,8 +28,8 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: c453b15b26a1432f01907ce9ff1001b76d6ac310f99934d7842618d2121d69ce
-updated: 2026-07-29
+source_hash: ad6cec5552ab712ee3c295f985159ab3a32285885ae705d141bf048e4549bb72
+updated: 2026-07-30
 ---
 
 # Module: browser-playwright-audit
@@ -401,7 +401,27 @@ when the route takes `!hexid`. Both wrong.
 ### `/control` added to `ROUTES`
 
 It was **absent entirely**: a real page with six sub-tabs, never audited. Now
-covered at both viewports (24 checks).
+covered at both viewports (24 checks). A **seventh** sub-tab, Camera, was added
+2026-07-30 (task `camera-page`).
+
+### Camera sub-tab coverage (2026-07-30)
+
+The generic `/control` route audit covers Camera's markup, geometry and console
+cleanliness. It deliberately does **not** assert transfer content: whether a
+transfer is in flight depends on the mesh at that instant, so any assertion
+about chunk counts would be flaky by construction and would fail on correct
+behaviour — the same mistake as the earlier `Least hops` assertion above.
+
+Live-progress rendering is therefore verified by **measurement against a real
+transfer**, recorded in `docs/modules/alarm-images.md` (pid 50108, 2026-07-30,
+~20 consecutive live WS pushes, `0 / 12 · 0%` → `6 / 12 · 50%` across two
+screenshots 20 s apart with no interaction). That is evidence the suite cannot
+produce on demand and must not pretend to.
+
+**Take photo is a transmitting control** and belongs to the forbidden set — it
+puts a command on air and replaces the image in the device's flash. It is
+verified for presence, label and disabled state only. It must never be clicked
+by the suite.
 
 ### Known pre-existing failure — not this audit's doing
 
