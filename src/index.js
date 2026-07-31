@@ -36,6 +36,7 @@ import { initLifecycle } from './lifecycle.js';
 import { startImapReceiver } from './imap-receiver.js';
 import { resolveNodeLabel, registerMacResolver, registerNodeIdResolver } from './node-label.js';
 import { OpManager } from './op-manager.js';
+import { renderPluginTabs, renderPluginNav, renderPluginHeader, renderPluginScripts } from './browser-plugins.js';
 
 // ─── ALARM PLUGIN ────────────────────────────────────────────────────────────
 // The composition root is the ONE place allowed to know a plugin exists. These
@@ -50,6 +51,7 @@ import { OpManager } from './op-manager.js';
 import './alarm-sections.js';
 import './alarm-ws.js';
 import './alarm-images.js';
+import './alarm-browser.js';
 
 registerNodeIdToMacResolver(getLiveMacByNodeId);
 registerMacToNodeIdResolver(getLiveNodeIdByMac);
@@ -120,12 +122,31 @@ app.get('/utils.js', (req, res) => {
 // with the contents of public/partials/filename at request time.
 const PARTIALS_DIR = path.join(PUBLIC_DIR, 'partials');
 
+// Plugin partial paths are relative to public/, core partials to public/partials/.
+function readPartial(rel) {
+  const p = path.join(PUBLIC_DIR, rel);
+  return existsSync(p) ? readFileSync(p, 'utf8') : `<!-- missing plugin partial: ${rel} -->`;
+}
+
 function assembleIndex() {
   let html = readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
-  return html.replace(/<!--\s*include:\s*(\S+)\s*-->/g, (_, filename) => {
+  // Generic plugin markers. With NO plugins registered every one of these
+  // renders to an empty string — that is the plugin-absent case and it must
+  // stay a clean no-op (docs/BROWSER_PLUGIN_SPEC.md).
+  // INCLUDES FIRST. The `plugin: nav` marker lives inside drawer-sidebar.html,
+  // so it does not exist in the document until that partial has been inlined.
+  // Substituting markers before includes silently leaves the nav marker in
+  // place as a comment — the sidebar renders, minus the plugin's entries, and
+  // nothing errors. Order is load-bearing.
+  html = html.replace(/<!--\s*include:\s*(\S+)\s*-->/g, (_, filename) => {
     const p = path.join(PARTIALS_DIR, filename);
     return existsSync(p) ? readFileSync(p, 'utf8') : `<!-- missing partial: ${filename} -->`;
   });
+  return html
+    .replace('<!-- plugin: tabs -->',    () => renderPluginTabs(readPartial))
+    .replace('<!-- plugin: nav -->',     () => renderPluginNav(readPartial))
+    .replace('<!-- plugin: header -->',  () => renderPluginHeader(readPartial))
+    .replace('<!-- plugin: scripts -->', () => renderPluginScripts());
 }
 
 function serveIndex(req, res) {

@@ -1,0 +1,7 @@
+<!-- ALARM PLUGIN — header badge. NOT CORE.
+     Shows that the alarm's backend (pac-host) is reachable. Absent entirely
+     when the plugin is unwired. See docs/BROWSER_PLUGIN_SPEC.md. -->
+<div class="badge badge-sm" x-show="pacHostStatus?.available"
+     :class="pacHostStatus?.status === 'ready' ? 'badge-success' : 'badge-warning'"
+     title="Custom backend (pac-host) connected"
+     x-text="'custom'"></div>

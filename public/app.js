@@ -14,8 +14,6 @@ import { telemetryMixin } from './app-telemetry.js';
 import { configMixin }      from './app-config.js';
 import { componentsMixin }  from './app-components.js';
 import { nodeStatusMixin }  from './app-node-status.js';
-import { controlMixin }     from './app-control.js';
-import { alignMixin }       from './app-align.js';
 import { fetchJSON, themeColor, svgElem } from './app-helpers.js';
 import { initPersist, persistGet, persistSet } from './app-persist.js';
 
@@ -80,30 +78,7 @@ function dashboard() {
     wsConnected:    false,
     serverReachable: true,
     bridgeConnected: true,
-    pacHostStatus:   null,
-    // ALARM PLUGIN display cache — server-pushed image transfer progress
-    // (alarm_images). Display only: every count, percentage and elapsed time in
-    // it is computed by src/alarm-images.js. See docs/CAMERA_PAGE_SPEC.md.
-    alarmImages:     {},
-    cameraGrabbing:  false,
-    // Which stored image is shown large. Local UI selection only — never
-    // persisted, never sent anywhere. Null means "the newest addressable one".
-    cameraSelectedKey: null,
     events:          [],
-
-    // -- pac-host command surface ---------------------------------------------
-    controlTab:      persistGet('controlTab', 'command'),
-    controlTarget:   null,
-    controlVerb:     '',
-    controlSending:  false,
-    pacHostQueues:   {},
-
-    // -- pac-host antenna alignment --------------------------------------------
-    alignModel:          null,
-    alignTarget:         null,
-    alignNBurst:         4,
-    alignReplyWinInput:  30,
-    alignSending:        false,
 
     // -- Rotator / Yagi -------------------------------------------------------
     yagiAz:          null,
@@ -418,10 +393,17 @@ function dashboard() {
 // Use defineProperties to merge mixins so getters are transferred without being invoked.
 window.dashboard = function() {
   const state = dashboard();
+  // Plugin-contributed state, merged before the mixins that read it. Same rule:
+  // core never names a plugin, and no plugins means no change at all.
+  for (const p of (window.__dashPlugins || [])) Object.assign(state, p.state || {});
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
     rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
-    componentsMixin, perfMixin, nodeStatusMixin, controlMixin, alignMixin,
+    componentsMixin, perfMixin, nodeStatusMixin,
+    // Plugin-contributed mixins. Core does not know what any of them are; a
+    // plugin registers itself in window.__dashPlugins from a script emitted
+    // BEFORE this file (src/browser-plugins.js). With no plugins this is [].
+    ...(window.__dashPlugins || []).flatMap(p => p.mixins || []),
   ];
   for (const mixin of mixins) {
     Object.defineProperties(state, Object.getOwnPropertyDescriptors(mixin));

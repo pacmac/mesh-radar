@@ -60,30 +60,27 @@ export const wsMixin = {
   },
 
   handleEvent(ev) {
+    // Plugin OBSERVERS run first and claim nothing. They exist because a plugin
+    // sometimes needs an event core owns — the alarm defaults its align target
+    // from `node_list`'s favourites, which core claims and returns on. An
+    // observer reads the PUSHED PAYLOAD (ev), never component state, since core
+    // has not updated it yet at this point.
+    for (const plugin of (window.__dashPlugins || [])) {
+      try { plugin.wsObservers?.[ev.type]?.call(this, ev); }
+      // A broken plugin must never take the core event loop down with it.
+      catch (e) { console.error('[plugin observer]', plugin.name, ev.type, e); }
+    }
+
     if (ev.type === 'config_op')           { handleConfigOp(ev); return; }
     if (ev.type === 'bridge_connected')    { this.bridgeConnected = true;  return; }
     if (ev.type === 'bridge_disconnected') { this.bridgeConnected = false; return; }
-    if (ev.type === 'pac_host_status')     {
-      this.pacHostStatus = ev;
-      // Default to the first known commandable unit so the Control page has
-      // something to show the moment units become known — never overrides an
-      // actual (even auto) choice already made, only fires while still null.
-      if (this.controlTarget == null) {
-        const first = this.controlDevices()[0];
-        if (first) this.controlTarget = first.num;
-      }
-      return;
-    }
-    if (ev.type === 'pac_host_queues')     { this.pacHostQueues = ev.queues || {}; return; }
-    if (ev.type === 'alarm_images')        { this.alarmImages = ev.units || {}; return; }
-    if (ev.type === 'pac_host_align')      {
-      this.alignModel = ev.model;
-      // Adopt the session's own target once it has one (mirrors the archived
-      // app-align.js's adoptModel — "Adopt target from it"). Same never-override
-      // guard as controlTarget above: only fires while still null.
-      if (this.alignTarget == null && ev.model?.target != null) this.alignTarget = ev.model.target;
-      if (typeof ev.model?.replyWindowSec === 'number') this.alignReplyWinInput = ev.model.replyWindowSec;
-      return;
+    // Plugin-contributed event types. Core keeps FIRST REFUSAL — this runs only
+    // after every core handler above has declined, so a plugin can never shadow
+    // a core message. Core does not know what types exist here; a plugin
+    // registers them in window.__dashPlugins (docs/BROWSER_PLUGIN_SPEC.md).
+    for (const plugin of (window.__dashPlugins || [])) {
+      const fn = plugin.wsHandlers?.[ev.type];
+      if (fn) { fn.call(this, ev); return; }
     }
 
     if (ev.type === 'settings') {
@@ -386,10 +383,6 @@ export const wsMixin = {
     if (ev.type === 'node_list') {
       // Server-computed nav entries — the browser never scans for favourites.
       this.favourites = ev.favourites ?? [];
-      // Default the align target to the first favourite, same never-override
-      // guard as controlTarget/alignTarget-from-model above — only fires
-      // while nothing (neither a user pick nor a running session) has set it.
-      if (this.alignTarget == null && this.favourites.length) this.alignTarget = this.favourites[0].num;
       this.nodes = ev.nodes ?? [];
       this.nodeCount = this.nodes.length;
       this.nodeTotal = ev.total ?? this.nodes.length;

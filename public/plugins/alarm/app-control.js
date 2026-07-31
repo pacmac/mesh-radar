@@ -8,8 +8,8 @@
 // queue existed briefly and was a real bug (Peter, 2026-07-25) — it went
 // stale the moment the queue changed without another click, which is not
 // "real time" regardless of how interactive the trigger looked.
-import { fetchJSON } from './app-helpers.js';
-import { persistSet } from './app-persist.js';
+import { fetchJSON } from '/app-helpers.js';
+import { persistSet } from '/app-persist.js';
 
 export const CONTROL_SHORTCUTS = ['ping', 'status', 'config', 'reboot'];
 
@@ -73,6 +73,48 @@ export const controlMixin = {
   /** Local UI selection — an interaction, not page data, so it lives here and
    *  is never persisted or sent anywhere. */
   cameraSelect(key) { this.cameraSelectedKey = key; },
+
+  /** What the device says it is holding, from the last check. Null until asked. */
+  cameraDevice() { return this.cameraUnit()?.device ?? null; },
+
+  /** Ask the device what image it currently holds.
+   *
+   *  DELIBERATELY A BUTTON, NOT A POLL. This is a radio round-trip (~4.3 s
+   *  measured) and services were explicit: airtime on that link is the scarcest
+   *  thing in the project and a background poller would compete with real
+   *  commands for the same wake windows. One call when somebody actually asks. */
+  async cameraCheckDevice() {
+    if (this.controlTarget == null) { this.showToast('Select a unit first', 'error', 0); return; }
+    this.cameraChecking = true;
+    try {
+      const r = await fetchJSON(`/alarm/image/${this.controlTarget}/check`, 'POST');
+      this.showToast(r.pid != null ? `Device is holding image ${r.pid}` : 'Device reported no image', 'success', 4000);
+    } catch (e) {
+      this.showToast(e.message || 'The device did not answer', 'error', 0);
+    } finally {
+      this.cameraChecking = false;
+    }
+  },
+
+  /** Pull an image the device holds and we do not.
+   *
+   *  Returns as soon as the transfer STARTS — a full pull is minutes, so the
+   *  page must not wait on it. Progress appears in the Transfer card through the
+   *  same path as every other transfer. */
+  async cameraFetchDevice() {
+    const d = this.cameraDevice();
+    if (!d?.fetchable) return;
+    if (!confirm(`Download image ${d.pid} from the device?\n\nThis transfers over the radio and can take several minutes. Watch the Transfer card for progress.`)) return;
+    this.cameraFetching = true;
+    try {
+      await fetchJSON(`/alarm/image/${this.controlTarget}/${d.pid}/fetch`, 'POST');
+      this.showToast(`Downloading image ${d.pid} — watch Transfer`, 'success', 5000);
+    } catch (e) {
+      this.showToast(e.message || 'Could not start the download', 'error', 0);
+    } finally {
+      this.cameraFetching = false;
+    }
+  },
 
   /** Take a NEW photo and upload it.
    *

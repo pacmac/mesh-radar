@@ -1,7 +1,7 @@
 ---
 module: app-control
-source: public/app-control.js
-source_hash: ae3e5c45335598bebbdd626c4fe25cf6a40b6daeff9a4f8c5bc8ad5e3688505a
+source: public/plugins/alarm/app-control.js
+source_hash: 633af0e40e23412a4685cd8754ea98e3e168d9f7a4cd8587ca42e5f041f0645c
 updated: 2026-07-31
 ---
 

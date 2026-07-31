@@ -12,6 +12,9 @@ source:
   - public/index.html
   - public/sw.js
   - public/partials/drawer-sidebar.html
+  - public/plugins/alarm/plugin.js
+  - public/plugins/alarm/nav.html
+  - public/plugins/alarm/header.html
   - public/partials/tab-cfg.html
   - public/partials/tab-devices.html
   - public/partials/tab-messages.html
@@ -28,7 +31,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 7d3ffa5548bf686a64f80c09b97b27a843450c657f5b57b55edf21635a35fcdd
+source_hash: 635dae3a65563fb6472ccb636227091c4f2ecad6ab42497dbd4d108274f2dbe8
 updated: 2026-07-31
 ---
 

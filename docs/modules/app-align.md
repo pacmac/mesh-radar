@@ -1,8 +1,8 @@
 ---
 module: app-align
-source: public/app-align.js
-source_hash: 995dd860deaf2caa7144f29463dcc200e43430f25f81c1b23b31beda43360678
-updated: 2026-07-25
+source: public/plugins/alarm/app-align.js
+source_hash: 7bd164473e7348fe83c713642212627998a015a71e1777aa675b701693f79ddf
+updated: 2026-07-31
 ---
 
 # Module: app-align

@@ -33,6 +33,7 @@
   };
 </script>
 <script src="/vendor/chart.umd-4.min.js"></script>
+<!-- plugin: scripts -->
 <script type="module" src="/app.js?v=20260723audit1"></script>
 <script defer src="/vendor/alpinejs-3.15.12.min.js"></script>
 <style>
@@ -225,10 +226,7 @@
                @click="setNav('perf')"
                x-text="'RF ' + perfSignedDb(perfScore(), 1, true)"></div>
         </template>
-        <div class="badge badge-sm" x-show="pacHostStatus?.available"
-             :class="pacHostStatus?.status === 'ready' ? 'badge-success' : 'badge-warning'"
-             title="Custom backend (pac-host) connected"
-             x-text="'custom'"></div>
+        <!-- plugin: header -->
         <div class="badge badge-sm" :class="wsConnected ? 'badge-primary' : 'badge-ghost'" x-text="wsConnected ? 'live' : 'offline'"></div>
       </div>
     </div>
@@ -259,7 +257,7 @@
         <template x-if="tab==='perf'"><!-- include: tab-perf.html --></template>
         <template x-if="tab==='range'"><!-- include: tab-range.html --></template>
         <template x-if="tab==='messages'"><!-- include: tab-messages.html --></template>
-        <template x-if="tab==='control'"><!-- include: tab-control.html --></template>
+        <!-- plugin: tabs -->
         <template x-if="tab==='devices'"><!-- include: tab-devices.html --></template>
         <template x-if="tab==='node'"><!-- include: tab-node.html --></template>
 

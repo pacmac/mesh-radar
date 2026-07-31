@@ -379,6 +379,42 @@
               </div>
             </template>
 
+            <!-- ON THE DEVICE. Deliberately NOT a dropdown: the device holds ONE
+                 payload and a new publish replaces it (measured, and confirmed by
+                 services). A one-item dropdown would imply a catalogue that does
+                 not exist. Checking costs a radio round-trip, so it is a button
+                 and never a poll. -->
+            <template x-if="cameraUnit()">
+              <div class="card bg-base-100 shadow shrink-0">
+                <div class="card-body py-3 gap-2">
+                  <div class="flex items-baseline justify-between gap-3">
+                    <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">On the device</h2>
+                    <button class="btn btn-xs" @click="cameraCheckDevice()" :disabled="cameraChecking"
+                            x-text="cameraChecking ? 'asking…' : 'Check device'"></button>
+                  </div>
+
+                  <p class="text-sm opacity-60" x-show="!cameraDevice()" x-text="cameraUnit().device_hint"></p>
+
+                  <template x-if="cameraDevice()">
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span class="text-sm font-mono tabular-nums">image <span x-text="cameraDevice().pid"></span></span>
+                      <span class="text-xs text-base-content/50" x-show="cameraDevice().chunks_text"
+                            x-text="cameraDevice().chunks_text"></span>
+                      <span class="badge badge-sm"
+                            :class="cameraDevice().held ? 'badge-success' : (cameraDevice().fetchable ? 'badge-warning' : 'badge-ghost')"
+                            x-text="cameraDevice().status_text"></span>
+                      <!-- Never presented as live: one radio call at a moment in
+                           time, and the device can publish a new payload after it. -->
+                      <span class="text-xs text-base-content/40" x-text="cameraDevice().checked_text"></span>
+                      <button class="btn btn-primary btn-xs ml-auto" x-show="cameraDevice().fetchable"
+                              @click="cameraFetchDevice()" :disabled="cameraFetching"
+                              x-text="cameraFetching ? 'starting…' : 'Download'"></button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+
             <!-- ATTEMPTS. pac-host forgets a transfer the instant it ends, so
                  without this an idle page looks identical whether the last week
                  held nothing or held nothing but failures. Peter, 2026-07-31:

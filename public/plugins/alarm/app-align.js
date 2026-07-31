@@ -14,7 +14,7 @@
 // alignTarget/alignNBurst/alignReplyWinInput are the ONLY browser-originated
 // values (same invariant the archive stated) — raw input, sent as-is, never
 // interpreted here.
-import { fetchJSON } from './app-helpers.js';
+import { fetchJSON } from '/app-helpers.js';
 
 export const alignMixin = {
   // Targets are node-dash's own favourites list (server-computed, already
