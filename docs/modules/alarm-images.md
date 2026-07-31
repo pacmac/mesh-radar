@@ -91,6 +91,24 @@ says so** (`history_note`): a process restart empties it, and attempts made
 while node-dash was down were never observable. Stating that beats implying a
 complete record.
 
+## What the device is holding — NOT a list
+
+`GET /images/<t>` returns a **single descriptor**, not a catalogue: the device
+holds one payload and a new publish replaces it. Measured 2026-07-31 against the
+bench unit — `{"pid":35560,"state":3,"chunks":11,"crc":…,"ready":true}` in 4.30 s.
+services confirmed independently: *"a one-item dropdown would imply a catalogue
+exists and none does."*
+
+So the page renders one line — *"device is holding pid N, not yet downloaded
+[Download]"* — and that line reports `already downloaded` instead when the pid is
+in `/stored`. Peter's requirement, 2026-07-31: *"I need to be able to pull an
+existing image whether or not it has been sent before."*
+
+`_device[num]` is populated ONLY by a user-initiated check (`setDeviceImage`).
+There is no poller and there must not be one — see `alarm-image-api.md`.
+`checked_text` always states when the check happened, because the device can
+publish a new payload immediately afterwards and this is never live.
+
 ## Stored images
 
 `/stored` rows are shaped into `images[]`, newest first, each carrying a
@@ -141,7 +159,9 @@ Self-registers on import. Exports exactly one function, for its sibling plugin
 module only:
 
 ```js
-export function isStoredPid(num, pid)  // → boolean
+export function isStoredPid(num, pid)   // → boolean — in the last /stored poll
+export function isDevicePid(num, pid)   // → boolean — the pid the DEVICE reported holding
+export function setDeviceImage(num, info)  // record a user-initiated device check
 ```
 
 The allowlist `alarm-image-api.js` gates every byte fetch on. **Core must never

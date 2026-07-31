@@ -30,6 +30,7 @@ const HISTORY_MAX = 12;
 let _timer = null;
 let _byNum = {};          // num -> display-ready unit model
 let _stored = {};         // num -> Set of stored pids (the image route's allowlist)
+let _device = {};         // num -> what the DEVICE says it holds, from a user-initiated check
 let _history = {};        // num -> [{ pid, received, count, outcome, ... }] newest first
 let _live = {};           // num -> { pid -> last raw transfer seen }, for end-detection
 let _broadcast = null;
@@ -47,6 +48,21 @@ const fmtBytes = b =>
  *  pac-host for an unstored pid does not 404, it hangs. */
 export function isStoredPid(num, pid) {
   return _stored[num] instanceof Set && _stored[num].has(Number(pid));
+}
+
+/** Is this the pid the DEVICE told us it is holding? Fetchable, but only via
+ *  the server-side fetch action — never as an <img src>, because a pid we do
+ *  not already hold runs the full radio pull and takes minutes. */
+export function isDevicePid(num, pid) {
+  return Number(_device[num]?.pid) === Number(pid);
+}
+
+/** Record what the device says it is holding. Called by the user-initiated
+ *  check in `alarm-image-api.js` — NEVER from a timer (see pac-host's
+ *  getDeviceImage). */
+export function setDeviceImage(num, info) {
+  _device[num] = info && Number.isFinite(Number(info.pid)) ? { ...info, at: Date.now() } : null;
+  _poll();
 }
 
 // A stored row shaped for display. Every string is built here.
@@ -261,6 +277,32 @@ async function _poll() {
       // [] is a real answer: that unit has sent nothing yet. !18a01fc4 is
       // genuinely empty right now, and that must not render as an error.
       images_empty_text: shapedImages.length ? null : 'no images stored for this unit yet',
+      // What the DEVICE is holding, from the last user-initiated check.
+      // Deliberately NOT a list: the device holds ONE payload and a new publish
+      // replaces it — measured, and confirmed by services (xsession #64), which
+      // is why there is no dropdown here. `held` means the bytes are already in
+      // /stored, in which case there is nothing to fetch.
+      device: (() => {
+        const d = _device[u.num];
+        if (!d || !Number.isFinite(Number(d.pid))) return null;
+        const pid  = Number(d.pid);
+        const held = pidSet.has(pid);
+        const at   = msToSec(d.at);
+        return {
+          pid,
+          held,
+          ready:        d.ready === true,
+          chunks_text:  Number.isFinite(Number(d.chunks)) ? `${fmtCount(d.chunks)} chunks` : null,
+          // Never presented as live: this came from one radio call at a moment
+          // in time, and the device can publish a new payload at any point.
+          checked_text: at != null ? `checked ${fmtAgo(at, nowSec)}` : null,
+          status_text:  held
+            ? 'already downloaded'
+            : (d.ready === true ? 'not yet downloaded' : 'not ready to send'),
+          fetchable:    !held && d.ready === true,
+        };
+      })(),
+      device_hint: _device[u.num] ? null : 'Ask the device what it is holding — one radio call, a few seconds.',
       history: (_history[u.num] || []).map(h => shapeHistory(h, nowSec)),
       // Said plainly rather than implied: we can only report what we watched.
       history_note: 'Attempts observed while node-dash was running. Earlier transfers are not recorded.',

@@ -55,6 +55,27 @@ has already published in that list.
 export default router   // GET /alarm/image/:num/:pid
 ```
 
+### Actions (POST) — added 2026-07-31, task `camera-image-card`
+
+| route | does |
+|---|---|
+| `POST /alarm/image/:num/check` | asks the DEVICE what image it currently holds |
+| `POST /alarm/image/:num/:pid/fetch` | pulls an image the device holds and we do not; returns **202 immediately** |
+
+**`check` is user-initiated ONLY and must never be put on a timer.** It is a real
+radio round-trip — pac-host issues `push stat` and waits, no cache, every call;
+measured 3.5-4.3 s. services, asked directly: *"Airtime on that link is the
+scarcest thing in this project… a background poller would compete with real
+commands for the same windows."*
+
+**`fetch` returns 202 and does not block.** A pull of a pid we do not hold is a
+full radio transfer (services measured 183-239 s). Progress renders through the
+existing `/progress` polling on the same code path as every other transfer, and
+the bytes land in `/stored`. Gated on the pid the device reported holding — never
+an arbitrary number, for the same reason as the stored allowlist.
+
+### GET bytes
+
 | response | when |
 |---|---|
 | `200 image/jpeg` | pid is in the last-polled stored list and pac-host returned bytes |

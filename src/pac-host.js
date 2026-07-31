@@ -302,6 +302,41 @@ export async function getStoredImages(unit) {
   return _call(`/mesh/images/${encodeURIComponent(unit)}/stored`);
 }
 
+/** What the device is CURRENTLY HOLDING — one payload, not a list.
+ *
+ *  RADIO ROUND-TRIP. pac-host implements this as a real `push stat` command to
+ *  the device and a real reply, every call, with no caching (services, xsession
+ *  #64). Measured 4.30 s against the bench unit.
+ *
+ *  → { pid, state, chunks, crc, proto, fw, ready }
+ *
+ *  **NEVER call this on a timer.** services, asked directly: *"Airtime on that
+ *  link is the scarcest thing in this project, the deployed unit listens ~8 s in
+ *  every 900, and a background poller would compete with real commands for the
+ *  same windows."* It is user-initiated only. If a cadence is ever needed,
+ *  services own the polling and publish the result with an age — we do not start
+ *  a poller here.
+ *
+ *  An earlier note in this file called this route unusable after a 25 s timeout
+ *  on 2026-07-29. That measurement is stale. */
+export async function getDeviceImage(unit, { timeoutMs = 20000 } = {}) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${PAC_HOST_URL}/mesh/images/${encodeURIComponent(unit)}`,
+                            { signal: ac.signal });
+    if (!res.ok) throw Object.assign(new Error(`pac-host ${res.status}`), { status: res.status });
+    return res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw Object.assign(new Error(`device did not answer in ${timeoutMs}ms`), { status: 504 });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The BYTES of one stored image, as a Buffer.
  *
  *  CALLERS MUST HAVE ALREADY ESTABLISHED THAT THIS PID IS STORED. Asking for a
