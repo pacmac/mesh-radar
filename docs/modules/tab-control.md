@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: 275b7686d4f48a61ea010c820b276cb9b29cb0ed0a462bf4cef1466e1ff44405
+source_hash: 331372ba35758f2d4431fe9fe15a162c8f64f599f269acbd3267960b4a243ffd
 updated: 2026-07-31
 ---
 
@@ -153,8 +153,11 @@ Peter: *"so I have some visibility"* — the successor to the archived
   an indeterminate one when it is null. The page never invents a proportion it
   was not given.
 - **Recent attempts card** (`x-if="cameraHistory().length"`): one row per
-  observed ended transfer — a `saved`/`ended` badge, chunks reached, repairs and
-  dupes, when it ended and how long it took. Present because pac-host forgets a
+  observed ended transfer — a `complete`/`partial`/`ended` badge, chunks
+  reached, repairs and dupes, when it ended and how long it took, plus
+  `outcome_text` spelling the outcome out in words underneath (a partial attempt
+  for an image already held is not the same event as one that lost the only
+  copy, and both used to render as `saved`). Present because pac-host forgets a
   transfer the moment it ends, so without it an idle page looks identical
   whether the last week held nothing or nothing but failures (Peter,
   2026-07-31). The card carries `history_note` verbatim: only attempts observed
@@ -183,9 +186,18 @@ placeholder, against services' `160a4a1` local store read.
 - Thumbnails use `loading="lazy"`.
 - The timestamp reads **"saved"**, never "captured": `savedAt` is when the bytes
   were stored, not when the shutter fired.
-- **No "test pattern" marker.** A `pid === 1 && bytes === 7156` heuristic was
-  implemented and removed — `!987ab80f`'s pid 1 is a real photograph. See
-  `alarm-images.md`.
+- **pid 1 is marked as the device's test image**, cited to firmware
+  (`TEST_IMAGE_PID = 1`, `TEST_IMAGE_LEN = 7156`, and `camPidFromCrc()` excludes
+  it). It *is* a real photograph — used as embedded test data. See
+  `alarm-images.md` for why this label was written, removed and restored.
+
+### The Take photo caption states what ONE PRESS does
+
+It previously promised the photo was delivered at the unit's next wake window.
+No single command achieves that: `cam grab` captures and stages, and a separate
+`push <pid>` transmits. The caption now says it captures and stages and
+**does not upload**, with the qualifier in `text-warning` so it is not missed.
+See `app-control.md` → "The capture verb".
 
 ## Invariants
 

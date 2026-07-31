@@ -1,7 +1,7 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: 8710da13b050abc52e8859d3060470d4a69017d71f1aa4b282200a70e5f92efd
+source_hash: ae3e5c45335598bebbdd626c4fe25cf6a40b6daeff9a4f8c5bc8ad5e3688505a
 updated: 2026-07-31
 ---
 
@@ -61,7 +61,7 @@ export const controlMixin = {
   // ── ALARM PLUGIN: Camera (task camera-page, 2026-07-30) ──────────────────
   cameraUnit(),                       // → alarmImages[controlTarget] ?? null — PURE READ of pushed state, zero fetch, zero derivation
   cameraLabel(num),                   // → alarmImages[num].label ?? null — server-supplied "SHORT !hexid"; the id is shown because short names are not unique
-  async cameraGrab(),                 // → confirm(), then POST /nodes/:num/pac-command {verb:'cam'}. REPLACES the image in the device's flash and transmits on the Private channel. Reuses the existing route; no new endpoint. Receipt is the Command tab's pushed ledger.
+  async cameraGrab(),                 // → confirm(), then POST /nodes/:num/pac-command {verb:'cam grab'}. CAPTURES AND STAGES ONLY — it does not upload; see "The capture verb" below. Reuses the existing route; no new endpoint. Receipt is the Command tab's pushed ledger.
   cameraImages(),                     // → cameraUnit().images ?? [] — stored images, newest first. Pure read; every string AND the url were built by src/alarm-images.js.
   cameraHistory(),                    // → cameraUnit().history ?? [] — ended transfers we observed. pac-host keeps no record once one ends.
   cameraSelected(),                   // → the image shown large: the selected key if still addressable, else the newest addressable, else null. A non-addressable row shares its pid with a newer one and cannot be fetched alone.
@@ -80,8 +80,63 @@ addressable — local UI selection, never persisted).
 at the root — see `app-ws.js` — not owned by this mixin, only read by
 `controlLedger()` and `cameraUnit()`/`cameraLabel()`.
 
+## The capture verb — `cam grab`, and why one press is not a photo delivered
+
+**Bare `cam` is not a capture.** It shipped that way and every Take photo press
+was a no-op. Firmware `main.cpp:2097` falls through to
+`{"type":"err","msg":"cam snap|grab|info|read|diag"}` — an error listing the
+sub-verbs. Confirmed on air, from node-dash's own message store:
+
+```
+10:27:00  OMNI → '@336b cam'
+10:27:01  BNCH → '{"type":"err","msg":"cam snap|grab|info|read|diag"}'
+```
+
+Peter caught it: *"that is a query and returns the verbs. so it is NOT working."*
+It came from the archived `push.html` era and was carried forward without ever
+being sent and observed.
+
+**`grab`, not `snap`.** `snap` publishes by *reference* and the camera stays
+awake while the RAK reads a 224-byte window per chunk over I2C. `grab` captures,
+bulk-reads to RAM, verifies that copy against the camera's own CRC, then
+**sleeps the camera** and uploads from RAM. For a battery unit facing a
+multi-minute upload the sleeping camera is the point, and a bad read fails
+before anything goes on air. Sent bare — the device derives the pid from image
+content, which is what makes a resumed transfer idempotent.
+
+**`cam grab` replies with nothing.** Silence is normal, not a failure; the next
+device message is a `push` status ~77 s later.
+
+### CAPTURE AND TRANSFER ARE SEPARATE OPERATIONS
+
+This is the part the button copy must not overstate. Measured 2026-07-31:
+
+```
+10:36:36  cam grab       → captured, no reply
+10:48:51  push stat      → up=18137, cnt=11, staged on the device
+10:51:18  push 18137     → the upload actually starts
+10:52:57  11/11 chunks, saved 2466 B
+```
+
+Both steps were driven **by hand**. One press of Take photo captures and stages;
+the image then sits on the device until a separate `push <pid>` is sent.
+
+node-dash cannot know the pid until the device reports it ~77 s later via
+`push stat`, and services' butler already owns the `push q`/`push rep` repair
+loop. **Polling for a pid and then driving an upload from the browser would put
+mesh orchestration in the dashboard**, which is the boundary
+`docs/PLUGIN_BOUNDARY_SPEC.md` and CLAUDE.md exist to hold. Asked of services as
+xsession #59: should pac-host expose one capture-and-upload operation?
+
+**Until that is settled the button says what one press does and no more** — it
+captures and stages, and states plainly that it does not upload. An earlier
+version promised the photo was "delivered at the unit's next wake window", which
+no single command achieves.
+
 ## Invariants
 
+- **Take photo must never claim to deliver an image.** One press captures and
+  stages; nothing in this file transmits the picture.
 - `controlDevices()` reads `pacHostStatus.units` directly — never a hardcoded
   node-id list. Source is `GET /v1/mesh/devices` (task
   `control-devices-endpoint`, 2026-07-25), which pac-host already scopes to

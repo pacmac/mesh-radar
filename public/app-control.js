@@ -74,18 +74,33 @@ export const controlMixin = {
    *  is never persisted or sent anywhere. */
   cameraSelect(key) { this.cameraSelectedKey = key; },
 
-  /** Take a NEW photo. This REPLACES the image in the device's flash and puts a
-   *  command on air, so it confirms first — services pulled a stale frame
-   *  believing it was fresh, which is the mistake this wording prevents.
+  /** Take a NEW photo and upload it.
+   *
+   *  THE VERB IS `cam grab`, AND BARE `cam` IS NOT A CAPTURE. We shipped bare
+   *  `cam` and every press was a no-op: firmware `main.cpp:2097` falls through
+   *  to `{"type":"err","msg":"cam snap|grab|info|read|diag"}` — an error
+   *  listing the sub-verbs. Peter caught it, 2026-07-31. It had been carried
+   *  over from the archived push.html era and never once sent and observed.
+   *
+   *  `grab` over `snap`: snap publishes by REFERENCE and the camera stays awake
+   *  while the RAK reads a 224-byte window per chunk over I2C. grab captures,
+   *  bulk-reads to RAM, verifies that copy against the camera's own CRC, then
+   *  SLEEPS the camera and uploads from RAM. For a battery unit facing a
+   *  multi-minute upload that is the whole point, and a bad read fails before
+   *  anything goes on air.
+   *
+   *  Sent bare, with no pid override: the device derives the pid from image
+   *  content, which is what makes a resumed transfer idempotent.
+   *
    *  Reuses the existing pac-command route; no new endpoint. The receipt is the
    *  Command tab's queue ledger, already pushed. */
   async cameraGrab() {
     if (this.controlTarget == null) { this.showToast('Select a unit first', 'error', 0); return; }
     const label = this.cameraLabel(this.controlTarget) || this.controlTarget;
-    if (!confirm(`Take a new photo on ${label}?\n\nThis REPLACES the image stored on the device and transmits on the Private channel. It is delivered at the unit's next wake window.`)) return;
+    if (!confirm(`Take a new photo on ${label}?\n\nThis CAPTURES a new image and stages it on the device, replacing the one held there. It transmits a command on the Private channel.\n\nIt does NOT upload the picture — capture and transfer are separate operations on this firmware, and the upload is not yet wired.`)) return;
     this.cameraGrabbing = true;
     try {
-      const result = await fetchJSON(`/nodes/${this.controlTarget}/pac-command`, 'POST', { verb: 'cam' });
+      const result = await fetchJSON(`/nodes/${this.controlTarget}/pac-command`, 'POST', { verb: 'cam grab' });
       this.showToast(`Queued: ${result.id}`, 'success', 3000);
     } catch (e) {
       this.showToast(e.message || 'Could not queue the photo', 'error', 0);

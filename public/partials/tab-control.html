@@ -322,11 +322,17 @@
                 <!-- Truthful label: a grab CAPTURES A NEW IMAGE AND REPLACES the
                      one in flash. services pulled a stale frame believing it was
                      fresh; the button says what it does and confirms first. -->
+                <!-- Says what ONE PRESS actually does. It used to promise delivery,
+                     which no single command achieves: `cam grab` captures and
+                     stages, and a separate `push <pid>` transmits. Measured
+                     2026-07-31 — both were driven by hand to land an image. Who
+                     owns that sequence is with services (xsession #59); until it
+                     is settled the button must not imply it uploads. -->
                 <p class="text-xs text-base-content/50">
-                  Takes a NEW photo and replaces the one stored on the device. Transmits on the
-                  Private channel and is delivered at the unit's next wake window — from the
-                  garage a full image is roughly a 20 minute operation. Watch the Command tab for
-                  the delivery receipt.
+                  Captures a NEW photo and stages it on the device, replacing the one held there.
+                  <span class="text-warning">It does not upload the picture yet</span> — on this
+                  firmware capture and transfer are separate operations, and the transfer step is
+                  not wired. Watch the Command tab for the receipt.
                 </p>
               </div>
             </div>
@@ -383,16 +389,22 @@
                 <div class="card-body py-3 gap-2">
                   <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Recent attempts</h2>
                   <template x-for="h in cameraHistory()" :key="h.key">
-                    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-base-200 pt-2 first:border-0">
-                      <span class="badge badge-sm"
-                            :class="h.outcome === 'saved' ? 'badge-success' : 'badge-ghost'"
-                            x-text="h.outcome === 'saved' ? 'saved' : 'ended'"></span>
-                      <span class="text-sm font-mono tabular-nums" x-text="h.chunks_text"></span>
-                      <span class="text-xs text-base-content/50" x-text="h.counts_text"></span>
-                      <span class="text-xs text-base-content/50 ml-auto">
-                        <span x-text="h.ended_text"></span>
-                        <span x-show="h.duration_text"> · took <span x-text="h.duration_text"></span></span>
-                      </span>
+                    <div class="flex flex-col gap-0.5 border-t border-base-200 pt-2 first:border-0">
+                      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <span class="badge badge-sm"
+                              :class="h.outcome === 'complete' ? 'badge-success'
+                                    : h.outcome === 'partial'  ? 'badge-warning' : 'badge-ghost'"
+                              x-text="h.outcome"></span>
+                        <span class="text-sm font-mono tabular-nums" x-text="h.chunks_text"></span>
+                        <span class="text-xs text-base-content/50" x-text="h.counts_text"></span>
+                        <span class="text-xs text-base-content/50 ml-auto">
+                          <span x-text="h.ended_text"></span>
+                          <span x-show="h.duration_text"> · took <span x-text="h.duration_text"></span></span>
+                        </span>
+                      </div>
+                      <!-- A partial attempt for an image we already hold is not
+                           the same event as one that lost the only copy. -->
+                      <span class="text-xs text-base-content/40" x-text="h.outcome_text"></span>
                     </div>
                   </template>
                   <p class="text-xs text-base-content/40 pt-1" x-text="cameraUnit()?.history_note"></p>
@@ -429,6 +441,12 @@
                       <span>saved <span x-text="cameraSelected().saved_stamp"></span></span>
                       <span x-text="cameraSelected().saved_text"></span>
                     </div>
+                    <!-- pid 1 is the firmware's embedded test image
+                         (TEST_IMAGE_PID), which camPidFromCrc can never assign
+                         to a real capture. Said plainly so a test frame is not
+                         mistaken for the garage. -->
+                    <p class="text-xs text-warning" x-show="cameraSelected().note"
+                       x-text="cameraSelected().note"></p>
                   </div>
                 </template>
 

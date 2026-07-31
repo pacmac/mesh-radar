@@ -67,16 +67,19 @@ function shapeImage(img, num, nowSec, newerPidSeen) {
     saved_text:  savedSec != null ? fmtAgo(savedSec, nowSec) : null,
     saved_stamp: savedSec != null ? fmtStamp(savedSec, { now: nowSec }) : null,
     addressable,
-    // NO "test pattern" LABEL. services said pid 1 on !8cee336b is a test
-    // pattern, and both units list pid 1 at exactly 7156 bytes, so a
-    // `pid === 1 && bytes === 7156` heuristic looked safe. It was written, and
-    // it was WRONG: !987ab80f's pid 1 decodes to a real photograph of
-    // buildings and sky (verified by eye, 2026-07-31). Shipping it would have
-    // stamped "not a capture" across a genuine image.
+    // pid 1 is the device's EMBEDDED TEST IMAGE, and this is the firmware
+    // contract rather than a guess:
+    //   main.cpp:489             TEST_IMAGE_PID = 1
+    //   include/test_image.h:22  TEST_IMAGE_LEN = 7156
+    //   main.cpp:521             camPidFromCrc() excludes 0 and TEST_IMAGE_PID
+    // pid 1 is RESERVED — a real capture can never be assigned it.
     //
-    // Whether a stored image is a test frame is not something this side can
-    // know. If pac-host ever publishes a flag we render it; until then we say
-    // nothing, because saying nothing is the only honest option.
+    // This label was written, then removed on 2026-07-31 because the image
+    // "decodes to a real photograph of buildings", then restored when the
+    // firmware was actually read. It IS a real photograph — used as embedded
+    // test data. Appearance was never the test, and reasoning from it got the
+    // wrong answer and briefly contradicted services, who were right.
+    note: (img.pid === 1 && img.bytes === 7156) ? 'device test image, not a capture' : null,
   };
 }
 
@@ -88,7 +91,13 @@ function shapeHistory(h, nowSec) {
   return {
     key:          `${h.pid}-${h.endedAt}`,
     pid:          h.pid,
-    outcome:      h.outcome,                        // 'saved' | 'ended'
+    outcome:      h.outcome,                        // 'complete' | 'partial' | 'ended'
+    // Said in words, because the badge alone cannot carry it: a partial attempt
+    // for an image we already hold is a very different event from one that lost
+    // the only copy, and both used to render as "saved".
+    outcome_text: h.outcome === 'complete' ? 'received in full'
+                : h.outcome === 'partial'  ? 'incomplete — image already held from an earlier transfer'
+                                           : 'incomplete — image not held',
     chunks_text:  h.count != null
       ? `${fmtCount(h.received)} / ${fmtCount(h.count)} chunks`
       : `${fmtCount(h.received)} chunks, total unknown`,
@@ -137,23 +146,46 @@ function shapeTransfer(t, nowSec) {
 // A transfer that was in flight last poll and is gone this poll has ENDED.
 // pac-host keeps no record of it, so if we do not capture it here it is lost —
 // which is exactly why the page could show a week of failures as "idle".
+//
+// KEYED BY pid + startedAt, NOT pid. A pid gets re-transferred: pac-host
+// auto-adopts any push it sees, so seconds after a successful transfer saves,
+// a SECOND transfer for the same pid can begin. Keying on pid alone meant the
+// new one occupied the old one's slot, the real ending was never recorded, and
+// the row that eventually appeared carried the *re-pull's* numbers.
+//
+// Measured 2026-07-31: pid 18137 completed 11/11 (1 repair, 10 dupes) and
+// saved at 09:52:59Z; pac-host auto-adopted the same pid at 09:53:00Z and that
+// second attempt EXFER'd at 3/0 chunks. The page showed "3 chunks, total
+// unknown · 0 repairs · 0 dupes" for what the operator had just watched
+// succeed. Peter: "it says total unknown".
 function _recordEndings(num, seenNow, storedPids, nowMs) {
   const prev = _live[num] || {};
-  for (const [pid, last] of Object.entries(prev)) {
-    if (seenNow[pid]) continue;                       // still running
-    const saved = storedPids.has(Number(pid));
-    const rows  = _history[num] || (_history[num] = []);
+  for (const [key, last] of Object.entries(prev)) {
+    if (seenNow[key]) continue;                       // still running
+    const pid      = Number(last.pid);
+    const received = last.received ?? 0;
+    const count    = last.count ?? null;
+    // Did THIS transfer get everything it was told to expect? That is a fact
+    // about this attempt. Whether the bytes exist at all is a separate fact —
+    // an earlier attempt may already have delivered them — and conflating the
+    // two is what made an aborted 3-chunk re-pull report "saved".
+    const complete = count != null && count > 0 && received >= count;
+    const held     = storedPids.has(pid);
+    const rows     = _history[num] || (_history[num] = []);
     rows.unshift({
-      pid:         Number(pid),
-      received:    last.received ?? 0,
-      count:       last.count ?? null,
+      pid,
+      received,
+      count,
       repairsSent: last.repairsSent ?? 0,
       dupes:       last.dupes ?? 0,
       startedAt:   last.startedAt ?? null,
       endedAt:     nowMs,
-      // Only two claims we can honestly make: the bytes turned up in the store,
-      // or the transfer stopped and they did not. NOT a diagnosis of why.
-      outcome:     saved ? 'saved' : 'ended',
+      // Three honest states, and none of them is a diagnosis of WHY:
+      //   complete — this attempt received every chunk of its manifest
+      //   partial  — it did not, but the image is in the store from elsewhere
+      //   ended    — it did not, and we do not hold the image
+      outcome:     complete ? 'complete' : (held ? 'partial' : 'ended'),
+      held,
     });
     rows.length = Math.min(rows.length, HISTORY_MAX);
   }
@@ -193,8 +225,13 @@ async function _poll() {
     const pidSet = new Set(images.map(i => Number(i.pid)).filter(Number.isFinite));
     stored[u.num] = pidSet;
 
+    // Keyed pid+startedAt so a re-adopted transfer of an already-delivered pid
+    // is a DIFFERENT entry, not the same one continuing. See _recordEndings.
     const seenNow = {};
-    for (const t of transfers) if (t?.pid != null) seenNow[t.pid] = t;
+    for (const t of transfers) {
+      if (t?.pid == null) continue;
+      seenNow[`${t.pid}-${t.startedAt ?? 0}`] = t;
+    }
     _recordEndings(u.num, seenNow, pidSet, nowMs);
 
     // pac-host returns newest first; the first row for a pid is the only one

@@ -1,7 +1,7 @@
 ---
 module: alarm-images
 source: src/alarm-images.js
-source_hash: 3be6c7f5fb0e1a03511666ceabab872dbeab168737cbcf6b5a976551791d7cf9
+source_hash: 2264c145ab824e9319f82cc7fce5749044fd231fea48f36e5650a21553fe77c2
 updated: 2026-07-31
 ---
 
@@ -42,15 +42,49 @@ no route that returns past attempts (probed `/list`, `/history` and
 
 So a transfer seen in one poll and absent from the next has **ended**, and if
 this module does not record that, nothing does. `_recordEndings()` captures the
-last-seen counters and asks one question of the stored list: did the bytes turn
-up? That yields exactly two honest outcomes:
+last-seen counters and records three states:
 
-- `saved` — the pid is now in `/stored`
-- `ended` — it is not
+- `complete` — this attempt received every chunk of its own manifest
+- `partial` — it did not, but the image is in `/stored` from an earlier transfer
+- `ended` — it did not, and we do not hold the image
 
-**Neither is a diagnosis.** This module does not know or claim *why* a transfer
-stopped, and must never grow a "failed"/"stalled"/"timed out" verdict — those
-are judgements about a radio link this side cannot see.
+**None of them is a diagnosis.** This module does not know or claim *why* a
+transfer stopped, and must never grow a "failed"/"stalled"/"timed out" verdict —
+those are judgements about a radio link this side cannot see.
+
+### Keyed by `pid + startedAt`, and that is load-bearing
+
+pac-host **auto-adopts any push it sees**, so a second transfer of the same pid
+can begin seconds after the first one succeeds. Keying in-flight transfers by
+`pid` alone let the newcomer occupy the completed transfer's slot: the real
+ending was never recorded, and the row that eventually appeared carried the
+*re-pull's* numbers.
+
+Measured 2026-07-31, and this is exactly what Peter saw:
+
+```
+09:52:59Z  pid 18137 completes 11/11, 1 repair, 10 dupes, saved 2466 B
+09:53:00Z  pac-host auto-adopts pid 18137 again — one second later
+09:58:07Z  that second attempt EXFERs at 3/0 chunks
+page showed: "saved · 3 chunks, total unknown · 0 repairs · 0 dupes"
+```
+
+Peter: *"the transfer succeeded, BUT: … it says total unknown"*. Fixed by
+keying on `pid + startedAt`; verified by reproducing the whole scenario
+(captured pid 35560, pushed it) and confirming the row reads
+`complete · 11 / 11 chunks · 0 repairs · 11 dupes`.
+
+**`outcome` must never be derived from the store alone.** The old code set
+`saved` from "is this pid in `/stored`", which was true because an *earlier*
+attempt delivered it — so an aborted 3-chunk re-pull reported success.
+"This attempt succeeded" and "the bytes exist" are different facts.
+
+> services hit the identical bug from their side, independently, and filed it as
+> their B109: their per-pid stats sidecar is overwritten by a later attempt on
+> the same pid, so `pid43238.stats.json` claims `outcome: ENOIMG, chunks: 0`
+> for a transfer that completed 12/12. Same shape, same cause. Passed to them
+> with our fix (xsession #60). **When their history endpoint lands it becomes
+> the authority and this drops to a fallback.**
 
 Bounded to `HISTORY_MAX` (12) per unit, in memory. **Restart-lossy, and the page
 says so** (`history_note`): a process restart empties it, and attempts made
@@ -77,17 +111,23 @@ server-built `url` pointing at `alarm-image-api.js`.
   nothing. `!18a01fc4` was genuinely empty when this shipped, and it must not
   render as an error.
 
-### No "test pattern" label — a heuristic that was written and then removed
+### pid 1 is the device's embedded test image — and this is firmware, not a guess
 
-services stated that pid 1 on `!8cee336b` is a test pattern rather than a
-capture, and both units list pid 1 at exactly 7156 bytes, so a
-`pid === 1 && bytes === 7156` label looked safe. It was implemented, and it was
-**wrong**: `!987ab80f`'s pid 1 decodes to a real photograph of buildings and sky
-(inspected directly, 2026-07-31). Shipping it would have stamped "not a
-capture" across a genuine image.
+```
+main.cpp:489             TEST_IMAGE_PID = 1
+include/test_image.h:22  TEST_IMAGE_LEN = 7156
+main.cpp:521             camPidFromCrc() excludes 0 and TEST_IMAGE_PID
+```
 
-Whether a stored image is a test frame is not knowable from this side. If
-pac-host publishes a flag, render it. Until then, say nothing.
+pid 1 is **reserved**; a real capture can never be assigned it. Rows matching
+`pid === 1 && bytes === 7156` are labelled `device test image, not a capture`.
+
+**This label was written, removed, and restored, and the removal is the lesson.**
+It was removed on 2026-07-31 because the image "decodes to a real photograph of
+buildings and sky" — which it does. It is a real photograph *used as embedded
+test data*. Appearance was never the test, reasoning from it produced the wrong
+answer, and it led to contradicting services who were right. The firmware was
+readable the whole time. See `device-capabilities-live-in-firmware-not-docs`.
 
 ## Dependencies
 
@@ -137,8 +177,8 @@ call this** — it exists because asking pac-host for an unstored pid does not
 `chunks_text`, `percent_text`, `percent`, `counts_text`, `cursor_text`,
 `started_text`, `last_rx_text`, `aborted`. Each **image** carries `key`, `pid`,
 `url`, `size_text`, `saved_text`, `saved_stamp`, `addressable`. Each **history**
-row carries `key`, `pid`, `outcome`, `chunks_text`, `counts_text`, `ended_text`,
-`ended_stamp`, `duration_text`.
+row carries `key`, `pid`, `outcome`, `outcome_text`, `chunks_text`,
+`counts_text`, `ended_text`, `ended_stamp`, `duration_text`.
 
 ## Invariants
 
