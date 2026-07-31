@@ -86,6 +86,9 @@ function dashboard() {
     // it is computed by src/alarm-images.js. See docs/CAMERA_PAGE_SPEC.md.
     alarmImages:     {},
     cameraGrabbing:  false,
+    // Which stored image is shown large. Local UI selection only — never
+    // persisted, never sent anywhere. Null means "the newest addressable one".
+    cameraSelectedKey: null,
     events:          [],
 
     // -- pac-host command surface ---------------------------------------------

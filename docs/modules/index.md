@@ -1,8 +1,8 @@
 ---
 module: index
 source: src/index.js
-source_hash: d56a0823cbdade4641d97d9b7e0586973e2e05cdf1090155ee0da07a2f81791e
-updated: 2026-07-30
+source_hash: 9ffdb6697c39b2190906ad2a6c1deba28f9e2cfc201f095f7c9604820f862a43
+updated: 2026-07-31
 ---
 
 # Module: index
@@ -118,15 +118,29 @@ once the rotator reports status). After the listener: `registerBridgeEvents(brid
   must be added to `WS_ONLY_ROUTES`/`WS_ONLY_EXACT`.
 - **`broadcastAll` is defined after `wss`**; the `_broadcast` closure bridges the
   forward reference for `OpManager`.
-- **Alarm-plugin imports are STATIC and top-level, and that is load-bearing.**
-  `./alarm-sections.js`, `./alarm-ws.js` and `./alarm-images.js` are imported as
-  bare side-effect imports near the top of the file, above `attachWsRelay`.
-  `registerWsWiring` is read exactly ONCE at attach time, so a registration
-  arriving later silently never fires — measured 0 live broadcasts in 110 s with
-  a dynamic import, while the connect replay still worked, which makes the
-  failure invisible from the UI. These three lines are the **only** permitted
-  reference to the alarm plugin anywhere in core; removing them must leave
-  node-dash fully functional.
+- **Alarm-plugin side-effect imports are STATIC and top-level, and that is
+  load-bearing.** `./alarm-sections.js`, `./alarm-ws.js` and `./alarm-images.js`
+  are imported as bare side-effect imports near the top of the file, above
+  `attachWsRelay`. `registerWsWiring` is read exactly ONCE at attach time, so a
+  registration arriving later silently never fires — measured 0 live broadcasts
+  in 110 s with a dynamic import, while the connect replay still worked, which
+  makes the failure invisible from the UI.
+- **This file is the composition root, and it is the ONLY core file permitted to
+  name the alarm plugin.** As of 2026-07-31 it names it eight times: three
+  side-effect imports above, plus `pacCommandRouter`, `pacAlignRouter` and
+  `alarmImageRouter` (import + `app.use` for each). Every one of those must stay
+  a **bare wiring line, deletable on its own**, leaving node-dash fully
+  functional — that is the property that matters, not the count.
+
+  > An earlier version of this invariant claimed the three side-effect imports
+  > were the *only* alarm reference in core. That was false when written —
+  > `pacCommandRouter`/`pacAlignRouter` were already here — and a false
+  > invariant is worse than none, because the next reader either trusts it or
+  > stops trusting the spec. Bug ledger B48.
+
+  Core modules that are **not** the composition root — `ws-relay.js`,
+  `node-status.js`, `db.js`, everything else — must not import, name or branch
+  on the plugin. They reach it only through the registration hooks.
 
 ## Test notes
 

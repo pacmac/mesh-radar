@@ -1,8 +1,8 @@
 ---
 module: app-control
 source: public/app-control.js
-source_hash: 86ad4cf53d46aea3516a07ffdf89538c0b00a8a703eb40f5fe91c8e357d82f5c
-updated: 2026-07-30
+source_hash: 8710da13b050abc52e8859d3060470d4a69017d71f1aa4b282200a70e5f92efd
+updated: 2026-07-31
 ---
 
 # Module: app-control
@@ -62,6 +62,10 @@ export const controlMixin = {
   cameraUnit(),                       // → alarmImages[controlTarget] ?? null — PURE READ of pushed state, zero fetch, zero derivation
   cameraLabel(num),                   // → alarmImages[num].label ?? null — server-supplied "SHORT !hexid"; the id is shown because short names are not unique
   async cameraGrab(),                 // → confirm(), then POST /nodes/:num/pac-command {verb:'cam'}. REPLACES the image in the device's flash and transmits on the Private channel. Reuses the existing route; no new endpoint. Receipt is the Command tab's pushed ledger.
+  cameraImages(),                     // → cameraUnit().images ?? [] — stored images, newest first. Pure read; every string AND the url were built by src/alarm-images.js.
+  cameraHistory(),                    // → cameraUnit().history ?? [] — ended transfers we observed. pac-host keeps no record once one ends.
+  cameraSelected(),                   // → the image shown large: the selected key if still addressable, else the newest addressable, else null. A non-addressable row shares its pid with a newer one and cannot be fetched alone.
+  cameraSelect(key),                  // → sets cameraSelectedKey. Local UI interaction, never persisted, never sent anywhere.
 }
 ```
 
@@ -69,7 +73,9 @@ export const controlMixin = {
 
 `controlTarget` (selected unit num, null initially), `controlVerb`
 (free-text input), `controlSending` (bool, disables Send while in flight),
-`cameraGrabbing` (bool, disables Take photo while in flight).
+`cameraGrabbing` (bool, disables Take photo while in flight),
+`cameraSelectedKey` (which stored image is shown large; null = newest
+addressable — local UI selection, never persisted).
 `pacHostQueues` and `alarmImages` (both server-pushed, keyed by unit num) live
 at the root — see `app-ws.js` — not owned by this mixin, only read by
 `controlLedger()` and `cameraUnit()`/`cameraLabel()`.

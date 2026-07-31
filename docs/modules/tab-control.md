@@ -1,8 +1,8 @@
 ---
 module: tab-control
 source: public/partials/tab-control.html
-source_hash: 7331cb1fb6935bc02c15070e1e933c80a1e1ef75aceccd3c2e4372ac1bc1d575
-updated: 2026-07-30
+source_hash: 275b7686d4f48a61ea010c820b276cb9b29cb0ed0a462bf4cef1466e1ff44405
+updated: 2026-07-31
 ---
 
 # Module: tab-control
@@ -152,19 +152,40 @@ Peter: *"so I have some visibility"* — the successor to the archived
   **Two bars, mutually exclusive**: a determinate one when `percent !== null`,
   an indeterminate one when it is null. The page never invents a proportion it
   was not given.
-- **Image card**: currently the honest placeholder "Not available yet."
+- **Recent attempts card** (`x-if="cameraHistory().length"`): one row per
+  observed ended transfer — a `saved`/`ended` badge, chunks reached, repairs and
+  dupes, when it ended and how long it took. Present because pac-host forgets a
+  transfer the moment it ends, so without it an idle page looks identical
+  whether the last week held nothing or nothing but failures (Peter,
+  2026-07-31). The card carries `history_note` verbatim: only attempts observed
+  while node-dash was running are recorded.
+- **Image card**: the newest addressable image rendered large with
+  `pid`/size/`saved` line, plus a thumbnail strip when more than one is stored.
+  Rows whose pid is shared with a newer row render as a non-clickable
+  `superseded` tile — `GET /images/<t>/<pid>` returns only the newest for a
+  given pid, so those cannot be fetched individually. Empty state uses the
+  server's `images_empty_text`; "select a unit" when none is chosen.
 
 **Every string on this page is server-computed** by `src/alarm-images.js`. This
 file formats no counts, no percentages and no elapsed times.
 
-### Image card status
+### Image card
 
-The placeholder text is **accurate as written but now out of date**. It says a
-local read of stored images "is being built"; services shipped it on 2026-07-30
-in `160a4a1` (`GET /v1/mesh/images/<t>/stored`, plus `/<t>/<pid>` serving from
-disk in ~3 ms). **node-dash does not call either yet** — wiring the real image
-panel is a separate task, and the placeholder stays until it lands rather than
-being quietly reworded to imply something that does not exist.
+Shipped 2026-07-31 (task `camera-image-card`), replacing the "Not available yet"
+placeholder, against services' `160a4a1` local store read.
+
+- `<img :src>` binds the **server-built** `img.url`
+  (`/alarm/image/<num>/<pid>`, served by `alarm-image-api.js`). The browser
+  never constructs an image URL, and never talks to pac-host.
+- `:key` on both the strip and the large view is `img.key` (`pid-savedAt`),
+  **not** `pid` — one unit currently lists 7 images under 3 distinct pids, and
+  duplicate `x-for` keys froze the message feed once already.
+- Thumbnails use `loading="lazy"`.
+- The timestamp reads **"saved"**, never "captured": `savedAt` is when the bytes
+  were stored, not when the shutter fired.
+- **No "test pattern" marker.** A `pid === 1 && bytes === 7156` heuristic was
+  implemented and removed — `!987ab80f`'s pid 1 is a real photograph. See
+  `alarm-images.md`.
 
 ## Invariants
 

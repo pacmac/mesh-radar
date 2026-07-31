@@ -262,19 +262,82 @@ export async function getQueue(unit) {
   return _call(`/mesh/queue/${encodeURIComponent(unit)}`);
 }
 
-/** In-flight image transfers for a unit. LOCAL READ, no radio: pac-host reads
- *  its own in-memory state and answers synchronously — measured 1.2 ms.
- *
- *  This is the ONLY image route safe to call from anything a page depends on.
- *  `/mesh/images/<t>` and `/mesh/images/<t>/<pid>` are BOTH radio round-trips
- *  aimed at a unit that listens ~8 s in every 300, so both can legitimately take
- *  MINUTES — measured at 75.02 s before services added a pid range-check, and
- *  25 s with no response at all. Do not call either on a page path.
+// -- pac-host's image routes, and what each one costs -----------------------
+// Only the two LOCAL reads below are safe on anything a page depends on.
+// Measured 2026-07-31 against the running service:
+//
+//   /mesh/images/<t>/progress     local, ~1.2 ms          <- safe, polled
+//   /mesh/images/<t>/stored       local, ~1.5 ms          <- safe, polled
+//   /mesh/images/<t>/<pid>        ~3 ms WHEN STORED       <- safe ONLY then
+//   /mesh/images/<t>/<pid>        no response in 45 s when the pid is a valid
+//                                 uint16 that is NOT stored — it leaves the
+//                                 store path entirely (no `served from store`
+//                                 log line) and does not come back
+//   /mesh/images/<t>/<pid>?refresh=1   radio: minutes, and a wake window
+//   /mesh/images/<t>              radio round-trip
+//
+// An earlier version of this comment said both non-progress image routes were
+// always radio round-trips. services' 160a4a1 (2026-07-30) made `/<pid>` serve
+// from disk when the bytes are already held, so that is now only half true —
+// corrected here rather than left to mislead (bug ledger B46).
+
+/** In-flight image transfers for a unit. LOCAL READ, no radio.
  *
  *  `transfers: []` means IDLE — 200 and nothing in flight. It is not an error
  *  and not "unknown" (services, xsession [ui-gaps-control-images]). */
 export async function getImagesProgress(unit) {
   return _call(`/mesh/images/${encodeURIComponent(unit)}/progress`);
+}
+
+/** Images pac-host already holds on disk for a unit. LOCAL READ, no radio —
+ *  measured 1.5 ms (services, 160a4a1).
+ *
+ *  → { target, images: [{ node, unit, pid, bytes, savedAt }] }, newest first.
+ *  `savedAt` is epoch MILLISECONDS. `unit` is canonical; `node` is the raw
+ *  directory key and is inconsistent even within one list (`!987ab80f` on one
+ *  row, `b80f` on the next) — bind to `unit`.
+ *
+ *  `images: []` is a real answer: that unit has sent nothing yet. Not an error. */
+export async function getStoredImages(unit) {
+  return _call(`/mesh/images/${encodeURIComponent(unit)}/stored`);
+}
+
+/** The BYTES of one stored image, as a Buffer.
+ *
+ *  CALLERS MUST HAVE ALREADY ESTABLISHED THAT THIS PID IS STORED. Asking for a
+ *  valid-range pid that is not held does not 404 — it leaves the store path and
+ *  hangs (measured: no response in 45 s). `alarm-image-api.js` gates every call
+ *  against the last-polled stored list for exactly this reason.
+ *
+ *  The timeout is the backstop for the remaining race: a pid can be evicted
+ *  between the poll that published it and the request that asks for it. Bounded
+ *  failure beats a hung socket.
+ *
+ *  The plain form is hard-coded. `?refresh=1` forces the radio path — minutes,
+ *  plus a wake window — and must never be reachable from a page. */
+export async function getImageBytes(unit, pid, { timeoutMs = 5000 } = {}) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(
+      `${PAC_HOST_URL}/mesh/images/${encodeURIComponent(unit)}/${encodeURIComponent(pid)}`,
+      { signal: ac.signal },
+    );
+    if (!res.ok) {
+      throw Object.assign(new Error(`pac-host ${res.status}`), { status: res.status });
+    }
+    return {
+      buf:  Buffer.from(await res.arrayBuffer()),
+      type: res.headers.get('content-type') || 'image/jpeg',
+    };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw Object.assign(new Error(`pac-host did not answer in ${timeoutMs}ms`), { status: 504 });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Open/retarget an align session and fire one burst. Pure passthrough —

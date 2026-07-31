@@ -1,8 +1,8 @@
 ---
 module: alarm-images
 source: src/alarm-images.js
-source_hash: 609dee5264a23fb4b090c72548720425b5fdb7b3319558e55b7b95b9e13c9e9d
-updated: 2026-07-30
+source_hash: 3be6c7f5fb0e1a03511666ceabab872dbeab168737cbcf6b5a976551791d7cf9
+updated: 2026-07-31
 ---
 
 # Module: alarm-images
@@ -21,26 +21,101 @@ Companion to `alarm-sections.js` and `alarm-ws.js`. See `docs/CAMERA_PAGE_SPEC.m
 
 ## Responsibilities
 
-- Poll `GET /v1/mesh/images/<unit>/progress` for every pac-host unit every 2 s
-- Shape each transfer into display-ready strings (chunk counts, percentage,
-  elapsed times) — the browser formats nothing
+- Poll `GET /v1/mesh/images/<unit>/progress` **and** `/stored` for every
+  pac-host unit every 2 s — both are local reads (~1.2 ms and ~1.5 ms)
+- Shape each transfer and each stored image into display-ready strings — the
+  browser formats nothing
+- **Remember attempts that ended**, because pac-host does not
+- Own the stored-pid allowlist (`isStoredPid`) that `alarm-image-api.js` gates on
 - Broadcast `alarm_images` on change, and contribute it to the connect replay
 - Distinguish IDLE (`transfers: []`) from "we cannot say" (fetch failed)
+
+## Transfer history — why this module keeps state at all
+
+Peter, 2026-07-31: *"no previus failed/ succeeded tests. basically it looks the
+same as it did 12 hours ago"*.
+
+pac-host's `/progress` describes only what is **in flight**. The instant a
+transfer ends — saved or abandoned — it vanishes from that endpoint and there is
+no route that returns past attempts (probed `/list`, `/history` and
+`/images/history` — all 400/502; `/stored` lists *images*, not *attempts*).
+
+So a transfer seen in one poll and absent from the next has **ended**, and if
+this module does not record that, nothing does. `_recordEndings()` captures the
+last-seen counters and asks one question of the stored list: did the bytes turn
+up? That yields exactly two honest outcomes:
+
+- `saved` — the pid is now in `/stored`
+- `ended` — it is not
+
+**Neither is a diagnosis.** This module does not know or claim *why* a transfer
+stopped, and must never grow a "failed"/"stalled"/"timed out" verdict — those
+are judgements about a radio link this side cannot see.
+
+Bounded to `HISTORY_MAX` (12) per unit, in memory. **Restart-lossy, and the page
+says so** (`history_note`): a process restart empties it, and attempts made
+while node-dash was down were never observable. Stating that beats implying a
+complete record.
+
+## Stored images
+
+`/stored` rows are shaped into `images[]`, newest first, each carrying a
+server-built `url` pointing at `alarm-image-api.js`.
+
+- **`key` is `pid-savedAt`, never `pid`.** A pid is a uint16 and recycles;
+  `!987ab80f` currently lists 7 images under 3 distinct pids, with pid 1
+  appearing five times. A duplicate `x-for` key is what froze the message feed
+  in `message-flow-audit`.
+- **`addressable: false`** when a newer row shares the same pid.
+  `GET /images/<t>/<pid>` returns only the newest for that pid, so the older
+  rows exist but cannot be fetched individually. The page marks them
+  `superseded` rather than serving the wrong picture under the right label.
+- **`saved_*`, never `captured_*`.** `savedAt` is when *we* stored the bytes,
+  not when the shutter fired. It is epoch **milliseconds** and `fmtAgo`/
+  `fmtStamp` take **seconds** — `msToSec` exists for exactly that divide.
+- **`images: []` is a real answer** (`images_empty_text`): that unit has sent
+  nothing. `!18a01fc4` was genuinely empty when this shipped, and it must not
+  render as an error.
+
+### No "test pattern" label — a heuristic that was written and then removed
+
+services stated that pid 1 on `!8cee336b` is a test pattern rather than a
+capture, and both units list pid 1 at exactly 7156 bytes, so a
+`pid === 1 && bytes === 7156` label looked safe. It was implemented, and it was
+**wrong**: `!987ab80f`'s pid 1 decodes to a real photograph of buildings and sky
+(inspected directly, 2026-07-31). Shipping it would have stamped "not a
+capture" across a genuine image.
+
+Whether a stored image is a test frame is not knowable from this side. If
+pac-host publishes a flag, render it. Until then, say nothing.
 
 ## Dependencies
 
 - `ws-relay.js` — `registerWsWiring`, `registerConnectReplay` (host services only)
 - `pac-host.js` — the plugin's own boundary module
-- `format.js` — `fmtAgo`, `fmtUptime`, `fmtCount`
+- `format.js` — `fmtAgo`, `fmtStamp`, `fmtUptime`, `fmtCount`
 
 ## Public interface
 
-None. Self-registers on import, exports nothing.
+Self-registers on import. Exports exactly one function, for its sibling plugin
+module only:
+
+```js
+export function isStoredPid(num, pid)  // → boolean
+```
+
+The allowlist `alarm-image-api.js` gates every byte fetch on. **Core must never
+call this** — it exists because asking pac-host for an unstored pid does not
+404, it hangs (>45 s measured).
 
 ## State
 
 - `_byNum` — node num → display-ready unit model. Rebuilt each poll; broadcast
   only when it differs from the previous poll (`JSON.stringify` compare).
+- `_stored` — node num → `Set` of stored pids. Backs `isStoredPid`.
+- `_history` — node num → ended attempts, newest first, capped at `HISTORY_MAX`.
+- `_live` — node num → pid → last raw transfer seen. Diffed each poll to detect
+  a transfer that has ended.
 - `_timer` — the 2 s interval. Guarded so repeated wiring cannot start two.
 - `_broadcast` — captured from the wiring callback.
 
@@ -48,12 +123,22 @@ None. Self-registers on import, exports nothing.
 
 ```js
 { type: 'alarm_images',
-  units: { "<num>": { id, label, state, idle_text, transfers: [ … ] } } }
+  units: { "<num>": {
+    id, label, state, idle_text,
+    transfers: [ … ],          // in flight now
+    images:    [ … ],          // stored on disk, newest first
+    images_empty_text,         // set only when images is empty
+    history:   [ … ],          // attempts that ended, newest first
+    history_note,              // the restart-lossy caveat, verbatim
+  } } }
 ```
 
-`state` is `'idle'` or `'running'`. Each transfer carries `pid`, `chunks_text`,
-`percent_text`, `percent`, `counts_text`, `cursor_text`, `started_text`,
-`last_rx_text`, `aborted`.
+`state` is `'idle'` or `'running'`. Each **transfer** carries `pid`,
+`chunks_text`, `percent_text`, `percent`, `counts_text`, `cursor_text`,
+`started_text`, `last_rx_text`, `aborted`. Each **image** carries `key`, `pid`,
+`url`, `size_text`, `saved_text`, `saved_stamp`, `addressable`. Each **history**
+row carries `key`, `pid`, `outcome`, `chunks_text`, `counts_text`, `ended_text`,
+`ended_stamp`, `duration_text`.
 
 ## Invariants
 

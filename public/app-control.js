@@ -50,6 +50,30 @@ export const controlMixin = {
    *  PKI failure — so the id is what tells them apart and it is shown. */
   cameraLabel(num) { return this.alarmImages?.[num]?.label ?? null; },
 
+  /** Stored images for the selected unit, newest first. Pure read — every
+   *  string, and the url itself, was built by src/alarm-images.js. */
+  cameraImages() { return this.cameraUnit()?.images ?? []; },
+
+  /** Past attempts we OBSERVED. pac-host keeps no record once a transfer ends,
+   *  so without this a week of failures renders identically to a week of
+   *  nothing — which is exactly what Peter reported (2026-07-31). */
+  cameraHistory() { return this.cameraUnit()?.history ?? []; },
+
+  /** The image being shown large. Defaults to the newest ADDRESSABLE one:
+   *  a pid recycles, and GET /images/<t>/<pid> only ever returns the newest
+   *  row for that pid, so a non-addressable row cannot be fetched alone. */
+  cameraSelected() {
+    const imgs = this.cameraImages();
+    if (!imgs.length) return null;
+    return imgs.find(i => i.key === this.cameraSelectedKey && i.addressable)
+        ?? imgs.find(i => i.addressable)
+        ?? null;
+  },
+
+  /** Local UI selection — an interaction, not page data, so it lives here and
+   *  is never persisted or sent anywhere. */
+  cameraSelect(key) { this.cameraSelectedKey = key; },
+
   /** Take a NEW photo. This REPLACES the image in the device's flash and puts a
    *  command on air, so it confirms first — services pulled a stale frame
    *  believing it was fresh, which is the mistake this wording prevents.

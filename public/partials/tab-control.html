@@ -373,18 +373,91 @@
               </div>
             </template>
 
+            <!-- ATTEMPTS. pac-host forgets a transfer the instant it ends, so
+                 without this an idle page looks identical whether the last week
+                 held nothing or held nothing but failures. Peter, 2026-07-31:
+                 "no previus failed/ succeeded tests". Outcome is an OBSERVATION
+                 (did the bytes reach the store?), never a diagnosis of why. -->
+            <template x-if="cameraHistory().length">
+              <div class="card bg-base-100 shadow shrink-0">
+                <div class="card-body py-3 gap-2">
+                  <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Recent attempts</h2>
+                  <template x-for="h in cameraHistory()" :key="h.key">
+                    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-base-200 pt-2 first:border-0">
+                      <span class="badge badge-sm"
+                            :class="h.outcome === 'saved' ? 'badge-success' : 'badge-ghost'"
+                            x-text="h.outcome === 'saved' ? 'saved' : 'ended'"></span>
+                      <span class="text-sm font-mono tabular-nums" x-text="h.chunks_text"></span>
+                      <span class="text-xs text-base-content/50" x-text="h.counts_text"></span>
+                      <span class="text-xs text-base-content/50 ml-auto">
+                        <span x-text="h.ended_text"></span>
+                        <span x-show="h.duration_text"> · took <span x-text="h.duration_text"></span></span>
+                      </span>
+                    </div>
+                  </template>
+                  <p class="text-xs text-base-content/40 pt-1" x-text="cameraUnit()?.history_note"></p>
+                </div>
+              </div>
+            </template>
+
+            <!-- IMAGE. Bytes come from /alarm/image/<num>/<pid>, which serves
+                 ONLY pids the server itself published in this payload — asking
+                 pac-host for an unstored pid does not 404, it hangs (>45s
+                 measured). The url is built server-side for that reason. -->
             <div class="card bg-base-100 shadow shrink-0">
-              <div class="card-body py-3 gap-2">
+              <div class="card-body py-3 gap-3">
                 <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Image</h2>
-                <p class="text-sm">Not available yet.</p>
-                <p class="text-xs text-base-content/50">
-                  Both of pac-host's image routes are radio round-trips aimed at a unit that
-                  listens about 8 seconds in every 300, so fetching the picture — or even the
-                  list of stored pictures — can take minutes and cannot be done while a page is
-                  open. A local read of what is already stored is being built; this panel is
-                  wired for it and shows nothing until it exists, rather than a placeholder that
-                  implies otherwise.
-                </p>
+
+                <template x-if="!cameraUnit()">
+                  <p class="text-sm opacity-60">Select a unit.</p>
+                </template>
+
+                <template x-if="cameraUnit() && !cameraImages().length">
+                  <p class="text-sm opacity-60" x-text="cameraUnit().images_empty_text"></p>
+                </template>
+
+                <template x-if="cameraSelected()">
+                  <div class="flex flex-col gap-2">
+                    <img :src="cameraSelected().url" :key="cameraSelected().key"
+                         class="rounded-lg border border-base-200 w-full max-w-md bg-base-200"
+                         :alt="'Image ' + cameraSelected().pid">
+                    <div class="flex flex-wrap items-baseline gap-x-3 text-xs text-base-content/50">
+                      <span class="font-mono">pid <span x-text="cameraSelected().pid"></span></span>
+                      <span x-text="cameraSelected().size_text"></span>
+                      <!-- "saved", never "captured": savedAt is when WE stored
+                           the bytes, not when the shutter fired. -->
+                      <span>saved <span x-text="cameraSelected().saved_stamp"></span></span>
+                      <span x-text="cameraSelected().saved_text"></span>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- The rest, selectable. Keyed on pid+savedAt, NOT pid: a pid is
+                     a uint16 and recycles, and one unit currently lists 7 images
+                     under 3 distinct pids. Duplicate x-for keys froze the message
+                     feed once already. -->
+                <template x-if="cameraImages().length > 1">
+                  <div class="flex flex-wrap gap-2 pt-1 border-t border-base-200">
+                    <template x-for="img in cameraImages()" :key="img.key">
+                      <button class="flex flex-col items-start gap-0.5 p-1 rounded-lg border text-left"
+                              :class="cameraSelected()?.key === img.key ? 'border-primary bg-base-200' : 'border-base-200'"
+                              :disabled="!img.addressable"
+                              @click="cameraSelect(img.key)">
+                        <img x-show="img.addressable" :src="img.url" loading="lazy"
+                             class="w-20 h-16 object-cover rounded bg-base-200" alt="">
+                        <!-- An older row sharing a pid with a newer one cannot be
+                             fetched on its own — pac-host returns only the newest
+                             for a given pid. Say so rather than serve the wrong
+                             picture under the right label. -->
+                        <span x-show="!img.addressable"
+                              class="w-20 h-16 rounded bg-base-200 flex items-center justify-center text-[0.6rem] text-base-content/40 text-center px-1">
+                          superseded
+                        </span>
+                        <span class="text-[0.6rem] text-base-content/50 font-mono" x-text="img.saved_stamp"></span>
+                      </button>
+                    </template>
+                  </div>
+                </template>
               </div>
             </div>
 
