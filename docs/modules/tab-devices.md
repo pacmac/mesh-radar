@@ -1,8 +1,8 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: 042fce481da8f1082a38b7389c18794e951cabddfc2c14e669ac40db9cae893d
-updated: 2026-07-16
+source_hash: 6981bc4db400d08787dfea24c36d2066c9addd1fb5dcc45c78219bc15a3fe443
+updated: 2026-08-01
 ---
 
 # Module: tab-devices
@@ -180,6 +180,32 @@ Owner:    @click="deviceTab='owner';    cfgRadioId=dev.node_id; radioTab='owner'
 `ownerSchema`/`fixedPosition` and reloads for the current `radioTab` —
 required because the loaders early-return on cached state and the x-if
 unmount destroys the rendered forms while that cache survives.
+
+## Channels tab: the banner told the operator the wrong thing (task `channel-config-editor-broken`, 2026-08-01)
+
+The warning above the channel list used to read:
+
+> "Editing **psk** on the primary channel can break mesh connectivity. Bytes
+> fields are locked — unlock only if you know what you're doing."
+
+Every clause is defensible and the conclusion it leads to is backwards. It
+presents **locked** as the safe state. Locked is the state that wipes the key:
+`collectForm` skips disabled inputs, so a locked PSK is never submitted, and
+`channelWriteBody()` used to fill it in from mesh-gw's cache — which is stale
+until the radio reconnects. On 2026-08-01 that cache held no PSK for a radio
+whose PSK was `AQ==`, so any save on that form would have written an empty key.
+See `docs/modules/app-config.md` → "A channel PUT never carries a PSK the
+operator did not supply" for the measurement.
+
+The banner now says what is true: the value shown is a cached read that is stale
+until the radio reconnects, an empty box does **not** mean the radio has no key,
+and a save must supply one.
+
+**An inline error sits under the Save button**, alongside the existing
+"Saved ✓", bound to `opErr('ch_' + ch.index + '_' + cfgRadioId)` — already
+populated by `asyncOp` (`app-ui.js`) when `channelWriteBody()` throws. No new
+state. A toast alone would be wrong: it vanishes, and this message is an
+instruction the operator has to act on before the save can succeed.
 
 ## Invariants
 

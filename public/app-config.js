@@ -5,11 +5,38 @@ import { buildForm, collectForm } from './app-forms.js';
 import { submitOp } from './op-client.js';
 import { opFlow } from './op-flow.js';
 
-// A channel PUT replaces ChannelSettings rather than patching it. Preserve
-// values omitted from the form (notably the locked PSK) and keep the route
-// index out of the body.
+// A channel PUT replaces ChannelSettings rather than patching it, so values the
+// form omitted have to come from somewhere and the route index stays out of the
+// body.
+//
+// THE PSK IS NEVER SUPPLIED FROM THE CACHE — it is refused instead. This
+// function used to fill a locked PSK in from `current.settings`, which reads as
+// obviously right and destroyed the key it was protecting (task
+// `channel-config-editor-broken`, 2026-08-01). Four links, each fine alone:
+// app-forms.js:107 renders a sensitive field disabled; :158 skips disabled
+// inputs when collecting; this function backfilled the gap from `current`; and
+// `current` is mesh-gw's channel cache, which is STALE UNTIL THE RADIO
+// RECONNECTS. Measured that day, 50 minutes after a successful write: the OMNI's
+// radio held `AQ==` — proven on air, 19 public nodes heard after 24 hours of
+// none — while the cached channel had no psk at all. Saving ANY field on that
+// form would have written an empty key and put the radio back on a channel the
+// public mesh cannot decode. Peter had just spent ten days off the air for
+// exactly that reason.
+//
+// `psk in edited` is the whole test, and it is testing OMITTED vs DELIBERATELY
+// EMPTY. An unencrypted channel is a legal Meshtastic configuration, so unlock
+// and clear is still allowed; unlock is what makes it the operator's choice
+// rather than the cache's. Gated on role because a DISABLED slot has no key to
+// protect and the five empty ones stay one-click editable.
 export function channelWriteBody(current, edited) {
   const role = edited.role ?? current?.role ?? 'DISABLED';
+  if (role !== 'DISABLED' && !('psk' in edited)) {
+    throw new Error(
+      'Unlock the PSK field and enter the key before saving. What is shown comes ' +
+      'from mesh-gw’s cache, which is stale until the radio reconnects — an empty ' +
+      'box does not mean the radio has no key. Saving without supplying one would ' +
+      'write an empty key and take this radio off its channel.');
+  }
   const settings = { ...(current?.settings || {}), ...edited };
   delete settings.role;
   return { settings, role };

@@ -413,8 +413,13 @@
                     <!-- ── Channels tab (from Config → Radio → Channels) ── -->
                     <template x-if="expandedDevice === dev.addr && deviceTab === 'channels'">
                       <div class="flex flex-col gap-3">
+                        <!-- This banner used to say "bytes fields are locked — unlock only if you
+                             know what you're doing", which presented LOCKED as the safe state. It
+                             is the dangerous one: a locked PSK is never submitted, and the write
+                             used to backfill it from a cache that is stale until the radio
+                             reconnects. See docs/modules/tab-devices.md. -->
                         <div class="alert alert-warning shadow-sm text-sm">
-                          <span>Editing <b>psk</b> on the primary channel can break mesh connectivity. Bytes fields are locked — unlock only if you know what you're doing.</span>
+                          <span>The <b>psk</b> shown here is a <b>cached</b> read — mesh-gw does not refresh it until the radio reconnects, so an empty box does <b>not</b> mean the radio has no key. Saving a PRIMARY or SECONDARY channel requires you to unlock the field and enter the key you want; getting it wrong takes this radio off its channel.</span>
                         </div>
                         <template x-for="ch in channels" :key="ch.index">
                           <div class="collapse collapse-arrow bg-base-100 shadow">
@@ -438,6 +443,10 @@
                                 </button>
                                 <span class="text-success text-sm" x-show="opOk('ch_' + ch.index + '_' + cfgRadioId)" x-transition>Saved ✓</span>
                                 <span class="text-warning text-sm animate-pulse" x-show="devIsSaving(cfgRadioId)" x-transition>Reconnecting…</span>
+                                <!-- Inline, not just the toast: the refusal is an instruction the
+                                     operator has to act on, and a toast is gone before they read it. -->
+                                <span class="text-error text-sm" x-show="opErr('ch_' + ch.index + '_' + cfgRadioId)"
+                                      x-text="opErr('ch_' + ch.index + '_' + cfgRadioId)"></span>
                               </div>
                             </div>
                           </div>
