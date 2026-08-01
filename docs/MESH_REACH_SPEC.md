@@ -294,6 +294,43 @@ Peter described. Without it, an observer can only watch results scroll past.
 candidates considered, the exclusions applied and why, the scores, and the
 winner's margin.**
 
+## 6a. The unit of work is a MISSION, not a target
+
+Peter, 2026-08-01: *"so each target would effectively be a mission."* Correct, and
+it is a better object than a row because it owns things a row cannot.
+
+A mission has an **objective**, a **dossier** (every attempt with its route, door,
+bearing and conditions), a **state**, a **cadence**, and — the part that matters
+most — a **retirement condition**.
+
+**The retirement condition is the fix for the worst number in this document.**
+The 335 targets that consumed 5,046 transmissions and never once answered (§2)
+are precisely what missions look like with no end condition: nothing was tracking
+them *as* anything, so nothing could ever stand them down. A mission that has
+failed forty times across six weeks, with no reception from that node in between,
+goes dormant and stops spending airtime — and reopens automatically when the node
+is next heard. That is not giving up; it is the difference between a campaign and
+a stuck loop.
+
+Mission types, because one undifferentiated queue is what produced §2:
+
+- **Identify** — reached or heard, but unplaceable. The objective is a position,
+  not contact. Costs little or no airtime. See §7c.
+- **Confirm** — never reached. The only type that can move the record.
+- **Re-confirm** — reached once, long ago. *Is 189 km still true?* Cheap, high
+  value, and currently nobody's job.
+- **Hold** — reached reliably. Sampled rarely, only to keep the reach map honest.
+- **Door** — the objective is not the node but what lies behind it. Succeeds when
+  something *new* becomes reachable through it (§7a).
+
+A mission is also the UI's unit: it is what you click, and its dossier is the
+whole story — every attempt, which door it went through, what the antenna was
+doing, and why it was chosen that night (§6).
+
+**The budget sits ABOVE the mission layer.** An operator will want to pin a
+favourite and keep hammering it; a pinned mission must compete for airtime like
+any other, never be exempt from it (§8).
+
 ## 7. Choose by expected information gain
 
 A node hit five times this week teaches almost nothing. A node never reached,
@@ -383,6 +420,116 @@ derived from shared relay paths, geography, or both is a design question this
 spec deliberately leaves open — and it should be answered against the graph
 rather than by picking an algorithm first.
 
+## 7b. The return path is free reconnaissance
+
+Peter, 2026-08-01, on seeing that a route out and its route home did not match:
+*"in/out routes dont match, do we know who his relay is? if not lets find him."*
+
+**A traceroute reply carries the path the mesh chose to come back by, and nobody
+had to hear it for us to learn it.** That is intelligence we did not gather; the
+far side volunteered it.
+
+Measured across all 3,334 successful routes, 2026-08-01:
+
+| | |
+|---|---|
+| relays on outbound paths | 57 |
+| relays on return paths | **69** |
+| **return-only — never on a path we sent** | **23** |
+
+**23 relays announced themselves by carrying our traffic home.** Nothing chose
+them and no attempt was spent finding them.
+
+The worked example is the 187.7 km record to St Ives on 17 July:
+
+```
+OUT   us → T4 → fir → TE 5 → L5-3 → Ives
+BACK  Ives → PENS → L5-3 → TE 5 → fir → T4 → us
+```
+
+`PENS` is on the way home and on no outbound path we have ever sent. It is
+`!a7df87aa`, *Pendoggett_Duel_Core_Solar* — north Cornwall — heard at −121 dBm,
+3 hops, and **it has no position**, so it is absent from every map and every
+distance calculation while being load-bearing on the return leg of our record.
+
+**This softens, but does not overturn, §12's "we cannot see past our reception
+horizon".** Route fields name nodes we never had to hear — so the horizon is not
+absolute. The honest measurement today is that it rescues almost nobody: of every
+relay appearing in any route, **zero** are known-but-never-heard, and only 3 have
+no node record at all (`0xda576110`, `0x74d5f6f5`, and `0xffffffff` — the last is
+the broadcast address appearing in a route field, which is a question about our
+own parsing, not a node). The *mechanism* is real and grows in value as reach
+extends: the further out we get, the more the returning packets describe
+territory we cannot hear.
+
+**Requirement:** relays are harvested from `route_back` as first-class discoveries,
+recorded with the fact that they were found on a return path, and ranked as
+candidate doors (§7a) exactly like outbound relays.
+
+## 7c. Identify missions — a name with no place on the map
+
+Reaching a node is not the only worthwhile objective. **Some nodes we already
+reach are holes in the map**: they carry our traffic, we hear them, and we cannot
+say where they are. They cannot enter a km calculation, cannot be drawn, and
+cannot inform a bearing.
+
+Six of the 23 return-only relays are in this state, measured 2026-08-01 — all
+live, all close, all carrying traffic, none placeable:
+
+```
+Sn#2   Sion#2            3 hops  -106 dBm   heard 2.3 h ago
+A-NL   A-NET Lily        2 hops  -111 dBm   heard 6.7 h ago
+1a8c   IRIS              2 hops  -113 dBm   heard 18.9 h ago
+J3BA   James3D-Base      1 hop   -120 dBm   heard 23.3 h ago
+c3b0   Meshtastic c3b0   2 hops  -117 dBm   heard 154.6 h ago
+ht01   Mesh_EX15 HT1     2 hops  -116 dBm   heard 309.3 h ago
+```
+
+**An identify mission costs little or no airtime.** Its objective is a position,
+and the routes to it are: watch for a position broadcast we may already be
+receiving and discarding; look for the node under another identity; or — for a
+node whose operator is on the public channel — ask them, as a person. It is the
+one mission type whose success does not require reaching anything.
+
+## 7d. Places, not coordinates — and map *and* radar
+
+Peter: *"we already have location street, town, city in a location func or
+module… the possibility of not just radar at the top, but map and radar."*
+
+**The geocoder already exists** — `src/geocode.js`, a queued Nominatim reverse
+lookup at 1.1 s intervals, cached in `nodeinfo.address`. **194 of 596 positioned
+nodes are already named**, so a third of the map is legible today and the rest is
+a backfill, not a build.
+
+It changes what a route *means*. The same record path, with addresses attached:
+
+```
+us → T4    Wiveliscombe Road, Milverton, Somerset
+   → fir   Nicholashayne Lane, Wellington, Devon
+   → TE 5  Ash Lane, Winsford, Somerset          ← on Exmoor
+   → L5-3  (no position)
+   → Ives  The Burrows, St. Ives, Cornwall
+```
+
+The corridor becomes a sentence: out through Milverton, down to Wellington, **up
+onto Exmoor**, then the long jump to the Cornish coast. The door that carries the
+record is a node on high ground — which a hop count can never show and a map
+makes obvious.
+
+**Elevation is not in our data and probably should be.** It is the likeliest
+physical explanation for why a given relay is a door, and without it the map shows
+*where* the corridors are while staying silent about *why*.
+
+**Both views are required, because they answer different questions:**
+
+- **Radar** — bearing and range from us. Egocentric. Directly drives where the
+  antenna points (§7).
+- **Map** — the mesh's own geography. Allocentric. Shows corridors, clusters and
+  which doors sit on high ground.
+
+Neither replaces the other, and a mission reads as a *place*: "St Ives, Cornwall
+— 187.7 km, bearing 242°, through Exmoor", not "187.7 km @ 242°".
+
 ## 8. The budget is enforced in code, not configuration
 
 An unattended process transmitting on a public channel shared with strangers is
@@ -462,9 +609,12 @@ in one task.
 6. **The relay graph (Domain 1).** Doors, clusters behind them, fragility —
    derived from the 3,334 routes already stored, so it can be built and be
    correct before any new attempt is made.
-7. **The frontier view (Domain 2).** Reach vs hearing, per §4's honesty rules.
-8. **Graph and map (Domain 2).** §7a's two views. Nothing computed in the
-   browser.
+7. **Mission Control (Domain 2).** The board. Two columns: radar and map on one
+   side (§7d), missions, doors and the attempt log on the other. Reach vs
+   hearing, per §4's honesty rules. Nothing computed in the browser.
+8. **Geocode backfill (Domain 1, no airtime).** 194 of 596 positioned nodes are
+   named; the module and its rate limit already exist. Turns coordinates into
+   places for every mission dossier.
 
 Phases 2 and 6 both run entirely on existing history and transmit nothing. They
 are where the first real answers come from, and they are the right place to start
