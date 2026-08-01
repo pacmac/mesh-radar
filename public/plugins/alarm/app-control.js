@@ -74,21 +74,32 @@ export const controlMixin = {
    *  is never persisted or sent anywhere. */
   cameraSelect(key) { this.cameraSelectedKey = key; },
 
-  /** Re-download the selected image over the air.
+  /** THE ONLY download path. Pull an image from the device over the air.
+   *
+   *  Replaces cameraRefetch() + cameraFetchDevice() (task camera-page-ux,
+   *  2026-08-01). Both POSTed this same endpoint and existed separately only
+   *  because they were written on different days against two readings of the
+   *  same API — one for "the device holds a pid we do not", one for "re-pull a
+   *  stored image". That is ONE intent, and it rendered as two differently
+   *  labelled buttons in two different cards. Peter: "just a case of dropping
+   *  fields and cards wherever is the fastest and easiest".
    *
    *  Peter, 2026-07-31: "pull an existing image whether or not it has been sent
    *  before". An earlier version refused anything already stored with a 409;
    *  that guard is gone. What remains is the DEVICE's limit, not ours — it holds
    *  one payload at a time, so only that pid can be re-pulled and the button is
-   *  offered only for it. */
-  async cameraRefetch() {
-    const img = this.cameraSelected();
-    if (!img?.on_device) return;
-    if (!confirm(`Download image ${img.pid} from the device again?\n\nIt transfers over the radio and can take several minutes. Watch the Transfer card.`)) return;
+   *  offered only for it.
+   *
+   *  Returns as soon as the transfer STARTS (202) — a full pull is minutes
+   *  (services measured 183-239 s), so the page must not wait on it. Progress
+   *  arrives through the existing /progress polling, never from this response. */
+  async cameraDownload(pid) {
+    if (this.controlTarget == null || pid == null) return;
+    if (!confirm(`Download image ${pid} from the device?\n\nIt transfers over the radio, can take several minutes, and costs the unit a wake window. Watch Status for progress.`)) return;
     this.cameraFetching = true;
     try {
-      await fetchJSON(`/alarm/image/${this.controlTarget}/${img.pid}/fetch`, 'POST');
-      this.showToast(`Downloading image ${img.pid} again — watch Transfer`, 'success', 5000);
+      await fetchJSON(`/alarm/image/${this.controlTarget}/${pid}/fetch`, 'POST');
+      this.showToast(`Downloading image ${pid} — watch Status`, 'success', 5000);
     } catch (e) {
       this.showToast(e.message || 'Could not start the download', 'error', 0);
     } finally {
@@ -115,26 +126,6 @@ export const controlMixin = {
       this.showToast(e.message || 'The device did not answer', 'error', 0);
     } finally {
       this.cameraChecking = false;
-    }
-  },
-
-  /** Pull an image the device holds and we do not.
-   *
-   *  Returns as soon as the transfer STARTS — a full pull is minutes, so the
-   *  page must not wait on it. Progress appears in the Transfer card through the
-   *  same path as every other transfer. */
-  async cameraFetchDevice() {
-    const d = this.cameraDevice();
-    if (!d?.fetchable) return;
-    if (!confirm(`Download image ${d.pid} from the device?\n\nThis transfers over the radio and can take several minutes. Watch the Transfer card for progress.`)) return;
-    this.cameraFetching = true;
-    try {
-      await fetchJSON(`/alarm/image/${this.controlTarget}/${d.pid}/fetch`, 'POST');
-      this.showToast(`Downloading image ${d.pid} — watch Transfer`, 'success', 5000);
-    } catch (e) {
-      this.showToast(e.message || 'Could not start the download', 'error', 0);
-    } finally {
-      this.cameraFetching = false;
     }
   },
 

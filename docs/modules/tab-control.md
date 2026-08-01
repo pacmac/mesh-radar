@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/plugins/alarm/tab-control.html
-source_hash: ce92f683f4f8018d6a52f09a3b06f2598a7111a222ef5cc03e0a53f80c4a90fe
+source_hash: 30bdd99e601087b0306f4d1bb2f8f9b3df53bda6b7c4f347369fd980f5ba1089
 updated: 2026-08-01
 ---
 
@@ -134,56 +134,110 @@ mobile field tool, this is an embedded dashboard card):
   spinner + `"GATHERING got/of"` while a burst is active) and End (disabled
   unless `alignRunning()`).
 
-## Layout — Camera sub-tab (**ALARM PLUGIN**, task `camera-page`, 2026-07-30)
+## Layout — Camera sub-tab (**ALARM PLUGIN**, task `camera-page-ux`, 2026-08-01)
 
-Peter: *"so I have some visibility"* — the successor to the archived
-`push.html`. Three stacked cards, single column, `max-w-3xl`:
+### What was wrong, measured before the rewrite
 
-- **Unit card**: unit `<select>` (`controlTarget`, options from
-  `controlDevices()`, labelled `cameraLabel(num) || d.label` so the **id is
-  visible** — short names are not unique), and a **Take photo** button
-  (`cameraGrab()`, disabled while `cameraGrabbing`). Caption states plainly that
-  it takes a NEW photo, **replaces** the one in flash, transmits on the Private
-  channel, and is delivered at the unit's next wake window.
-- **Transfer card** (`x-if="cameraUnit()"`): `RUNNING`/`IDLE` badge, then either
-  `idle_text` ("no transfer in flight") or one block per transfer —
-  `chunks_text`, `percent_text`, a `<progress>` bar, `counts_text`,
-  `started_text`, optional device cursor, `last_rx_text`, and an `aborted` flag.
-  **Two bars, mutually exclusive**: a determinate one when `percent !== null`,
-  an indeterminate one when it is null. The page never invents a proportion it
-  was not given.
-- **Recent attempts card** (`x-if="cameraHistory().length"`): one row per
-  observed ended transfer — a `complete`/`partial`/`ended` badge, chunks
-  reached, repairs and dupes, when it ended and how long it took, plus
-  `outcome_text` spelling the outcome out in words underneath (a partial attempt
-  for an image already held is not the same event as one that lost the only
-  copy, and both used to render as `saved`). Present because pac-host forgets a
-  transfer the moment it ends, so without it an idle page looks identical
-  whether the last week held nothing or nothing but failures (Peter,
-  2026-07-31). The card carries `history_note` verbatim: only attempts observed
-  while node-dash was running are recorded.
-- **Image card**: the newest addressable image rendered large with
-  `pid`/size/`saved` line, plus a thumbnail strip when more than one is stored.
-  Rows whose pid is shared with a newer row render as a non-clickable
-  `superseded` tile — `GET /images/<t>/<pid>` returns only the newest for a
-  given pid, so those cannot be fetched individually. Empty state uses the
-  server's `images_empty_text`; "select a unit" when none is chosen.
+Peter, 2026-08-01: *"the page is really a monkey see monkey do effort. you have
+taken no thought in how this page would be used"* / *"the layout is also
+horrendous, just a case of dropping fields and cards wherever is the fastest and
+easiest"* / *"more of a very early beta dev page, not a production page that
+allows the user to command the camera and get it's image quickly and easily"*.
 
-**Every string on this page is server-computed** by `src/alarm-images.js`. This
-file formats no counts, no percentages and no elapsed times.
+He was right, and the tell is that the card order **was the commit order** —
+Unit+button, Transfer, On the device, Recent attempts, Image — each appended as
+the endpoint it wrapped landed. The page was a map of pac-host's API, not of
+anything a person wants to do.
 
-### Image card
+Measured live at 1600x1000 before the rewrite:
 
-Shipped 2026-07-31 (task `camera-image-card`), replacing the "Not available yet"
-placeholder, against services' `160a4a1` local store read.
+| | |
+|---|---|
+| camera pane | 816 px wide at x=251 — **533 px of viewport empty** |
+| image top | y=689 in an 884 px pane — **~55% of the picture below the fold** |
+| image rendered | 476x358 from a **320x240** source — 1.49x, non-integer, soft |
+| heading order | Transfer, On the device, Recent attempts, **Image (last)** |
+
+Plus: three `x-if`'d cards so the page reflowed and the download button moved as
+state changed; TWO download buttons (`cameraFetchDevice`, `cameraRefetch`) doing
+one job because they came from two endpoints; and no glanceable state — three
+cards had to be read to learn "idle, last picture 12h ago".
+
+### The layout
+
+Two columns at `lg:` and up, one column below. `max-w-3xl` is gone.
+
+```
++------------------------------------------+-----------------+
+|  PLATE                                   | ACTION RAIL     |
+|  +------------------------------------+  | Unit [BNCH v]   |
+|  |   image, integer 2x, 640x480 cap   |  | [ TAKE PHOTO ]  |
+|  +------------------------------------+  | caption         |
+|  BNCH !8cee336b . 01 Aug 06:47 . 2.7kB   | STATUS (fixed)  |
+|  pid 50108 . device test image           | Ping Status Reb |
+|  Stored images (9) [ dropdown v ]        | > Diagnostics   |
+|  fetch_text            [Download again]  |                 |
++------------------------------------------+-----------------+
+```
+
+**The picture is the page.** It is first in source order and first visually, so
+it is the thing on screen when the tab opens. Everything that was above it is
+either in the rail or behind the disclosure.
+
+### The plate — the one place with any character
+
+The image sits on a **dark neutral mat** (`bg-neutral`, dark in *both* themes)
+with a hairline border, and a monospace caption strip beneath it reading like a
+contact-sheet annotation. This is a deliberate deviation: a dark mat under the
+light theme, so the frame reads as a photo viewer rather than one more card on a
+card. Everything else on the page stays quiet DaisyUI — the boldness is spent
+once, here.
+
+**Image sizing is capped at 640 CSS px = exactly 2x integer scale** of the
+320x240 source, centred on the mat. Not "as wide as the column allows": the old
+476 px was a 1.49x non-integer upscale, which is the softness Peter was looking
+at, and blowing a low-res sensor frame to 900 px is worse, not better. The cap
+is a choice about the *source*, not about the container.
+
+### The action rail
+
+- **Unit** `<select>` — `controlTarget`, options from `controlDevices()`,
+  labelled `cameraLabel(num) || d.label` so the **id is visible** (short names
+  are not unique; both units currently report GARG).
+- **Take photo** — `cameraGrab()`, full width, the only primary button on the
+  page. Caption states what ONE PRESS does; see below.
+- **Status block** — fixed `min-h`, always present. Renders `idle_text` when
+  nothing is in flight, or per-transfer `chunks_text` / `percent_text` / bar
+  while one is. **idle -> running -> idle must not move anything on the page.**
+- **Device controls** — the server's shortcut verbs, rendered from
+  `controlShortcuts()` (currently `ping`, `status`, `config`, `reboot`) through
+  the existing `sendControl(verb)`. The list is **not** hardcoded here; that is
+  the same invariant the Command sub-tab holds. Peter, 2026-08-01, on why these
+  are duplicated from the Command sub-tab: *"why? this is the camera page."* When a photo does not come
+  back, whether the unit is awake and alive is the first question, and making
+  the operator switch tabs to ask it is the same card-hopping the rest of this
+  rewrite removes. Duplicating a *control* is not a fault; forcing a tab switch
+  is.
+- **Diagnostics** — a closed `<details>` holding Check device + the device row,
+  Recent attempts + `history_note`, and the per-transfer repair/dupe/cursor
+  detail. These are diagnostics, not the page.
+
+### One download action
+
+`cameraFetchDevice()` and `cameraRefetch()` both POST
+`/alarm/image/<num>/<pid>/fetch`. They are merged into **`cameraDownload(pid)`**
+— one confirm, one toast, one label vocabulary. Two call sites remain (the
+selected stored image on the plate; the device-held pid under Diagnostics)
+because they are genuinely two situations, but they are one code path.
+
+### Image identity
 
 - `<img :src>` binds the **server-built** `img.url`
-  (`/alarm/image/<num>/<pid>`, served by `alarm-image-api.js`). The browser
+  (`/alarm/image/<num>/by-id/<id>`, served by `alarm-image-api.js`). The browser
   never constructs an image URL, and never talks to pac-host.
-- `:key` on both the strip and the large view is `img.key` (`pid-savedAt`),
-  **not** `pid` — one unit currently lists 7 images under 3 distinct pids, and
-  duplicate `x-for` keys froze the message feed once already.
-- Thumbnails use `loading="lazy"`.
+- `:key` is `img.key` (`pid-savedAt`), **not** `pid` — one unit lists 7 images
+  under 3 distinct pids, and duplicate `x-for` keys froze the message feed once
+  already.
 - The timestamp reads **"saved"**, never "captured": `savedAt` is when the bytes
   were stored, not when the shutter fired.
 - **pid 1 is marked as the device's test image**, cited to firmware
@@ -191,13 +245,29 @@ placeholder, against services' `160a4a1` local store read.
   it). It *is* a real photograph — used as embedded test data. See
   `alarm-images.md` for why this label was written, removed and restored.
 
-### The Take photo caption states what ONE PRESS does
+**Every string on this page is server-computed** by `src/alarm-images.js`. This
+file formats no counts, no percentages and no elapsed times. The rewrite adds no
+derived state: it only chooses which already-pushed string goes where.
 
-It previously promised the photo was delivered at the unit's next wake window.
-No single command achieves that: `cam grab` captures and stages, and a separate
-`push <pid>` transmits. The caption now says it captures and stages and
-**does not upload**, with the qualifier in `text-warning` so it is not missed.
-See `app-control.md` → "The capture verb".
+### The Take photo caption still says it does not upload — and why
+
+Peter's first complaint was *"what is the point in a [Take Photo] Button if
+there's no way to download it?"*, and the answer he is owed is one press that
+ends with the picture on screen. **That is not in this task, and not because it
+was deferred for convenience.**
+
+`cam grab` captures and stages; a separate `push <pid>` transmits; and `cam
+grab` **replies with nothing**, so the pid is only knowable ~77 s later via a
+`push stat` radio call. Probed live 2026-08-01: pac-host has no
+capture-and-upload operation — `GET /v1/mesh/camera` and `/v1/mesh/verbs` both
+**404**. node-dash polling the device and then driving the upload would put mesh
+orchestration in the dashboard, which is the boundary `PLUGIN_BOUNDARY_SPEC.md`
+and CLAUDE.md exist to hold.
+
+So the caption keeps its `text-warning` qualifier until services expose the
+operation (xsession #59/#61). **The rail is built so that when it lands, the
+button's second half drops in with no re-layout** — same button, same position,
+the status block already sized for a running transfer.
 
 ## Invariants
 
@@ -209,6 +279,20 @@ See `app-control.md` → "The capture verb".
   `"6 / 0"`, never `"100%"`.
 - **Take photo confirms before transmitting.** It replaces the device's stored
   image and puts a command on air.
+- **Take photo must never claim to deliver an image.** One press captures and
+  stages. The caption's `text-warning` qualifier is load-bearing and may only be
+  removed when a real capture-and-upload operation exists upstream — not when
+  the wording feels awkward.
+- **The picture is first.** Nothing may be inserted above the plate. Every card
+  that once sat there is why this task exists.
+- **The status block never changes the page's geometry.** It is always present
+  with a fixed minimum height; `idle -> running -> idle` must not move the
+  download button, the dropdown, or the plate.
+- **One download code path.** Any new download affordance calls
+  `cameraDownload(pid)`. Two buttons that POST the same endpoint under different
+  labels is the defect this replaced.
+- **The image is capped at 2x integer scale (640 px).** Uncapping it to fill the
+  column re-introduces the non-integer upscale this task removed.
 - Never renders as, or alongside, the chat message feed (`tab-messages.html`)
   — command traffic is not chat, even though it rides on Meshtastic text
   messages underneath (Peter, 2026-07-25 — see task

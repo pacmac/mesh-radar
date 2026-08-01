@@ -1,7 +1,7 @@
 ---
 module: app-control
 source: public/plugins/alarm/app-control.js
-source_hash: cde791bdc4fbe3f45db17cd71266d7d0cdb785319782914d431570d673c17a6d
+source_hash: aebb74196097303a9c984ea12e94422a3c8946247499523d026ee45379e210bc
 updated: 2026-08-01
 ---
 
@@ -64,8 +64,11 @@ export const controlMixin = {
   async cameraGrab(),                 // → confirm(), then POST /nodes/:num/pac-command {verb:'cam grab'}. CAPTURES AND STAGES ONLY — it does not upload; see "The capture verb" below. Reuses the existing route; no new endpoint. Receipt is the Command tab's pushed ledger.
   cameraImages(),                     // → cameraUnit().images ?? [] — stored images, newest first. Pure read; every string AND the url were built by src/alarm-images.js.
   cameraHistory(),                    // → cameraUnit().history ?? [] — ended transfers we observed. pac-host keeps no record once one ends.
-  cameraSelected(),                   // → the image shown large: the selected key if still addressable, else the newest addressable, else null. A non-addressable row shares its pid with a newer one and cannot be fetched alone.
+  cameraSelected(),                   // → the image shown large: the selected key if present in the pushed list, else the newest (index 0). Every row is addressable now — see "id addressing" in alarm-image-api.md.
   cameraSelect(key),                  // → sets cameraSelectedKey. Local UI interaction, never persisted, never sent anywhere.
+  cameraDevice(),                     // → cameraUnit().device ?? null — what the DEVICE said it holds at the last user-initiated check. Null until asked; never presented as live.
+  async cameraCheckDevice(),          // → POST /alarm/image/:num/check. A REAL RADIO ROUND-TRIP (~4.3s measured). User-initiated only, never on a timer.
+  async cameraDownload(pid),          // → confirm(), then POST /alarm/image/:num/:pid/fetch. THE ONLY download path — see "One download action" below.
 }
 ```
 
@@ -79,6 +82,26 @@ addressable — local UI selection, never persisted).
 `pacHostQueues` and `alarmImages` (both server-pushed, keyed by unit num) live
 at the root — see `app-ws.js` — not owned by this mixin, only read by
 `controlLedger()` and `cameraUnit()`/`cameraLabel()`.
+
+## One download action (task `camera-page-ux`, 2026-08-01)
+
+`cameraFetchDevice()` and `cameraRefetch()` are **gone**, replaced by a single
+`cameraDownload(pid)`. Both POSTed the same endpoint
+(`/alarm/image/:num/:pid/fetch`); they existed separately only because they were
+written on different days against two different reads of the same API — one for
+"the device holds a pid we do not", one for "re-pull a stored image". That is
+one intent, and it rendered as two differently-labelled buttons in two different
+cards, which is precisely the fault Peter named: *"just a case of dropping
+fields and cards wherever is the fastest and easiest"*.
+
+Two call sites remain because the two situations are genuinely different — the
+selected stored image on the plate, and the device-held pid under Diagnostics —
+but they share one confirm, one toast vocabulary and one code path.
+
+**The confirm is not optional.** A download is a full radio transfer (services
+measured 183-239 s) and costs the unit a wake window. The POST returns 202
+immediately; progress arrives through the existing `/progress` polling, not from
+this call's response.
 
 ## The capture verb — `cam grab`, and why one press is not a photo delivered
 

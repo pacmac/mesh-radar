@@ -290,70 +290,163 @@
           </div>
 
           <!-- ==================== CAMERA ====================
-               Successor to the archived push.html. Every value is bound verbatim
-               from the server's alarm_images message (docs/CAMERA_PAGE_SPEC.md);
-               nothing here computes a count, a percentage or an elapsed time.
+               Rebuilt 2026-08-01, task `camera-page-ux`. Peter: "the page is
+               really a monkey see monkey do effort... the layout is also
+               horrendous, just a case of dropping fields and cards wherever is
+               the fastest and easiest... more of a very early beta dev page".
 
-               The IMAGE itself is deliberately absent, not stubbed: both of
-               pac-host's image routes are radio round-trips (75s measured), so a
-               page cannot open on either. The panel says so rather than showing
-               a placeholder that implies one is coming. -->
-          <div x-show="controlTab==='camera'" class="flex-1 min-h-0 overflow-y-auto max-w-3xl flex flex-col gap-3">
+               He was right and the tell was the card order — it WAS the commit
+               order (Unit, Transfer, On device, Attempts, Image), each appended
+               as the endpoint it wrapped landed. Measured at 1600x1000 before
+               this rewrite: the picture began at y=689 in an 884px pane, 533px
+               of viewport sat empty to the right, and the image was upscaled
+               1.49x to 476px. The page was a map of pac-host's API.
 
-            <div class="card bg-base-100 shadow shrink-0">
-              <div class="card-body py-3 gap-3">
-                <div class="flex flex-wrap items-end gap-3">
-                  <label class="form-control">
-                    <span class="label-text text-xs opacity-60">Unit</span>
-                    <!-- Keyed and labelled by id: both units currently report
-                         shortName GARG (one firmware image on two boards, same
-                         root as the PKI failure). The id is what distinguishes
-                         them, so it is shown. -->
-                    <select class="select select-sm select-bordered font-mono" x-model="controlTarget">
-                      <template x-for="d in controlDevices()" :key="d.num">
-                        <option :value="d.num" x-text="cameraLabel(d.num) || d.label"></option>
-                      </template>
-                    </select>
-                  </label>
-                  <button class="btn btn-primary btn-sm" @click="cameraGrab()"
-                          :disabled="controlTarget == null || cameraGrabbing"
-                          x-text="cameraGrabbing ? 'sending…' : 'Take photo'"></button>
+               Now: PLATE (the picture, first) + RAIL (the controls). Every
+               value is still bound verbatim from the server's alarm_images
+               message — nothing here computes a count, a percentage or an
+               elapsed time. See docs/modules/tab-control.md. -->
+          <div x-show="controlTab==='camera'" class="flex-1 min-h-0 overflow-y-auto">
+            <div class="flex flex-col lg:flex-row gap-4 items-start">
+
+              <!-- ============ PLATE — the picture IS the page ============
+                   First in source order and first on screen. Nothing may be
+                   inserted above it; every card that once sat here is the
+                   reason this task exists. -->
+              <div class="flex-1 min-w-0 w-full flex flex-col gap-3">
+
+                <!-- The mat is dark in BOTH themes so the frame reads as a photo
+                     viewer rather than one more card on a card. This is the one
+                     deliberate deviation from the surrounding DaisyUI surfaces;
+                     the boldness is spent once, here. -->
+                <div class="rounded-xl bg-neutral p-3 sm:p-5 flex items-center justify-center min-h-[14rem]">
+
+                  <template x-if="!cameraUnit()">
+                    <p class="text-sm text-neutral-content/60">Select a unit.</p>
+                  </template>
+
+                  <template x-if="cameraUnit() && !cameraImages().length">
+                    <p class="text-sm text-neutral-content/60" x-text="cameraUnit().images_empty_text"></p>
+                  </template>
+
+                  <!-- CAPPED AT 640px = exactly 2x integer scale of the 320x240
+                       source. NOT "as wide as the column allows": the old 476px
+                       was a 1.49x non-integer upscale, which is the softness
+                       Peter was looking at, and blowing a low-res sensor frame
+                       across 900px is worse, not better. -->
+                  <template x-if="cameraSelected()">
+                    <img :src="cameraSelected().url" :key="cameraSelected().key"
+                         class="w-full max-w-[640px] rounded-lg border border-neutral-content/20"
+                         :alt="'Image ' + cameraSelected().pid">
+                  </template>
                 </div>
-                <!-- Truthful label: a grab CAPTURES A NEW IMAGE AND REPLACES the
-                     one in flash. services pulled a stale frame believing it was
-                     fresh; the button says what it does and confirms first. -->
-                <!-- Says what ONE PRESS actually does. It used to promise delivery,
-                     which no single command achieves: `cam grab` captures and
-                     stages, and a separate `push <pid>` transmits. Measured
-                     2026-07-31 — both were driven by hand to land an image. Who
-                     owns that sequence is with services (xsession #59); until it
-                     is settled the button must not imply it uploads. -->
-                <p class="text-xs text-base-content/50">
+
+                <!-- Caption strip — reads like a contact-sheet annotation.
+                     "saved", never "captured": savedAt is when WE stored the
+                     bytes, not when the shutter fired. -->
+                <template x-if="cameraSelected()">
+                  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono text-xs tabular-nums text-base-content/60">
+                    <span class="text-base-content/80" x-text="cameraLabel(controlTarget)"></span>
+                    <span>saved <span x-text="cameraSelected().saved_stamp"></span></span>
+                    <span x-text="cameraSelected().saved_text"></span>
+                    <span x-text="cameraSelected().size_text"></span>
+                    <span>pid <span x-text="cameraSelected().pid"></span></span>
+                    <!-- pid 1 is the firmware's embedded test image
+                         (TEST_IMAGE_PID), which camPidFromCrc can never assign
+                         to a real capture. Said plainly so a test frame is not
+                         mistaken for the garage. -->
+                    <span class="text-warning" x-show="cameraSelected().note"
+                          x-text="cameraSelected().note"></span>
+                  </div>
+                </template>
+
+                <!-- DROPDOWN over everything services holds. Peter, 2026-07-31:
+                     "a drop down listing the images that the services says are
+                     available". Every row is selectable: they are addressed by
+                     the store's stable id, so rows sharing a recycled pid are
+                     reachable instead of greyed out as "superseded". -->
+                <template x-if="cameraImages().length">
+                  <div class="flex flex-col gap-2">
+                    <div class="flex flex-wrap items-end gap-3">
+                      <label class="form-control flex-1 min-w-0">
+                        <span class="label-text text-xs opacity-60">Stored images (<span x-text="cameraImages().length"></span>)</span>
+                        <select class="select select-sm select-bordered font-mono w-full" x-model="cameraSelectedKey">
+                          <template x-for="img in cameraImages()" :key="img.key">
+                            <option :value="img.key"
+                                    x-text="img.saved_stamp + '  ·  ' + img.size_text + '  ·  pid ' + img.pid + (img.note ? '  ·  ' + img.note : '')"></option>
+                          </template>
+                        </select>
+                      </label>
+                      <!-- Offered ONLY for the image the device still holds: it
+                           keeps one payload and a new capture replaces it, so
+                           every other pid answers ENOIMG. The reason is stated
+                           rather than the button silently missing. -->
+                      <button class="btn btn-sm btn-outline shrink-0"
+                              x-show="cameraSelected()?.on_device"
+                              @click="cameraDownload(cameraSelected().pid)" :disabled="cameraFetching"
+                              x-text="cameraFetching ? 'starting…' : 'Download again'"></button>
+                    </div>
+                    <p class="text-xs text-base-content/50" x-show="cameraSelected()"
+                       x-text="cameraSelected()?.fetch_text"></p>
+                  </div>
+                </template>
+              </div>
+
+              <!-- ============ RAIL — everything you can do ============ -->
+              <div class="w-full lg:w-80 shrink-0 flex flex-col gap-3">
+
+                <label class="form-control w-full">
+                  <span class="label-text text-xs opacity-60">Unit</span>
+                  <!-- Labelled by id: both units currently report shortName GARG
+                       (one firmware image on two boards, same root as the PKI
+                       failure). The id is what distinguishes them. -->
+                  <select class="select select-sm select-bordered font-mono w-full" x-model="controlTarget">
+                    <template x-for="d in controlDevices()" :key="d.num">
+                      <option :value="d.num" x-text="cameraLabel(d.num) || d.label"></option>
+                    </template>
+                  </select>
+                </label>
+
+                <!-- The only primary button on the page. -->
+                <button class="btn btn-primary w-full font-display" @click="cameraGrab()"
+                        :disabled="controlTarget == null || cameraGrabbing"
+                        x-text="cameraGrabbing ? 'sending…' : 'Take photo'"></button>
+
+                <!-- Says what ONE PRESS actually does. It used to promise
+                     delivery, which no single command achieves: `cam grab`
+                     captures and stages, replies with NOTHING, and a separate
+                     `push <pid>` transmits. Probed 2026-08-01: pac-host has no
+                     capture-and-upload operation (/mesh/camera 404), and
+                     node-dash driving that sequence would put mesh
+                     orchestration in the dashboard — the boundary
+                     PLUGIN_BOUNDARY_SPEC.md exists to hold. The warning stays
+                     until services expose it (xsession #59/#61). -->
+                <p class="text-xs text-base-content/50 -mt-1">
                   Captures a NEW photo and stages it on the device, replacing the one held there.
                   <span class="text-warning">It does not upload the picture yet</span> — on this
                   firmware capture and transfer are separate operations, and the transfer step is
-                  not wired. Watch the Command tab for the receipt.
+                  not wired.
                 </p>
-              </div>
-            </div>
 
-            <template x-if="cameraUnit()">
-              <div class="card bg-base-100 shadow shrink-0">
-                <div class="card-body py-3 gap-2">
+                <!-- STATUS — ALWAYS PRESENT, FIXED MINIMUM HEIGHT.
+                     idle -> running -> idle must not move the download button,
+                     the dropdown or the plate. The old page x-if'd three cards
+                     in and out and the page reflowed under the operator. -->
+                <div class="rounded-lg bg-base-200 p-3 min-h-[6rem] flex flex-col gap-1.5">
                   <div class="flex items-baseline justify-between gap-3">
-                    <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Transfer</h2>
+                    <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Status</span>
                     <span class="badge badge-sm"
-                          :class="cameraUnit().state === 'running' ? 'badge-primary' : 'badge-ghost'"
-                          x-text="cameraUnit().state"></span>
+                          :class="cameraUnit()?.state === 'running' ? 'badge-primary' : 'badge-ghost'"
+                          x-text="cameraUnit()?.state ?? 'unknown'"></span>
                   </div>
 
                   <!-- [] means IDLE — 200 and nothing in flight. Not an error and
                        not unknown; the operator must be able to tell those apart. -->
-                  <p class="text-sm opacity-60" x-show="cameraUnit().idle_text"
-                     x-text="cameraUnit().idle_text"></p>
+                  <p class="text-sm opacity-60" x-show="cameraUnit()?.idle_text"
+                     x-text="cameraUnit()?.idle_text"></p>
 
-                  <template x-for="t in cameraUnit().transfers" :key="t.pid">
-                    <div class="flex flex-col gap-1 border-t border-base-200 pt-2 first:border-0">
+                  <template x-for="t in (cameraUnit()?.transfers ?? [])" :key="t.pid">
+                    <div class="flex flex-col gap-1">
                       <div class="flex items-baseline justify-between gap-3">
                         <span class="text-sm font-mono tabular-nums" x-text="t.chunks_text"></span>
                         <span class="text-sm font-mono tabular-nums opacity-70" x-text="t.percent_text"></span>
@@ -365,158 +458,103 @@
                       <progress class="progress progress-primary w-full" x-show="t.percent !== null"
                                 :value="t.percent" max="100"></progress>
                       <progress class="progress progress-primary w-full" x-show="t.percent === null"></progress>
-                      <div class="text-xs text-base-content/50" x-text="t.counts_text"></div>
-                      <div class="text-xs text-base-content/50">
-                        <span x-text="t.started_text"></span>
-                        <span x-show="t.cursor_text"> · device cursor <span x-text="t.cursor_text"></span></span>
-                        <!-- Elapsed time, NOT a stall verdict. -->
-                        <span x-show="t.last_rx_text"> · last chunk <span x-text="t.last_rx_text"></span></span>
-                        <span x-show="t.aborted" class="text-error"> · aborted</span>
+                      <div class="text-xs text-base-content/50" x-text="t.started_text"></div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- DEVICE CONTROLS. Peter, 2026-08-01, on why these are also on
+                     the Command sub-tab: "why? this is the camera page." When a
+                     photo does not come back, whether the unit is awake and
+                     alive is the first question, and making the operator switch
+                     tabs to ask it is the same card-hopping this rewrite
+                     removes. Duplicating a CONTROL is not a fault; forcing a tab
+                     switch is. The verb list is the server's (controlShortcuts),
+                     never hardcoded here. -->
+                <div class="flex flex-col gap-1.5">
+                  <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Device</span>
+                  <div class="join w-full">
+                    <template x-for="v in controlShortcuts()" :key="v">
+                      <button class="join-item btn btn-xs btn-outline flex-1"
+                              :disabled="controlTarget == null || controlSending"
+                              @click="sendControl(v)"
+                              x-text="v"></button>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- DIAGNOSTICS. Plain <details> so closed content is genuinely
+                     not rendered. These are diagnostics, not the page. -->
+                <details class="rounded-lg bg-base-200 px-3 py-2">
+                  <summary class="cursor-pointer select-none text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">
+                    Diagnostics
+                  </summary>
+                  <div class="pt-3 flex flex-col gap-4">
+
+                    <!-- ON THE DEVICE. Deliberately NOT a dropdown: the device
+                         holds ONE payload and a new publish replaces it
+                         (measured, and confirmed by services). Checking costs a
+                         radio round-trip, so it is a button and never a poll. -->
+                    <div class="flex flex-col gap-2" x-show="cameraUnit()">
+                      <div class="flex items-baseline justify-between gap-3">
+                        <span class="text-xs font-semibold text-base-content/60">On the device</span>
+                        <button class="btn btn-xs" @click="cameraCheckDevice()" :disabled="cameraChecking"
+                                x-text="cameraChecking ? 'asking…' : 'Check device'"></button>
                       </div>
+
+                      <p class="text-xs opacity-60" x-show="!cameraDevice()" x-text="cameraUnit()?.device_hint"></p>
+
+                      <template x-if="cameraDevice()">
+                        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span class="text-xs font-mono tabular-nums">image <span x-text="cameraDevice().pid"></span></span>
+                          <span class="text-xs text-base-content/50" x-show="cameraDevice().chunks_text"
+                                x-text="cameraDevice().chunks_text"></span>
+                          <span class="badge badge-xs"
+                                :class="cameraDevice().held ? 'badge-success' : (cameraDevice().fetchable ? 'badge-warning' : 'badge-ghost')"
+                                x-text="cameraDevice().status_text"></span>
+                          <!-- Never presented as live: one radio call at a moment
+                               in time, and the device can publish a new payload
+                               after it. -->
+                          <span class="text-xs text-base-content/40" x-text="cameraDevice().checked_text"></span>
+                          <button class="btn btn-primary btn-xs w-full mt-1" x-show="cameraDevice().fetchable"
+                                  @click="cameraDownload(cameraDevice().pid)" :disabled="cameraFetching"
+                                  x-text="cameraFetching ? 'starting…' : 'Download'"></button>
+                        </div>
+                      </template>
                     </div>
-                  </template>
-                </div>
-              </div>
-            </template>
 
-            <!-- ON THE DEVICE. Deliberately NOT a dropdown: the device holds ONE
-                 payload and a new publish replaces it (measured, and confirmed by
-                 services). A one-item dropdown would imply a catalogue that does
-                 not exist. Checking costs a radio round-trip, so it is a button
-                 and never a poll. -->
-            <template x-if="cameraUnit()">
-              <div class="card bg-base-100 shadow shrink-0">
-                <div class="card-body py-3 gap-2">
-                  <div class="flex items-baseline justify-between gap-3">
-                    <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">On the device</h2>
-                    <button class="btn btn-xs" @click="cameraCheckDevice()" :disabled="cameraChecking"
-                            x-text="cameraChecking ? 'asking…' : 'Check device'"></button>
-                  </div>
-
-                  <p class="text-sm opacity-60" x-show="!cameraDevice()" x-text="cameraUnit().device_hint"></p>
-
-                  <template x-if="cameraDevice()">
-                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span class="text-sm font-mono tabular-nums">image <span x-text="cameraDevice().pid"></span></span>
-                      <span class="text-xs text-base-content/50" x-show="cameraDevice().chunks_text"
-                            x-text="cameraDevice().chunks_text"></span>
-                      <span class="badge badge-sm"
-                            :class="cameraDevice().held ? 'badge-success' : (cameraDevice().fetchable ? 'badge-warning' : 'badge-ghost')"
-                            x-text="cameraDevice().status_text"></span>
-                      <!-- Never presented as live: one radio call at a moment in
-                           time, and the device can publish a new payload after it. -->
-                      <span class="text-xs text-base-content/40" x-text="cameraDevice().checked_text"></span>
-                      <button class="btn btn-primary btn-xs ml-auto" x-show="cameraDevice().fetchable"
-                              @click="cameraFetchDevice()" :disabled="cameraFetching"
-                              x-text="cameraFetching ? 'starting…' : 'Download'"></button>
-                    </div>
-                  </template>
-                </div>
-              </div>
-            </template>
-
-            <!-- ATTEMPTS. pac-host forgets a transfer the instant it ends, so
-                 without this an idle page looks identical whether the last week
-                 held nothing or held nothing but failures. Peter, 2026-07-31:
-                 "no previus failed/ succeeded tests". Outcome is an OBSERVATION
-                 (did the bytes reach the store?), never a diagnosis of why. -->
-            <template x-if="cameraHistory().length">
-              <div class="card bg-base-100 shadow shrink-0">
-                <div class="card-body py-3 gap-2">
-                  <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Recent attempts</h2>
-                  <template x-for="h in cameraHistory()" :key="h.key">
-                    <div class="flex flex-col gap-0.5 border-t border-base-200 pt-2 first:border-0">
-                      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                        <span class="badge badge-sm"
-                              :class="h.outcome === 'complete' ? 'badge-success'
-                                    : h.outcome === 'partial'  ? 'badge-warning' : 'badge-ghost'"
-                              x-text="h.outcome"></span>
-                        <span class="text-sm font-mono tabular-nums" x-text="h.chunks_text"></span>
-                        <span class="text-xs text-base-content/50" x-text="h.counts_text"></span>
-                        <span class="text-xs text-base-content/50 ml-auto">
-                          <span x-text="h.ended_text"></span>
-                          <span x-show="h.duration_text"> · took <span x-text="h.duration_text"></span></span>
-                        </span>
-                      </div>
-                      <!-- A partial attempt for an image we already hold is not
-                           the same event as one that lost the only copy. -->
-                      <span class="text-xs text-base-content/40" x-text="h.outcome_text"></span>
-                    </div>
-                  </template>
-                  <p class="text-xs text-base-content/40 pt-1" x-text="cameraUnit()?.history_note"></p>
-                </div>
-              </div>
-            </template>
-
-            <!-- IMAGE. Bytes come from /alarm/image/<num>/<pid>, which serves
-                 ONLY pids the server itself published in this payload — asking
-                 pac-host for an unstored pid does not 404, it hangs (>45s
-                 measured). The url is built server-side for that reason. -->
-            <div class="card bg-base-100 shadow shrink-0">
-              <div class="card-body py-3 gap-3">
-                <h2 class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Image</h2>
-
-                <template x-if="!cameraUnit()">
-                  <p class="text-sm opacity-60">Select a unit.</p>
-                </template>
-
-                <template x-if="cameraUnit() && !cameraImages().length">
-                  <p class="text-sm opacity-60" x-text="cameraUnit().images_empty_text"></p>
-                </template>
-
-                <template x-if="cameraSelected()">
-                  <div class="flex flex-col gap-2">
-                    <img :src="cameraSelected().url" :key="cameraSelected().key"
-                         class="rounded-lg border border-base-200 w-full max-w-md bg-base-200"
-                         :alt="'Image ' + cameraSelected().pid">
-                    <div class="flex flex-wrap items-baseline gap-x-3 text-xs text-base-content/50">
-                      <span class="font-mono">pid <span x-text="cameraSelected().pid"></span></span>
-                      <span x-text="cameraSelected().size_text"></span>
-                      <!-- "saved", never "captured": savedAt is when WE stored
-                           the bytes, not when the shutter fired. -->
-                      <span>saved <span x-text="cameraSelected().saved_stamp"></span></span>
-                      <span x-text="cameraSelected().saved_text"></span>
-                    </div>
-                    <!-- pid 1 is the firmware's embedded test image
-                         (TEST_IMAGE_PID), which camPidFromCrc can never assign
-                         to a real capture. Said plainly so a test frame is not
-                         mistaken for the garage. -->
-                    <p class="text-xs text-warning" x-show="cameraSelected().note"
-                       x-text="cameraSelected().note"></p>
-                  </div>
-                </template>
-
-                <!-- DROPDOWN over everything services holds. Peter, 2026-07-31:
-                     "a drop down listing the images that the services says are
-                     available". Every row is selectable now: they are addressed
-                     by the store's stable id, so the rows sharing a recycled pid
-                     are reachable instead of greyed out as "superseded". -->
-                <template x-if="cameraImages().length">
-                  <div class="flex flex-col gap-2 pt-2 border-t border-base-200">
-                    <label class="form-control">
-                      <span class="label-text text-xs opacity-60">Stored images (<span x-text="cameraImages().length"></span>)</span>
-                      <select class="select select-sm select-bordered font-mono" x-model="cameraSelectedKey">
-                        <template x-for="img in cameraImages()" :key="img.key">
-                          <option :value="img.key"
-                                  x-text="img.saved_stamp + '  ·  ' + img.size_text + '  ·  pid ' + img.pid + (img.note ? '  ·  ' + img.note : '')"></option>
-                        </template>
-                      </select>
-                    </label>
-                    <!-- Re-download. Offered ONLY for the image the device still
-                         holds: it keeps one payload and a new capture replaces
-                         it, so every other pid answers ENOIMG. The reason is
-                         stated rather than the button silently missing. -->
-                    <div class="flex items-center gap-3" x-show="cameraSelected()">
-                      <span class="text-xs text-base-content/50" x-text="cameraSelected()?.fetch_text"></span>
-                      <button class="btn btn-xs btn-primary ml-auto"
-                              x-show="cameraSelected()?.on_device"
-                              @click="cameraRefetch()" :disabled="cameraFetching"
-                              x-text="cameraFetching ? 'starting…' : 'Download again'"></button>
+                    <!-- ATTEMPTS. pac-host forgets a transfer the instant it
+                         ends, so without this an idle page looks identical
+                         whether the last week held nothing or held nothing but
+                         failures. Peter, 2026-07-31: "no previus failed/
+                         succeeded tests". Outcome is an OBSERVATION (did the
+                         bytes reach the store?), never a diagnosis of why. -->
+                    <div class="flex flex-col gap-2" x-show="cameraHistory().length">
+                      <span class="text-xs font-semibold text-base-content/60">Recent attempts</span>
+                      <template x-for="h in cameraHistory()" :key="h.key">
+                        <div class="flex flex-col gap-0.5 border-t border-base-300 pt-2 first:border-0">
+                          <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            <span class="badge badge-xs"
+                                  :class="h.outcome === 'complete' ? 'badge-success'
+                                        : h.outcome === 'partial'  ? 'badge-warning' : 'badge-ghost'"
+                                  x-text="h.outcome"></span>
+                            <span class="text-xs font-mono tabular-nums" x-text="h.chunks_text"></span>
+                            <span class="text-xs text-base-content/50 ml-auto">
+                              <span x-text="h.ended_text"></span>
+                              <span x-show="h.duration_text"> · <span x-text="h.duration_text"></span></span>
+                            </span>
+                          </div>
+                          <span class="text-xs text-base-content/50" x-text="h.counts_text"></span>
+                          <!-- A partial attempt for an image we already hold is
+                               not the same event as one that lost the only copy. -->
+                          <span class="text-xs text-base-content/40" x-text="h.outcome_text"></span>
+                        </div>
+                      </template>
+                      <p class="text-xs text-base-content/40" x-text="cameraUnit()?.history_note"></p>
                     </div>
                   </div>
-                </template>
+                </details>
               </div>
             </div>
-
           </div>
         </div>
