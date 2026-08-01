@@ -15,9 +15,17 @@
   — and typed in. It is the approved reference the real Mission Control page is
   specced and built against (docs/MESH_REACH_SPEC.md, Domain 2 phase).
 
-  Do not import from it, do not wire it up, and do not delete it when the real
-  page ships — a reference you can still open is how you tell whether the built
-  thing drifted from the agreed design.
+  HOW THE REAL PAGE USES IT. Peter, 2026-08-02: "the new dynamic page can use
+  this page and insert data, but the page must be saved to file and not
+  overwritten." So the live Mission Control is built by COPYING this markup and
+  CSS into its own files and binding real data into it — not by editing this one
+  in place.
+
+  THIS FILE IS FROZEN. It is never wired up, never re-pointed at live data, and
+  never overwritten by the thing derived from it. That is the whole point: an
+  untouched original is what lets you diff the shipped page against the agreed
+  design and see where it drifted. A reference that gets edited alongside the
+  code stops being a reference.
 -->
 <style>
 @font-face { font-family:'Oxanium'; font-weight:400 800; font-display:swap; src:url('/vendor/fonts/oxanium-latin.woff2') format('woff2'); }

@@ -697,10 +697,17 @@ in one task.
 
    **The approved design reference is `public/_mockup-mission-control.html`** —
    static, unwired, every figure real, built and signed off 2026-08-02. Peter:
-   *"keep the static page as a reference, do not delete it."* It stays after the
-   real page ships: a reference you can still open is how you tell whether the
-   built thing drifted from the agreed design. Build against it; do not import
-   from it.
+   *"keep the static page as a reference, do not delete it."*
+
+   **The live page is built by copying it, never by editing it.** Peter:
+   *"the new dynamic page can use this page and insert data, but the page must be
+   saved to file and not overwritten."* So its markup and CSS are the starting
+   point for the real partial and mixin; the mockup itself is **frozen** — never
+   wired to data, never re-pointed, never overwritten by what is derived from it.
+
+   That freeze is the entire value. An untouched original is what lets the
+   shipped page be diffed against the agreed design; a reference that gets edited
+   alongside the code has stopped being a reference.
 8. **Geocode backfill (Domain 1, no airtime).** 194 of 596 positioned nodes are
    named; the module and its rate limit already exist. Turns coordinates into
    places for every mission dossier.
