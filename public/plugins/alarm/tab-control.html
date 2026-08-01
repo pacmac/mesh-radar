@@ -302,53 +302,57 @@
                of viewport sat empty to the right, and the image was upscaled
                1.49x to 476px. The page was a map of pac-host's API.
 
-               Now: PLATE (the picture, first) + RAIL (the controls). Every
-               value is still bound verbatim from the server's alarm_images
-               message — nothing here computes a count, a percentage or an
-               elapsed time. See docs/modules/tab-control.md. -->
+               Now: the PICTURE at the top, centred, and the controls stacked
+               beneath it on the same centre axis. Every value is still bound
+               verbatim from the server's alarm_images message — nothing here
+               computes a count, a percentage or an elapsed time.
+               See docs/modules/tab-control.md. -->
           <div x-show="controlTab==='camera'" class="flex-1 min-h-0 overflow-y-auto">
             <div class="flex flex-col gap-4">
 
-              <!-- ============ PLATE — the picture IS the page ============
-                   Full width, first in source order, first on screen. Nothing
-                   may be inserted above it AND NOTHING MAY SIT BESIDE IT.
-                   Peter, 2026-08-01, rejecting the first attempt: "dont like
+              <!-- ============ THE PICTURE ============
+                   First in source order, first on screen, centred. Nothing may
+                   be inserted above it AND NOTHING MAY SIT BESIDE IT.
+                   Peter, 2026-08-01, rejecting a two-column attempt: "dont like
                    the layout with the image in the left column of a 2 column
                    layout. the image should be centreted and at the top of the
                    page. the controls should be below."
 
-                   The mat is dark in BOTH themes so the frame reads as a photo
-                   viewer rather than one more card on a card. This is the one
-                   deliberate deviation from the surrounding DaisyUI surfaces;
-                   the boldness is spent once, here. -->
-              <!-- THE MAT HUGS THE PICTURE. It was briefly full-bleed, which
-                   measured 1337x523 around a 640x480 image — 56% empty, with
-                   348px black bars either side. Peter: "why is there a black
-                   box surrounding the image?" A mat is a frame, not a
-                   backdrop; w-fit keeps it a border around the photograph
-                   instead of a band across the page. -->
-              <div class="rounded-xl bg-neutral p-3 sm:p-4 mx-auto w-fit max-w-full flex items-center justify-center min-h-[12rem] min-w-[16rem]">
+                   NO SURFACE BEHIND THE PHOTOGRAPH. It was briefly wrapped in a
+                   dark "mat" — full-bleed first (1337x523 around a 640x480
+                   image: 56% empty, 348px black bars), then hugging it as a
+                   17px frame. Peter: "why is there a black box surrounding the
+                   image?" Both were the same mistake in two sizes. The picture
+                   is the only thing on this page that needs to be looked at, so
+                   it gets a hairline border and a shadow and nothing else — a
+                   print laid on the page, not a photo inside a box. -->
+              <div class="mx-auto w-fit max-w-full">
 
                 <template x-if="!cameraUnit()">
-                  <p class="text-sm text-neutral-content/60">Select a unit.</p>
+                  <div class="rounded-lg border border-dashed border-base-300 bg-base-200/40 px-10 py-16 text-center">
+                    <p class="text-sm text-base-content/50">Select a unit.</p>
+                  </div>
                 </template>
 
                 <template x-if="cameraUnit() && !cameraImages().length">
-                  <p class="text-sm text-neutral-content/60" x-text="cameraUnit().images_empty_text"></p>
+                  <div class="rounded-lg border border-dashed border-base-300 bg-base-200/40 px-10 py-16 text-center">
+                    <p class="text-sm text-base-content/50" x-text="cameraUnit().images_empty_text"></p>
+                  </div>
                 </template>
 
-                <!-- CAPPED AT 640px = exactly 2x integer scale of the 320x240
-                     source. NOT "as wide as the page allows": the old 476px was
-                     a 1.49x non-integer upscale, which is the softness Peter was
-                     looking at, and blowing a low-res sensor frame across
-                     1300px is worse, not better. -->
+                <!-- 640px = exactly 2x integer scale of the 320x240 source. NOT
+                     "as wide as the page allows": the old 476px was a 1.49x
+                     non-integer upscale, which is the softness Peter was looking
+                     at, and blowing a low-res sensor frame across 1300px is
+                     worse, not better.
+
+                     w-[640px], NOT w-full: the parent is w-fit, so a percentage
+                     width is circular — it collapsed the picture to 322px
+                     (1.01x), smaller than the 476px this task set out to fix.
+                     max-w-full keeps it shrinking correctly on a phone. -->
                 <template x-if="cameraSelected()">
-                  <!-- w-[640px], NOT w-full: the mat is w-fit, so a percentage
-                       width is circular and collapsed the picture to 1.01x
-                       (measured 322px). A fixed 640 holds the exact 2x scale
-                       and the mat sizes itself to it. -->
                   <img :src="cameraSelected().url" :key="cameraSelected().key"
-                       class="w-[640px] max-w-full rounded-lg border border-neutral-content/20"
+                       class="block w-[640px] max-w-full rounded-lg border border-base-300 shadow-md"
                        :alt="'Image ' + cameraSelected().pid">
                 </template>
               </div>

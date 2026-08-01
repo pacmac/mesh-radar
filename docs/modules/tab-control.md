@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/plugins/alarm/tab-control.html
-source_hash: bf7a6ccb2b0d5de46ce8e95434109842435cd9c57ac39d18a77b4ac8719e66ba
+source_hash: ac19adc37cbe762c9988a55e6212614615e8da0a1423285310198901755f7934
 updated: 2026-08-01
 ---
 
@@ -167,11 +167,13 @@ cards had to be read to learn "idle, last picture 12h ago".
 
 ```
 +--------------------------------------------------------------+
-|                          PLATE (full width)                   |
 |              +--------------------------------+               |
+|              |                                |               |
 |              |   image, integer 2x, 640x480   |               |
+|              |   hairline border + shadow     |               |
+|              |   NO surface behind it         |               |
 |              +--------------------------------+               |
-+--------------------------------------------------------------+
+|                                                               |
 |          BNCH !8cee336b . 01 Aug 06:47 . 7.0 kB . pid 1       |
 |                                                               |
 |              [ Unit  BNCH v ]  [  TAKE PHOTO  ]               |
@@ -185,11 +187,11 @@ cards had to be read to learn "idle, last picture 12h ago".
 +--------------------------------------------------------------+
 ```
 
-**The picture is the page.** The plate is full-bleed and first; the controls
-stack **beneath** it in a centred column **exactly as wide as the image
-(640 px)**, so image and controls share one centre axis.
+**The picture is the page.** It is first and centred; the controls stack
+**beneath** it in a centred column **exactly as wide as the image (640 px)**, so
+image and controls share one centre axis.
 
-**A first attempt put the plate and a control rail side by side** and Peter
+**A first attempt put the picture and a control rail side by side** and Peter
 rejected it: *"dont like the layout with the image in the left column of a 2
 column layout. the image should be centreted and at the top of the page. the
 controls should be below. it does not look good, looks more like you have tried
@@ -197,36 +199,39 @@ to squeeze everything into 1 row."* Two columns solved the wasted-width problem
 by filling the width with controls, which is not the same as giving the picture
 the page. Do not reintroduce a side rail.
 
-### The plate — the one place with any character
+### No surface behind the photograph
 
-The image sits on a **dark neutral mat** (`bg-neutral`, dark in *both* themes)
-with a hairline border, and a monospace caption strip beneath it reading like a
-contact-sheet annotation. This is a deliberate deviation: a dark mat under the
-light theme, so the frame reads as a photo viewer rather than one more card on a
-card. Everything else on the page stays quiet DaisyUI — the boldness is spent
-once, here.
+The image gets a **hairline border and a shadow, and nothing else** — a print
+laid on the page. `border-base-300 shadow-md`, no background, no padding, no
+card. Beneath it sits a monospace caption strip reading like a contact-sheet
+annotation.
 
-**The mat must HUG the picture (`w-fit`), never span the page.** Shipped
-full-bleed first and Peter caught it immediately: *"why is there a black box
-surrounding the image?"* Measured at 1600x1000, it was **1337x523 around a
-640x480 image — 56% empty, with 348 px black bars either side**. A mat is a
-frame; at that size it is a backdrop, and the intent does not survive the
-execution. Now 674x515 around the same image: a **17 px** border, 11% empty.
+**A dark "mat" was tried twice and rejected twice.** First full-bleed —
+measured at 1600x1000 as **1337x523 around a 640x480 image: 56% empty, with
+348 px black bars either side**. Then hugging the picture as a 17 px frame
+(674x515, 11% empty). Peter, at the first: *"why is there a black box
+surrounding the image?"*; at the second: *"fix it"*. Both were the same mistake
+in two sizes. The picture is the only thing on this page that needs looking at,
+so nothing is placed behind it to compete.
 
-**The image is `w-[640px]`, not `w-full max-w-[640px]`.** Inside a `w-fit`
-parent a percentage width is circular — it collapsed the picture to 322 px
-(1.01x), *smaller than the 476 px this whole task set out to fix*. The fixed
-width is what holds the 2x scale while letting the mat size itself to it.
-`max-w-full` keeps it shrinking correctly on a phone (measured 329 px at 390
+**Do not reintroduce a background surface behind the `<img>`** — not
+`bg-neutral`, not a `card`, not a tinted panel. The empty and no-unit states DO
+get their own quiet dashed placeholder (`border-dashed bg-base-200/40`), because
+there is no photograph there to be the subject.
+
+**The image is 640 CSS px = exactly 2x integer scale** of the 320x240 source,
+centred. Not "as wide as the page allows": the old 476 px was a 1.49x
+non-integer upscale, which is the softness Peter was looking at, and blowing a
+low-res sensor frame across 1300 px is worse, not better. The size is a choice
+about the *source*, not about the container.
+
+**Written `w-[640px] max-w-full`, NOT `w-full max-w-[640px]`.** The wrapper is
+`w-fit`, so a percentage width is circular — it collapsed the picture to 322 px
+(1.01x), *smaller than the 476 px this whole task set out to fix*. Measured, not
+predicted. `max-w-full` keeps it shrinking correctly on a phone (355 px at 390
 wide).
 
-**Image sizing is capped at 640 CSS px = exactly 2x integer scale** of the
-320x240 source, centred on the mat. Not "as wide as the column allows": the old
-476 px was a 1.49x non-integer upscale, which is the softness Peter was looking
-at, and blowing a low-res sensor frame to 900 px is worse, not better. The cap
-is a choice about the *source*, not about the container.
-
-### The control column (beneath the plate, centred, 640 px)
+### The control column (beneath the picture, centred, 640 px)
 
 - **Unit** `<select>` — `controlTarget`, options from `controlDevices()`,
   labelled `cameraLabel(num) || d.label` so the **id is visible** (short names
@@ -254,7 +259,7 @@ is a choice about the *source*, not about the container.
 `cameraFetchDevice()` and `cameraRefetch()` both POST
 `/alarm/image/<num>/<pid>/fetch`. They are merged into **`cameraDownload(pid)`**
 — one confirm, one toast, one label vocabulary. Two call sites remain (the
-selected stored image on the plate; the device-held pid under Diagnostics)
+selected stored image under the picture; the device-held pid under Diagnostics)
 because they are genuinely two situations, but they are one code path.
 
 ### Image identity
@@ -311,12 +316,12 @@ the status block already sized for a running transfer.
   removed when a real capture-and-upload operation exists upstream — not when
   the wording feels awkward.
 - **The picture is first, full width, and centred.** Nothing may be inserted
-  above the plate, and nothing may be placed beside it. Every card that once sat
+  above the picture, and nothing may be placed beside it. Every card that once sat
   above it is why this task exists; the side rail that briefly replaced them was
   rejected for the same reason.
 - **The status block never changes the page's geometry.** It is always present
   with a fixed minimum height; `idle -> running -> idle` must not move the
-  download button, the dropdown, or the plate.
+  download button, the dropdown, or the picture.
 - **One download code path.** Any new download affordance calls
   `cameraDownload(pid)`. Two buttons that POST the same endpoint under different
   labels is the defect this replaced.
