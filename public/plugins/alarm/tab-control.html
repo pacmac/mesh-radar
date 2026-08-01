@@ -321,7 +321,13 @@
                    viewer rather than one more card on a card. This is the one
                    deliberate deviation from the surrounding DaisyUI surfaces;
                    the boldness is spent once, here. -->
-              <div class="rounded-xl bg-neutral p-3 sm:p-5 flex items-center justify-center min-h-[14rem]">
+              <!-- THE MAT HUGS THE PICTURE. It was briefly full-bleed, which
+                   measured 1337x523 around a 640x480 image — 56% empty, with
+                   348px black bars either side. Peter: "why is there a black
+                   box surrounding the image?" A mat is a frame, not a
+                   backdrop; w-fit keeps it a border around the photograph
+                   instead of a band across the page. -->
+              <div class="rounded-xl bg-neutral p-3 sm:p-4 mx-auto w-fit max-w-full flex items-center justify-center min-h-[12rem] min-w-[16rem]">
 
                 <template x-if="!cameraUnit()">
                   <p class="text-sm text-neutral-content/60">Select a unit.</p>
@@ -337,8 +343,12 @@
                      looking at, and blowing a low-res sensor frame across
                      1300px is worse, not better. -->
                 <template x-if="cameraSelected()">
+                  <!-- w-[640px], NOT w-full: the mat is w-fit, so a percentage
+                       width is circular and collapsed the picture to 1.01x
+                       (measured 322px). A fixed 640 holds the exact 2x scale
+                       and the mat sizes itself to it. -->
                   <img :src="cameraSelected().url" :key="cameraSelected().key"
-                       class="w-full max-w-[640px] rounded-lg border border-neutral-content/20"
+                       class="w-[640px] max-w-full rounded-lg border border-neutral-content/20"
                        :alt="'Image ' + cameraSelected().pid">
                 </template>
               </div>

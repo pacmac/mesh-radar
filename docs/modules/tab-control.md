@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/plugins/alarm/tab-control.html
-source_hash: a6dada6340de2bb229e4125afb777a5b63dd00ec618a9c3bc6d4b13bb95d0412
+source_hash: bf7a6ccb2b0d5de46ce8e95434109842435cd9c57ac39d18a77b4ac8719e66ba
 updated: 2026-08-01
 ---
 
@@ -205,6 +205,20 @@ contact-sheet annotation. This is a deliberate deviation: a dark mat under the
 light theme, so the frame reads as a photo viewer rather than one more card on a
 card. Everything else on the page stays quiet DaisyUI — the boldness is spent
 once, here.
+
+**The mat must HUG the picture (`w-fit`), never span the page.** Shipped
+full-bleed first and Peter caught it immediately: *"why is there a black box
+surrounding the image?"* Measured at 1600x1000, it was **1337x523 around a
+640x480 image — 56% empty, with 348 px black bars either side**. A mat is a
+frame; at that size it is a backdrop, and the intent does not survive the
+execution. Now 674x515 around the same image: a **17 px** border, 11% empty.
+
+**The image is `w-[640px]`, not `w-full max-w-[640px]`.** Inside a `w-fit`
+parent a percentage width is circular — it collapsed the picture to 322 px
+(1.01x), *smaller than the 476 px this whole task set out to fix*. The fixed
+width is what holds the 2x scale while letting the mat size itself to it.
+`max-w-full` keeps it shrinking correctly on a phone (measured 329 px at 390
+wide).
 
 **Image sizing is capped at 640 CSS px = exactly 2x integer scale** of the
 320x240 source, centred on the mat. Not "as wide as the column allows": the old
