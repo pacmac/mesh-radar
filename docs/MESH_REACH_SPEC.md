@@ -323,6 +323,66 @@ position on it rather than leaving it to fall out of the arithmetic.
 The 5,046 wasted transmissions in §2 are what a scheduler without this looks
 like.
 
+## 7a. Clusters and doors — and it has to be visualised
+
+Peter, 2026-08-01: *"that will grow to identifying and mapping & displaying
+clusters, they are also opportunities into other clusters, but it has to be
+visualised."*
+
+**The cluster structure is already in the data and it is stark.** Every
+successful hit stored its full relay chain, and `relay_positions` is populated on
+100% of them — so the graph can be built *and drawn* with no new transmissions.
+Parsed from all 3,334 successful routes, 2026-08-01:
+
+**57 distinct relay nodes carry every route we have ever completed.** And a
+handful dominate:
+
+| relay | times used | targets behind it | furthest target |
+|---|---|---|---|
+| `T4` | 2,139 | 79 | 188 km |
+| `fir` | 1,243 | 77 | 189 km |
+| `TE 5` | 971 | 63 | 188 km |
+| `S2` | 500 | 42 | 180 km |
+| `TivN` | 216 | 35 | 182 km |
+| `MDor` | 163 | 25 | 182 km |
+
+**Our reach is not a radius. It is a tree with a few load-bearing doors.** 104
+verified targets sit behind 57 relays, and three or four of those relays carry
+almost everything. That reframes targeting completely:
+
+- **A door is worth more than a target.** Reaching a node 180 km away that opens
+  onto twelve unreached nodes is worth far more than confirming a thirteenth node
+  behind a door we already hold. This is §7's information gain expressed
+  topologically, and it should probably dominate the scoring.
+- **Fragility is measurable and worth displaying.** If `T4` goes off air, 79
+  targets go with it. A single relay failure can erase most of the frontier, and
+  a record set through one door is more precarious than the number suggests.
+- **The next frontier is the next door.** The productive question stops being
+  "which distant node shall we try" and becomes "which reachable relay has the
+  most unexplored mesh behind it".
+
+**Visualisation is a requirement, not a nice-to-have, and Peter is explicit.**
+Two views, and they answer different questions:
+
+1. **The graph** — us, the doors, the clusters behind them. Shows structure,
+   dependency and fragility. This is where "these two clusters are only joined by
+   one relay" becomes visible, and it cannot be read off a table.
+2. **The map** — the same thing laid on geography, using `relay_positions`.
+   Shows *where* the doors are and therefore where to point the antenna, which is
+   the direct input to §7's bearing choice.
+
+Both are Domain 2 and neither may compute anything: cluster membership, door
+ranking and fragility are server-computed per BROWSER_CONTRACT, and the browser
+places what it is told. This is also the one place the existing radar work
+carries over — a polar view of doors by bearing and distance is a natural fit for
+`radar-scope`, if that is where it ends up.
+
+**Not established:** what a "cluster" is, formally. The relay graph above is
+evidence that clusters exist, not a definition of one. Whether they are best
+derived from shared relay paths, geography, or both is a design question this
+spec deliberately leaves open — and it should be answered against the graph
+rather than by picking an algorithm first.
+
 ## 8. The budget is enforced in code, not configuration
 
 An unattended process transmitting on a public channel shared with strangers is
@@ -399,7 +459,16 @@ in one task.
 4. **The scheduler (Domain 1).** Scoring per §7, decision log mandatory.
 5. **The callout instrument (Domain 1).** Wording variation, cooldowns, one in
    flight.
-6. **The frontier view (Domain 2).** Reach vs hearing, per §4's honesty rules.
+6. **The relay graph (Domain 1).** Doors, clusters behind them, fragility —
+   derived from the 3,334 routes already stored, so it can be built and be
+   correct before any new attempt is made.
+7. **The frontier view (Domain 2).** Reach vs hearing, per §4's honesty rules.
+8. **Graph and map (Domain 2).** §7a's two views. Nothing computed in the
+   browser.
+
+Phases 2 and 6 both run entirely on existing history and transmit nothing. They
+are where the first real answers come from, and they are the right place to start
+once §9 is settled.
 
 ## 12. What is not established
 
