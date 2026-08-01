@@ -13,8 +13,8 @@
 // See docs/modules/alarm-image-api.md.
 
 import { Router } from 'express';
-import { getImageBytes, getDeviceImage } from './pac-host.js';
-import { isStoredPid, isDevicePid, setDeviceImage } from './alarm-images.js';
+import { getImageBytes, getImageById, getDeviceImage } from './pac-host.js';
+import { isStoredPid, isStoredId, isDevicePid, setDeviceImage } from './alarm-images.js';
 import { numToNodeId } from './utils.js';
 import { log } from './log.js';
 
@@ -25,6 +25,32 @@ const FETCH_TIMEOUT_MS = 5000;
 // measured 183-239 s for one; the deployed unit listens ~8 s in every 900, so a
 // slow window can push it well past that. Generous, and bounded.
 const PULL_TIMEOUT_MS  = 600000;
+
+// GET /alarm/image/:num/by-id/:id — the PREFERRED byte route.
+//
+// pid is a recycling uint16 and is not unique within a unit's stored list
+// (!987ab80f: 7 rows, 3 distinct pids), so /images/<t>/<pid> can only ever
+// return the newest row for a pid — four of GARG's images were listable but
+// unreachable. services' by-id route fixes that; measured 200 in 1.6 ms.
+router.get('/alarm/image/:num/by-id/:id', async (req, res) => {
+  const num = Number(req.params.num);
+  const id  = Number(req.params.id);
+  if (!Number.isInteger(num) || !Number.isInteger(id)) {
+    return res.status(400).json({ error: 'num and id must be integers' });
+  }
+  if (!isStoredId(num, id)) {
+    return res.status(404).json({ error: 'no such stored image for this unit' });
+  }
+  try {
+    const { buf, type } = await getImageById(numToNodeId(num), id, { timeoutMs: FETCH_TIMEOUT_MS });
+    res.set('Content-Type', type);
+    // Safe to cache hard: an id names ONE immutable stored blob, unlike a pid.
+    res.set('Cache-Control', 'private, max-age=86400');
+    return res.send(buf);
+  } catch (err) {
+    return res.status(err.status ?? 502).json({ error: err.message });
+  }
+});
 
 // GET /alarm/image/:num/:pid
 router.get('/alarm/image/:num/:pid', async (req, res) => {
@@ -111,17 +137,28 @@ router.post('/alarm/image/:num/:pid/fetch', async (req, res) => {
   if (!Number.isInteger(num) || !Number.isInteger(pid)) {
     return res.status(400).json({ error: 'num and pid must be integers' });
   }
-  if (isStoredPid(num, pid)) {
-    // Already on disk — nothing to spend airtime on.
-    return res.status(409).json({ error: 'already downloaded' });
-  }
+  // RE-DOWNLOAD IS ALLOWED. An earlier version refused any pid already in
+  // /stored with 409 "already downloaded", which directly contradicted Peter's
+  // requirement: "pull an existing image WHETHER OR NOT IT HAS BEEN SENT
+  // BEFORE". That guard is gone.
+  //
+  // What remains is a limit of the device, not a policy of ours: it holds ONE
+  // payload and a new capture replaces it, so only that pid can be re-pulled.
+  // Every other returns ENOIMG — measured, and visible in services' /history
+  // (pid 50108 ENOIMG twice). We refuse those rather than start a transfer we
+  // know will fail and bill it to a wake window.
   if (!isDevicePid(num, pid)) {
-    return res.status(404).json({ error: 'the device has not reported holding this image — check the device first' });
+    return res.status(409).json({
+      error: 'the device is no longer holding this image, so it cannot be downloaded again — it holds one at a time. Use Check device to see which.',
+    });
   }
 
   // Fire and forget. services own the START frame, the repair loop and the
   // retry policy; we only ask for the image and watch /progress like everyone else.
-  getImageBytes(numToNodeId(num), pid, { timeoutMs: PULL_TIMEOUT_MS })
+  // refresh:true — skip services' store and go to the device. Without it a pid
+  // they already hold is served from disk in milliseconds and nothing goes on
+  // air, so the button would report a download that never happened.
+  getImageBytes(numToNodeId(num), pid, { timeoutMs: PULL_TIMEOUT_MS, refresh: true })
     .then(() => log.info('alarm-image', `device pull complete for ${numToNodeId(num)} pid ${pid}`))
     .catch(e => log.warn('alarm-image', `device pull failed for ${numToNodeId(num)} pid ${pid}: ${e.message}`));
 

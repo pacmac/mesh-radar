@@ -1,8 +1,8 @@
 ---
 module: alarm-image-api
 source: src/alarm-image-api.js
-source_hash: d2a68a143c939e13b9e50bb8fde9ec6227ed06bfb1859b5f95c18ee2e611bc69
-updated: 2026-07-31
+source_hash: 9c9767fd5e1b8ff3c276c9cc29139e97e34110a0f2066672ede626b22529077e
+updated: 2026-08-01
 ---
 
 # Module: alarm-image-api
@@ -74,6 +74,35 @@ existing `/progress` polling on the same code path as every other transfer, and
 the bytes land in `/stored`. Gated on the pid the device reported holding — never
 an arbitrary number, for the same reason as the stored allowlist.
 
+### GET bytes — `by-id` is preferred
+
+`GET /alarm/image/:num/by-id/:id` serves by the store's **stable id**. `pid` is a
+recycling uint16 and is not unique within a unit's list (`!987ab80f`: 7 rows, 3
+distinct pids), so the pid route can only ever return the newest row carrying a
+pid — four of GARG's images were listable but unreachable. Verified 2026-08-01:
+selecting a previously-`superseded` row now loads `by-id/15`, a real 320x240
+JPEG. Cached `max-age=86400` because an id names one immutable blob; the pid
+route stays at 300 s because a pid can later mean a different picture.
+
+### Re-download — `?refresh=1`, and why the plain route is a trap
+
+`POST /alarm/image/:num/:pid/fetch` passes `refresh: true`, which skips services'
+store and goes to the device.
+
+**Without it the button reports a download that never happened.** Measured
+2026-07-31: the plain route returned `202 started`, node-dash logged `device pull
+complete`, and pac-host logged `image 1 served from store (7156 bytes) — no
+radio`. Serving from disk is correct for VIEWING and silently wrong for
+RE-DOWNLOADING. With `refresh:true`, the same request produced
+`image pull: pid 1 from !8cee336b — requested` and a real 32-chunk transfer:
+`image ok: pid 1 32/32 chunks, 1 repairs, 29 dupes, total 205.6s`.
+
+The 409 `already downloaded` guard is GONE — it contradicted Peter's requirement
+(*"whether or not it has been sent before"*). What remains is the device's limit,
+not ours: it holds ONE payload, so only that pid can be re-pulled and every other
+answers `ENOIMG`. Those are refused rather than started, so a wake window is not
+spent on a transfer known to fail.
+
 ### GET bytes
 
 | response | when |
@@ -94,9 +123,10 @@ mean a different picture (see below).
 - **NEVER blind-proxy a browser-supplied pid.** This is the whole reason the
   allowlist exists, and it is not a theoretical concern — see Test notes for the
   measurement.
-- **`?refresh=1` is never sent, and never reachable from a page.** It forces
-  pac-host's radio path: minutes, and it costs the device a wake window. This
-  route hard-codes the plain form and takes no query parameters at all.
+- **`?refresh=1` is sent ONLY from the confirmed re-download action**, never
+  from a GET and never from anything a page load can trigger. It forces
+  pac-host's radio path: minutes, and it costs the device a wake window. The
+  byte routes hard-code the plain form and take no query parameters at all.
 - **Every upstream call carries an `AbortController` timeout.** The allowlist
   closes the common case; the timeout closes the race where a pid is evicted
   between the poll that published it and the request that asks for it.

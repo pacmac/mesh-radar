@@ -30,6 +30,7 @@ const HISTORY_MAX = 12;
 let _timer = null;
 let _byNum = {};          // num -> display-ready unit model
 let _stored = {};         // num -> Set of stored pids (the image route's allowlist)
+let _storedIds = {};      // num -> Set of stored image ids (the by-id route's allowlist)
 let _device = {};         // num -> what the DEVICE says it holds, from a user-initiated check
 let _history = {};        // num -> [{ pid, received, count, outcome, ... }] newest first
 let _live = {};           // num -> { pid -> last raw transfer seen }, for end-detection
@@ -50,6 +51,11 @@ export function isStoredPid(num, pid) {
   return _stored[num] instanceof Set && _stored[num].has(Number(pid));
 }
 
+/** Is this a stored image id for this unit? Allowlist for the by-id byte route. */
+export function isStoredId(num, id) {
+  return _storedIds[num] instanceof Set && _storedIds[num].has(Number(id));
+}
+
 /** Is this the pid the DEVICE told us it is holding? Fetchable, but only via
  *  the server-side fetch action — never as an <img src>, because a pid we do
  *  not already hold runs the full radio pull and takes minutes. */
@@ -66,23 +72,34 @@ export function setDeviceImage(num, info) {
 }
 
 // A stored row shaped for display. Every string is built here.
-function shapeImage(img, num, nowSec, newerPidSeen) {
+function shapeImage(img, num, nowSec, onDevice) {
   const savedSec = msToSec(img.savedAt);
-  // pac-host returns newest first, so a pid already seen higher up the list is
-  // a NEWER image under the same number. GET /images/<t>/<pid> returns only
-  // that newest one, so this row exists but cannot be fetched on its own.
-  const addressable = !newerPidSeen;
   return {
     // NOT keyed on pid: a pid is a uint16 and recycles, and !987ab80f currently
     // lists 7 images under 3 distinct pids (pid 1 five times). A duplicate
     // x-for key is what froze the message feed once already (message-flow-audit).
     key:         `${img.pid}-${img.savedAt}`,
+    id:          img.id ?? null,
     pid:         img.pid,
-    url:         `/alarm/image/${num}/${img.pid}`,
+    // ID-ADDRESSED, not pid-addressed. pid is a recycling uint16 and is not
+    // unique in a unit's list (!987ab80f: 7 rows, 3 distinct pids), so
+    // /images/<t>/<pid> can only ever return the NEWEST row for a pid and four
+    // of GARG's images were listable but unreachable. services' by-id route
+    // (measured 200 in 1.6 ms) fixes that; pid remains only as a fallback for
+    // any row the store has not given an id.
+    url:         img.id != null ? `/alarm/image/${num}/by-id/${img.id}` : `/alarm/image/${num}/${img.pid}`,
     size_text:   fmtBytes(img.bytes),
     saved_text:  savedSec != null ? fmtAgo(savedSec, nowSec) : null,
     saved_stamp: savedSec != null ? fmtStamp(savedSec, { now: nowSec }) : null,
-    addressable,
+    // Can this one be RE-PULLED over the air? Only if the device still holds
+    // that pid. The device holds ONE payload and a new capture replaces it, so
+    // every other row will answer ENOIMG — measured, and now permanently
+    // visible in services' /history (pid 50108 ENOIMG twice, pid 18137 EXFER
+    // 3/0). Offering a re-download button for those would be seven buttons
+    // that cannot work.
+    on_device:   onDevice,
+    fetch_text:  onDevice ? 'still on the device — can be downloaded again'
+                          : 'not on the device any more — view only',
     // pid 1 is the device's EMBEDDED TEST IMAGE, and this is the firmware
     // contract rather than a guess:
     //   main.cpp:489             TEST_IMAGE_PID = 1
@@ -210,13 +227,14 @@ function _recordEndings(num, seenNow, storedPids, nowMs) {
 
 async function _poll() {
   if (!pacHost.isAvailable()) {
-    if (Object.keys(_byNum).length) { _byNum = {}; _stored = {}; _push(); }
+    if (Object.keys(_byNum).length) { _byNum = {}; _stored = {}; _storedIds = {}; _push(); }
     return;
   }
   const nowMs   = Date.now();
   const nowSec  = Math.floor(nowMs / 1000);
-  const next    = {};
-  const stored  = {};
+  const next     = {};
+  const stored   = {};
+  const storedIds = {};
   for (const u of pacHost.connectMessage().units ?? []) {
     let progress, storedRes;
     try {
@@ -240,6 +258,8 @@ async function _poll() {
     // an unstored pid — which does not 404, it hangs (measured: >45 s).
     const pidSet = new Set(images.map(i => Number(i.pid)).filter(Number.isFinite));
     stored[u.num] = pidSet;
+    // Separate allowlist for the id-addressed byte route.
+    storedIds[u.num] = new Set(images.map(i => Number(i.id)).filter(Number.isFinite));
 
     // Keyed pid+startedAt so a re-adopted transfer of an already-delivered pid
     // is a DIFFERENT entry, not the same one continuing. See _recordEndings.
@@ -252,12 +272,8 @@ async function _poll() {
 
     // pac-host returns newest first; the first row for a pid is the only one
     // GET /images/<t>/<pid> can return.
-    const pidSeen = new Set();
-    const shapedImages = images.map((img) => {
-      const already = pidSeen.has(img.pid);
-      pidSeen.add(img.pid);
-      return shapeImage(img, u.num, nowSec, already);
-    });
+    const devicePid = Number(_device[u.num]?.pid);
+    const shapedImages = images.map(img => shapeImage(img, u.num, nowSec, Number(img.pid) === devicePid));
 
     next[u.num] = {
       id: u.id,
@@ -309,6 +325,7 @@ async function _poll() {
     };
   }
   _stored = stored;
+  _storedIds = storedIds;
   if (JSON.stringify(next) !== JSON.stringify(_byNum)) {
     _byNum = next;
     _push();

@@ -1,8 +1,8 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 043f2e38b4ed7cf75ce694361f5e458c50ffbabc924dc384c72509361bb1ddd4
-updated: 2026-07-31
+source_hash: efb5e973138e39e49126adba60066d455658b00a0b5c9af44780d7011997d23a
+updated: 2026-08-01
 ---
 
 # Module: pac-host

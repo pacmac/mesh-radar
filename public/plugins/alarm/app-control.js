@@ -65,14 +65,36 @@ export const controlMixin = {
   cameraSelected() {
     const imgs = this.cameraImages();
     if (!imgs.length) return null;
-    return imgs.find(i => i.key === this.cameraSelectedKey && i.addressable)
-        ?? imgs.find(i => i.addressable)
-        ?? null;
+    // Every stored row is reachable now (addressed by the store's stable id),
+    // so there is no "unreachable" case left to skip over.
+    return imgs.find(i => i.key === this.cameraSelectedKey) ?? imgs[0] ?? null;
   },
 
   /** Local UI selection — an interaction, not page data, so it lives here and
    *  is never persisted or sent anywhere. */
   cameraSelect(key) { this.cameraSelectedKey = key; },
+
+  /** Re-download the selected image over the air.
+   *
+   *  Peter, 2026-07-31: "pull an existing image whether or not it has been sent
+   *  before". An earlier version refused anything already stored with a 409;
+   *  that guard is gone. What remains is the DEVICE's limit, not ours — it holds
+   *  one payload at a time, so only that pid can be re-pulled and the button is
+   *  offered only for it. */
+  async cameraRefetch() {
+    const img = this.cameraSelected();
+    if (!img?.on_device) return;
+    if (!confirm(`Download image ${img.pid} from the device again?\n\nIt transfers over the radio and can take several minutes. Watch the Transfer card.`)) return;
+    this.cameraFetching = true;
+    try {
+      await fetchJSON(`/alarm/image/${this.controlTarget}/${img.pid}/fetch`, 'POST');
+      this.showToast(`Downloading image ${img.pid} again — watch Transfer`, 'success', 5000);
+    } catch (e) {
+      this.showToast(e.message || 'Could not start the download', 'error', 0);
+    } finally {
+      this.cameraFetching = false;
+    }
+  },
 
   /** What the device says it is holding, from the last check. Null until asked. */
   cameraDevice() { return this.cameraUnit()?.device ?? null; },

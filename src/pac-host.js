@@ -337,6 +337,15 @@ export async function getDeviceImage(unit, { timeoutMs = 20000 } = {}) {
   }
 }
 
+/** Bytes of one stored image BY ITS STABLE ID. Local read (~1.6 ms measured).
+ *
+ *  Preferred over the pid form: an id names exactly one stored blob, whereas a
+ *  pid recycles and resolves only to the newest row carrying it. Added by
+ *  services alongside the move of image bytes into SQLite. */
+export async function getImageById(unit, id, { timeoutMs = 5000 } = {}) {
+  return _imageBytes(`/mesh/images/${encodeURIComponent(unit)}/by-id/${encodeURIComponent(id)}`, timeoutMs);
+}
+
 /** The BYTES of one stored image, as a Buffer.
  *
  *  CALLERS MUST HAVE ALREADY ESTABLISHED THAT THIS PID IS STORED. Asking for a
@@ -350,14 +359,25 @@ export async function getDeviceImage(unit, { timeoutMs = 20000 } = {}) {
  *
  *  The plain form is hard-coded. `?refresh=1` forces the radio path — minutes,
  *  plus a wake window — and must never be reachable from a page. */
-export async function getImageBytes(unit, pid, { timeoutMs = 5000 } = {}) {
+export async function getImageBytes(unit, pid, { timeoutMs = 5000, refresh = false } = {}) {
+  // `refresh` FORCES THE RADIO PATH and deliberately skips the store — services:
+  // "refresh means 'I know you hold it, go and get it again anyway'".
+  //
+  // Without it, a re-download of an image services already holds is answered
+  // from disk in milliseconds and never reaches the device. That is correct for
+  // VIEWING and a silent lie for RE-DOWNLOADING: measured 2026-07-31, a
+  // "Download again" of pid 1 logged `served from store — no radio` while
+  // reporting success. Only ever set this from a deliberate, confirmed user
+  // action — it costs minutes and a wake window.
+  const q = refresh ? '?refresh=1' : '';
+  return _imageBytes(`/mesh/images/${encodeURIComponent(unit)}/${encodeURIComponent(pid)}${q}`, timeoutMs);
+}
+
+async function _imageBytes(path, timeoutMs) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    const res = await fetch(
-      `${PAC_HOST_URL}/mesh/images/${encodeURIComponent(unit)}/${encodeURIComponent(pid)}`,
-      { signal: ac.signal },
-    );
+    const res = await fetch(`${PAC_HOST_URL}${path}`, { signal: ac.signal });
     if (!res.ok) {
       throw Object.assign(new Error(`pac-host ${res.status}`), { status: res.status });
     }

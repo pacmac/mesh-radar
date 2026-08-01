@@ -1,8 +1,8 @@
 ---
 module: alarm-images
 source: src/alarm-images.js
-source_hash: e6643cf502c6038398109e1e3105ca02517d468ad57f9ca0267d6b6f9e629688
-updated: 2026-07-31
+source_hash: 2d2838bae1a76281c4aede17fb3a75804ea5108ea212704d77dd8840da5519a2
+updated: 2026-08-01
 ---
 
 # Module: alarm-images
@@ -101,8 +101,14 @@ exists and none does."*
 
 So the page renders one line — *"device is holding pid N, not yet downloaded
 [Download]"* — and that line reports `already downloaded` instead when the pid is
-in `/stored`. Peter's requirement, 2026-07-31: *"I need to be able to pull an
-existing image whether or not it has been sent before."*
+in `/stored`.
+
+Separately, the **dropdown** lists everything *services* holds, which is what
+Peter actually asked for: *"a drop down listing the images that the services says
+are available"*. I first read "available" as "on the device", measured the
+single-descriptor route, and built a view-only strip instead — then put that
+misreading to services, whose agreement confirmed nothing because the framing was
+mine.
 
 `_device[num]` is populated ONLY by a user-initiated check (`setDeviceImage`).
 There is no poller and there must not be one — see `alarm-image-api.md`.
@@ -118,10 +124,14 @@ server-built `url` pointing at `alarm-image-api.js`.
   `!987ab80f` currently lists 7 images under 3 distinct pids, with pid 1
   appearing five times. A duplicate `x-for` key is what froze the message feed
   in `message-flow-audit`.
-- **`addressable: false`** when a newer row shares the same pid.
-  `GET /images/<t>/<pid>` returns only the newest for that pid, so the older
-  rows exist but cannot be fetched individually. The page marks them
-  `superseded` rather than serving the wrong picture under the right label.
+- **`url` is ID-ADDRESSED** (`/alarm/image/<num>/by-id/<id>`), falling back to
+  the pid form only for a row with no id. Every stored row is therefore
+  reachable. Before this, four of GARG's seven were greyed out as `superseded`,
+  because `GET /images/<t>/<pid>` returns only the newest row for a pid.
+- **`on_device`** says whether the DEVICE still holds that pid — the only row an
+  over-the-air re-pull can satisfy, since it keeps one payload at a time. Every
+  other answers `ENOIMG`, so `fetch_text` says *"not on the device any more —
+  view only"* rather than offering a button that cannot work.
 - **`saved_*`, never `captured_*`.** `savedAt` is when *we* stored the bytes,
   not when the shutter fired. It is epoch **milliseconds** and `fmtAgo`/
   `fmtStamp` take **seconds** — `msToSec` exists for exactly that divide.

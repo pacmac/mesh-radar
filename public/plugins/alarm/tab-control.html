@@ -486,30 +486,33 @@
                   </div>
                 </template>
 
-                <!-- The rest, selectable. Keyed on pid+savedAt, NOT pid: a pid is
-                     a uint16 and recycles, and one unit currently lists 7 images
-                     under 3 distinct pids. Duplicate x-for keys froze the message
-                     feed once already. -->
-                <template x-if="cameraImages().length > 1">
-                  <div class="flex flex-wrap gap-2 pt-1 border-t border-base-200">
-                    <template x-for="img in cameraImages()" :key="img.key">
-                      <button class="flex flex-col items-start gap-0.5 p-1 rounded-lg border text-left"
-                              :class="cameraSelected()?.key === img.key ? 'border-primary bg-base-200' : 'border-base-200'"
-                              :disabled="!img.addressable"
-                              @click="cameraSelect(img.key)">
-                        <img x-show="img.addressable" :src="img.url" loading="lazy"
-                             class="w-20 h-16 object-cover rounded bg-base-200" alt="">
-                        <!-- An older row sharing a pid with a newer one cannot be
-                             fetched on its own — pac-host returns only the newest
-                             for a given pid. Say so rather than serve the wrong
-                             picture under the right label. -->
-                        <span x-show="!img.addressable"
-                              class="w-20 h-16 rounded bg-base-200 flex items-center justify-center text-[0.6rem] text-base-content/40 text-center px-1">
-                          superseded
-                        </span>
-                        <span class="text-[0.6rem] text-base-content/50 font-mono" x-text="img.saved_stamp"></span>
-                      </button>
-                    </template>
+                <!-- DROPDOWN over everything services holds. Peter, 2026-07-31:
+                     "a drop down listing the images that the services says are
+                     available". Every row is selectable now: they are addressed
+                     by the store's stable id, so the rows sharing a recycled pid
+                     are reachable instead of greyed out as "superseded". -->
+                <template x-if="cameraImages().length">
+                  <div class="flex flex-col gap-2 pt-2 border-t border-base-200">
+                    <label class="form-control">
+                      <span class="label-text text-xs opacity-60">Stored images (<span x-text="cameraImages().length"></span>)</span>
+                      <select class="select select-sm select-bordered font-mono" x-model="cameraSelectedKey">
+                        <template x-for="img in cameraImages()" :key="img.key">
+                          <option :value="img.key"
+                                  x-text="img.saved_stamp + '  ·  ' + img.size_text + '  ·  pid ' + img.pid + (img.note ? '  ·  ' + img.note : '')"></option>
+                        </template>
+                      </select>
+                    </label>
+                    <!-- Re-download. Offered ONLY for the image the device still
+                         holds: it keeps one payload and a new capture replaces
+                         it, so every other pid answers ENOIMG. The reason is
+                         stated rather than the button silently missing. -->
+                    <div class="flex items-center gap-3" x-show="cameraSelected()">
+                      <span class="text-xs text-base-content/50" x-text="cameraSelected()?.fetch_text"></span>
+                      <button class="btn btn-xs btn-primary ml-auto"
+                              x-show="cameraSelected()?.on_device"
+                              @click="cameraRefetch()" :disabled="cameraFetching"
+                              x-text="cameraFetching ? 'starting…' : 'Download again'"></button>
+                    </div>
                   </div>
                 </template>
               </div>
