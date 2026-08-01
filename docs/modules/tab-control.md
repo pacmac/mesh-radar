@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/plugins/alarm/tab-control.html
-source_hash: 30bdd99e601087b0306f4d1bb2f8f9b3df53bda6b7c4f347369fd980f5ba1089
+source_hash: a6dada6340de2bb229e4125afb777a5b63dd00ec618a9c3bc6d4b13bb95d0412
 updated: 2026-08-01
 ---
 
@@ -163,26 +163,39 @@ state changed; TWO download buttons (`cameraFetchDevice`, `cameraRefetch`) doing
 one job because they came from two endpoints; and no glanceable state — three
 cards had to be read to learn "idle, last picture 12h ago".
 
-### The layout
-
-Two columns at `lg:` and up, one column below. `max-w-3xl` is gone.
+### The layout — stacked on one centre axis, NOT two columns
 
 ```
-+------------------------------------------+-----------------+
-|  PLATE                                   | ACTION RAIL     |
-|  +------------------------------------+  | Unit [BNCH v]   |
-|  |   image, integer 2x, 640x480 cap   |  | [ TAKE PHOTO ]  |
-|  +------------------------------------+  | caption         |
-|  BNCH !8cee336b . 01 Aug 06:47 . 2.7kB   | STATUS (fixed)  |
-|  pid 50108 . device test image           | Ping Status Reb |
-|  Stored images (9) [ dropdown v ]        | > Diagnostics   |
-|  fetch_text            [Download again]  |                 |
-+------------------------------------------+-----------------+
++--------------------------------------------------------------+
+|                          PLATE (full width)                   |
+|              +--------------------------------+               |
+|              |   image, integer 2x, 640x480   |               |
+|              +--------------------------------+               |
++--------------------------------------------------------------+
+|          BNCH !8cee336b . 01 Aug 06:47 . 7.0 kB . pid 1       |
+|                                                               |
+|              [ Unit  BNCH v ]  [  TAKE PHOTO  ]               |
+|              caption                                          |
+|              +--------------------------------+               |
+|              |  STATUS            idle/running |              |
+|              +--------------------------------+               |
+|              Stored images (9) [ v ] [Download again]         |
+|              [ ping ][ status ][ config ][ reboot ]           |
+|              > Diagnostics                                    |
++--------------------------------------------------------------+
 ```
 
-**The picture is the page.** It is first in source order and first visually, so
-it is the thing on screen when the tab opens. Everything that was above it is
-either in the rail or behind the disclosure.
+**The picture is the page.** The plate is full-bleed and first; the controls
+stack **beneath** it in a centred column **exactly as wide as the image
+(640 px)**, so image and controls share one centre axis.
+
+**A first attempt put the plate and a control rail side by side** and Peter
+rejected it: *"dont like the layout with the image in the left column of a 2
+column layout. the image should be centreted and at the top of the page. the
+controls should be below. it does not look good, looks more like you have tried
+to squeeze everything into 1 row."* Two columns solved the wasted-width problem
+by filling the width with controls, which is not the same as giving the picture
+the page. Do not reintroduce a side rail.
 
 ### The plate — the one place with any character
 
@@ -199,7 +212,7 @@ once, here.
 at, and blowing a low-res sensor frame to 900 px is worse, not better. The cap
 is a choice about the *source*, not about the container.
 
-### The action rail
+### The control column (beneath the plate, centred, 640 px)
 
 - **Unit** `<select>` — `controlTarget`, options from `controlDevices()`,
   labelled `cameraLabel(num) || d.label` so the **id is visible** (short names
@@ -283,8 +296,10 @@ the status block already sized for a running transfer.
   stages. The caption's `text-warning` qualifier is load-bearing and may only be
   removed when a real capture-and-upload operation exists upstream — not when
   the wording feels awkward.
-- **The picture is first.** Nothing may be inserted above the plate. Every card
-  that once sat there is why this task exists.
+- **The picture is first, full width, and centred.** Nothing may be inserted
+  above the plate, and nothing may be placed beside it. Every card that once sat
+  above it is why this task exists; the side rail that briefly replaced them was
+  rejected for the same reason.
 - **The status block never changes the page's geometry.** It is always present
   with a fixed minimum height; `idle -> running -> idle` must not move the
   download button, the dropdown, or the plate.

@@ -307,45 +307,52 @@
                message — nothing here computes a count, a percentage or an
                elapsed time. See docs/modules/tab-control.md. -->
           <div x-show="controlTab==='camera'" class="flex-1 min-h-0 overflow-y-auto">
-            <div class="flex flex-col lg:flex-row gap-4 items-start">
+            <div class="flex flex-col gap-4">
 
               <!-- ============ PLATE — the picture IS the page ============
-                   First in source order and first on screen. Nothing may be
-                   inserted above it; every card that once sat here is the
-                   reason this task exists. -->
-              <div class="flex-1 min-w-0 w-full flex flex-col gap-3">
+                   Full width, first in source order, first on screen. Nothing
+                   may be inserted above it AND NOTHING MAY SIT BESIDE IT.
+                   Peter, 2026-08-01, rejecting the first attempt: "dont like
+                   the layout with the image in the left column of a 2 column
+                   layout. the image should be centreted and at the top of the
+                   page. the controls should be below."
 
-                <!-- The mat is dark in BOTH themes so the frame reads as a photo
-                     viewer rather than one more card on a card. This is the one
-                     deliberate deviation from the surrounding DaisyUI surfaces;
-                     the boldness is spent once, here. -->
-                <div class="rounded-xl bg-neutral p-3 sm:p-5 flex items-center justify-center min-h-[14rem]">
+                   The mat is dark in BOTH themes so the frame reads as a photo
+                   viewer rather than one more card on a card. This is the one
+                   deliberate deviation from the surrounding DaisyUI surfaces;
+                   the boldness is spent once, here. -->
+              <div class="rounded-xl bg-neutral p-3 sm:p-5 flex items-center justify-center min-h-[14rem]">
 
-                  <template x-if="!cameraUnit()">
-                    <p class="text-sm text-neutral-content/60">Select a unit.</p>
-                  </template>
+                <template x-if="!cameraUnit()">
+                  <p class="text-sm text-neutral-content/60">Select a unit.</p>
+                </template>
 
-                  <template x-if="cameraUnit() && !cameraImages().length">
-                    <p class="text-sm text-neutral-content/60" x-text="cameraUnit().images_empty_text"></p>
-                  </template>
+                <template x-if="cameraUnit() && !cameraImages().length">
+                  <p class="text-sm text-neutral-content/60" x-text="cameraUnit().images_empty_text"></p>
+                </template>
 
-                  <!-- CAPPED AT 640px = exactly 2x integer scale of the 320x240
-                       source. NOT "as wide as the column allows": the old 476px
-                       was a 1.49x non-integer upscale, which is the softness
-                       Peter was looking at, and blowing a low-res sensor frame
-                       across 900px is worse, not better. -->
-                  <template x-if="cameraSelected()">
-                    <img :src="cameraSelected().url" :key="cameraSelected().key"
-                         class="w-full max-w-[640px] rounded-lg border border-neutral-content/20"
-                         :alt="'Image ' + cameraSelected().pid">
-                  </template>
-                </div>
+                <!-- CAPPED AT 640px = exactly 2x integer scale of the 320x240
+                     source. NOT "as wide as the page allows": the old 476px was
+                     a 1.49x non-integer upscale, which is the softness Peter was
+                     looking at, and blowing a low-res sensor frame across
+                     1300px is worse, not better. -->
+                <template x-if="cameraSelected()">
+                  <img :src="cameraSelected().url" :key="cameraSelected().key"
+                       class="w-full max-w-[640px] rounded-lg border border-neutral-content/20"
+                       :alt="'Image ' + cameraSelected().pid">
+                </template>
+              </div>
+
+              <!-- ============ CONTROL COLUMN ============
+                   Beneath the plate, centred, and exactly as wide as the image
+                   (640px) so picture and controls share one centre axis. -->
+              <div class="mx-auto w-full max-w-[640px] flex flex-col gap-3">
 
                 <!-- Caption strip — reads like a contact-sheet annotation.
                      "saved", never "captured": savedAt is when WE stored the
                      bytes, not when the shutter fired. -->
                 <template x-if="cameraSelected()">
-                  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono text-xs tabular-nums text-base-content/60">
+                  <div class="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1 font-mono text-xs tabular-nums text-base-content/60">
                     <span class="text-base-content/80" x-text="cameraLabel(controlTarget)"></span>
                     <span>saved <span x-text="cameraSelected().saved_stamp"></span></span>
                     <span x-text="cameraSelected().saved_text"></span>
@@ -360,57 +367,24 @@
                   </div>
                 </template>
 
-                <!-- DROPDOWN over everything services holds. Peter, 2026-07-31:
-                     "a drop down listing the images that the services says are
-                     available". Every row is selectable: they are addressed by
-                     the store's stable id, so rows sharing a recycled pid are
-                     reachable instead of greyed out as "superseded". -->
-                <template x-if="cameraImages().length">
-                  <div class="flex flex-col gap-2">
-                    <div class="flex flex-wrap items-end gap-3">
-                      <label class="form-control flex-1 min-w-0">
-                        <span class="label-text text-xs opacity-60">Stored images (<span x-text="cameraImages().length"></span>)</span>
-                        <select class="select select-sm select-bordered font-mono w-full" x-model="cameraSelectedKey">
-                          <template x-for="img in cameraImages()" :key="img.key">
-                            <option :value="img.key"
-                                    x-text="img.saved_stamp + '  ·  ' + img.size_text + '  ·  pid ' + img.pid + (img.note ? '  ·  ' + img.note : '')"></option>
-                          </template>
-                        </select>
-                      </label>
-                      <!-- Offered ONLY for the image the device still holds: it
-                           keeps one payload and a new capture replaces it, so
-                           every other pid answers ENOIMG. The reason is stated
-                           rather than the button silently missing. -->
-                      <button class="btn btn-sm btn-outline shrink-0"
-                              x-show="cameraSelected()?.on_device"
-                              @click="cameraDownload(cameraSelected().pid)" :disabled="cameraFetching"
-                              x-text="cameraFetching ? 'starting…' : 'Download again'"></button>
-                    </div>
-                    <p class="text-xs text-base-content/50" x-show="cameraSelected()"
-                       x-text="cameraSelected()?.fetch_text"></p>
-                  </div>
-                </template>
-              </div>
+                <div class="flex flex-wrap items-end gap-3">
+                  <label class="form-control flex-1 min-w-[10rem]">
+                    <span class="label-text text-xs opacity-60">Unit</span>
+                    <!-- Labelled by id: both units currently report shortName
+                         GARG (one firmware image on two boards, same root as the
+                         PKI failure). The id is what distinguishes them. -->
+                    <select class="select select-sm select-bordered font-mono w-full" x-model="controlTarget">
+                      <template x-for="d in controlDevices()" :key="d.num">
+                        <option :value="d.num" x-text="cameraLabel(d.num) || d.label"></option>
+                      </template>
+                    </select>
+                  </label>
 
-              <!-- ============ RAIL — everything you can do ============ -->
-              <div class="w-full lg:w-80 shrink-0 flex flex-col gap-3">
-
-                <label class="form-control w-full">
-                  <span class="label-text text-xs opacity-60">Unit</span>
-                  <!-- Labelled by id: both units currently report shortName GARG
-                       (one firmware image on two boards, same root as the PKI
-                       failure). The id is what distinguishes them. -->
-                  <select class="select select-sm select-bordered font-mono w-full" x-model="controlTarget">
-                    <template x-for="d in controlDevices()" :key="d.num">
-                      <option :value="d.num" x-text="cameraLabel(d.num) || d.label"></option>
-                    </template>
-                  </select>
-                </label>
-
-                <!-- The only primary button on the page. -->
-                <button class="btn btn-primary w-full font-display" @click="cameraGrab()"
-                        :disabled="controlTarget == null || cameraGrabbing"
-                        x-text="cameraGrabbing ? 'sending…' : 'Take photo'"></button>
+                  <!-- The only primary button on the page. -->
+                  <button class="btn btn-primary font-display flex-1 min-w-[10rem]" @click="cameraGrab()"
+                          :disabled="controlTarget == null || cameraGrabbing"
+                          x-text="cameraGrabbing ? 'sending…' : 'Take photo'"></button>
+                </div>
 
                 <!-- Says what ONE PRESS actually does. It used to promise
                      delivery, which no single command achieves: `cam grab`
@@ -462,6 +436,37 @@
                     </div>
                   </template>
                 </div>
+
+                <!-- DROPDOWN over everything services holds. Peter, 2026-07-31:
+                     "a drop down listing the images that the services says are
+                     available". Every row is selectable: they are addressed by
+                     the store's stable id, so rows sharing a recycled pid are
+                     reachable instead of greyed out as "superseded". -->
+                <template x-if="cameraImages().length">
+                  <div class="flex flex-col gap-2">
+                    <div class="flex flex-wrap items-end gap-3">
+                      <label class="form-control flex-1 min-w-0">
+                        <span class="label-text text-xs opacity-60">Stored images (<span x-text="cameraImages().length"></span>)</span>
+                        <select class="select select-sm select-bordered font-mono w-full" x-model="cameraSelectedKey">
+                          <template x-for="img in cameraImages()" :key="img.key">
+                            <option :value="img.key"
+                                    x-text="img.saved_stamp + '  ·  ' + img.size_text + '  ·  pid ' + img.pid + (img.note ? '  ·  ' + img.note : '')"></option>
+                          </template>
+                        </select>
+                      </label>
+                      <!-- Offered ONLY for the image the device still holds: it
+                           keeps one payload and a new capture replaces it, so
+                           every other pid answers ENOIMG. The reason is stated
+                           rather than the button silently missing. -->
+                      <button class="btn btn-sm btn-outline shrink-0"
+                              x-show="cameraSelected()?.on_device"
+                              @click="cameraDownload(cameraSelected().pid)" :disabled="cameraFetching"
+                              x-text="cameraFetching ? 'starting…' : 'Download again'"></button>
+                    </div>
+                    <p class="text-xs text-base-content/50" x-show="cameraSelected()"
+                       x-text="cameraSelected()?.fetch_text"></p>
+                  </div>
+                </template>
 
                 <!-- DEVICE CONTROLS. Peter, 2026-08-01, on why these are also on
                      the Command sub-tab: "why? this is the camera page." When a
