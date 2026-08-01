@@ -81,8 +81,17 @@ _N/A_
 - `wakesExpected: null` omits the field entirely; `0` renders a bare count. Neither
   path divides.
 - Delivery keeps five numbers, never one boolean.
-- pac-host instants are epoch **milliseconds**; `msToSec` does the divide once, at
+- pac-host **instants** are epoch milliseconds; `msToSec` does the divide once, at
   this boundary.
+- pac-host **durations** are milliseconds too — `beat` and `windowMs` take the same
+  divide (`:166`, `:168`) before `fmtUptime`, which takes seconds. Measured live
+  2026-08-01 18:35Z: BNCH `beat` 62324, GARG `beat` 900004. BNCH's drifts — it is
+  `beatSource: measured` — so re-measure rather than trusting the number.
+- **Do not remove those two divides.** services' `[ms-everywhere]` (2026-08-01) tells
+  every consumer to grep its own code for a divide-by-1000 as the way to find unit
+  bugs; these two are the correct case, not the bug. Without the divide a 15-minute
+  beat renders "10d 10h". Full contract: `docs/modules/pac-host.md` → "Units on this
+  boundary".
 
 Full rationale for each: `docs/REACHABILITY_SPEC.md`.
 

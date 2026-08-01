@@ -247,6 +247,90 @@ session-restart durability.
 - **The queue ledger has no browser-facing GET, ever, anywhere.** `_pollQueues()` (polling `getQueue()`) is the only reader of pac-host's queue REST endpoint; the browser only ever receives `pac_host_queues` pushed over WS. A GET route for this existed for a few commits and was a real, reported bug — see `control-queue-push-not-get`. Do not reintroduce one; if a future page needs different query semantics (e.g. filtered/paginated), extend the push shape, don't add a fetch.
 - Queue polling only runs `while isAvailable()` — no wasted requests when pac-host is down, and `_queues` is cleared (pushed as empty) rather than left stale when it goes unreachable.
 - **Only `/images/<t>/progress` is safe on a poll path.** It is a local read of pac-host's own memory. The other image routes are not — see below.
+- **Every timing value pac-host publishes is milliseconds; the one we send it is not.** See "Units on this boundary" below before changing any conversion in a consumer.
+
+## Units on this boundary (task `ms-everywhere-units-contract`, 2026-08-01)
+
+pac-host publishes **milliseconds**, in every timing field, and did so before the
+ms-everywhere ruling — services convert on the way in from the device.
+
+Measured live `GET /v1/mesh/devices`, 2026-08-01 **18:35Z**:
+
+| unit | `beat` | `windowMs` | read as seconds it would be |
+|---|---|---|---|
+| `!8cee336b` BNCH | 62324 | 10000 | 17.3 h / 2.8 h |
+| `!987ab80f` GARG | 900004 | 10000 | 10.4 days / 2.8 h |
+
+**`beat` drifts and these numbers will not reproduce.** `beatSource` is `measured` on
+both units — it is pac-host's running estimate of the observed transmit interval, not a
+configured constant. BNCH read 59988 at 18:00Z and 62324 at 18:35Z, the same ~60 s beat
+measured twice. GARG's 900004 is a 15-minute beat and is stable because the unit sleeps
+to a schedule. Re-measure rather than trusting the table; what the table is evidence
+**for** is the magnitude, which no drift can move by a factor of 1000.
+
+Two families, both milliseconds, each converted at exactly one place per consumer:
+
+- **durations** — `beat`, `windowMs`, `wakeErrMs`
+- **instants, epoch ms** — `nextWake`, `lastHeardMs`, `fwAt`, `lastCheckedMs`, and
+  every `<field>At` sibling (`hopsAt`, `rssiAt`, `snrAt`, `positionAt`, `vitalsAt`,
+  `txRadioAt`); on the image surface `savedAt`, `startedAt`, `lastRxAt`, `endedAt`
+
+### Why a divide-by-1000 in a consumer is CORRECT and must not be "fixed"
+
+`src/format.js` is **seconds-based** throughout, because mesh-gw's own timestamps are
+epoch seconds and they were here first. So every pac-host value is divided once, at the
+consumer's boundary, by that consumer's `msToSec` (`alarm-sections.js:57`,
+`alarm-images.js:39`).
+
+This matters because of how it will be encountered. services' xsession
+`[ms-everywhere]` (2026-08-01) told every consumer to grep its own code for a
+divide-by-1000 as the way to find unit bugs. Someone will do exactly that, land on:
+
+```
+src/alarm-sections.js:166   field('Beat', u.beat, fmtUptime(msToSec(u.beat)), ...)
+src/alarm-sections.js:168   field('Window', u.windowMs, fmtUptime(msToSec(u.windowMs)), ...)
+```
+
+and read them as the bug. They are not. Remove either divide and a 15-minute beat
+renders as "10d 10h". The divide is what makes a millisecond value legal input to a
+seconds-based formatter.
+
+### The `[ms-everywhere]` change itself: nothing to do, and why
+
+`beat` and `win` become milliseconds on the wire and in device config, in both firmware
+generations. Peter's ruling, quoted by services: *"everything is now ms, no guessing"*
+and *"you cannot use seconds, that will result in rounding and accumulative
+calculations."* Locked SSOT: mt-transport `docs/api/v3/behaviour.md` §2.
+
+node-dash was one of two consumers whose ack gated the device flash. Ack given
+2026-08-01 after grepping both domains: **what services publishes to us does not
+change**, because they already multiplied on the way in. `win`/`rx.win` has zero hits in
+this repo — we never read it, so whatever it becomes cannot reach us.
+
+One consequence to expect rather than diagnose: during the changeover a not-yet-flashed
+unit publishes `beat: null` with a reason, instead of a wrong number. `null` there is
+correct and temporary. `beatSource` says how the value was arrived at (`measured` on
+both units when this was written).
+
+### The one timing value we SEND, and why it is exempt
+
+`alignConfig({ replyWindowSec })` → `POST /v1/mesh/align/config`. **Seconds,
+deliberately, and it stays seconds.** Ruled by services in xsession `[ms-everywhere]`
+#82, in answer to our question, in their words:
+
+> "align/config is services-internal and never reaches the device. Its unit is stated in
+> the field name, which is why it is exempt from ms-everywhere."
+
+Their two reasons, both worth keeping. It is declared in services' own `settings.js` and
+used at their `align.js:210` for a local `setTimeout` deadline — no firmware has ever
+seen it, and the SSOT governs what a v3 *device* does. And §2 exists so that "nothing may
+require the reader to work out which unit a number is in" — `beat: 60` was dangerous
+because nothing said which unit it was, whereas `replyWindowSec: 30` says it.
+
+**THE INVERSE IS THE TEST, and it is the half that will matter later:** anything we send
+that DOES reach the device must be milliseconds. `replyWindowSec` is currently the only
+timing value this repo writes to services at all. The next one is decided by this rule,
+not by precedent.
 
 ## The image routes and what each one costs
 

@@ -57,6 +57,12 @@ Body: `{ replyWindowSec: number }` (5-120, pac-host-validated — this router
 does not re-validate the range). Response: pac-host's raw JSON, passed
 straight through.
 
+`replyWindowSec` is **seconds, and stays seconds** — services ruled it exempt
+from ms-everywhere (xsession `[ms-everywhere]` #82, 2026-08-01) because it never
+reaches the device and its unit is stated in its name. This router still does not
+re-validate the range, and must not convert it. See `docs/modules/pac-host.md` →
+"Units on this boundary".
+
 All three: `400` on missing/malformed input; any other non-2xx is pac-host's
 own status code, forwarded as-is (`502` if pac-host threw without a status).
 A `409` from `/align/ping` means a burst is already active on that session —
@@ -74,6 +80,9 @@ _N/A — stateless request/response._
 - **No GET route, and none should be added** — same reasoning as
   `pac-command-api.js`'s Invariants: the view-model is page data, pushed by
   `pac-host.js`'s poll-and-push loop (`pac_host_align`), replayed on connect.
+- **Never converts a unit.** `replyWindowSec` is passed through in seconds exactly
+  as the browser sent it. This is the only timing value node-dash writes to
+  services; anything added later that reaches the device must be milliseconds.
 
 ## Test notes
 
