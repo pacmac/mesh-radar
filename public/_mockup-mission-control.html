@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mission Control — mockup</title>
+<!--
+  THROWAWAY MOCKUP. Not wired to anything: no WebSocket, no fetch, no backend.
+  Every number is real, read out of data/node-dash.db and the live radios on
+  2026-08-01/02, and typed in. Its only job is to let the layout and density be
+  judged before docs/MESH_REACH_SPEC.md gets a Domain 2 phase.
+  Delete it, or replace it with the real page. Do not import from it.
+-->
+<style>
+@font-face { font-family:'Oxanium'; font-weight:400 800; font-display:swap; src:url('/vendor/fonts/oxanium-latin.woff2') format('woff2'); }
+@font-face { font-family:'DM Sans'; font-weight:300 600; font-display:swap; src:url('/vendor/fonts/dm-sans-normal-latin.woff2') format('woff2'); }
+@font-face { font-family:'JetBrains Mono'; font-weight:400 500; font-display:swap; src:url('/vendor/fonts/jetbrains-mono-latin.woff2') format('woff2'); }
+
+/* ── Palette: Ordnance Survey cartography on a night chart table ──────────
+   Contour orange, chart blue, admin-boundary magenta and map buff, taken from
+   OS Landranger, set on deep slate rather than black. Deliberately NOT the
+   black-plus-one-acid-accent console cliché — this page is about ground,
+   distance and terrain, so it borrows from the map, not from science fiction. */
+:root{
+  --ground:#0E141A;      /* chart table at night */
+  --panel:#141C24;
+  --panel-2:#18222B;
+  --hair:#22303C;        /* hairline rules */
+  --paper:#E6DCC8;       /* OS map buff — primary text */
+  --dim:#7A8892;
+  --dimmer:#4E5C66;
+  --contour:#D07A32;     /* OS contour orange — distance, the record */
+  --sea:#3C7A93;         /* chart blue — geography */
+  --boundary:#B0538A;    /* OS admin magenta — doors and relays */
+  --verified:#6FA97E;    /* map woodland green — confirmed */
+  --miss:#B8514B;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ground); color:var(--paper);
+  /* Mono is the primary voice: this is an instrument, not an article. */
+  font-family:'JetBrains Mono','Courier New',monospace;
+  font-size:13px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+.prose{font-family:'DM Sans',system-ui,sans-serif}
+
+/* eyebrows encode section, not decoration */
+.eyebrow{
+  font-family:'Oxanium',sans-serif; font-weight:700;
+  font-size:10px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--dim);
+}
+.rule{height:1px;background:var(--hair);border:0;margin:0}
+
+/* ══ HEADER ═══════════════════════════════════════════════════════════════ */
+header{
+  display:flex; align-items:baseline; gap:18px; flex-wrap:wrap;
+  padding:14px 22px 12px; border-bottom:1px solid var(--hair);
+}
+header h1{
+  font-family:'Oxanium',sans-serif; font-weight:800; font-size:15px;
+  letter-spacing:.16em; text-transform:uppercase; margin:0; color:var(--paper);
+}
+header .sub{color:var(--dim); font-size:11px}
+header .spacer{flex:1}
+header .clock{color:var(--dim); font-size:11px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--verified);display:inline-block;margin-right:6px;vertical-align:middle}
+.dot.idle{background:var(--dimmer)}
+
+/* ══ SIGNATURE: THE REACH RULE ════════════════════════════════════════════
+   The whole product in one strip — a kilometre scale, every verified target a
+   tick, a hard terminator at the record, ghosts beyond it for positioned
+   candidates nobody has confirmed. A map scale bar, not a stat card. */
+.reachrule{padding:20px 22px 8px; border-bottom:1px solid var(--hair); background:linear-gradient(180deg,#111922,var(--ground))}
+.rr-head{display:flex; align-items:flex-end; gap:16px; margin-bottom:14px}
+.rr-figure{
+  font-family:'Oxanium',sans-serif; font-weight:800;
+  font-size:52px; line-height:.86; letter-spacing:-.02em; color:var(--contour);
+  font-variant-numeric:tabular-nums;
+}
+.rr-figure .unit{font-size:20px; letter-spacing:0; margin-left:4px; color:var(--contour)}
+.rr-caption{padding-bottom:6px}
+.rr-caption .l1{color:var(--paper); font-size:12px}
+.rr-caption .l2{color:var(--dim); font-size:11px}
+.rr-right{margin-left:auto; text-align:right; padding-bottom:6px}
+.rr-right .big{font-family:'Oxanium',sans-serif;font-weight:700;font-size:20px;color:var(--paper);font-variant-numeric:tabular-nums}
+.rr-right .lbl{color:var(--dim);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+
+.scale{position:relative; height:74px; margin-top:4px}
+.scale .axis{position:absolute; left:0; right:0; top:44px; height:1px; background:var(--hair)}
+.tick{position:absolute; bottom:30px; width:1px; background:var(--sea); transform:translateX(-.5px)}
+.tick.hi{background:var(--contour)}
+.ghost{position:absolute; bottom:30px; width:1px; height:9px; background:var(--dimmer)}
+.terminator{position:absolute; bottom:22px; width:2px; height:38px; background:var(--contour); box-shadow:0 0 12px rgba(208,122,50,.55)}
+.terminator::after{
+  content:'RECORD 189.1'; position:absolute; bottom:40px; left:50%; transform:translateX(-50%);
+  font-family:'Oxanium',sans-serif; font-weight:700; font-size:9px; letter-spacing:.14em;
+  color:var(--contour); white-space:nowrap;
+}
+.gradmark{position:absolute; top:46px; font-size:10px; color:var(--dimmer); transform:translateX(-50%)}
+.gradmark i{position:absolute; left:50%; top:-6px; width:1px; height:5px; background:var(--hair); display:block}
+.rr-legend{display:flex; gap:20px; color:var(--dim); font-size:10px; padding:2px 0 4px}
+.swatch{display:inline-block;width:8px;height:2px;vertical-align:middle;margin-right:6px}
+
+/* ══ BOARD ════════════════════════════════════════════════════════════════ */
+.board{display:grid; grid-template-columns:minmax(320px,0.86fr) 1.14fr; gap:0; align-items:stretch}
+.col{min-width:0}
+.col-left{border-right:1px solid var(--hair)}
+.pane{padding:14px 20px}
+.pane + .pane{border-top:1px solid var(--hair)}
+.pane-head{display:flex; align-items:baseline; gap:10px; margin-bottom:10px}
+.pane-head .note{color:var(--dimmer); font-size:10px; margin-left:auto}
+
+svg{display:block; width:100%; height:auto}
+
+/* ══ MISSION DOSSIER ══════════════════════════════════════════════════════ */
+.mission-title{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+.mission-title .call{font-family:'Oxanium',sans-serif;font-weight:700;font-size:19px;letter-spacing:.02em}
+.mission-title .full{color:var(--dim); font-size:12px}
+.badge{
+  font-family:'Oxanium',sans-serif;font-weight:700;font-size:9px;letter-spacing:.14em;
+  padding:2px 7px; border:1px solid currentColor; color:var(--contour);
+}
+.badge.hold{color:var(--dim)}
+.place{color:var(--sea); font-size:12px; margin-top:3px}
+
+.facts{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--hair); border:1px solid var(--hair); margin:12px 0}
+.fact{background:var(--panel); padding:8px 10px}
+.fact .v{font-family:'Oxanium',sans-serif;font-weight:700;font-size:17px;font-variant-numeric:tabular-nums;color:var(--paper)}
+.fact .v.warn{color:var(--miss)}
+.fact .v.ok{color:var(--verified)}
+.fact .k{color:var(--dim);font-size:9px;letter-spacing:.11em;text-transform:uppercase;margin-top:1px}
+
+/* the traverse — a route as a survey chain, not a comma list */
+.traverse{margin:10px 0 2px}
+.tr-row{display:flex; align-items:flex-start; gap:8px; padding:3px 0}
+.tr-dir{color:var(--dim); font-size:10px; letter-spacing:.12em; width:38px; flex:none; padding-top:2px}
+.tr-chain{flex:1; min-width:0}
+.hop{display:inline-block; margin:0 2px 3px 0}
+.hop .n{color:var(--paper)}
+.hop .p{color:var(--sea); font-size:11px}
+.hop .snr{color:var(--dimmer); font-size:10px}
+.arrow{color:var(--dimmer); margin:0 5px}
+.hop.door .n{color:var(--boundary)}
+.hop.unplaced .p{color:var(--miss)}
+
+/* ══ DOORS ════════════════════════════════════════════════════════════════ */
+table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
+th{
+  text-align:left; font-family:'Oxanium',sans-serif; font-weight:700; font-size:9px;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--dim);
+  padding:0 8px 5px 0; border-bottom:1px solid var(--hair); font-style:normal;
+}
+th.r,td.r{text-align:right; padding-right:0}
+td{padding:5px 8px 5px 0; border-bottom:1px solid rgba(34,48,60,.5)}
+tbody tr:last-child td{border-bottom:0}
+.door-n{color:var(--boundary)}
+.bar{height:3px; background:var(--boundary); opacity:.75}
+.place-sm{color:var(--dim); font-size:11px}
+
+/* ══ QUEUE ════════════════════════════════════════════════════════════════
+   Mission type is a two-letter gutter mark, not a coloured pill — it reads as
+   a margin annotation on a flight plan and keeps the row's colour budget for
+   the one thing that matters, distance. */
+.queue td,.queue th{vertical-align:baseline}
+/* .r zeroes padding-right for the doors table's flush-right bars; the queue has
+   a column AFTER its numbers, so it needs the gutter back. */
+.queue td.r,.queue th.r{padding-right:18px}
+.queue td.qn{padding-right:14px}
+.qtype{font-family:'Oxanium',sans-serif;font-weight:700;font-size:9px;letter-spacing:.06em}
+.qtype.rc{color:var(--sea)}
+.qtype.cf{color:var(--contour)}
+.qtype.id{color:var(--boundary)}
+.qtype.dm{color:var(--dimmer)}
+.qn{color:var(--paper)}
+.qr{color:var(--dim); font-size:11px}
+.qnone{color:var(--miss)}
+.queue .r.hi{color:var(--contour)}
+.qwhy{color:var(--dim); font-size:11px}
+.queue tr.suspect .qwhy,.queue tr.dormant .qwhy{color:var(--dimmer)}
+.queue tr.dormant .qn,.queue tr.suspect .qn{color:var(--dim)}
+
+/* ══ LOG ══════════════════════════════════════════════════════════════════ */
+/* Full-width strip: the log is the board's ticker, and it needs the horizontal
+   room to show a route rather than truncating it. Two columns of entries so
+   hits and misses stay on one screen together. */
+.logstrip{border-top:1px solid var(--hair); padding:14px 22px 4px}
+.log{columns:2; column-gap:34px; column-rule:1px solid var(--hair)}
+.log-row{display:grid; grid-template-columns:66px 60px 1fr auto; gap:10px; padding:3px 0; border-bottom:1px solid rgba(34,48,60,.4); align-items:baseline; break-inside:avoid}
+.log-row:last-child{border-bottom:0}
+.log .t{color:var(--dimmer); font-size:11px}
+.log .who{color:var(--paper)}
+.log .detail{color:var(--dim); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.log .out{font-size:10px; letter-spacing:.1em; font-family:'Oxanium',sans-serif; font-weight:700}
+.log .out.ok{color:var(--verified)}
+.log .out.miss{color:var(--miss)}
+
+footer{padding:10px 22px 22px; color:var(--dimmer); font-size:11px; border-top:1px solid var(--hair)}
+
+@media (max-width:1100px){
+  .board{grid-template-columns:1fr}
+  .col-left{border-right:0; border-bottom:1px solid var(--hair)}
+  .facts{grid-template-columns:repeat(2,1fr)}
+  .rr-figure{font-size:40px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+:focus-visible{outline:2px solid var(--contour); outline-offset:2px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Mesh Reach</h1>
+  <span class="sub">TA2o · TA2y · Wiveliscombe</span>
+  <span class="spacer"></span>
+  <span class="clock"><span class="dot idle"></span>prober idle — 8 attempts today</span>
+</header>
+
+<!-- ══ SIGNATURE: THE REACH RULE ══════════════════════════════════════════ -->
+<section class="reachrule">
+  <div class="rr-head">
+    <div class="rr-figure">189.1<span class="unit">km</span></div>
+    <div class="rr-caption">
+      <div class="l1">furthest verified reach</div>
+      <div class="l2">standing 28 days · set 4 Jul 15:43 · single confirmed hit</div>
+    </div>
+    <div class="rr-right">
+      <div class="big">84</div>
+      <div class="lbl">targets placed &amp; verified</div>
+    </div>
+    <div class="rr-right">
+      <div class="big">15.3<span style="font-size:12px">%</span></div>
+      <div class="lbl">of 21,793 attempts</div>
+    </div>
+  </div>
+
+  <div class="scale" id="scale"></div>
+
+  <div class="rr-legend">
+    <span><i class="swatch" style="background:var(--sea)"></i>verified reach · tick height = hit rate</span>
+    <span><i class="swatch" style="background:var(--dimmer)"></i>placed, never confirmed</span>
+    <span><i class="swatch" style="background:var(--contour)"></i>the record</span>
+    <span style="margin-left:auto;color:var(--dimmer)">beyond 200 km: positions unverified, not counted</span>
+  </div>
+</section>
+
+<!-- ══ BOARD ═════════════════════════════════════════════════════════════ -->
+<div class="board">
+
+  <!-- ── LEFT: the two geometries ──────────────────────────────────────── -->
+  <div class="col col-left">
+    <div class="pane">
+      <div class="pane-head">
+        <span class="eyebrow">Radar — bearing &amp; range from us</span>
+        <span class="note">rings 50 / 100 / 150 / 200 km</span>
+      </div>
+      <svg id="radar" viewBox="0 0 400 400" role="img" aria-label="Polar plot of verified targets by bearing and range"></svg>
+    </div>
+
+    <div class="pane">
+      <div class="pane-head">
+        <span class="eyebrow">Map — the mesh's own ground</span>
+        <span class="note">211 observed links · record corridor in orange</span>
+      </div>
+      <svg id="map" viewBox="0 0 400 300" role="img" aria-label="Geographic plot of the mesh and the record corridor"></svg>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: mission control ────────────────────────────────────────── -->
+  <div class="col">
+
+    <!-- MISSION DOSSIER -->
+    <div class="pane">
+      <div class="pane-head"><span class="eyebrow">Mission · re-confirm</span></div>
+
+      <div class="mission-title">
+        <span class="call">Ives</span>
+        <span class="full">St Ives Solar Node 2E0XCN · !f1a8ce4f · RAK4631</span>
+        <span class="badge">FRONTIER</span>
+      </div>
+      <div class="place">The Burrows, St. Ives, TR26 1DN, Cornwall</div>
+
+      <div class="facts">
+        <div class="fact"><div class="v">187.7<span style="font-size:11px"> km</span></div><div class="k">distance</div></div>
+        <div class="fact"><div class="v">242°</div><div class="k">bearing</div></div>
+        <div class="fact"><div class="v warn">4.3%</div><div class="k">1 hit / 23 tries</div></div>
+        <div class="fact"><div class="v">16d</div><div class="k">since confirmed</div></div>
+      </div>
+
+      <div class="pane-head" style="margin:14px 0 4px"><span class="eyebrow">Traverse — 17 Jul 02:47</span>
+        <span class="note">out and back do not match</span></div>
+
+      <div class="traverse">
+        <div class="tr-row">
+          <div class="tr-dir">OUT</div>
+          <div class="tr-chain">
+            <span class="hop"><span class="n">us</span></span><span class="arrow">→</span><span class="hop door"><span class="n">T4</span> <span class="p">Milverton</span> <span class="snr">−1</span></span><span class="arrow">→</span><span class="hop door"><span class="n">fir</span> <span class="p">Wellington</span> <span class="snr">+23</span></span><span class="arrow">→</span><span class="hop door"><span class="n">TE&nbsp;5</span> <span class="p">Winsford, Exmoor</span> <span class="snr">−51</span></span><span class="arrow">→</span><span class="hop unplaced"><span class="n">L5-3</span> <span class="p">no position</span> <span class="snr">−54</span></span><span class="arrow">→</span><span class="hop"><span class="n">Ives</span> <span class="snr">−53</span></span>
+          </div>
+        </div>
+        <div class="tr-row">
+          <div class="tr-dir">BACK</div>
+          <div class="tr-chain">
+            <span class="hop"><span class="n">Ives</span></span><span class="arrow">→</span><span class="hop unplaced"><span class="n">PENS</span> <span class="p">Pendoggett — no position</span> <span class="snr">−59</span></span><span class="arrow">→</span><span class="hop unplaced"><span class="n">L5-3</span> <span class="snr">+14</span></span><span class="arrow">→</span><span class="hop door"><span class="n">TE&nbsp;5</span> <span class="snr">−34</span></span><span class="arrow">→</span><span class="hop door"><span class="n">fir</span> <span class="snr">−48</span></span><span class="arrow">→</span><span class="hop door"><span class="n">T4</span> <span class="snr">+22</span></span><span class="arrow">→</span><span class="hop"><span class="n">us</span> <span class="snr">+15</span></span>
+          </div>
+        </div>
+      </div>
+      <p class="prose" style="color:var(--dim);font-size:12px;margin:8px 0 0">
+        The way home came through <span style="color:var(--boundary)">PENS</span>, which sits on no outbound path we have ever sent.
+        It is one of 23 relays discovered this way — and one of six we cannot place on a map.
+      </p>
+    </div>
+
+    <!-- DOORS -->
+    <div class="pane">
+      <div class="pane-head">
+        <span class="eyebrow">Doors — relays our traffic depends on</span>
+        <span class="note">57 carry every route ever completed</span>
+      </div>
+      <table>
+        <thead><tr><th>Relay</th><th>Where</th><th class="r">Behind</th><th class="r" style="padding-right:16px">Furthest</th><th style="width:110px">Traffic share</th></tr></thead>
+        <tbody>
+          <tr><td class="door-n">T4</td><td class="place-sm">Milverton, Somerset</td><td class="r">79</td><td class="r" style="padding-right:16px">188 km</td><td><div class="bar" style="width:100%"></div></td></tr>
+          <tr><td class="door-n">fir</td><td class="place-sm">Wellington, Devon</td><td class="r">77</td><td class="r" style="padding-right:16px">189 km</td><td><div class="bar" style="width:58%"></div></td></tr>
+          <tr><td class="door-n">TE 5</td><td class="place-sm">Winsford, Exmoor</td><td class="r">63</td><td class="r" style="padding-right:16px">188 km</td><td><div class="bar" style="width:45%"></div></td></tr>
+          <tr><td class="door-n">S2</td><td class="place-sm">Mid Devon</td><td class="r">42</td><td class="r" style="padding-right:16px">180 km</td><td><div class="bar" style="width:23%"></div></td></tr>
+          <tr><td class="door-n">TivN</td><td class="place-sm">Tiverton, Devon</td><td class="r">35</td><td class="r" style="padding-right:16px">182 km</td><td><div class="bar" style="width:10%"></div></td></tr>
+          <tr><td class="door-n">MDor</td><td class="place-sm" style="color:var(--miss)">no position</td><td class="r">25</td><td class="r" style="padding-right:16px">182 km</td><td><div class="bar" style="width:8%"></div></td></tr>
+        </tbody>
+      </table>
+      <p class="prose" style="color:var(--dim);font-size:12px;margin:10px 0 0">
+        If <span style="color:var(--boundary)">T4</span> goes off air, 79 targets go with it. The record runs through it.
+      </p>
+    </div>
+
+    <!-- MISSION QUEUE — what happens next, and why -->
+    <div class="pane">
+      <div class="pane-head">
+        <span class="eyebrow">Queue — next, and the reason</span>
+        <span class="note">ranking illustrative · no scorer built</span>
+      </div>
+      <table class="queue">
+        <thead><tr><th style="width:26px"></th><th>Mission</th><th class="r">km</th><th class="r">Record</th><th>Because</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="qtype rc">RC</td><td class="qn">Ives</td><td class="r">187.7</td><td class="r qr">1/23</td>
+            <td class="qwhy">awake 48 min ago · frontier unconfirmed 16 days</td>
+          </tr>
+          <tr>
+            <td class="qtype cf">CF</td><td class="qn">T5F</td><td class="r hi">191.5</td><td class="r qr">0/7</td>
+            <td class="qwhy">would beat the record · heard 2 h ago</td>
+          </tr>
+          <tr>
+            <td class="qtype id">ID</td><td class="qn">PENS</td><td class="r qnone">—</td><td class="r qr">—</td>
+            <td class="qwhy">carries our return leg · no position · costs no airtime</td>
+          </tr>
+          <tr>
+            <td class="qtype rc">RC</td><td class="qn">Terr</td><td class="r">177.0</td><td class="r qr">2/147</td>
+            <td class="qwhy">Guernsey · awake 2 h ago · stale 10 days</td>
+          </tr>
+          <tr>
+            <td class="qtype cf">CF</td><td class="qn">MAD2</td><td class="r">183.9</td><td class="r qr">0/0</td>
+            <td class="qwhy">never once attempted · placed · heard today</td>
+          </tr>
+          <tr class="suspect">
+            <td class="qtype cf">CF</td><td class="qn">f3ed</td><td class="r">206.8</td><td class="r qr">0/5</td>
+            <td class="qwhy">held back — position beyond 200 km, unverified</td>
+          </tr>
+          <tr class="dormant">
+            <td class="qtype dm">—</td><td class="qn">VeNT</td><td class="r">159.2</td><td class="r qr">0/94</td>
+            <td class="qwhy">stood down after 94 silent attempts · reopens when heard</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ LOG — full-width strip ═══════════════════════════════════════════ -->
+<section class="logstrip">
+      <div class="pane-head">
+        <span class="eyebrow">Attempt log</span>
+        <span class="note">append-only · misses kept · newest first</span>
+      </div>
+      <div class="log">
+        <div class="log-row"><span class="t">23:03:49</span><span class="who">BNCH</span><span class="detail">no reply · 30 s deadline</span><span class="out miss">MISS</span></div>
+        <div class="log-row"><span class="t">23:03:02</span><span class="who">34eb</span><span class="detail">no reply · 30 s deadline</span><span class="out miss">MISS</span></div>
+        <div class="log-row"><span class="t">23:01:32</span><span class="who">PUCK</span><span class="detail">no reply · 30 s deadline</span><span class="out miss">MISS</span></div>
+        <div class="log-row"><span class="t">23:00:57</span><span class="who">Titz</span><span class="detail">no reply · 30 s deadline</span><span class="out miss">MISS</span></div>
+        <div class="log-row"><span class="t">22:59:27</span><span class="who">WHN</span><span class="detail">no reply · 30 s deadline</span><span class="out miss">MISS</span></div>
+        <div class="log-row"><span class="t">22:57:57</span><span class="who">5360</span><span class="detail">no reply · 30 s deadline</span><span class="out miss">MISS</span></div>
+        <div class="log-row"><span class="t">22:56:27</span><span class="who">T5F</span><span class="detail">no reply · 30 s deadline</span><span class="out miss">MISS</span></div>
+        <div class="log-row"><span class="t">22:54:57</span><span class="who">PUCK</span><span class="detail">no reply · 30 s deadline</span><span class="out miss">MISS</span></div>
+        <div class="log-row"><span class="t">30 Jul</span><span class="who">EXw</span><span class="detail">us → T4 → EXw · 43.0 km · 2 hops</span><span class="out ok">HIT</span></div>
+        <div class="log-row"><span class="t">29 Jul</span><span class="who">EXw</span><span class="detail">us → T4 → EXw · 43.0 km · 2 hops</span><span class="out ok">HIT</span></div>
+        <div class="log-row"><span class="t">29 Jul</span><span class="who">TA2m</span><span class="detail">direct · 0.4 km</span><span class="out ok">HIT</span></div>
+        <div class="log-row"><span class="t">29 Jul</span><span class="who">HPN2</span><span class="detail">no reply · 30 s deadline</span><span class="out miss">MISS</span></div>
+      </div>
+      <p class="prose" style="color:var(--dim);font-size:12px;margin:10px 0 0">
+        A miss records a timestamp and nothing else. No bearing, no channel load, no signal —
+        so 85% of what we have done cannot be compared to what worked.
+      </p>
+</section>
+
+<footer>
+  Mockup — nothing here is live. Figures read from <span style="color:var(--dim)">data/node-dash.db</span> and the radios, 1–2 Aug 2026.
+</footer>
+
+<script>
+// ── Real geometry, extracted from the database. Nothing is fetched. ────────
+const LINKS=[{"a":[51.0298,-3.2347],"b":[51.0286,-3.1533],"c":4236},{"a":[50.9379,-3.4832],"b":[51.8816,-4.6891],"c":1},{"a":[50.8396,-3.4701],"b":[50.9379,-3.4832],"c":402},{"a":[50.8396,-3.4701],"b":[50.9346,-3.2768],"c":171},{"a":[51.0286,-3.1533],"b":[50.9346,-3.2768],"c":1167},{"a":[51.0286,-3.1533],"b":[50.9379,-3.4832],"c":8},{"a":[51.0298,-3.2347],"b":[50.8396,-3.4701],"c":512},{"a":[51.0286,-3.1533],"b":[50.7281,-3.5488],"c":38},{"a":[51.1082,-3.6078],"b":[50.9346,-3.2768],"c":1256},{"a":[51.1082,-3.6078],"b":[50.7412,-4.0075],"c":458},{"a":[51.1082,-3.6078],"b":[51.8816,-4.6891],"c":1},{"a":[50.62,-2.0185],"b":[50.62,-2.0185],"c":15},{"a":[51.0298,-3.2347],"b":[50.987,-2.8574],"c":660},{"a":[51.0298,-3.2347],"b":[50.987,-2.7001],"c":419},{"a":[50.987,-2.8574],"b":[50.987,-2.7001],"c":175},{"a":[50.7183,-3.9518],"b":[50.7412,-4.0075],"c":82},{"a":[51.1082,-3.6078],"b":[50.7183,-3.9518],"c":98},{"a":[51.0298,-3.2347],"b":[51.0394,-3.1195],"c":1085},{"a":[51.0394,-3.1195],"b":[50.9346,-3.2768],"c":306},{"a":[51.0394,-3.1195],"b":[51.0394,-3.1195],"c":148},{"a":[51.0298,-3.2347],"b":[50.9346,-3.2768],"c":938},{"a":[51.1082,-3.6078],"b":[50.8396,-3.4701],"c":619},{"a":[50.7216,-3.5553],"b":[50.7216,-3.5095],"c":20},{"a":[50.6233,-3.4177],"b":[50.7216,-3.5095],"c":60},{"a":[50.6233,-3.4177],"b":[50.7806,-3.5357],"c":18},{"a":[50.8396,-3.4701],"b":[50.7806,-3.5357],"c":184},{"a":[50.7281,-3.4832],"b":[50.7216,-3.5095],"c":2},{"a":[51.1082,-3.6078],"b":[50.6233,-3.4177],"c":143},{"a":[50.8396,-3.4701],"b":[50.7281,-3.5488],"c":90},{"a":[50.6233,-3.4177],"b":[50.7281,-3.5488],"c":63},{"a":[50.9346,-3.2768],"b":[51.0284,-3.1536],"c":12},{"a":[51.0286,-3.1533],"b":[51.0284,-3.1536],"c":794},{"a":[51.1082,-3.6078],"b":[50.9379,-3.4832],"c":304},{"a":[50.9379,-3.4832],"b":[50.8527,-3.4046],"c":49},{"a":[51.0298,-3.2347],"b":[50.9346,-3.2768],"c":179},{"a":[50.62,-1.9661],"b":[50.62,-2.0185],"c":3},{"a":[50.62,-1.9661],"b":[50.62,-2.0185],"c":6},{"a":[50.7281,-3.5488],"b":[50.7216,-3.5095],"c":26},{"a":[50.7166,-3.5095],"b":[50.7216,-3.5095],"c":39},{"a":[50.9379,-3.4832],"b":[50.7216,-3.5095],"c":46},{"a":[50.6233,-3.4177],"b":[50.7216,-3.5553],"c":20},{"a":[50.9346,-3.2768],"b":[50.9346,-3.2768],"c":208},{"a":[51.4589,-2.8049],"b":[51.4589,-3.2768],"c":2},{"a":[51.1541,-2.7034],"b":[51.4589,-3.2768],"c":17},{"a":[51.0298,-3.2347],"b":[51.1541,-2.7034],"c":56},{"a":[50.9379,-3.2211],"b":[50.9379,-3.4832],"c":81},{"a":[51.0286,-3.1533],"b":[51.0394,-3.1195],"c":136},{"a":[51.0394,-3.1195],"b":[51.1541,-2.7034],"c":49},{"a":[50.8396,-3.4701],"b":[50.6233,-3.4177],"c":98},{"a":[50.62,-3.3817],"b":[50.6233,-3.4177],"c":24},{"a":[50.6364,-3.3849],"b":[50.6233,-3.4177],"c":17},{"a":[50.9379,-3.4832],"b":[50.8592,-3.398],"c":16},{"a":[50.833,-3.3784],"b":[50.8592,-3.398],"c":6},{"a":[50.833,-3.3784],"b":[50.8527,-3.4046],"c":14},{"a":[50.8396,-3.4701],"b":[50.8527,-3.4046],"c":37},{"a":[50.6266,-3.4144],"b":[50.6233,-3.4177],"c":74},{"a":[50.7183,-3.9518],"b":[50.9379,-3.4832],"c":21},{"a":[50.6233,-3.398],"b":[50.7281,-3.5488],"c":4},{"a":[50.6233,-3.398],"b":[50.6233,-3.4177],"c":19},{"a":[50.6249,-3.4062],"b":[50.62,-3.3817],"c":14},{"a":[50.62,-3.3817],"b":[50.6233,-3.3784],"c":4},{"a":[50.6233,-3.4177],"b":[50.6233,-3.3784],"c":24},{"a":[50.7773,-2.9622],"b":[50.8396,-3.4701],"c":30},{"a":[50.7773,-2.9622],"b":[50.9379,-3.4832],"c":80},{"a":[50.7216,-3.5095],"b":[50.7806,-3.5357],"c":23},{"a":[50.8396,-3.4701],"b":[50.8558,-3.9444],"c":2},{"a":[50.7183,-3.9518],"b":[50.8558,-3.9444],"c":4},{"a":[50.8396,-3.4701],"b":[50.9379,-3.2211],"c":10},{"a":[50.8685,-2.1513],"b":[50.8703,-2.1533],"c":1},{"a":[50.7842,-2.0128],"b":[50.8685,-2.1513],"c":1},{"a":[50.7842,-2.0128],"b":[50.7773,-2.0185],"c":2},{"a":[50.9379,-3.4832],"b":[50.8985,-3.4701],"c":35},{"a":[50.9379,-3.4832],"b":[50.6233,-3.4177],"c":45},{"a":[51.0298,-3.2347],"b":[51.0394,-3.1195],"c":37},{"a":[50.6233,-3.4177],"b":[50.6233,-3.3784],"c":4},{"a":[51.1082,-3.6078],"b":[49.4305,-2.6182],"c":2},{"a":[51.1082,-3.6078],"b":[50.8558,-3.9444],"c":14},{"a":[50.7281,-3.5488],"b":[50.7806,-3.5357],"c":25},{"a":[51.1443,-3.5389],"b":[51.4589,-3.2768],"c":8},{"a":[50.9379,-3.4832],"b":[51.1443,-3.5389],"c":5},{"a":[50.62,-3.3817],"b":[50.7281,-3.5488],"c":8},{"a":[50.7281,-3.5488],"b":[50.9346,-3.2768],"c":10},{"a":[50.9379,-3.4832],"b":[50.7806,-3.5357],"c":16},{"a":[50.9379,-3.4832],"b":[50.9346,-3.2768],"c":28},{"a":[51.0298,-3.2347],"b":[51.0394,-2.5428],"c":16},{"a":[50.6364,-3.3849],"b":[50.7216,-3.5095],"c":4},{"a":[51.0298,-3.2347],"b":[51.0284,-3.1536],"c":121},{"a":[50.8527,-3.4046],"b":[50.8592,-3.398],"c":12},{"a":[50.8396,-3.4701],"b":[50.8592,-3.398],"c":83},{"a":[50.6233,-3.4177],"b":[50.7166,-3.5095],"c":4},{"a":[50.6233,-3.3784],"b":[50.6233,-3.4177],"c":1},{"a":[50.6364,-3.3849],"b":[50.6233,-3.3784],"c":3},{"a":[50.6266,-3.4144],"b":[50.6233,-3.4308],"c":7},{"a":[50.6233,-3.4177],"b":[50.6233,-3.4308],"c":31},{"a":[51.0286,-3.1533],"b":[50.6233,-3.4177],"c":11},{"a":[51.0298,-3.2347],"b":[50.7281,-3.5488],"c":21},{"a":[51.0286,-3.1533],"b":[50.7806,-3.5357],"c":5},{"a":[50.6233,-3.4177],"b":[50.6429,-3.3849],"c":6},{"a":[50.6102,-3.3587],"b":[50.6429,-3.3849],"c":6},{"a":[50.6102,-3.3587],"b":[50.6233,-3.4177],"c":11},{"a":[51.0286,-3.1533],"b":[50.7216,-3.5095],"c":10},{"a":[50.7281,-3.5488],"b":[50.7281,-3.5488],"c":20},{"a":[50.9379,-3.2211],"b":[50.9379,-3.2211],"c":2},{"a":[50.6364,-3.3849],"b":[50.62,-3.3817],"c":7},{"a":[51.0286,-3.1533],"b":[51.0263,-3.1588],"c":9},{"a":[50.9346,-3.2768],"b":[51.0263,-3.1588],"c":5},{"a":[51.1082,-3.6078],"b":[51.4589,-3.2768],"c":8},{"a":[50.7281,-3.5488],"b":[50.7216,-3.5553],"c":1},{"a":[50.8396,-3.4701],"b":[50.8297,-3.9584],"c":2},{"a":[50.7183,-3.9518],"b":[50.8297,-3.9584],"c":6},{"a":[50.8297,-3.9584],"b":[50.8558,-3.9444],"c":6},{"a":[50.8396,-3.4701],"b":[50.8854,-3.3784],"c":4},{"a":[50.9379,-3.4832],"b":[50.8854,-3.3784],"c":4},{"a":[50.7183,-3.9518],"b":[50.7249,-4.0632],"c":5},{"a":[51.0298,-3.2347],"b":[51.0263,-3.1588],"c":5},{"a":[50.8396,-3.4701],"b":[50.987,-3.0671],"c":1},{"a":[50.9379,-3.4832],"b":[50.987,-3.0671],"c":2},{"a":[50.987,-3.0671],"b":[50.8592,-3.398],"c":1},{"a":[50.9346,-3.2768],"b":[52.5074,-1.8088],"c":2},{"a":[50.9379,-3.4832],"b":[50.7281,-3.5488],"c":4},{"a":[50.6233,-3.398],"b":[50.7216,-3.5095],"c":1},{"a":[50.6266,-3.4144],"b":[50.7216,-3.5095],"c":8},{"a":[51.1541,-2.7034],"b":[50.9346,-3.2768],"c":17},{"a":[50.7183,-3.9518],"b":[50.6134,-3.4058],"c":2},{"a":[50.6134,-3.4058],"b":[50.7216,-3.5095],"c":4},{"a":[50.8396,-3.4701],"b":[50.6134,-3.4058],"c":3},{"a":[50.833,-3.3784],"b":[50.6134,-3.4058],"c":1},{"a":[51.1082,-3.6078],"b":[50.6134,-3.4058],"c":2},{"a":[50.6134,-3.4058],"b":[50.7166,-3.5095],"c":1},{"a":[50.6134,-3.4058],"b":[50.8592,-3.398],"c":1},{"a":[51.0394,-3.1195],"b":[51.0263,-3.1588],"c":1},{"a":[51.0298,-3.2347],"b":[50.7347,-3.516],"c":2},{"a":[51.0286,-3.1533],"b":[50.7347,-3.516],"c":2},{"a":[50.6855,-3.4996],"b":[50.7216,-3.5095],"c":1},{"a":[51.0286,-3.1533],"b":[50.7216,-3.5553],"c":1},{"a":[51.1082,-3.6078],"b":[50.2071,-5.4854],"c":1},{"a":[50.9346,-3.2768],"b":[51.4589,-3.2768],"c":20},{"a":[51.1082,-3.6078],"b":[52.077,-4.3574],"c":1},{"a":[50.9379,-3.4832],"b":[52.077,-4.3574],"c":1},{"a":[50.6364,-3.3849],"b":[49.4371,-2.6575],"c":1},{"a":[49.4371,-2.6575],"b":[51.8816,-4.6891],"c":1},{"a":[49.4305,-2.6182],"b":[51.8816,-4.6891],"c":1},{"a":[49.4305,-2.6182],"b":[50.9379,-3.4832],"c":5},{"a":[50.8396,-3.4701],"b":[49.4371,-2.6575],"c":1},{"a":[51.0298,-3.2347],"b":[50.7842,-2.0128],"c":1},{"a":[49.4371,-2.6575],"b":[50.9379,-3.4832],"c":4},{"a":[49.4371,-2.6575],"b":[50.7216,-3.5095],"c":1},{"a":[51.1082,-3.6078],"b":[50.3579,-4.8497],"c":7},{"a":[50.6233,-3.4177],"b":[51.8816,-4.6891],"c":1},{"a":[50.7183,-3.9518],"b":[51.8816,-4.6891],"c":3},{"a":[51.5113,-3.2244],"b":[51.4589,-3.2768],"c":1},{"a":[51.5113,-3.2244],"b":[51.5113,-3.2244],"c":1},{"a":[51.5113,-3.2244],"b":[51.4589,-3.2768],"c":1},{"a":[51.1443,-3.5389],"b":[51.0394,-3.1195],"c":2},{"a":[51.4982,-3.1326],"b":[51.1443,-3.5389],"c":1},{"a":[51.4982,-3.1326],"b":[51.4589,-3.2768],"c":3},{"a":[50.9379,-3.4832],"b":[50.9379,-3.2211],"c":1},{"a":[51.0298,-3.2347],"b":[50.7773,-2.0185],"c":2},{"a":[50.7347,-3.516],"b":[50.7216,-3.5095],"c":8},{"a":[51.0394,-3.1195],"b":[50.9346,-3.2768],"c":2},{"a":[50.7773,-2.9622],"b":[51.1082,-3.6078],"c":1},{"a":[50.9379,-3.4832],"b":[50.7412,-4.0075],"c":10},{"a":[49.4771,-2.5859],"b":[50.7216,-3.5095],"c":2},{"a":[49.4771,-2.5859],"b":[50.9379,-3.4832],"c":2},{"a":[51.1541,-2.7034],"b":[51.1443,-2.9622],"c":8},{"a":[50.6233,-3.4308],"b":[50.7216,-3.5095],"c":3},{"a":[50.6364,-3.3849],"b":[50.6233,-3.4308],"c":1},{"a":[50.6364,-3.3849],"b":[50.9379,-3.4832],"c":2},{"a":[50.7281,-3.5488],"b":[50.6233,-3.4177],"c":3},{"a":[51.0394,-3.1195],"b":[51.0284,-3.1536],"c":1},{"a":[51.0286,-3.1533],"b":[51.0263,-3.1588],"c":8},{"a":[51.0298,-3.2347],"b":[51.0263,-3.1588],"c":2},{"a":[50.7281,-3.5488],"b":[50.6233,-3.4308],"c":2},{"a":[51.1443,-3.0147],"b":[51.4589,-3.2768],"c":6},{"a":[49.4977,-2.5344],"b":[49.4633,-2.5854],"c":1},{"a":[49.4502,-2.5461],"b":[49.4977,-2.5344],"c":1},{"a":[51.0286,-3.1533],"b":[51.0147,-3.1282],"c":21},{"a":[50.6266,-3.4144],"b":[50.7281,-3.5488],"c":2},{"a":[51.0298,-3.2347],"b":[51.0147,-3.1282],"c":3},{"a":[50.6364,-3.3849],"b":[50.6102,-3.3587],"c":1},{"a":[50.7281,-3.5488],"b":[50.7216,-3.5095],"c":1},{"a":[50.8396,-3.4701],"b":[50.7412,-4.0075],"c":6},{"a":[50.6266,-3.4144],"b":[50.6364,-3.3849],"c":2},{"a":[50.62,-3.3817],"b":[50.6233,-3.4308],"c":1},{"a":[49.4305,-2.6182],"b":[50.7216,-3.5095],"c":1},{"a":[50.9903,-4.3745],"b":[50.7183,-3.9518],"c":1},{"a":[50.6266,-3.4144],"b":[50.62,-3.3817],"c":7},{"a":[50.6266,-3.4144],"b":[50.8396,-3.4701],"c":4},{"a":[50.8396,-3.4701],"b":[51.0286,-3.1533],"c":36},{"a":[50.987,-2.8574],"b":[50.9518,-2.8273],"c":4},{"a":[50.7249,-4.0632],"b":[50.7412,-4.0075],"c":1},{"a":[49.4371,-2.6575],"b":[50.7281,-3.5488],"c":1},{"a":[50.7249,-4.0108],"b":[50.7412,-4.0075],"c":3},{"a":[50.7183,-3.9518],"b":[50.7249,-4.0108],"c":1},{"a":[50.7773,-2.9622],"b":[50.7183,-3.9518],"c":1},{"a":[50.62,-3.3817],"b":[50.7216,-3.5095],"c":2},{"a":[49.4666,-2.5952],"b":[49.4771,-2.5859],"c":1},{"a":[49.4567,-2.5461],"b":[49.4666,-2.5952],"c":1},{"a":[49.4567,-2.5461],"b":[49.4305,-2.6182],"c":1},{"a":[50.7675,-1.7924],"b":[49.4371,-2.6575],"c":1},{"a":[50.8396,-3.4701],"b":[50.62,-3.3817],"c":6},{"a":[51.5113,-2.5952],"b":[50.7412,-4.0075],"c":10},{"a":[50.9346,-3.2768],"b":[51.0286,-3.1533],"c":3},{"a":[50.5676,-4.7972],"b":[50.3611,-4.8464],"c":1},{"a":[50.7249,-3.5389],"b":[50.6233,-3.4177],"c":1},{"a":[50.7249,-3.5389],"b":[50.7216,-3.5095],"c":1},{"a":[51.0394,-3.1195],"b":[51.0394,-3.1195],"c":2},{"a":[50.6233,-3.398],"b":[50.62,-3.3817],"c":1},{"a":[50.6364,-3.3849],"b":[50.6233,-3.398],"c":1},{"a":[51.0394,-3.1195],"b":[52.3043,-2.1168],"c":2},{"a":[50.6855,-3.4996],"b":[50.7281,-3.5488],"c":1}];
+const T = window.__TARGETS__ = [{"n":"rh5","km":30.9,"b":153,"lat":50.7772928,"lon":-2.9622272,"att":371,"ok":57},{"n":"T4","km":5.3,"b":274,"lat":51.029786,"lon":-3.234665,"att":57,"ok":45},{"n":"T5F","km":191.5,"b":23,"lat":52.6123008,"lon":-2.0709376,"att":7,"ok":0},{"n":"HM1","km":54.0,"b":27,"lat":51.4588672,"lon":-2.8049408,"att":33,"ok":1},{"n":"ta21","km":13.1,"b":219,"lat":50.9345792,"lon":-3.2768,"att":682,"ok":179},{"n":"5f04","km":3.1,"b":62,"lat":51.0394368,"lon":-3.1195136,"att":4,"ok":1},{"n":"CPDH","km":177.3,"b":165,"lat":49.4829568,"lon":-2.5329664,"att":1,"ok":0},{"n":"70a0","km":181.4,"b":168,"lat":49.4319728,"lon":-2.6158819,"att":8,"ok":0},{"n":"?","km":177.7,"b":167,"lat":49.4698496,"lon":-2.5919488,"att":1,"ok":0},{"n":"Mick","km":95.6,"b":225,"lat":50.413568,"lon":-4.112384,"att":1,"ok":0},{"n":"0SUP","km":177.7,"b":167,"lat":49.4698496,"lon":-2.5919488,"att":7,"ok":0},{"n":"3090","km":180.2,"b":165,"lat":49.4567424,"lon":-2.5264128,"att":8,"ok":0},{"n":"M31C","km":52.5,"b":2,"lat":51.4981888,"lon":-3.1326208,"att":24,"ok":1},{"n":"FYU","km":94.1,"b":226,"lat":50.4332288,"lon":-4.112384,"att":48,"ok":0},{"n":"DTWK","km":178.4,"b":28,"lat":52.4361728,"lon":-1.9226624,"att":1,"ok":0},{"n":"CaFN","km":55.9,"b":357,"lat":51.52768,"lon":-3.2079872,"att":16,"ok":0},{"n":"GZG","km":47.9,"b":202,"lat":50.62656,"lon":-3.4144256,"att":1000,"ok":51},{"n":"NMC","km":94.6,"b":234,"lat":50.515843,"lon":-4.234772,"att":7,"ok":0},{"n":"?","km":179.4,"b":23,"lat":52.5074432,"lon":-2.1233664,"att":1,"ok":0},{"n":"bien","km":54.1,"b":355,"lat":51.511296,"lon":-3.2243712,"att":2,"ok":0},{"n":"TE 5","km":32.7,"b":286,"lat":51.1082496,"lon":-3.6077568,"att":52,"ok":29},{"n":"MP","km":85.1,"b":268,"lat":50.9902848,"lon":-4.374528,"att":2,"ok":1},{"n":"?","km":156.2,"b":27,"lat":52.2747904,"lon":-2.1200896,"att":1,"ok":0},{"n":"ARSE","km":179.9,"b":166,"lat":49.4567424,"lon":-2.5460736,"att":22,"ok":0},{"n":"S2","km":30.1,"b":227,"lat":50.839552,"lon":-3.4701312,"att":16,"ok":4},{"n":"EX8#","km":46.2,"b":200,"lat":50.6363904,"lon":-3.3849344,"att":25,"ok":4},{"n":"T2","km":65.3,"b":239,"lat":50.7183104,"lon":-3.9518208,"att":10,"ok":3},{"n":"ari","km":165.7,"b":242,"lat":50.3054336,"lon":-5.2166656,"att":6,"ok":0},{"n":"Wtag","km":140.0,"b":239,"lat":50.3611392,"lon":-4.8463872,"att":1,"ok":0},{"n":"\ud83d\udcf6","km":109.8,"b":36,"lat":51.8258688,"lon":-2.228224,"att":1,"ok":0},{"n":"FJDt","km":43.0,"b":220,"lat":50.7281408,"lon":-3.5487744,"att":253,"ok":12},{"n":"0a73","km":26.4,"b":216,"lat":50.8329984,"lon":-3.3783808,"att":192,"ok":13},{"n":"VeNT","km":159.2,"b":238,"lat":50.2583294,"lon":-5.0638847,"att":94,"ok":0},{"n":"\ud83d\udc12","km":68.9,"b":38,"lat":51.511296,"lon":-2.5427968,"att":45,"ok":0},{"n":"?","km":34.1,"b":68,"lat":51.1414272,"lon":-2.7070464,"att":15,"ok":0},{"n":"Egg4","km":95.6,"b":225,"lat":50.413568,"lon":-4.112384,"att":4,"ok":0},{"n":"LWT1","km":129.4,"b":29,"lat":52.035584,"lon":-2.228224,"att":4,"ok":0},{"n":"REGM","km":100.1,"b":106,"lat":50.7674624,"lon":-1.7924096,"att":1,"ok":0},{"n":"cobo","km":178.0,"b":167,"lat":49.4665728,"lon":-2.5952256,"att":14,"ok":0},{"n":"TINA","km":61.7,"b":210,"lat":50.5440566,"lon":-3.5923233,"att":2,"ok":0},{"n":"f3ed","km":206.8,"b":356,"lat":52.8809984,"lon":-3.375104,"att":5,"ok":0},{"n":"Smon","km":121.3,"b":236,"lat":50.413568,"lon":-4.5842432,"att":7,"ok":0},{"n":"FBRC","km":49.6,"b":0,"lat":51.4719744,"lon":-3.1588352,"att":1,"ok":0},{"n":"GBCM","km":84.8,"b":108,"lat":50.7841848,"lon":-2.0127858,"att":6,"ok":1},{"n":"c21f","km":181.6,"b":168,"lat":49.430528,"lon":-2.6181632,"att":99,"ok":3},{"n":"718e","km":42.8,"b":219,"lat":50.724864,"lon":-3.538944,"att":15,"ok":1},{"n":"Terr","km":177.0,"b":166,"lat":49.47709,"lon":-2.58592,"att":147,"ok":2},{"n":"TA2o","km":0.5,"b":57,"lat":51.028568,"lon":-3.15329,"att":3,"ok":2},{"n":"?","km":38.9,"b":41,"lat":51.2891833,"lon":-2.79128,"att":55,"ok":0},{"n":"RobT","km":125.6,"b":247,"lat":50.5708544,"lon":-4.7939584,"att":10,"ok":0},{"n":"HPN2","km":159.6,"b":239,"lat":50.2636544,"lon":-5.0765824,"att":42,"ok":0},{"n":"8a47","km":98.8,"b":38,"lat":51.724288,"lon":-2.277376,"att":1,"ok":0},{"n":"A2-1","km":44.8,"b":212,"lat":50.6855424,"lon":-3.4996224,"att":47,"ok":5},{"n":"5d78","km":180.3,"b":168,"lat":49.4370816,"lon":-2.6574848,"att":76,"ok":3},{"n":"D34-","km":47.9,"b":201,"lat":50.6249216,"lon":-3.4062336,"att":532,"ok":7},{"n":"TH","km":180.0,"b":24,"lat":52.494336,"lon":-2.0578304,"att":5,"ok":0},{"n":"Sptf","km":96.5,"b":224,"lat":50.397184,"lon":-4.1025536,"att":2,"ok":0},{"n":"XMV2","km":156.9,"b":239,"lat":50.2759424,"lon":-5.0429952,"att":24,"ok":0},{"n":"RAK1","km":10.8,"b":204,"lat":50.937856,"lon":-3.2210944,"att":417,"ok":48},{"n":"TivN","km":24.7,"b":247,"lat":50.937856,"lon":-3.4832384,"att":82,"ok":31},{"n":"M0","km":95.6,"b":49,"lat":51.5801088,"lon":-2.1069824,"att":2,"ok":0},{"n":"sj37","km":168.6,"b":27,"lat":52.3747328,"lon":-2.039808,"att":1,"ok":0},{"n":"NKD2","km":66.7,"b":36,"lat":51.511296,"lon":-2.5952256,"att":21,"ok":5},{"n":"TR10","km":68.5,"b":241,"lat":50.724864,"lon":-4.0108032,"att":36,"ok":3},{"n":"M3","km":35.6,"b":303,"lat":51.2,"lon":-3.588096,"att":3,"ok":0},{"n":"NUGG","km":34.5,"b":66,"lat":51.150848,"lon":-2.7066368,"att":12,"ok":0},{"n":"CSN1","km":188.1,"b":242,"lat":50.2104064,"lon":-5.4951936,"att":99,"ok":0},{"n":"JPR1","km":205.7,"b":3,"lat":52.8744448,"lon":-3.014656,"att":1,"ok":0},{"n":"6cc0","km":117.5,"b":15,"lat":52.0474624,"lon":-2.7242496,"att":4,"ok":0},{"n":"WLCD","km":3.1,"b":62,"lat":51.0394368,"lon":-3.1195136,"att":684,"ok":518},{"n":"GA3","km":212.9,"b":161,"lat":49.2151556,"lon":-2.1888565,"att":2,"ok":0},{"n":"WHN","km":117.3,"b":35,"lat":51.8914048,"lon":-2.1889024,"att":2,"ok":0},{"n":"694c","km":47.4,"b":199,"lat":50.6232832,"lon":-3.3783808,"att":35,"ok":2},{"n":"8464","km":172.9,"b":165,"lat":49.5222784,"lon":-2.53952,"att":5,"ok":0},{"n":"KM02","km":40.2,"b":215,"lat":50.7281408,"lon":-3.4832384,"att":1,"ok":1},{"n":"NLCB","km":84.6,"b":109,"lat":50.7772928,"lon":-2.0185088,"att":6,"ok":0},{"n":"EH","km":34.8,"b":66,"lat":51.1541248,"lon":-2.70336,"att":346,"ok":57},{"n":"5360","km":73.6,"b":41,"lat":51.52768,"lon":-2.4674304,"att":11,"ok":0},{"n":"?","km":67.7,"b":203,"lat":50.4659968,"lon":-3.5356672,"att":60,"ok":0},{"n":"BigE","km":177.2,"b":26,"lat":52.4550144,"lon":-2.0185088,"att":3,"ok":0},{"n":"F400","km":90.6,"b":323,"lat":51.6718592,"lon":-3.9550976,"att":21,"ok":0},{"n":"?","km":133.1,"b":32,"lat":52.035584,"lon":-2.1233664,"att":3,"ok":0},{"n":"?","km":159.2,"b":26,"lat":52.3042816,"lon":-2.1168128,"att":6,"ok":1},{"n":"R2","km":49.1,"b":201,"lat":50.61336,"lon":-3.405823,"att":4,"ok":0},{"n":"Pan1","km":26.8,"b":112,"lat":50.9345792,"lon":-2.8049408,"att":3,"ok":0},{"n":"NTU","km":93.4,"b":225,"lat":50.4332288,"lon":-4.0992768,"att":1,"ok":0},{"n":"34eb","km":42.8,"b":219,"lat":50.724864,"lon":-3.538944,"att":6,"ok":0},{"n":"20TH","km":111.4,"b":35,"lat":51.8479872,"lon":-2.240512,"att":1,"ok":0},{"n":"MOB1","km":60.1,"b":249,"lat":50.8297216,"lon":-3.9583744,"att":5,"ok":0},{"n":"GH","km":68.1,"b":203,"lat":50.46272,"lon":-3.538944,"att":1,"ok":0},{"n":"SENS","km":60.1,"b":249,"lat":50.8297216,"lon":-3.9583744,"att":135,"ok":7},{"n":"?","km":72.7,"b":104,"lat":50.8685211,"lon":-2.1512715,"att":3,"ok":1},{"n":"?","km":167.7,"b":27,"lat":52.3665408,"lon":-2.0414464,"att":1,"ok":0},{"n":"0VEA","km":47.9,"b":201,"lat":50.6232832,"lon":-3.3980416,"att":197,"ok":12},{"n":"Neth","km":179.3,"b":24,"lat":52.4951552,"lon":-2.0832256,"att":5,"ok":0},{"n":"?","km":165.5,"b":338,"lat":52.4058624,"lon":-4.0599552,"att":1,"ok":0},{"n":"b250","km":22.0,"b":225,"lat":50.8854272,"lon":-3.3783808,"att":102,"ok":4},{"n":"WSZ1","km":61.4,"b":214,"lat":50.5675776,"lon":-3.6438016,"att":16,"ok":0},{"n":"RC00","km":71.8,"b":243,"lat":50.724864,"lon":-4.063232,"att":178,"ok":5},{"n":"ba5c","km":180.6,"b":166,"lat":49.4501888,"lon":-2.5460736,"att":12,"ok":0},{"n":"HMB4","km":21.5,"b":102,"lat":50.987008,"lon":-2.8573696,"att":375,"ok":265},{"n":"e570","km":177.3,"b":165,"lat":49.4829568,"lon":-2.5329664,"att":23,"ok":0},{"n":"F4HB","km":115.0,"b":34,"lat":51.8815744,"lon":-2.2249472,"att":19,"ok":0},{"n":"abac","km":179.3,"b":165,"lat":49.463535,"lon":-2.535617,"att":7,"ok":0},{"n":"Grn4","km":140.4,"b":239,"lat":50.3578624,"lon":-4.849664,"att":11,"ok":2},{"n":"?","km":178.8,"b":27,"lat":52.4550144,"lon":-1.96608,"att":1,"ok":0},{"n":"N14C","km":149.7,"b":305,"lat":51.7767168,"lon":-4.9512448,"att":19,"ok":0},{"n":"HWK","km":63.6,"b":211,"lat":50.537248,"lon":-3.627943,"att":8,"ok":0},{"n":"?","km":48.2,"b":3,"lat":51.4588672,"lon":-3.1195136,"att":5,"ok":0},{"n":"BSON","km":179.5,"b":28,"lat":52.4496896,"lon":-1.9288064,"att":2,"ok":0},{"n":"MMRF","km":67.9,"b":38,"lat":51.5080192,"lon":-2.5591808,"att":7,"ok":0},{"n":"?","km":66.3,"b":39,"lat":51.4916352,"lon":-2.5624576,"att":2,"ok":0},{"n":"PNTR","km":42.9,"b":354,"lat":51.4097152,"lon":-3.2210944,"att":97,"ok":0},{"n":"PJ1","km":3.1,"b":62,"lat":51.0394368,"lon":-3.1195136,"att":421,"ok":228},{"n":"StJ1","km":57.7,"b":205,"lat":50.5544704,"lon":-3.4996224,"att":16,"ok":0},{"n":"AP3X","km":55.5,"b":204,"lat":50.5708544,"lon":-3.4832384,"att":2,"ok":0},{"n":"R1","km":48.4,"b":197,"lat":50.610176,"lon":-3.35872,"att":64,"ok":3},{"n":"KD2","km":163.4,"b":21,"lat":52.3902976,"lon":-2.2781952,"att":1,"ok":0},{"n":"FCN3","km":71.4,"b":209,"lat":50.46272,"lon":-3.6438016,"att":2,"ok":0},{"n":"MD01","km":90.2,"b":111,"lat":50.724864,"lon":-1.96608,"att":10,"ok":1},{"n":"FBH","km":16.5,"b":37,"lat":51.1442944,"lon":-3.014656,"att":70,"ok":3},{"n":"Cndr","km":99.7,"b":27,"lat":51.8201344,"lon":-2.4911872,"att":8,"ok":0},{"n":"59a7","km":175.7,"b":165,"lat":49.4976712,"lon":-2.5344122,"att":8,"ok":0},{"n":"d3e4","km":47.8,"b":199,"lat":50.6200064,"lon":-3.3816576,"att":263,"ok":18},{"n":"e2b0","km":57.3,"b":358,"lat":51.5407872,"lon":-3.19488,"att":14,"ok":0},{"n":"CpNB","km":74.6,"b":26,"lat":51.62674,"lon":-2.67865,"att":6,"ok":0},{"n":"VeNT","km":159.0,"b":238,"lat":50.259968,"lon":-5.0630656,"att":41,"ok":0},{"n":"BNCH","km":0.0,"b":17,"lat":51.02633,"lon":-3.158835,"att":592,"ok":5},{"n":"E1","km":48.4,"b":202,"lat":50.6232832,"lon":-3.4177024,"att":24,"ok":3},{"n":"f6f4","km":176.9,"b":166,"lat":49.4829568,"lon":-2.5526272,"att":11,"ok":0},{"n":"XXAs","km":29.6,"b":296,"lat":51.1442944,"lon":-3.538944,"att":17,"ok":1},{"n":"MOHS","km":67.5,"b":242,"lat":50.73824,"lon":-4.0063269,"att":1250,"ok":287},{"n":"VEGE","km":67.4,"b":204,"lat":50.4725504,"lon":-3.5487744,"att":5,"ok":0},{"n":"d660","km":7.8,"b":124,"lat":50.987008,"lon":-3.0670848,"att":15,"ok":2},{"n":"N14B","km":148.0,"b":304,"lat":51.7656576,"lon":-4.9328128,"att":5,"ok":0},{"n":"Dura","km":16.4,"b":138,"lat":50.9165568,"lon":-3.0031872,"att":15,"ok":0},{"n":"GARG","km":2.5,"b":121,"lat":51.0146831,"lon":-3.128249,"att":897,"ok":8},{"n":"CBay","km":187.7,"b":242,"lat":50.200576,"lon":-5.4788096,"att":24,"ok":1},{"n":"EXw","km":43.0,"b":220,"lat":50.7281408,"lon":-3.5487744,"att":341,"ok":62},{"n":"mble","km":64.9,"b":41,"lat":51.462144,"lon":-2.53952,"att":2,"ok":0},{"n":"?","km":54.0,"b":27,"lat":51.4588672,"lon":-2.8049408,"att":8,"ok":0},{"n":"ApRo","km":63.0,"b":211,"lat":50.5380864,"lon":-3.6143104,"att":59,"ok":0},{"n":"ac7c","km":136.4,"b":24,"lat":52.1404416,"lon":-2.3330816,"att":2,"ok":0},{"n":"c320","km":19.0,"b":46,"lat":51.1442944,"lon":-2.9622272,"att":100,"ok":4},{"n":"01b4","km":143.1,"b":240,"lat":50.3611392,"lon":-4.898816,"att":18,"ok":0},{"n":"ARW1","km":137.0,"b":237,"lat":50.349554,"lon":-4.783274,"att":18,"ok":0},{"n":"Star","km":172.0,"b":236,"lat":50.1481472,"lon":-5.1642368,"att":57,"ok":0},{"n":"?","km":114.4,"b":58,"lat":51.5637248,"lon":-1.7563648,"att":1,"ok":0},{"n":"2f8c","km":54.5,"b":355,"lat":51.5145728,"lon":-3.2210944,"att":1,"ok":0},{"n":"SW","km":22.0,"b":225,"lat":50.8854272,"lon":-3.3783808,"att":57,"ok":0},{"n":"Looe","km":121.5,"b":235,"lat":50.3873536,"lon":-4.5580288,"att":7,"ok":0},{"n":"HPRN","km":159.6,"b":239,"lat":50.2628352,"lon":-5.0757632,"att":10,"ok":0},{"n":"Mr B","km":95.2,"b":118,"lat":50.6200064,"lon":-1.96608,"att":33,"ok":5},{"n":"SNB1","km":25.9,"b":222,"lat":50.8526592,"lon":-3.4045952,"att":317,"ok":44},{"n":"ED3","km":61.7,"b":210,"lat":50.54464,"lon":-3.5946496,"att":4,"ok":0},{"n":"?","km":13.1,"b":219,"lat":50.9345792,"lon":-3.2768,"att":35,"ok":0},{"n":"ALBU","km":88.7,"b":29,"lat":51.724288,"lon":-2.53952,"att":16,"ok":0},{"n":"NM-C","km":93.8,"b":233,"lat":50.5151488,"lon":-4.2205184,"att":13,"ok":0},{"n":"J19E","km":74.6,"b":28,"lat":51.6161536,"lon":-2.6476544,"att":43,"ok":0},{"n":"79fc","km":67.3,"b":44,"lat":51.462144,"lon":-2.4870912,"att":81,"ok":0},{"n":"e104","km":54.1,"b":355,"lat":51.511296,"lon":-3.2243712,"att":2,"ok":0},{"n":"BN13","km":250.1,"b":94,"lat":50.8329984,"lon":0.3964928,"att":4,"ok":0},{"n":"1df4","km":176.3,"b":165,"lat":49.4898877,"lon":-2.5442851,"att":78,"ok":0},{"n":"?","km":35.6,"b":303,"lat":51.2,"lon":-3.588096,"att":1,"ok":0},{"n":"TKV","km":112.3,"b":237,"lat":50.46272,"lon":-4.4826624,"att":10,"ok":0},{"n":"d67f","km":178.5,"b":167,"lat":49.463296,"lon":-2.5853952,"att":22,"ok":1},{"n":"7mrb","km":92.0,"b":119,"lat":50.6200064,"lon":-2.0185088,"att":242,"ok":92},{"n":"N14A","km":151.5,"b":305,"lat":51.795968,"lon":-4.962304,"att":1,"ok":0},{"n":"Qkrs","km":66.7,"b":36,"lat":51.511296,"lon":-2.5952256,"att":2,"ok":0},{"n":"PJOB","km":136.9,"b":238,"lat":50.3611392,"lon":-4.7939584,"att":2,"ok":0},{"n":"LWM2","km":48.0,"b":332,"lat":51.4064384,"lon":-3.4865152,"att":52,"ok":0},{"n":"?","km":188.8,"b":21,"lat":52.6123008,"lon":-2.1757952,"att":1,"ok":0},{"n":"ilmn","km":20.2,"b":120,"lat":50.9345792,"lon":-2.9097984,"att":48,"ok":0},{"n":"DEC1","km":115.0,"b":34,"lat":51.8815744,"lon":-2.2249472,"att":1,"ok":0},{"n":"9cb8","km":117.4,"b":15,"lat":52.0471885,"lon":-2.7247593,"att":10,"ok":0},{"n":"XMV3","km":176.1,"b":240,"lat":50.210336,"lon":-5.297472,"att":3,"ok":0},{"n":"t::1","km":125.9,"b":247,"lat":50.5675776,"lon":-4.7972352,"att":56,"ok":1},{"n":"?","km":168.8,"b":23,"lat":52.4210866,"lon":-2.1921316,"att":1,"ok":0},{"n":"DSN1","km":55.3,"b":40,"lat":51.4064384,"lon":-2.6476544,"att":2,"ok":0},{"n":"\ud83c\udf0a","km":54.5,"b":204,"lat":50.577408,"lon":-3.4701312,"att":2,"ok":0},{"n":"SCAP","km":61.7,"b":210,"lat":50.54464,"lon":-3.5946496,"att":3,"ok":0},{"n":"MARS","km":178.4,"b":28,"lat":52.4353536,"lon":-1.9202048,"att":1,"ok":0},{"n":"297c","km":61.3,"b":28,"lat":51.5145728,"lon":-2.7492352,"att":5,"ok":0},{"n":"esp3","km":10.8,"b":204,"lat":50.937856,"lon":-3.2210944,"att":30,"ok":2},{"n":"6ccc","km":48.7,"b":203,"lat":50.6232832,"lon":-3.4308096,"att":149,"ok":15},{"n":"9048","km":110.6,"b":34,"lat":51.8504448,"lon":-2.2659072,"att":12,"ok":0},{"n":"?","km":24.6,"b":110,"lat":50.9517693,"lon":-2.8272626,"att":9,"ok":2},{"n":"a17c","km":142.7,"b":25,"lat":52.1863168,"lon":-2.2740992,"att":2,"ok":0},{"n":"2250","km":54.1,"b":355,"lat":51.511296,"lon":-3.2243712,"att":33,"ok":0},{"n":"?","km":178.0,"b":22,"lat":52.5074432,"lon":-2.1757952,"att":60,"ok":0},{"n":"d80c","km":177.6,"b":29,"lat":52.4222464,"lon":-1.9070976,"att":1,"ok":0},{"n":"EX4E","km":43.8,"b":220,"lat":50.7215872,"lon":-3.555328,"att":220,"ok":18},{"n":"XXAm","km":3.1,"b":62,"lat":51.0394368,"lon":-3.1195136,"att":24,"ok":2},{"n":"OMT","km":45.5,"b":201,"lat":50.642944,"lon":-3.3849344,"att":107,"ok":6},{"n":"Titz","km":156.8,"b":14,"lat":52.3911168,"lon":-2.5837568,"att":2,"ok":0},{"n":"T096","km":140.0,"b":239,"lat":50.3611392,"lon":-4.8463872,"att":19,"ok":1},{"n":"10a9","km":109.8,"b":3,"lat":52.013056,"lon":-3.0855168,"att":19,"ok":0},{"n":"PAIG","km":71.5,"b":205,"lat":50.442632,"lon":-3.58446,"att":1,"ok":0},{"n":"35e7","km":109.8,"b":3,"lat":52.0126464,"lon":-3.0834688,"att":32,"ok":0},{"n":"RES1","km":58.2,"b":251,"lat":50.8557659,"lon":-3.94436,"att":19,"ok":7},{"n":"inno","km":15.9,"b":140,"lat":50.917376,"lon":-3.0121984,"att":9,"ok":0},{"n":"JBS","km":143.2,"b":25,"lat":52.1928704,"lon":-2.2806528,"att":3,"ok":0},{"n":"ptxc","km":65.4,"b":33,"lat":51.51744,"lon":-2.6423296,"att":1,"ok":0},{"n":"Spod","km":41.0,"b":218,"lat":50.7346944,"lon":-3.5160064,"att":111,"ok":6},{"n":"?","km":65.3,"b":336,"lat":51.5637248,"lon":-3.538944,"att":2,"ok":0},{"n":"fir","km":13.1,"b":219,"lat":50.9345792,"lon":-3.2768,"att":22,"ok":20},{"n":"ZAL1","km":26.0,"b":237,"lat":50.8985344,"lon":-3.4701312,"att":155,"ok":19},{"n":"home","km":125.6,"b":247,"lat":50.5708544,"lon":-4.7939584,"att":3,"ok":0},{"n":"RED1","km":164.0,"b":30,"lat":52.290724,"lon":-1.935375,"att":17,"ok":0},{"n":"BBBC","km":127.8,"b":36,"lat":51.9478767,"lon":-2.0568163,"att":14,"ok":0},{"n":"WRP","km":178.6,"b":165,"lat":49.4698496,"lon":-2.53952,"att":11,"ok":0},{"n":"Luke","km":176.2,"b":166,"lat":49.4846687,"lon":-2.5850837,"att":55,"ok":0},{"n":"skyn","km":54.1,"b":355,"lat":51.511296,"lon":-3.2243712,"att":40,"ok":1},{"n":"CDFW","km":48.8,"b":350,"lat":51.4588672,"lon":-3.2768,"att":292,"ok":16},{"n":"a920","km":132.1,"b":310,"lat":51.77344,"lon":-4.6399488,"att":8,"ok":0},{"n":"SR#1","km":25.0,"b":222,"lat":50.8592128,"lon":-3.3980416,"att":282,"ok":42},{"n":"Nd-1","km":131.0,"b":239,"lat":50.4102912,"lon":-4.7448064,"att":1,"ok":0},{"n":"WEI","km":47.4,"b":199,"lat":50.6232832,"lon":-3.3783808,"att":293,"ok":12},{"n":"SR#9","km":42.3,"b":216,"lat":50.716568,"lon":-3.509503,"att":293,"ok":22},{"n":"RSn1","km":107.9,"b":21,"lat":51.9307264,"lon":-2.5952256,"att":4,"ok":0},{"n":"TA2m","km":0.4,"b":59,"lat":51.0283514,"lon":-3.153572,"att":865,"ok":349},{"n":"XMV","km":156.6,"b":239,"lat":50.278529,"lon":-5.041652,"att":4,"ok":0},{"n":"Hnbr","km":156.7,"b":30,"lat":52.2452992,"lon":-2.0185088,"att":2,"ok":0},{"n":"Td1 ","km":143.2,"b":325,"lat":52.0769991,"lon":-4.3573864,"att":9,"ok":1},{"n":"HELT","km":142.4,"b":312,"lat":51.8815744,"lon":-4.6891008,"att":47,"ok":2},{"n":"TOM","km":32.4,"b":98,"lat":50.987008,"lon":-2.7000832,"att":614,"ok":275},{"n":"?","km":40.2,"b":215,"lat":50.7281408,"lon":-3.4832384,"att":415,"ok":0},{"n":"?","km":39.4,"b":23,"lat":51.3536047,"lon":-2.9410908,"att":1,"ok":0},{"n":"?","km":189.1,"b":29,"lat":52.5074432,"lon":-1.8087936,"att":63,"ok":1},{"n":"?","km":121.1,"b":38,"lat":51.8782976,"lon":-2.0709376,"att":1,"ok":0},{"n":"Sen1","km":208.0,"b":240,"lat":50.0727808,"lon":-5.6918016,"att":2,"ok":0},{"n":"MAD1","km":182.2,"b":14,"lat":52.6123008,"lon":-2.490368,"att":31,"ok":0},{"n":"TM01","km":127.4,"b":36,"lat":51.9438336,"lon":-2.0578304,"att":87,"ok":0},{"n":"GAZ1","km":188.1,"b":242,"lat":50.2104064,"lon":-5.4951936,"att":3,"ok":0},{"n":"WLMR","km":103.8,"b":31,"lat":51.8258688,"lon":-2.3855104,"att":21,"ok":0},{"n":"Rive","km":61.4,"b":214,"lat":50.5675776,"lon":-3.6438016,"att":8,"ok":0},{"n":"DESK","km":60.1,"b":249,"lat":50.8297216,"lon":-3.9583744,"att":29,"ok":0},{"n":"284d","km":58.9,"b":29,"lat":51.4904815,"lon":-2.7496933,"att":2,"ok":0},{"n":"RDEw","km":41.9,"b":216,"lat":50.7215872,"lon":-3.5094528,"att":57,"ok":5},{"n":"Gal","km":43.1,"b":88,"lat":51.0394368,"lon":-2.5427968,"att":46,"ok":9},{"n":"CJ-B","km":34.1,"b":68,"lat":51.1414272,"lon":-2.7070464,"att":4,"ok":0},{"n":"EX5R","km":38.0,"b":224,"lat":50.7805696,"lon":-3.5356672,"att":396,"ok":66},{"n":"Msh6","km":44.9,"b":272,"lat":51.0394368,"lon":-3.801088,"att":10,"ok":0},{"n":"PIXL","km":61.7,"b":210,"lat":50.5442304,"lon":-3.5926016,"att":3,"ok":0},{"n":"BEAR","km":97.9,"b":221,"lat":50.3578624,"lon":-4.063232,"att":8,"ok":0},{"n":"JP3","km":143.2,"b":25,"lat":52.1928704,"lon":-2.2806528,"att":1,"ok":0},{"n":"mob1","km":130.6,"b":239,"lat":50.413568,"lon":-4.7415296,"att":5,"ok":0},{"n":"d208","km":54.5,"b":351,"lat":51.511296,"lon":-3.2768,"att":3,"ok":0},{"n":"Ives","km":187.7,"b":242,"lat":50.2071296,"lon":-5.4853632,"att":23,"ok":1},{"n":"213c","km":130.7,"b":236,"lat":50.3611392,"lon":-4.6891008,"att":2,"ok":0},{"n":"PUCK","km":80.4,"b":35,"lat":51.6161536,"lon":-2.490368,"att":19,"ok":0},{"n":"ARH2","km":112.3,"b":237,"lat":50.46272,"lon":-4.4826624,"att":17,"ok":0},{"n":"db4c","km":181.6,"b":168,"lat":49.430528,"lon":-2.6181632,"att":6,"ok":0},{"n":"sj27","km":168.4,"b":27,"lat":52.3730944,"lon":-2.0414464,"att":18,"ok":0},{"n":"Stan","km":88.8,"b":120,"lat":50.6200064,"lon":-2.0709376,"att":2,"ok":0},{"n":"HEGM","km":97.5,"b":108,"lat":50.741248,"lon":-1.8448384,"att":4,"ok":0},{"n":"MrB2","km":92.0,"b":119,"lat":50.6200064,"lon":-2.0185088,"att":92,"ok":15},{"n":"\ud83c\udf32","km":107.8,"b":34,"lat":51.8258688,"lon":-2.2806528,"att":1,"ok":0},{"n":"50a8","km":97.7,"b":318,"lat":51.6718592,"lon":-4.112384,"att":1,"ok":0},{"n":"MESH","km":47.4,"b":199,"lat":50.6232832,"lon":-3.3783808,"att":56,"ok":2},{"n":"?","km":149.7,"b":305,"lat":51.7767168,"lon":-4.9512448,"att":173,"ok":0},{"n":"CMR3","km":179.0,"b":30,"lat":52.4091392,"lon":-1.8284544,"att":1,"ok":0},{"n":"MV C","km":134.2,"b":25,"lat":52.1208,"lon":-2.3393,"att":2,"ok":0},{"n":"B45","km":169.4,"b":27,"lat":52.3730944,"lon":-2.0086784,"att":3,"ok":0}];
+
+// ── THE REACH RULE ────────────────────────────────────────────────────────
+(function reachRule(){
+  const el = document.getElementById('scale');
+  const MAX = 220, RECORD = 189.1;
+  const pos = km => (km / MAX) * 100;
+
+  for (const t of T){
+    if (t.km > MAX) continue;
+    const d = document.createElement('div');
+    if (t.ok > 0){
+      const rate = t.ok / t.att;                       // tick height carries reliability
+      d.className = 'tick' + (t.km > 150 ? ' hi' : '');
+      d.style.height = (6 + rate * 26).toFixed(1) + 'px';
+      d.title = `${t.n} — ${t.km} km, ${t.ok}/${t.att} (${(rate*100).toFixed(1)}%)`;
+    } else {
+      d.className = 'ghost';
+      d.title = `${t.n} — ${t.km} km, never confirmed in ${t.att} attempts`;
+    }
+    d.style.left = pos(t.km) + '%';
+    el.appendChild(d);
+  }
+
+  const term = document.createElement('div');
+  term.className = 'terminator';
+  term.style.left = pos(RECORD) + '%';
+  el.appendChild(term);
+
+  const axis = document.createElement('div'); axis.className = 'axis'; el.appendChild(axis);
+
+  for (let k = 0; k <= MAX; k += 25){
+    const g = document.createElement('div');
+    g.className = 'gradmark'; g.style.left = pos(k) + '%';
+    g.innerHTML = '<i></i>' + (k === 0 ? 'us' : k);
+    el.appendChild(g);
+  }
+})();
+
+// ── RADAR — bearing and range from us ─────────────────────────────────────
+(function radar(){
+  const S = 400, C = S/2, R = 176, MAX = 200;
+  const p = [];
+  p.push(`<circle cx="${C}" cy="${C}" r="${R}" fill="#101820" stroke="#22303C"/>`);
+  for (const km of [50,100,150,200]){
+    const r = (km/MAX)*R;
+    p.push(`<circle cx="${C}" cy="${C}" r="${r.toFixed(1)}" fill="none" stroke="#22303C" stroke-dasharray="2 4"/>`);
+    p.push(`<text x="${C+3}" y="${(C-r+11).toFixed(1)}" fill="#4E5C66" font-size="9" font-family="JetBrains Mono">${km}</text>`);
+  }
+  for (let b = 0; b < 360; b += 45){
+    const a = (b-90)*Math.PI/180;
+    p.push(`<line x1="${C}" y1="${C}" x2="${(C+Math.cos(a)*R).toFixed(1)}" y2="${(C+Math.sin(a)*R).toFixed(1)}" stroke="#22303C" stroke-width="${b%90?0.5:1}"/>`);
+    const lr = R+13;
+    p.push(`<text x="${(C+Math.cos(a)*lr).toFixed(1)}" y="${(C+Math.sin(a)*lr+3).toFixed(1)}" fill="#4E5C66" font-size="9" text-anchor="middle" font-family="Oxanium">${b}</text>`);
+  }
+  const labelled = [];
+  for (const t of T){
+    if (t.km > MAX) continue;
+    const a = (t.b-90)*Math.PI/180, r = (t.km/MAX)*R;
+    const x = C+Math.cos(a)*r, y = C+Math.sin(a)*r;
+    if (t.ok > 0){
+      const big = t.km > 150;
+      p.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${big?3.4:2.1}" fill="${big?'#D07A32':'#3C7A93'}"><title>${t.n} — ${t.km} km @ ${t.b}°</title></circle>`);
+      if (big) labelled.push({x,y,n: t.n === '?' ? t.km.toFixed(0)+' km' : t.n});
+    } else {
+      p.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.5" fill="none" stroke="#4E5C66" stroke-width="0.8"><title>${t.n} — ${t.km} km, never confirmed</title></circle>`);
+    }
+  }
+  // Label only the four furthest, nudged apart — a crowded rim reads as noise.
+  labelled.sort((a,b)=>a.y-b.y);
+  let lastY = -99;
+  for (const L of labelled.slice(0,6)){
+    const y = (L.y - lastY < 11) ? lastY + 11 : L.y;   // minimum vertical separation
+    lastY = y;
+    const left = L.x > C;
+    p.push(`<text x="${(L.x + (left?-6:6)).toFixed(1)}" y="${(y+3).toFixed(1)}" fill="#D07A32" font-size="9" text-anchor="${left?'end':'start'}" font-family="JetBrains Mono">${L.n}</text>`);
+  }
+
+  // the record bearing, drawn as a survey line rather than a sweep
+  const ra = (242-90)*Math.PI/180;
+  p.push(`<line x1="${C}" y1="${C}" x2="${(C+Math.cos(ra)*R).toFixed(1)}" y2="${(C+Math.sin(ra)*R).toFixed(1)}" stroke="#D07A32" stroke-width="0.9" stroke-dasharray="5 5" opacity="0.75"/>`);
+  p.push(`<circle cx="${C}" cy="${C}" r="2.6" fill="#E6DCC8"/>`);
+  document.getElementById('radar').innerHTML = p.join('');
+})();
+
+// ── MAP — the same mesh on its own ground ─────────────────────────────────
+(function map(){
+  const W = 400, H = 300, PAD = 16;
+  const HOME = {lat:51.0263296, lon:-3.1588352};
+  const pts = T.filter(t => t.km <= 220);
+  const lats = pts.map(t=>t.lat).concat(HOME.lat), lons = pts.map(t=>t.lon).concat(HOME.lon);
+  const la0=Math.min(...lats), la1=Math.max(...lats), lo0=Math.min(...lons), lo1=Math.max(...lons);
+  const k = Math.cos(HOME.lat*Math.PI/180);                    // flatten longitude at this latitude
+  const sx = (W-PAD*2)/((lo1-lo0)*k), sy = (H-PAD*2)/(la1-la0), s = Math.min(sx,sy);
+  const X = lon => PAD + ((lon-lo0)*k)*s + ((W-PAD*2)-((lo1-lo0)*k)*s)/2;
+  const Y = lat => H-PAD - (lat-la0)*s - ((H-PAD*2)-(la1-la0)*s)/2;
+
+  const p = [`<rect x="0" y="0" width="${W}" height="${H}" fill="#101820"/>`];
+
+  // ── THE WEB — every node-to-node hop we have ever observed, drawn first so
+  //    the nodes sit on top of it. Opacity carries how much traffic it took.
+  const maxC = Math.max(...LINKS.map(l=>l.c));
+  for (const l of LINKS){
+    const w = 0.35 + Math.min(1, Math.log1p(l.c)/Math.log1p(maxC)) * 1.5;
+    const o = 0.16 + Math.min(1, Math.log1p(l.c)/Math.log1p(maxC)) * 0.5;
+    p.push(`<line x1="${X(l.a[1]).toFixed(1)}" y1="${Y(l.a[0]).toFixed(1)}" x2="${X(l.b[1]).toFixed(1)}" y2="${Y(l.b[0]).toFixed(1)}" stroke="#3C7A93" stroke-width="${w.toFixed(2)}" opacity="${o.toFixed(2)}"/>`);
+  }
+
+  for (const t of pts){
+    if (t.ok > 0) p.push(`<circle cx="${X(t.lon).toFixed(1)}" cy="${Y(t.lat).toFixed(1)}" r="${t.km>150?2.8:1.8}" fill="${t.km>150?'#D07A32':'#3C7A93'}" opacity="0.95"><title>${t.n} — ${t.km} km</title></circle>`);
+    else p.push(`<circle cx="${X(t.lon).toFixed(1)}" cy="${Y(t.lat).toFixed(1)}" r="1.4" fill="none" stroke="#3F4C57" stroke-width="0.7"/>`);
+  }
+  const corridor = [{"n":"T4","km":5.3,"b":274,"lat":51.029786,"lon":-3.234665},{"n":"TE 5","km":32.7,"b":286,"lat":51.1082496,"lon":-3.6077568},{"n":"S2","km":30.1,"b":227,"lat":50.839552,"lon":-3.4701312},{"n":"TivN","km":24.7,"b":247,"lat":50.937856,"lon":-3.4832384},{"n":"CBay","km":187.7,"b":242,"lat":50.200576,"lon":-5.4788096},{"n":"fir","km":13.1,"b":219,"lat":50.9345792,"lon":-3.2768},{"n":"Ives","km":187.7,"b":242,"lat":50.2071296,"lon":-5.4853632}];
+  const chain = ['T4','fir','TE 5','Ives'].map(n => corridor.find(d => d.n === n)).filter(Boolean);
+  const path = [[HOME.lon,HOME.lat]].concat(chain.map(d=>[d.lon,d.lat]));
+  p.push(`<polyline points="${path.map(([lo,la])=>`${X(lo).toFixed(1)},${Y(la).toFixed(1)}`).join(' ')}" fill="none" stroke="#D07A32" stroke-width="1.2" opacity="0.85"/>`);
+  for (const d of chain){
+    p.push(`<circle cx="${X(d.lon).toFixed(1)}" cy="${Y(d.lat).toFixed(1)}" r="3.2" fill="none" stroke="#B0538A" stroke-width="1.3"/>`);
+    p.push(`<text x="${(X(d.lon)+5).toFixed(1)}" y="${(Y(d.lat)-4).toFixed(1)}" fill="#B0538A" font-size="9" font-family="JetBrains Mono">${d.n}</text>`);
+  }
+  p.push(`<circle cx="${X(HOME.lon).toFixed(1)}" cy="${Y(HOME.lat).toFixed(1)}" r="3.4" fill="#E6DCC8"/>`);
+  p.push(`<text x="${(X(HOME.lon)+6).toFixed(1)}" y="${(Y(HOME.lat)+3).toFixed(1)}" fill="#E6DCC8" font-size="9" font-family="JetBrains Mono">us</text>`);
+  document.getElementById('map').innerHTML = p.join('');
+})();
+</script>
+</body>
+</html>
