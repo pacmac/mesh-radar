@@ -530,6 +530,88 @@ physical explanation for why a given relay is a door, and without it the map sho
 Neither replaces the other, and a mission reads as a *place*: "St Ives, Cornwall
 — 187.7 km, bearing 242°, through Exmoor", not "187.7 km @ 242°".
 
+## 7e. The web — every route is a set of LINKS, and the end of it is a mesh map
+
+Peter, 2026-08-02: *"when we have found a node that is relaying, we can see which
+node was relayed to it and therefore its location, so we also know for any node
+where it is and how far away it is, to stretch the 'spiderweb' overlay on a
+map… we will end up with the data for a mesh map."*
+
+**A route is not a list of endpoints, it is a chain of edges**, and we have been
+storing them since June without reading them that way. `us → T4 → fir → TE 5 →
+L5-3 → Ives` is five observed links, each one a node-to-node hop that some radio
+actually made.
+
+Extracted from every successful route, both directions, 2026-08-02:
+
+| | |
+|---|---|
+| distinct node-to-node links observed | **359** |
+| of those, both ends placed and drawable | **211** |
+| total hop observations behind them | **18,826** |
+
+That is a survey of the mesh's own topology, gathered as a by-product of asking
+other questions.
+
+### A second record, and a different one
+
+Link lengths are computable wherever both ends are placed. The longest single
+hops we have ever witnessed:
+
+```
+309.2 km   c21f — HELT      seen once
+307.2 km   5d78 — HELT      seen once
+202.0 km   fir  — (unnamed) seen 2x
+199.4 km   TE 5 — c21f      seen 2x
+178.6 km   c21f — TivN      seen 5x
+```
+
+**This is not our reach — it is the longest link the mesh made while we were
+watching.** Both belong on the board, and they must never be added together or
+confused: one is what *we* achieved, the other is what we *observed*. The two
+300 km hops involve Guernsey nodes over a sea path, are single observations, and
+fall squarely under the position-trust caveat in §12 — record them, flag them,
+do not publish them as records.
+
+### Constraining the unplaceable
+
+**Peter's inference is right and needs one qualification.** A node that relayed
+to a placed node must have been in radio range of it, so its neighbours bound
+where it can be. Measured: **32 unplaced nodes have at least one placed
+neighbour**, and some have many —
+
+```
+(unnamed)  24 placed neighbours
+MDor       16   ← one of our own doors, currently "no position"
+exw1       10
+A2-B        9
+031c        7
+```
+
+`MDor` carries traffic for 25 targets and cannot be drawn. With sixteen placed
+neighbours it can be *estimated*.
+
+**The qualification: this yields a REGION, not a point.** Radio range is not a
+constant — the same mesh shows 3 km links and 300 km links — so one neighbour
+constrains almost nothing and the estimate only tightens with several. Therefore:
+
+- An estimated position is stored in **its own field**, never written into the
+  position a node reported for itself.
+- It carries its **error region** and the neighbour count it was derived from.
+- **It never enters the km headline** (§1a). A record must rest on a position the
+  node claimed, not one we inferred — otherwise the frontier becomes a function
+  of our own arithmetic.
+- It is fine for drawing, for bearings, and for deciding where to point.
+
+### What this becomes
+
+The endpoint is not a reach dashboard with a map on it. It is **a survey of the
+mesh**: which nodes relay and which are leaves, which links exist, how long each
+one is, which are load-bearing, and which clusters are joined by a single hop.
+
+Nobody had to be asked for any of it, and it accumulates on its own every time a
+traceroute completes.
+
 ## 8. The budget is enforced in code, not configuration
 
 An unattended process transmitting on a public channel shared with strangers is
