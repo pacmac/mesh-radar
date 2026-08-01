@@ -5,11 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mission Control — mockup</title>
 <!--
-  THROWAWAY MOCKUP. Not wired to anything: no WebSocket, no fetch, no backend.
-  Every number is real, read out of data/node-dash.db and the live radios on
-  2026-08-01/02, and typed in. Its only job is to let the layout and density be
-  judged before docs/MESH_REACH_SPEC.md gets a Domain 2 phase.
-  Delete it, or replace it with the real page. Do not import from it.
+  DESIGN REFERENCE — KEEP. Peter, 2026-08-02: "keep the static page as a
+  reference, do not delete it." An earlier version of this comment said to
+  delete it once the real page existed; that was wrong and is the reason this
+  correction is spelled out rather than quietly edited.
+
+  It is not wired to anything: no WebSocket, no fetch, no backend. Every number
+  is real — read out of data/node-dash.db and the live radios on 2026-08-01/02
+  — and typed in. It is the approved reference the real Mission Control page is
+  specced and built against (docs/MESH_REACH_SPEC.md, Domain 2 phase).
+
+  Do not import from it, do not wire it up, and do not delete it when the real
+  page ships — a reference you can still open is how you tell whether the built
+  thing drifted from the agreed design.
 -->
 <style>
 @font-face { font-family:'Oxanium'; font-weight:400 800; font-display:swap; src:url('/vendor/fonts/oxanium-latin.woff2') format('woff2'); }

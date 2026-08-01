@@ -694,6 +694,13 @@ in one task.
 7. **Mission Control (Domain 2).** The board. Two columns: radar and map on one
    side (§7d), missions, doors and the attempt log on the other. Reach vs
    hearing, per §4's honesty rules. Nothing computed in the browser.
+
+   **The approved design reference is `public/_mockup-mission-control.html`** —
+   static, unwired, every figure real, built and signed off 2026-08-02. Peter:
+   *"keep the static page as a reference, do not delete it."* It stays after the
+   real page ships: a reference you can still open is how you tell whether the
+   built thing drifted from the agreed design. Build against it; do not import
+   from it.
 8. **Geocode backfill (Domain 1, no airtime).** 194 of 596 positioned nodes are
    named; the module and its rate limit already exist. Turns coordinates into
    places for every mission dossier.
