@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: 276f0dd851fdc750d02aa277e6213d4bee003e0377de9d0b1d9b16e81417a6ce
+source_hash: 7c2af9bdeb90f32769bad17aea9048a4dc4f22c769cf2d36fa5e36ffb587f9ca
 updated: 2026-08-02
 ---
 

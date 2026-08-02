@@ -291,8 +291,34 @@ function handleTelemetryEvent(event, rxDevice) {
   }
 }
 
+// ─── Packet observers — core EMITS, it does not reach in ────────────────────
+//
+// The same extension-point idiom as registerNodeSection (node-status.js) and
+// registerWsWiring (ws-relay.js). It exists so the observatory can see every
+// packet WITHOUT persist.js importing it: core is not permitted to name a
+// plugin, and tests/test_observatory_boundary.mjs enforces that. The
+// composition root wires the two together.
+//
+// Called for EVERY packet, direct or relayed. That is the point — the nodes
+// worth locating are the distant relayed ones, which _captureSignal below
+// deliberately excludes (relayed RSSI describes the last hop, not the origin).
+const _packetObservers = [];
+export function registerPacketObserver(fn) { _packetObservers.push(fn); }
+
+function _notifyPacketObservers(packet, device, ts, replay) {
+  for (const fn of _packetObservers) {
+    // ISOLATED ON PURPOSE. This runs on the hot path for every packet. Core
+    // emitting into a plugin must never become core DEPENDING on the plugin
+    // working — a throw in an observer must not take down packet ingestion.
+    try { fn(packet, device, ts, replay); }
+    catch (e) { console.error(`[persist] packet observer failed: ${e.message}`); }
+  }
+}
+
 function handlePacket(packet, device, ts, replay) {
   if (!packet?.decoded) return;
+
+  _notifyPacketObservers(packet, device, ts, replay);
 
   // Envelope signal for every DIRECT packet, regardless of portnum — the
   // densest honest source of a node's own link quality over time.

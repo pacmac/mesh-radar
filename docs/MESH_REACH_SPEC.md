@@ -859,9 +859,14 @@ in one task.
    side (§7d), missions, doors and the attempt log on the other. Reach vs
    hearing, per §4's honesty rules. Nothing computed in the browser.
 
-   **The approved design reference is `public/_mockup-mission-control.html`** —
-   static, unwired, every figure real, built and signed off 2026-08-02. Peter:
-   *"keep the static page as a reference, do not delete it."*
+   **The approved design reference is `public/_mockup-mission-control.html`**,
+   served at `http://192.168.10.205:8000/_mockup-mission-control.html` — static,
+   unwired, every figure real, built and signed off 2026-08-02.
+
+   Peter, twice: *"keep the static page as a reference, do not delete it"* and
+   *"this page must stay… it is a reference and is stand alone."* It keeps that
+   URL. The live Mission Control page gets its own route and its own files; this
+   one is never repointed, renamed, or replaced by it.
 
    **The live page is built by copying it, never by editing it.** Peter:
    *"the new dynamic page can use this page and insert data, but the page must be

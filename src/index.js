@@ -6,7 +6,7 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import * as pacHost from './pac-host.js';
 import configRouter from './config-api.js';
-import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId } from './device-config.js';
+import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId, getAllDeviceCfgs } from './device-config.js';
 import deviceRemoveRouter from './device-remove.js';
 import { registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
@@ -64,7 +64,21 @@ import './alarm-browser.js';
 // silently never fires.
 //
 // Delete these lines and the observatory's own files and node-dash is unchanged.
-import './observatory.js';
+import { observe } from './observatory.js';
+import { registerPacketObserver } from './persist.js';
+import { packetObservation } from './observations.js';
+
+// Every packet becomes an observation, carrying WHERE THE ANTENNA WAS POINTING.
+// That last part is the whole reason this is wired now rather than later: it is
+// the only datum in the plan that cannot be reconstructed afterwards (B52).
+//
+// The wiring lives here because persist.js is core and may not name a plugin,
+// and observations.js is kept pure so it can be tested with plain objects. The
+// composition root is the one place allowed to know about all three.
+registerPacketObserver((packet, device, ts, replay) => {
+  const o = packetObservation(packet, device, ts, replay, rotator.status, getAllDeviceCfgs());
+  if (o) observe(o);
+});
 // The catalogue of domain calculations. Separate from the engine on purpose:
 // this file knows what a bearing is, the engine must never learn. It is the ONE
 // place every inference is registered, so the whole of what node-dash works out
