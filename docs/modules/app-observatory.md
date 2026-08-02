@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 63aae559c7b821cf9e919967a4fc91b1d8fa60ffa620c1e86437efbc41db800f
+source_hash: c29e40192ef5200b6603b908b997de84990e3cb50938dae0eca1d5aa98333562
 updated: 2026-08-02
 ---
 
@@ -202,9 +202,14 @@ documented on `obsRadarSvg()`.
 
 Every number is server-computed; these scale and position only.
 
-`obsShortDate()` renders `24 Jun` — no year, `en-GB` forced so the axis does not
-change shape with the viewer's locale. Formatting a timestamp the server supplied
-is expressly allowed; computing an age on a timer is not, and this does not.
+`obsShortDate()` renders `24-06` — day-month, zero padded, no year (Peter:
+*"24-06 etc etc"*). **Built by hand, not via `toLocaleDateString`**: a locale
+formatter cannot be relied on to give day-first or hyphens, which is the
+instability that had already forced an explicit `en-GB`. Hand-formatting removes
+the dependency rather than pinning it.
+
+Formatting a timestamp the server supplied is expressly allowed; computing an age
+on a timer is not, and this does not.
 
 ## Invariants
 

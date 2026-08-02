@@ -167,18 +167,22 @@ export const observatoryMixin = {
     return p.join('');
   },
 
-  /** "24 Jun" — the shortest form that is still unambiguous at this zoom.
+  /** "24-06" — day-month, zero padded, no year.
    *
-   *  No year: the whole series is the current one, and Peter's rule is that the
-   *  label fits the data, not the other way around. Formatting a timestamp the
-   *  server supplied is expressly allowed (BROWSER_CONTRACT); computing an age
-   *  on a timer is not, and this does not. */
+   *  Peter, 2026-08-02: "24-06 etc etc". The label fits the column rather than
+   *  the column stretching for the label, and the year is dropped because the
+   *  whole series is one year.
+   *
+   *  BUILT BY HAND, not via toLocaleDateString. A locale formatter cannot be
+   *  relied on to give day-first or to use hyphens — that instability is
+   *  exactly what forced an explicit 'en-GB' an hour ago, and hand-formatting
+   *  removes the dependency rather than pinning it.
+   *
+   *  Formatting a timestamp the server supplied is expressly allowed
+   *  (BROWSER_CONTRACT); computing an age on a timer is not, and this does not. */
   obsShortDate(ts) {
-    // en-GB explicitly, not the browser default: the default renders "Jun 24"
-    // on a US locale and "24 Jun" here, so the axis would silently change shape
-    // depending on who is looking at it. The mesh is in Somerset; day-first is
-    // the right and stable answer.
-    return new Date(ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const d = new Date(ts * 1000);
+    return String(d.getDate()).padStart(2, '0') + '-' + String(d.getMonth() + 1).padStart(2, '0');
   },
 
   /** ATTEMPTS AND ANSWERS PER DAY. The 27 July cliff — ~1,000/day to 1, because

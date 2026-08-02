@@ -1,6 +1,6 @@
 ---
 module: OBSERVATORY_CHARTS
-source_hash: a79c2838fb4a8d8ea4c12ae831fb7397c2c9c4727ca54d6d58b58c35de96fa58
+source_hash: d6609ce2ab321a804f2fb6eda28dd7c0c0ac827e67bd178745d2b7abb78a7fe7
 updated: 2026-08-02
 ---
 
@@ -118,10 +118,11 @@ shipped without one — it plotted time and never said what the horizontal meant
 Peter: *"records over time has no x axis, and you can use a very short form for
 date/time, we know what year it is."*
 
-Format is `24 Jun` — **no year**, because the series is all one year and the label
-must fit the column rather than the column stretching for the label. Forced to
-`en-GB`, not the browser default: the default renders `Jun 24` on a US locale, so
-the axis would silently change shape depending on who was looking at it.
+Format is `24-06` — day-month, zero padded, **no year**, because the series is
+all one year and the label must fit the column rather than the column stretching
+for the label. Built by hand rather than through `toLocaleDateString`: a locale
+formatter gives neither day-first nor hyphens reliably, and pinning a locale to
+work around that is weaker than not depending on one.
 
 The daily chart thins its labels to roughly five so they never collide across 30
 bars, and uses the same formatter, so the two charts read as a pair.
