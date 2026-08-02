@@ -314,32 +314,81 @@ export const observatoryMixin = {
    *  in the UI for exactly that reason. */
   obsNodeCount() { return new Set(this.observations.map(o => o.entity)).size; },
 
-  /** How a packet reached us. "RF" or "MQTT" — never blank.
+  /** The feed's own summary line. Counting the RENDERED list is expressly
+   *  allowed — it describes what is on screen, not a claim about the mesh.
    *
-   *  An MQTT arrival crossed no radio distance, so it must never be mistaken
-   *  for something we heard. Older rows recorded before the flag shipped have
-   *  no `via_mqtt` at all and render as an em dash: unknown provenance is its
-   *  own answer, and defaulting them to "RF" would credit the reach model with
-   *  contacts that may never have happened. */
-  obsVia(o) {
-    const v = o?.data?.via_mqtt;
-    if (v === undefined || v === null) return '—';
-    return v ? 'MQTT' : 'RF';
-  },
-
-  /** The feed's own summary line. Counting the rendered list is expressly
-   *  allowed — it describes what is on screen, not a claim about the mesh —
-   *  and the split is the point: a feed that is mostly MQTT is not evidence of
-   *  reach, and that has to be visible rather than inferred. */
+   *  There is no RF/MQTT split here any more and there must not be one: MQTT
+   *  arrivals never enter the store (spec §3a), so every row on this page was
+   *  heard on air by construction. A column reporting that would be a column
+   *  that is always the same. */
   obsFeedSummary() {
     const n = this.observations.length;
     const az = this.observations.filter(o => this.obsHasAz(o)).length;
-    const mqtt = this.observations.filter(o => o.data?.via_mqtt === true).length;
-    const rf = this.observations.filter(o => o.data?.via_mqtt === false).length;
-    const parts = [`${n} on screen`, `${az} with a bearing`];
-    if (rf || mqtt) parts.push(`${rf} RF · ${mqtt} MQTT`);
-    return parts.join(' · ');
+    return `${n} on screen · ${az} with a bearing`;
   },
+
+  /** Replayed to every new connection — see observatory-ws.js. Without this the
+   *  page is blank until the next packet, which on a quiet channel is minutes
+   *  and reads as broken. */
+  applyObservationsReplay(ev) {
+    this.observations = (ev.observations || []).slice(0, MAX_ROWS);
+  },
+
+  /** One observation, as it is recorded. */
+  applyObservation(ev) {
+    const o = ev.observation;
+    if (!o) return;
+    this.observations = [o, ...this.observations].slice(0, MAX_ROWS);
+  },
+
+  // ── Pure renderers. Formatting only; nothing is derived or decided. ────────
+
+  obsTime(ts) {
+    if (!ts) return '';
+    return new Date(ts * 1000).toLocaleTimeString([], { hour12: false });
+  },
+
+  /** The receiving radio's label, from the roster the server already pushed.
+   *  Falls back to the raw MAC rather than inventing a name. */
+  obsRadio(mac) {
+    if (!mac) return '—';
+    return this.deviceLabel?.(mac) || this.deviceConfigs?.[mac]?.label || mac.slice(0, 8);
+  },
+
+  /** A node's short name if the server has sent one, else its raw num. Never
+   *  guessed — an unnamed node shows as a number, which is honest.
+   *
+   *  Looks up by num rather than through nodeById(), which takes a `!hex` id
+   *  and threw `nodeId?.startsWith is not a function` 182 times when handed the
+   *  numeric entity. An observation's entity is opaque to the engine and
+   *  happens to be a node num here; converting it to an id would be this page
+   *  asserting a format the store does not guarantee. */
+  obsNode(entity) {
+    const num = Number(entity);
+    if (!Number.isFinite(num)) return entity;
+    const n = this.nodes?.find?.(x => x.num === num);
+    return n?.user?.short_name || entity;
+  },
+
+  /** THE COLUMN THIS PAGE EXISTS FOR. Null is rendered as an em dash, never as
+   *  0 — north is a real bearing and a blank must not read as one. */
+  obsAz(o) {
+    const az = o?.data?.az;
+    return (az == null) ? '—' : `${az}°`;
+  },
+
+  /** Bearing rows are the ones with information in them; everything else is
+   *  context. Used to tint, not to filter — a filtered feed hides how much of
+   *  the traffic carries no bearing, which is itself worth seeing. */
+  obsHasAz(o) { return o?.data?.az != null; },
+
+  obsNum(v, suffix = '') { return (v == null) ? '—' : `${v}${suffix}`; },
+
+  /** Distinct nodes among the observations ON SCREEN. Describes the list being
+   *  rendered, not a fact about the mesh — a mesh-wide count would be a derived
+   *  claim and belongs to the server (BROWSER_CONTRACT). Labelled "on screen"
+   *  in the UI for exactly that reason. */
+  obsNodeCount() { return new Set(this.observations.map(o => o.entity)).size; },
 
   // obsRelayName() was here and is gone. It looked the name up in this.nodes,
   // which is a FILTERED list — 4 entries at the time — so every relay rendered

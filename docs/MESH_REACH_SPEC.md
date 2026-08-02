@@ -189,27 +189,29 @@ hear tells us the inbound path works. It is not proof of outbound reach, but it
 is proof the node is alive and roughly where, which is what makes an attempt
 worth spending.
 
-### 3a. An MQTT arrival is not a hit — of any kind
+### 3a. An MQTT arrival is not a hit — it is not a reception at all
+
+Peter, 2026-08-02: *"we are not interested in via mqtt, those are not radio hops,
+we can achieve unlimited distance over mqtt, that is meaningless."*
 
 A packet delivered over the MQTT bridge crossed **no radio distance**. It is not
-passive reception, it does not prove an inbound path, and it must never be
-counted toward reach or used to justify an attempt.
+passive reception, it proves no inbound path, and it says nothing about reach —
+over a broker the answer to "how far" is unbounded and therefore worthless.
 
-Every observation therefore records `via_mqtt` (`docs/modules/observations.md`).
-This was added on 2026-08-02 after measuring that nothing in the store could
-separate the two: the unverified positioned nodes "heard in the last day" ran to
-428 km and one to 1,681 km, and there was no field that could say whether those
-had crossed air or a broker.
+**The rule is exclusion at capture, not a flag.** `packetObservation()` returns
+`null` for `packet.via_mqtt` (`docs/modules/observations.md`). The observation
+store is therefore a record of radio receptions *by construction*, and no
+inference, panel or reader has to remember to filter.
 
-**Measured on the day it shipped: zero MQTT arrivals** — 57 live receptions and
-762 `range_test_log` rows, all RF. So the flag is a guard, not a correction. It
-exists because the failure it prevents is silent and retroactive: a gateway
-enabling MQTT would inflate every reach figure computed from receptions
-afterwards, with nothing in the data to reveal it.
+The first implementation stored them with a `via_mqtt` flag. That was wrong for a
+reason worth keeping: a flag is a filter every future consumer can forget, and
+one that forgot would credit the model with a 1,681 km "contact". A store that
+cannot contain the wrong thing needs no discipline to read correctly.
 
-**Rows written before the flag existed carry no value at all**, and must be
-treated as *unknown provenance*, never as RF. Defaulting them would manufacture
-exactly the confidence this rule removes.
+Discards are **counted** (`mqttDiscarded()`) and logged only when non-zero — a
+silent drop is indistinguishable from a quiet channel. Measured on the day the
+rule shipped: zero, across 57 live receptions and 762 `range_test_log` rows. Our
+gateways are not bridging. The counter exists for the day one does.
 
 ## 4. A miss proves nothing — the censoring rule
 

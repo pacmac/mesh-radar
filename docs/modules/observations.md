@@ -1,7 +1,7 @@
 ---
 module: observations
 source: src/observations.js
-source_hash: 03eca0e8f5325d67fd555cf4df4efcf44d2f2cc67ed0219ba60e12b502525451
+source_hash: 3c723f080690c149c0dadb3f2fa511a7be0c129e9d49aef737649216b3f41bb4
 updated: 2026-08-02
 ---
 
@@ -53,43 +53,49 @@ the function untestable without a live rotator and a database.
 kind    'reception'
 entity  packet.from
 source  receiving radio MAC
-data    { rx_device, az, beam_deg, rssi, snr, hops, via_mqtt, portnum, packet_id }
+data    { rx_device, az, beam_deg, rssi, snr, hops, portnum, packet_id }
 ```
 
 **A replay returns `null`.** Re-ingesting July's packets must never be stamped
 with today's antenna position — that would manufacture bearings that were never
 measured, fabricating the very data this exists to start collecting.
 
-## `via_mqtt` — how it got here, and why that is not a detail
+## MQTT arrivals are dropped, not flagged
 
-The project asks how far we can reach **on air**. A packet delivered by the MQTT
-bridge travelled no radio distance at all, and stored without this flag it is
-indistinguishable from one we heard.
+Peter, 2026-08-02: *"we are not interested in via mqtt, those are not radio
+hops, we can achieve unlimited distance over mqtt, that is meaningless."*
 
-It matters at exactly the distances that matter. Measured 2026-08-02, the
-positioned nodes we have never verified a route to but which were "heard in the
-last day" run to **428 km**, and one to **1,681 km**. Those are not LoRa
-contacts. Before this flag there was nothing in the store that could say so, and
-any reach claim built on receptions would have been unfalsifiable.
+He is right, and the consequence is architectural rather than cosmetic. A packet
+delivered over the MQTT bridge crossed **no radio distance**. `packetObservation`
+returns `null` for it, alongside the replay guard and for the same reason: this
+store is a record of things heard **on air**, and something that was not must not
+be in it.
 
-`mesh-gw` supplies it on every packet (`docs/gw/API_SSE.md`, inside
-`data.packet`). node-dash already used it in `passive-tracer.js` and
-`range_test_log`; the observation path threw it away.
+**Dropped at capture, not filtered at read.** The first attempt (128e5fa)
+recorded MQTT packets with `via_mqtt: true` and left every consumer free to
+forget the check — one inference skipping it would quietly credit us with a
+1,681 km contact that crossed a broker and not one metre of air. Excluded here,
+it cannot be forgotten by anything downstream, and no reader has to know MQTT
+exists.
 
-**Boolean, never null.** This is the one field that does *not* follow the
-null-when-unknown rule, and deliberately so: an absent flag defaulting to "RF"
-would silently credit MQTT arrivals as reach, which is the whole failure this
-prevents. The gw always sends it, so `!!packet.via_mqtt` is a reading, not a
-guess. Rows written *before* the flag shipped have no key at all, and the page
-renders those as an em dash rather than as RF.
+**There is no `via_mqtt` field on the payload.** A boolean that is always false
+is noise, and worse: it invites a reader to check it and conclude the store might
+contain the other kind.
 
-### What it measured
+### Counted, not silent
 
-Zero. Over 57 live receptions in three minutes and 762 rows of
-`range_test_log`, **every arrival is RF** — our gateways are not currently
-taking MQTT-bridged traffic. So this is a guard rather than a correction: the
-moment a gateway enables MQTT, the feed would otherwise start quietly inflating
-the reach figures with contacts that never crossed a metre of air.
+`mqttDiscarded()` returns how many have been dropped since boot, and
+`observatory-ws.js` logs it **only when non-zero**. A silent discard is
+indistinguishable from a quiet channel.
+
+Measured 2026-08-02: **zero** — 57 live receptions over three minutes and 762
+rows of `range_test_log`, every one RF. Our gateways are not bridging today. The
+counter exists for the day one starts, because that failure would otherwise be
+both silent and retroactive.
+
+A module-level counter rather than a stored row, because a discarded packet is
+not an observation of anything — and it keeps the function pure in the sense the
+boundary test cares about: no db, no clock, no network, no `src/` imports.
 
 ## `antennaBearing()` — null unless it means something
 

@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 1d80ef8b69ea13eaea56bbf8c5860c80d09d18322836c2edd3e03100a3bea955
+source_hash: dfad1b8bf5a81ab6a3e92d7db66474f52a385ec8207934141d9e9634556ace83
 updated: 2026-08-02
 ---
 
@@ -57,17 +57,15 @@ obsHasAz(o)          // tints the row; does not filter
 obsNum(v, suffix)    // value or em dash
 obsNodeCount()       // distinct nodes ON SCREEN
 obsRelayShare(uses)  // bar width relative to the busiest door
-obsVia(o)            // "RF" | "MQTT" | em dash — never assumed
-obsFeedSummary()     // rows on screen, bearings, and the RF/MQTT split
+obsFeedSummary()     // rows on screen, and how many carry a bearing
 ```
 
-### `obsVia` — an em dash for rows written before the flag
+### There is no `obsVia` — and that is the design
 
-`via_mqtt` is a boolean on every observation recorded from 2026-08-02 onward
-(spec §3a). Rows older than that have no key, and they render as an em dash
-rather than as `RF`. Defaulting them would credit the reach model with contacts
-that may never have crossed air — the same class of error as `obsAz` rendering
-an unknown bearing as north.
+An earlier version rendered an `RF` / `MQTT` column. MQTT arrivals are now
+dropped at the mapper (spec §3a), so every row here was heard on air by
+construction and the column would always say `RF`. The exclusion lives where it
+cannot be forgotten rather than in a value the page has to interpret.
 
 ### `obsAz` — em dash, never zero
 

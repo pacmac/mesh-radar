@@ -31,6 +31,21 @@ export function packetObservation(packet, device, ts, replay, rotatorStatus, dev
   // measured — fabricating precisely the data this exists to start collecting.
   if (replay) return null;
 
+  // AN MQTT ARRIVAL IS NOT A RECEPTION. Peter, 2026-08-02: "we are not
+  // interested in via mqtt, those are not radio hops, we can achieve unlimited
+  // distance over mqtt, that is meaningless."
+  //
+  // He is right, and the consequence is that this belongs HERE rather than in a
+  // stored flag. The first attempt recorded MQTT packets with `via_mqtt: true`
+  // and left every consumer free to forget the filter — one inference that
+  // skipped the check would quietly credit us with a 1,681 km contact that
+  // crossed a broker and not one metre of air. Excluded at capture, it cannot
+  // be forgotten by anything downstream.
+  //
+  // The store is therefore a record of RADIO receptions, by construction, and
+  // no reader has to know that MQTT exists.
+  if (packet.via_mqtt) { _mqttDiscarded++; return null; }
+
   const hops = packet.hop_start != null
     ? Math.max(0, packet.hop_start - (packet.hop_limit ?? 0))
     : null;
@@ -47,22 +62,10 @@ export function packetObservation(packet, device, ts, replay, rotatorStatus, dev
       rssi:      num(packet.rx_rssi),
       snr:       num(packet.rx_snr),
       hops,
-      // HOW IT GOT HERE, and this is not a detail. The project asks how far we
-      // can reach ON AIR; a packet delivered by the MQTT bridge travelled no
-      // radio distance at all, and stored without this flag it is
-      // indistinguishable from one we heard.
-      //
-      // It matters at exactly the distances that matter: measured 2026-08-02,
-      // the unverified candidates "heard in the last day" run to 428 km and one
-      // at 1,681 km. Those are not LoRa contacts. Without via_mqtt there is
-      // nothing in the store that can say so, and every reach claim built on
-      // receptions would be unfalsifiable.
-      //
-      // Boolean, never null — the gw sends it on every packet
-      // (docs/gw/API_SSE.md), and an absent flag defaulting to "RF" would
-      // silently credit MQTT arrivals as reach, which is the failure this
-      // exists to prevent.
-      via_mqtt:  !!packet.via_mqtt,
+      // No `via_mqtt` field: an observation that exists arrived over the air,
+      // because the MQTT ones never get this far. A boolean that is always
+      // false is noise, and worse, it invites a reader to check it and conclude
+      // the store might contain the other kind.
       portnum:   packet.decoded?.portnum ?? null,
       packet_id: packet.id ?? null,
     },
@@ -123,3 +126,16 @@ export function beamwidth(device, deviceCfgs) {
 }
 
 const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+
+// How many MQTT arrivals have been dropped. COUNTED, NOT SILENT: measured
+// 2026-08-02 this is zero — 57 live receptions and 762 range_test_log rows,
+// every one RF — so our gateways are not bridging today. If that changes, the
+// number moves, and a silent discard would look identical to a quiet channel.
+//
+// A module-level counter rather than a stored row, because the discarded packet
+// is not an observation of anything. This keeps the function pure in the sense
+// the boundary test cares about — no db, no clock, no network, no src/ imports.
+let _mqttDiscarded = 0;
+
+/** MQTT arrivals dropped since boot. */
+export function mqttDiscarded() { return _mqttDiscarded; }

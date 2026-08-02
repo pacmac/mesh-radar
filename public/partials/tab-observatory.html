@@ -277,7 +277,9 @@
   <div x-show="obsTab==='receptions'" class="flex-1 min-h-0 flex flex-col gap-2">
 
     <div class="flex items-baseline gap-3 flex-wrap shrink-0">
-      <span class="text-xs text-base-content/50">every packet heard, and where the antenna was pointing</span>
+      <!-- "heard" is literal: MQTT arrivals never enter the store (spec §3a),
+           so there is no arrival-path column and nothing here to filter. -->
+      <span class="text-xs text-base-content/50">every packet heard on air, and where the antenna was pointing</span>
       <span class="ml-auto text-xs font-mono text-base-content/50"
             x-text="obsFeedSummary()"></span>
     </div>
@@ -303,7 +305,6 @@
                 <th class="w-16 text-right">RSSI</th>
                 <th class="w-16 text-right">SNR</th>
                 <th class="w-14 text-right">Hops</th>
-                <th class="w-16">Via</th>
                 <th>Port</th>
               </tr>
             </thead>
@@ -321,10 +322,6 @@
                   <td class="text-right" x-text="obsNum(o.data?.rssi)"></td>
                   <td class="text-right text-base-content/60" x-text="obsNum(o.data?.snr)"></td>
                   <td class="text-right" x-text="obsNum(o.data?.hops)"></td>
-                  <!-- HOW IT ARRIVED. An MQTT packet crossed no radio distance;
-                       it must never be mistaken for something we heard. -->
-                  <td :class="o.data?.via_mqtt ? 'text-warning' : 'text-base-content/40'"
-                      x-text="obsVia(o)"></td>
                   <td class="text-base-content/40 truncate" x-text="o.data?.portnum || '—'"></td>
                 </tr>
               </template>

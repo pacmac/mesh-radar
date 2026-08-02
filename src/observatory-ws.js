@@ -15,6 +15,7 @@
 import { events, recentObservations, facts, runInference } from './observatory.js';
 import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
 import { resolveNodeLabel } from './node-label.js';
+import { mqttDiscarded } from './observations.js';
 import { getConfig, getCachedGeocode } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
@@ -325,6 +326,13 @@ function recompute(broadcast) {
       const r = runInference(key);
       console.log(`[observatory] ${r.key}: ${r.facts} facts from ${r.rows} evidence rows`);
     }
+    // ONLY WHEN NON-ZERO. MQTT arrivals never enter the store (§3a) — they are
+    // dropped at the mapper — but a silent discard is indistinguishable from a
+    // quiet channel. Today this number is zero and the line never prints; the
+    // day a gateway starts bridging, it does.
+    const dropped = mqttDiscarded();
+    if (dropped) console.log(`[observatory] ${dropped} MQTT arrivals discarded since boot — not radio hops`);
+
     broadcast?.({ type: 'relay_usage', relays: relayUsage() });
     broadcast?.({ type: 'reach_model', reach: reachModel() });
     broadcast?.({ type: 'mesh_links', links: meshLinks() });
