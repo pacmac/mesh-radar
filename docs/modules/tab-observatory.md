@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: ad1080af1183277e86671c961d33822b60634d927bc6a93d235e6081615322f6
+source_hash: a5772c88042dec04bbd6d2c87ad536906d4b289a6d9455bceddcbe2d0842925d
 updated: 2026-08-02
 ---
 
@@ -39,6 +39,15 @@ moves**.
 | Missions | awaiting the scheduler (blocked on spec §9) |
 | Record ladder | **live** — `reach.ladder` |
 | Receptions | **live** |
+
+### The feed summary line
+
+`obsFeedSummary()` reports rows on screen, how many carry a bearing, and the
+RF/MQTT split. Counting the *rendered list* is expressly allowed — it describes
+what is on screen, not a claim about the mesh — and the split is the point: a
+feed that is mostly MQTT is not evidence of reach, and that has to be visible
+rather than inferred. The RF/MQTT half is omitted entirely while every row
+predates the flag, rather than showing a misleading `0 · 0`.
 
 ### Map legend
 
@@ -84,6 +93,11 @@ never wired to data, never re-pointed, never overwritten by what derives from it
 - **The bearing column tints rows rather than filtering them** — hiding the
   bearing-less majority would hide how much traffic carries no bearing, which is
   itself worth seeing.
+- **The Via column says how the packet arrived — `RF` or `MQTT`, never blank.**
+  An MQTT arrival crossed no radio distance and must never read as something we
+  heard; it is tinted `text-warning` so it cannot be skimmed past. Rows recorded
+  before the flag shipped render as an em dash: unknown provenance is its own
+  answer (spec §3a).
 - **Empty panels say "waiting for a feed, not for data."**
 - Counts labelled "on screen" are the rendered list, not a claim about the mesh.
 

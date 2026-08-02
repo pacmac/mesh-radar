@@ -1,7 +1,7 @@
 ---
 module: observations
 source: src/observations.js
-source_hash: 4ac6179364863c4fc5d5b8ddb8e53e89a78cf3909f14735b7ac2ff3faa880370
+source_hash: 03eca0e8f5325d67fd555cf4df4efcf44d2f2cc67ed0219ba60e12b502525451
 updated: 2026-08-02
 ---
 
@@ -53,12 +53,43 @@ the function untestable without a live rotator and a database.
 kind    'reception'
 entity  packet.from
 source  receiving radio MAC
-data    { rx_device, az, beam_deg, rssi, snr, hops, portnum, packet_id }
+data    { rx_device, az, beam_deg, rssi, snr, hops, via_mqtt, portnum, packet_id }
 ```
 
 **A replay returns `null`.** Re-ingesting July's packets must never be stamped
 with today's antenna position — that would manufacture bearings that were never
 measured, fabricating the very data this exists to start collecting.
+
+## `via_mqtt` — how it got here, and why that is not a detail
+
+The project asks how far we can reach **on air**. A packet delivered by the MQTT
+bridge travelled no radio distance at all, and stored without this flag it is
+indistinguishable from one we heard.
+
+It matters at exactly the distances that matter. Measured 2026-08-02, the
+positioned nodes we have never verified a route to but which were "heard in the
+last day" run to **428 km**, and one to **1,681 km**. Those are not LoRa
+contacts. Before this flag there was nothing in the store that could say so, and
+any reach claim built on receptions would have been unfalsifiable.
+
+`mesh-gw` supplies it on every packet (`docs/gw/API_SSE.md`, inside
+`data.packet`). node-dash already used it in `passive-tracer.js` and
+`range_test_log`; the observation path threw it away.
+
+**Boolean, never null.** This is the one field that does *not* follow the
+null-when-unknown rule, and deliberately so: an absent flag defaulting to "RF"
+would silently credit MQTT arrivals as reach, which is the whole failure this
+prevents. The gw always sends it, so `!!packet.via_mqtt` is a reading, not a
+guess. Rows written *before* the flag shipped have no key at all, and the page
+renders those as an em dash rather than as RF.
+
+### What it measured
+
+Zero. Over 57 live receptions in three minutes and 762 rows of
+`range_test_log`, **every arrival is RF** — our gateways are not currently
+taking MQTT-bridged traffic. So this is a guard rather than a correction: the
+moment a gateway enables MQTT, the feed would otherwise start quietly inflating
+the reach figures with contacts that never crossed a metre of air.
 
 ## `antennaBearing()` — null unless it means something
 

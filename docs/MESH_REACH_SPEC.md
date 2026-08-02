@@ -189,6 +189,28 @@ hear tells us the inbound path works. It is not proof of outbound reach, but it
 is proof the node is alive and roughly where, which is what makes an attempt
 worth spending.
 
+### 3a. An MQTT arrival is not a hit — of any kind
+
+A packet delivered over the MQTT bridge crossed **no radio distance**. It is not
+passive reception, it does not prove an inbound path, and it must never be
+counted toward reach or used to justify an attempt.
+
+Every observation therefore records `via_mqtt` (`docs/modules/observations.md`).
+This was added on 2026-08-02 after measuring that nothing in the store could
+separate the two: the unverified positioned nodes "heard in the last day" ran to
+428 km and one to 1,681 km, and there was no field that could say whether those
+had crossed air or a broker.
+
+**Measured on the day it shipped: zero MQTT arrivals** — 57 live receptions and
+762 `range_test_log` rows, all RF. So the flag is a guard, not a correction. It
+exists because the failure it prevents is silent and retroactive: a gateway
+enabling MQTT would inflate every reach figure computed from receptions
+afterwards, with nothing in the data to reveal it.
+
+**Rows written before the flag existed carry no value at all**, and must be
+treated as *unknown provenance*, never as RF. Defaulting them would manufacture
+exactly the confidence this rule removes.
+
 ## 4. A miss proves nothing — the censoring rule
 
 **This is the single most important statistical constraint and the model must be

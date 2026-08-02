@@ -47,6 +47,22 @@ export function packetObservation(packet, device, ts, replay, rotatorStatus, dev
       rssi:      num(packet.rx_rssi),
       snr:       num(packet.rx_snr),
       hops,
+      // HOW IT GOT HERE, and this is not a detail. The project asks how far we
+      // can reach ON AIR; a packet delivered by the MQTT bridge travelled no
+      // radio distance at all, and stored without this flag it is
+      // indistinguishable from one we heard.
+      //
+      // It matters at exactly the distances that matter: measured 2026-08-02,
+      // the unverified candidates "heard in the last day" run to 428 km and one
+      // at 1,681 km. Those are not LoRa contacts. Without via_mqtt there is
+      // nothing in the store that can say so, and every reach claim built on
+      // receptions would be unfalsifiable.
+      //
+      // Boolean, never null — the gw sends it on every packet
+      // (docs/gw/API_SSE.md), and an absent flag defaulting to "RF" would
+      // silently credit MQTT arrivals as reach, which is the failure this
+      // exists to prevent.
+      via_mqtt:  !!packet.via_mqtt,
       portnum:   packet.decoded?.portnum ?? null,
       packet_id: packet.id ?? null,
     },

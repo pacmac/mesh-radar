@@ -314,6 +314,33 @@ export const observatoryMixin = {
    *  in the UI for exactly that reason. */
   obsNodeCount() { return new Set(this.observations.map(o => o.entity)).size; },
 
+  /** How a packet reached us. "RF" or "MQTT" — never blank.
+   *
+   *  An MQTT arrival crossed no radio distance, so it must never be mistaken
+   *  for something we heard. Older rows recorded before the flag shipped have
+   *  no `via_mqtt` at all and render as an em dash: unknown provenance is its
+   *  own answer, and defaulting them to "RF" would credit the reach model with
+   *  contacts that may never have happened. */
+  obsVia(o) {
+    const v = o?.data?.via_mqtt;
+    if (v === undefined || v === null) return '—';
+    return v ? 'MQTT' : 'RF';
+  },
+
+  /** The feed's own summary line. Counting the rendered list is expressly
+   *  allowed — it describes what is on screen, not a claim about the mesh —
+   *  and the split is the point: a feed that is mostly MQTT is not evidence of
+   *  reach, and that has to be visible rather than inferred. */
+  obsFeedSummary() {
+    const n = this.observations.length;
+    const az = this.observations.filter(o => this.obsHasAz(o)).length;
+    const mqtt = this.observations.filter(o => o.data?.via_mqtt === true).length;
+    const rf = this.observations.filter(o => o.data?.via_mqtt === false).length;
+    const parts = [`${n} on screen`, `${az} with a bearing`];
+    if (rf || mqtt) parts.push(`${rf} RF · ${mqtt} MQTT`);
+    return parts.join(' · ');
+  },
+
   // obsRelayName() was here and is gone. It looked the name up in this.nodes,
   // which is a FILTERED list — 4 entries at the time — so every relay rendered
   // as a raw number. The server now sends `label` with each relay, which is
