@@ -137,10 +137,38 @@ class MissionRunner extends EventEmitter {
 
   _emit() { this.emit('activity', this.state()); }
 
-  _schedule() {
+  /** RESCHEDULING HAPPENS HERE AND NOWHERE ELSE, IN A FINALLY.
+   *
+   *  The first version called _schedule() on each of the five return paths
+   *  inside _tick() and wrapped the timer in `.catch(() => {})`. So any throw
+   *  anywhere in a tick was swallowed AND skipped every one of those calls: the
+   *  runner died permanently after one bad tick, silently, with a full queue.
+   *  It managed exactly one mission — Peter, 2026-08-02: "it has made one
+   *  attempt and failed, but we have a whole list of targets dont we?"
+   *
+   *  A loop whose continuation depends on remembering to reschedule on every
+   *  branch is a loop that will stop. This one cannot: the finally runs whatever
+   *  the tick does, and a failure is logged rather than discarded. */
+  _schedule(delayMs = null) {
     if (!this._started) return;
     if (this._timer) clearTimeout(this._timer);
-    this._timer = setTimeout(() => this._tick().catch(() => {}), cfg().interval_sec * 1000);
+    const wait = delayMs ?? cfg().interval_sec * 1000;
+    this._timer = setTimeout(async () => {
+      // CADENCE IS MEASURED FROM THE START OF A TICK, NOT ITS END. A mission
+      // can take three minutes of its own — up to 90 s aiming the beam and 90 s
+      // waiting for a reply that never comes — and rescheduling from the end
+      // would silently halve the rate that was configured. The floor keeps a
+      // long mission from immediately triggering the next one.
+      const startedAt = Date.now();
+      try {
+        await this._tick();
+      } catch (e) {
+        console.error(`[mission] tick failed: ${e && e.stack ? e.stack : e}`);
+      } finally {
+        const elapsed = Date.now() - startedAt;
+        this._schedule(Math.max(5_000, cfg().interval_sec * 1000 - elapsed));
+      }
+    }, wait);
   }
 
   async _tick() {
@@ -157,14 +185,13 @@ class MissionRunner extends EventEmitter {
     const mode = modeName(dashMode.value);
     if (mode !== 'disc' || c.enabled === false || !tracerouteEnabled()
         || this.busy || !this._queue.length) {
-      this._schedule();
-      return;
+      return;   // the finally in _schedule() brings us back
     }
 
     const m = this._queue.shift();
     const to = Number(m.target);
     const device = transmitterForMode(mode);
-    if (!to || !device) { this._schedule(); return; }
+    if (!to || !device) return;
 
     this._current = {
       target: String(to),
@@ -197,7 +224,6 @@ class MissionRunner extends EventEmitter {
       this._queue.unshift(m);
       this._current = null;
       this._emit();
-      this._schedule();
       return;
     }
 
@@ -232,7 +258,6 @@ class MissionRunner extends EventEmitter {
     this._recent.unshift(row);
     this._recent = this._recent.slice(0, c.recent);
     this._emit();
-    this._schedule();
   }
 
   /** Point the beam at the target, and WAIT FOR THE ROTATOR TO SAY IT IS THERE.

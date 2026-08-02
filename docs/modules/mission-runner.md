@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: 8bf0058a3d421c3e57e5b53a2709053e233625e3d059721363ad7c2613a9fb3d
+source_hash: 8c46c5f866966370bed8876c6729fb1049b7edd8f96caf55048a002bd2ce0e87
 updated: 2026-08-02
 ---
 
@@ -86,6 +86,31 @@ Verified live: `WIST 234.2 km, bearing 11 → aimed 11°`, stored as
 Mode owns every per-mode behaviour including which radio transmits (Peter's
 standing rule), so the runner reads `dashMode` and idles in every other mode. See
 `docs/modules/dash-mode.md`.
+
+## Scheduling — rescheduled in a `finally`, and nowhere else
+
+The first version called `_schedule()` on each of the five return paths inside
+`_tick()`, and the timer ran `this._tick().catch(() => {})`. Any throw anywhere
+in a tick was therefore swallowed **and** skipped every one of those calls: the
+runner died permanently, silently, with a full queue. It managed exactly one
+mission before stopping.
+
+Peter, 2026-08-02: *"you see WIST is hard coded, it has made one attempt and
+failed, but we have a whole list of targets dont we?"* — not hardcoded, but he
+was right that it was stuck. Measured at the time: **queue 18, attempts 1, seven
+minutes idle** with the rotator free.
+
+A loop whose continuation depends on remembering to reschedule on every branch is
+a loop that will stop. Now there is one `_schedule()` call, in a `finally`, and
+failures are logged rather than discarded.
+
+### Cadence is measured from the START of a tick
+
+A mission can take three minutes of its own — up to 90 s aiming the beam, 90 s
+waiting for a reply that never comes. Rescheduling from the *end* would silently
+halve the configured rate. The next tick is scheduled at
+`interval − elapsed`, with a 5 s floor so a long mission cannot immediately
+trigger the next one.
 
 ## Rate
 
