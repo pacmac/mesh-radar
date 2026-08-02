@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: b057c7976c909725badf32177a5528e7648d808fcd32cccb89dd37a72fbc76d6
+source_hash: 780ff40fb4ec464a32d05eab3e92b72d0ce9c9c99b22f2d2dd88044484769b59
 updated: 2026-08-02
 ---
 

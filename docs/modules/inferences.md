@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: 40b65d47ec055a663e4a2a3bc4c0c41e047a83fd40e6ebbb996954ce04575bf9
+source_hash: 07e4cf54551aa6b9a438c506fe6227002bcf8b1a4f0dc749d27ffbc590cec0c6
 updated: 2026-08-02
 ---
 
@@ -125,14 +125,52 @@ beyond the 189.1 km record — while **423 attempts went to a single node with n
 position that has never answered**. The pool the prober never saw is where the
 information is.
 
+### The step, not the distance
+
+Peter, 2026-08-02: *"what I am expecting to see is the 189km increase, if it's
+not then we are not making use of all of that data we have?"*
+
+He was right. The first ranking used **distance from home**, which is the naive
+metric, and the runner spent every attempt on 233–234 km nodes in Cheshire and
+Bedfordshire — roughly **100 km past anything we have ever touched**, in
+corridors where no path has ever been demonstrated. Five consecutive misses.
+
+Meanwhile the data already held the better candidates:
+
+| target | km | step past a node we have **reached** |
+|---|---|---|
+| `?5C3` | 191.4 | **3.6 km** |
+| `?1F2` | 190.7 | **3.3 km** |
+| `Sen1` | 208 | 20.8 km, past `Ives` (verified 187.7) |
+| `GA3` | 212.9 | 39.3 km, past the Guernsey relays |
+| `?A20`, `WIST` | 233–234 | ~100 km |
+
+On the headline number those are 40 km apart. As propositions they are nothing
+alike: one extends a working corridor by a hop, the other is a leap into the
+dark.
+
+`step_km` is the great-circle distance from a candidate to the **nearest node we
+have actually reached** — computed from `proven`, the set of every verified
+target's position plus home, which the same evidence rows already carry.
+Suspect distances are excluded from `proven` (§12): a claim is not a place.
+
+`rank = 1000 + max(0, 300 − step × 2)`, so `record` and `unknown-record` share one
+scale and the smallest step wins regardless of which class it is in.
+
 ### Classes
 
 | class | meaning | quota |
 |---|---|---|
-| `unknown-record` | never attempted, and beyond the record | 8 |
-| `record` | attempted, no reply, and beyond the record | 5 |
+| `unknown-record` | never attempted, and beyond the record | 6 |
+| `record` | attempted, no reply, and beyond the record | 6 |
 | `reconfirm` | verified past 100 km, untried for ≥ 7 days | 4 |
-| `unknown` | never attempted | 3 |
+| `unknown` | never attempted | 4 |
+
+Rebalanced once the step metric existed. The old split gave eight slots to
+`unknown-record` and every one went to a 100 km leap, crowding out the handful of
+candidates a short hop past a working corridor. The two record classes now share
+a rank scale, so the split is about breadth of evidence rather than about which
+class wins.
 
 **A portfolio, not a sort.** Ranked purely by score the shortlist came back as
 twenty rows of *"never attempted, and would beat the 189 km record"* — the

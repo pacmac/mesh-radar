@@ -223,9 +223,9 @@ class RotatorClient extends EventEmitter {
       //   { evt:'started', cmd:'move2az', target:90 }
       //   { evt:'done',    cmd:'move2az', az:89.9, ok:true }
       //   { evt:'busy',    held:true }        ← another user holds the lock
-      if (msg.evt === 'started') { this.emit('started', msg); return; }
-      if (msg.evt === 'done')    { this.emit('done', msg);    return; }
-      if (msg.evt === 'busy')    { this.emit('busy', msg);    return; }
+      if (msg.evt === 'started') { console.log(`[rotator] started ${JSON.stringify(msg)}`); this.emit('started', msg); return; }
+      if (msg.evt === 'done')    { console.log(`[rotator] done ${JSON.stringify(msg)}`);    this.emit('done', msg);    return; }
+      if (msg.evt === 'busy')    { console.log(`[rotator] busy ${JSON.stringify(msg)}`);    this.emit('busy', msg);    return; }
       if (msg.evt === 'subs') return;
       if (msg.log != null && msg.az == null && msg.evt == null) return;   // bare log echo
 

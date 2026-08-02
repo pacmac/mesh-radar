@@ -229,6 +229,7 @@ function missions() {
       place:  shortPlace(getCachedGeocode(Number(f.entity))),
       km:     f.value.km,
       bearing: f.value.bearing ?? null,
+      step_km: f.value.step_km ?? null,
       cls:    f.value.cls,
       reason: f.value.reason,
       attempts: f.value.attempts,

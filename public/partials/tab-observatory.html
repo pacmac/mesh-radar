@@ -135,7 +135,7 @@
             <template x-if="missions?.missions?.length">
               <div class="overflow-y-auto max-h-80">
                 <table class="table table-xs font-mono tabular-nums">
-                  <thead><tr><th>Target</th><th>Where</th><th class="text-right pr-3">km</th><th>Why</th></tr></thead>
+                  <thead><tr><th>Target</th><th>Where</th><th class="text-right pr-3">km</th><th class="text-right pr-3">step</th><th>Why</th></tr></thead>
                   <tbody>
                     <template x-for="m in missions.missions" :key="m.target">
                       <tr>
@@ -148,6 +148,13 @@
                         </td>
                         <td class="text-base-content/50 truncate max-w-[10rem]" x-text="m.place || ''"></td>
                         <td class="text-right pr-3" x-text="m.km"></td>
+                        <!-- THE STEP. How far past the nearest node we have
+                             actually reached — the number that says whether an
+                             attempt is an extension or a leap. Blank for the
+                             classes where the target is itself proven ground. -->
+                        <td class="text-right pr-3"
+                            :class="m.step_km > 50 ? 'text-warning' : 'text-success'"
+                            x-text="m.step_km ? '+' + Math.round(m.step_km) : ''"></td>
                         <!-- The reason is a server-written string. The page must
                              never assemble an explanation out of numbers. -->
                         <td class="text-base-content/60 font-sans" x-text="m.reason"></td>

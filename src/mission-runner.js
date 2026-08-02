@@ -48,7 +48,7 @@ import { EventEmitter } from 'events';
 import { traceroute, tracerouteEnabled } from './traceroute.js';
 import { transmitterForMode, isTransmitterForMode, dashMode, modeName } from './dash-mode.js';
 import { rotator } from './rotator.js';
-import { getRotatorAddress } from './device-config.js';
+import { getRotatorAddress, getAllDeviceCfgs } from './device-config.js';
 import { getConfig } from './db.js';
 import { resolveNodeLabel } from './node-label.js';
 
@@ -199,6 +199,7 @@ class MissionRunner extends EventEmitter {
       place:  m.place ?? null,
       km:     m.km ?? null,
       bearing: m.bearing ?? null,
+      step_km: m.step_km ?? null,
       cls:    m.cls ?? null,
       reason: m.reason ?? null,
       device, mode,
@@ -218,6 +219,11 @@ class MissionRunner extends EventEmitter {
     this._current.az = aim.az;
     this._current.aim = aim.note;
     if (aim.wait) {
+      // A DEFERRAL MUST LEAVE A TRACE. Without this the runner sat with a full
+      // queue and zero attempts and there was nothing anywhere saying why —
+      // the mission never reaches `recent`, so the panel and the log were both
+      // silent. An invisible skip is indistinguishable from a dead loop.
+      console.log(`[mission] deferred ${this._current.label}: ${aim.note}`);
       // The rotator is busy or held by the garage alarm. Put the mission BACK
       // and try again next tick — firing an unaimed shot at a 234 km target
       // would spend the airtime and prove nothing.
@@ -289,11 +295,42 @@ class MissionRunner extends EventEmitter {
       return { az: rotator.status?.az ?? null, note: 'no bearing known', wait: false };
     }
 
-    const r = await rotator.point(bearing, { timeoutMs: c.aim_timeout_sec * 1000 });
+    // THE V4 DOES NOT ALWAYS REACH ITS TARGET, AND SAYS SO:
+    //   started {"evt":"started","cmd":"seek2az","target":30}
+    //   done    {"evt":"done","cmd":"seek2az","az":7,"ok":false}
+    // It accepted the command, moved, stopped 23 degrees short and reported the
+    // failure honestly. (The v5 on .195 is closed-loop on an encoder to 0.5
+    // degrees and would not do this — it is currently unreachable.)
+    //
+    // Treating ok:false as fatal meant every mission deferred forever and the
+    // queue never drained. But a 23 degree miss on a 35 degree beam still puts
+    // the target inside the main lobe: transmitting slightly off-boresight is
+    // enormously better than not transmitting at all. So a near miss is
+    // ACCEPTED and NAMED, and the azimuth actually achieved is what gets
+    // recorded on the attempt — never the one we asked for.
+    const beam = beamwidthOf(rotMac);
+    let r = await rotator.point(bearing, { timeoutMs: c.aim_timeout_sec * 1000 });
+
+    // One re-issue if it stopped well short. The v4 often lands closer on a
+    // second, shorter move; a third would just be stubbornness.
+    if (!r.busy && !r.timeout && r.ok === false
+        && r.az != null && Math.abs(angleDiff(r.az, bearing)) > beam / 2) {
+      r = await rotator.point(bearing, { timeoutMs: c.aim_timeout_sec * 1000 });
+    }
+
     if (r.busy)    return { az: r.az, note: 'beam held by another user', wait: true };
     if (r.timeout) return { az: r.az, note: 'rotator did not answer', wait: true };
-    if (!r.ok)     return { az: r.az, note: `move failed: ${r.err || 'unknown'}`, wait: true };
-    return { az: Math.round(r.az), note: `aimed ${Math.round(r.az)}°`, wait: false };
+    if (r.az == null) return { az: null, note: 'rotator reported no azimuth', wait: true };
+
+    const off = Math.round(Math.abs(angleDiff(r.az, bearing)));
+    const az  = Math.round(r.az);
+    if (off > beam) {
+      // Outside the main lobe entirely — this would be a shot in a different
+      // direction, and the airtime would prove nothing about the target.
+      return { az, note: `stopped ${off}° off ${Math.round(bearing)}°`, wait: true };
+    }
+    if (off > beam / 2) return { az, note: `aimed ${az}° — ${off}° off, inside the ${beam}° beam`, wait: false };
+    return { az, note: `aimed ${az}°`, wait: false };
   }
 
   /** WHAT THE ROUTE REVEALED. Computed against what was known BEFORE it landed
@@ -351,6 +388,20 @@ class MissionRunner extends EventEmitter {
       found,
     };
   }
+}
+
+/** The rotator's beamwidth, from its stored profile. Defaults to 35 — the value
+ *  the radar has used all along — rather than to something narrow, because a
+ *  too-narrow assumption rejects usable aims. */
+function beamwidthOf(mac) {
+  const b = getAllDeviceCfgs()?.[mac]?.beam_deg;
+  return (typeof b === 'number' && b > 0 && b < 360) ? b : 35;
+}
+
+/** Signed smallest angle between two bearings. 359 and 1 are 2 apart, not 358 —
+ *  the wrap is the whole reason this exists. */
+function angleDiff(a, b) {
+  return ((((a - b) % 360) + 540) % 360) - 180;
 }
 
 export const missionRunner = new MissionRunner();

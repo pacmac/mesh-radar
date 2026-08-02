@@ -493,12 +493,46 @@ registerInference({
     // The record is computed from the same rows, not passed in: an inference
     // that took the record as a dependency would rank against a stale one on
     // the run where the record itself moved.
+    //
+    // PROVEN GROUND, not just the record number. Every node we have actually
+    // reached is a place a packet of ours has demonstrably arrived, and the
+    // set of them is the shape of what we can do — the single furthest one is a
+    // summary of it, not a substitute for it.
     let record = 0;
+    const proven = [{ lat: HOME.lat, lon: HOME.lon }];   // we are, trivially, reachable
     for (const r of rows) {
       if (!r.hits) continue;
       const km = greatCircleKm(HOME.lat, HOME.lon, r.lat, r.lon);
-      if (km <= 200 && km > record) record = km;
+      if (km > 200) continue;                            // §12 — a claim, not evidence
+      proven.push({ lat: r.lat, lon: r.lon });
+      if (km > record) record = km;
     }
+
+    /** How far past the nearest node we have ACTUALLY REACHED.
+     *
+     *  THE METRIC THAT MATTERS, and raw distance from home is not it. Peter,
+     *  2026-08-02: "what I am expecting to see is the 189km increase, if it's
+     *  not then we are not making use of all of that data we have?"
+     *
+     *  He was right and this is the correction. Ranked by distance from home,
+     *  the runner spent every attempt on 233-234 km nodes in Cheshire and
+     *  Bedfordshire — about 100 km past anything we have ever touched, in
+     *  corridors where no path has ever been demonstrated. Meanwhile Sen1 sits
+     *  208 km out and just 21 km past Ives, which we verify at 187.7 km, and
+     *  GA3 sits 213 km out and 37 km past the Guernsey relays.
+     *
+     *  On the headline number those are 25 km apart. As propositions they are
+     *  nothing alike: one extends a working corridor by a hop, the other is a
+     *  leap into the dark. The step is what separates them, and it is computable
+     *  from data we have held for five weeks. */
+    const stepKm = (lat, lon) => {
+      let best = Infinity;
+      for (const q of proven) {
+        const d = greatCircleKm(lat, lon, q.lat, q.lon);
+        if (d < best) best = d;
+      }
+      return best;
+    };
 
     for (const r of rows) {
       const km = Math.round(greatCircleKm(HOME.lat, HOME.lon, r.lat, r.lon) * 10) / 10;
@@ -511,20 +545,26 @@ registerInference({
 
       let cls = null, reason = null, rank = 0;
 
+      // SMALLEST STEP FIRST, not greatest distance. A 21 km extension of a
+      // proven corridor outranks a 100 km leap into a direction we have never
+      // reached, even though the leap has the bigger headline number.
+      const step = Math.round(stepKm(r.lat, r.lon) * 10) / 10;
+      const stepScore = Math.max(0, 300 - step * 2);
+
       if (attempts === 0 && km > record) {
         cls = 'unknown-record';
-        reason = `never attempted, and would beat the ${Math.round(record)} km record`;
-        rank = 1000 + km;
+        reason = `never attempted — ${Math.round(step)} km past the nearest node we have reached, and would beat the ${Math.round(record)} km record`;
+        rank = 1000 + stepScore;
       } else if (attempts === 0) {
         cls = 'unknown';
         reason = 'never attempted — one try tells us more than a repeat anywhere';
-        rank = 700 + km;
+        rank = 700 + stepScore;
       } else if (hits === 0 && km > record) {
         cls = 'record';
-        reason = `${attempts} attempt${attempts === 1 ? '' : 's'}, no reply yet — would beat the ${Math.round(record)} km record`;
+        reason = `${attempts} attempt${attempts === 1 ? '' : 's'}, no reply yet — ${Math.round(step)} km past the nearest node we have reached, would beat the ${Math.round(record)} km record`;
         // Diminishing: the twentieth silent attempt is worth less than the
         // second. §4 says silence proves nothing, not that it is free.
-        rank = 500 + km - Math.min(120, attempts * 6);
+        rank = 1000 + stepScore - Math.min(120, attempts * 6);
       } else if (hits > 0 && km > 100 && ageDays != null && ageDays >= 7) {
         cls = 'reconfirm';
         reason = `verified ${hits}/${attempts}, untried for ${ageDays} days — is the corridor still open?`;
@@ -540,6 +580,9 @@ registerInference({
         entity: String(r.target),
         value: {
           km, cls, reason, attempts, hits,
+          // How far past proven ground. The panel shows it because it is the
+          // number that says whether an attempt is a step or a leap.
+          step_km: step,
           // THE BEARING TRAVELS WITH THE MISSION. Without it the runner cannot
           // aim, and an unaimed YAGI is a worse antenna than an omni — the
           // first discovery run fired a 234 km attempt at whatever azimuth the
@@ -569,7 +612,13 @@ registerInference({
     // are a judgement about balance, stated here rather than buried in a score:
     // most effort on ground never covered, real effort on beating the record,
     // and a standing tax on re-confirming what we already hold.
-    const QUOTA = { 'unknown-record': 8, 'record': 5, 'reconfirm': 4, 'unknown': 3 };
+    // REBALANCED once the step metric existed. The old split gave eight slots
+    // to `unknown-record` — targets never attempted and beyond the record —
+    // and every one of them went to a 100 km leap, crowding out the handful of
+    // candidates that sit a short hop past a working corridor. `record` and
+    // `unknown-record` now share the same rank scale, so the split is about
+    // breadth of evidence rather than about which class wins.
+    const QUOTA = { 'unknown-record': 6, 'record': 6, 'reconfirm': 4, 'unknown': 4 };
     const used = {};
     const top = [];
     for (const m of scored) {

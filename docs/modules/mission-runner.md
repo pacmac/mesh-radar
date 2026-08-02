@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: 8c46c5f866966370bed8876c6729fb1049b7edd8f96caf55048a002bd2ce0e87
+source_hash: e5a1e72bfe1c30fab75f6604b2860f9b7303fe3859cf2545eb2d64452041b878
 updated: 2026-08-02
 ---
 
@@ -80,6 +80,44 @@ route to an unplaced node is exactly how we learn where it is.
 
 Verified live: `WIST 234.2 km, bearing 11 → aimed 11°`, stored as
 `tx F4:12:FA:39:F7:B6, rotator_az 10`. The YAGI, on the beam, at the frontier.
+
+### The v4 does not always reach its target, and says so
+
+```
+started {"evt":"started","cmd":"seek2az","target":30}
+done    {"evt":"done","cmd":"seek2az","az":7,"ok":false}
+```
+
+It accepted the command, moved, stopped **23° short** and reported the failure
+honestly. (The v5 on `.195` is closed-loop on an encoder to 0.5° and would not
+do this — it is currently unreachable.)
+
+Treating `ok:false` as fatal meant **every mission deferred forever and the queue
+never drained** — a full queue, zero attempts, and nothing anywhere saying why.
+
+So a near miss is **accepted and named**. A 23° miss on a 35° beam still puts the
+target inside the main lobe, and transmitting slightly off-boresight is
+enormously better than not transmitting at all:
+
+| miss | outcome |
+|---|---|
+| ≤ half beam | `aimed 31°` |
+| ≤ full beam | `aimed 31° — 12° off, inside the 35° beam` |
+| > full beam | deferred; the shot would prove nothing about the target |
+
+One re-issue before judging — the v4 often lands closer on a second, shorter
+move (measured: 7° on the first attempt, 30° on the second). A third would be
+stubbornness.
+
+**The azimuth recorded on the attempt is the one achieved, never the one asked
+for.** Anything later reading `rotator_az` gets where the beam actually was.
+
+### A deferral leaves a trace
+
+`[mission] deferred ?5C3: move failed: unknown` — without it the runner sat with
+a full queue and zero attempts and there was nothing to explain it, because a
+deferred mission never reaches `recent`. An invisible skip is indistinguishable
+from a dead loop.
 
 ## Only in DISC mode
 
