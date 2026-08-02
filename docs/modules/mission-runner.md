@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: d28b0c47fe9f8b5d8ca675429d451090e6f571f3b038a4ca81ad1ddfcc6ae1a1
+source_hash: c62870f58bee160844314932d13da8cc480ea54fed3d829584f1718c3994f569
 updated: 2026-08-02
 ---
 
@@ -204,7 +204,29 @@ takes effect on the next mission with no restart.
 `DEFAULTS` and are deliberately not exposed. They are protocol timing, not
 policy — a setting nobody should be turning is not a setting.
 
-## Rate
+## The beam is held while the shot goes out
+
+`rotator.hold(hold_sec × 1000)` immediately after the aim lands, before dispatch.
+Default 15 s — sized to the real reply window (a measured manual round trip took
+**2.9 s**) rather than to the 90 s timeout, which would monopolise an antenna the
+garage alarm also needs. `0` disables it.
+
+**An off-beam shot is not charged to the target.** The azimuth is re-read at
+dispatch, not trusted from the `done` event, and if the beam has moved outside
+the beamwidth the mission is deferred without spending one of its attempts — it
+tested nothing about the target, so charging it would be a lie. (B58.)
+
+### The setting existed and did nothing, briefly
+
+`cfg()` whitelisted only `interval_sec` and `enabled` from the `discovery` key,
+so `hold_sec` read as `undefined` and no hold was ever sent — while the UI showed
+the control and the config stored the value. Caught by watching the rotator's own
+frames rather than trusting that the code path ran. The whitelist is now explicit
+and complete for what this module reads.
+
+Verified live: `ROTATOR held=true holdMs=14984 az=241` during a real mission.
+
+## Rate## Rate
 
 One attempt every **180 s** (config `mission_runner.interval_sec`), ≈ 480/day
 against the old ~1,000/day in bursts. Peter's *"not so much as to become a

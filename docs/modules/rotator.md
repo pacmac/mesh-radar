@@ -1,7 +1,7 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: e258092b8f0a18a743422cfc6625a1e4ef10270e9c625b29fd72e9a50e9d6eac
+source_hash: f690417b77e4a0ab1c1c1060add44d9c9101dcc2e2de045db41541d57b9e03ab
 updated: 2026-07-07
 ---
 
@@ -167,6 +167,36 @@ the lock. The YAGI has two users — node-dash and the garage alarm, which point
 it and **holds** it — so `busy` is a reason to wait, never to fight for the beam.
 
 The timeout is a backstop for a device that never answers. It is not a poll.
+
+## `hold(ms)` — the firmware verb, and how I got it wrong
+
+Peter, 2026-08-02: *"the pointer function seems to be unaware of the hold feature
+that the rotator now has"*, then *"and it's called hold and not lock."*
+
+I had tested `lock` — the name in `docs/ROTATOR_API_V5.md` — got
+`{"log":"No such Function: lock"}`, and told him the v4 had no hold at all. That
+proved only that `lock` is not the verb.
+
+**Asking the device settled it in one command.** `@help()` returns 40 functions
+including `@hold()`, and a bare `@hold` replies `"@hold: ms"`. Verified live:
+`hold(10000)` → `held=true`, `holdMs` counting down from 9985.
+
+`_connect()` only requests a schema when the variant is **v5**, so a v4's
+capabilities have never been read at all — node-dash works from a hardcoded list
+of three setvars (`rotator-api.js` `SETVARS.v4`). The firmware is the authority;
+the docs and our own lists are both incomplete, and this is the second time that
+has cost real work.
+
+The same `@help()` output also lists `@move2az()` on the v4, contradicting the
+comment on `move()` that said v4 has only `seek2az`. The comment is corrected;
+the command choice is unchanged.
+
+### What it is for
+
+The yagi has two users — us and the garage alarm — and the v4 drifts. *"Aimed"*
+and *"still aimed a few seconds later"* are different claims, and B58 caught the
+difference: a shot fired at az 120 when the target bearing was 30. A hold across
+the dispatch window closes that structurally.
 
 ## Invariants
 

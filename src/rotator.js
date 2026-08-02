@@ -132,9 +132,10 @@ class RotatorClient extends EventEmitter {
     return true;
   }
 
-  // Absolute closed-loop seek. Dispatches the active variant's native
-  // command: v4 seek2az (live-verified on .186), v5 move2az. Both are
-  // shortest-path absolute seeks on the encoder.
+  // Absolute closed-loop seek. v4 is driven with seek2az (live-verified on
+  // .186); v5 with move2az. NOTE, from the v4's own @help() on 2026-08-02:
+  // BOTH commands exist on v4 — @seek2az() and @move2az() are both listed. The
+  // split here is which one we chose, not which one the firmware has.
   move(az) {
     const cmd = (this._variant === 'v5') ? 'move2az' : 'seek2az';
     this._send({ action: cmd, args: [Number(az)] });
@@ -172,6 +173,31 @@ class RotatorClient extends EventEmitter {
       this.on('busy', onBusy);
       this.move(az);
     });
+  }
+
+  /** HOLD THE BEAM. The firmware verb is `hold`, and it takes milliseconds.
+   *
+   *  Peter, 2026-08-02: "the pointer function seems to be unaware of the hold
+   *  feature that the rotator now has", then "and it's called hold and not
+   *  lock." Both corrections were needed. I had tested `lock` — the name in
+   *  docs/ROTATOR_API_V5.md — got `{"log":"No such Function: lock"}` and
+   *  concluded the v4 had no hold at all. That proved only that `lock` is not
+   *  the verb.
+   *
+   *  Asking the device settled it. `@help()` lists 40 functions including
+   *  `@hold()`, and a bare `@hold` replies `"@hold: ms"`. Verified live:
+   *  `hold(10000)` → `held=true`, `holdMs` counting down from 9985.
+   *
+   *  node-dash had never asked: _connect() only requests a schema when the
+   *  variant is v5, so a v4's capabilities were never read at all and we worked
+   *  from a hardcoded list of three setvars. The firmware is the authority;
+   *  the docs and our own lists are both incomplete.
+   *
+   *  Used to keep the beam still across a mission: the yagi has two users and
+   *  the v4 has its own drift behaviour, so "aimed" and "still aimed a few
+   *  seconds later" are different claims. */
+  hold(ms) {
+    this._send({ action: 'hold', args: [Math.max(0, Math.round(Number(ms) || 0))] });
   }
 
   sendAction(action, args) {

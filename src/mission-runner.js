@@ -85,8 +85,15 @@ function cfg() {
   return {
     ...DEFAULTS,
     ...(getConfig('mission_runner', {}) || {}),
-    ...(d.interval_sec != null ? { interval_sec: d.interval_sec } : {}),
-    ...(d.enabled      != null ? { enabled:      d.enabled      } : {}),
+    // Pull every user-facing key this module consumes. An earlier version
+    // listed only interval_sec and enabled, so hold_sec silently read as
+    // undefined and the beam was never held — the setting existed, the UI
+    // showed it, and it did nothing. Whitelisting by hand is what caused that;
+    // the list is now explicit and complete for what this module reads.
+    ...(d.interval_sec        != null ? { interval_sec: d.interval_sec } : {}),
+    ...(d.enabled             != null ? { enabled: d.enabled } : {}),
+    ...(d.hold_sec            != null ? { hold_sec: d.hold_sec } : {}),
+    ...(d.attempts_per_target != null ? { attempts_per_target: d.attempts_per_target } : {}),
   };
 }
 
@@ -294,6 +301,22 @@ class MissionRunner extends EventEmitter {
       return;
     }
 
+    // WHERE IS THE BEAM *NOW*, not where did it land. The hold makes this
+    // almost always agree, but almost is not a guarantee with a shared antenna,
+    // and a shot fired off-beam tests nothing about the target.
+    const beamNow = rotator.status?.az;
+    const beamOff = (beamNow != null && m.bearing != null)
+      ? Math.abs(angleDiff(beamNow, m.bearing)) : 0;
+    const offBeam = beamOff > beamwidthOf(getRotatorAddress()) && aim.az != null;
+    if (offBeam) {
+      // B58: do NOT charge this against the budget — it proved nothing about
+      // the target, so spending one of its six shots on it would be a lie.
+      console.log(`[mission] beam drifted to ${Math.round(beamNow)}° (wanted ${m.bearing}°) — deferring ${this._current.label}`);
+      this._current = null;
+      this._emit();
+      return;
+    }
+
     this._discovered.attempts++;
     this._emit();
 
@@ -395,6 +418,13 @@ class MissionRunner extends EventEmitter {
     if (r.busy)    return { az: r.az, note: 'beam held by another user', wait: true };
     if (r.timeout) return { az: r.az, note: 'rotator did not answer', wait: true };
     if (r.az == null) return { az: null, note: 'rotator reported no azimuth', wait: true };
+
+    // HOLD IT THERE. The firmware's own verb (rotator.hold(ms)); nothing used
+    // it before. Without this the beam is free to move between the `done` event
+    // and the packet going out — B58 caught a shot fired at az 120 when the
+    // target bearing was 30.
+    const holdMs = (Number(c.hold_sec) || 0) * 1000;
+    if (holdMs > 0) rotator.hold(holdMs);
 
     const off = Math.round(Math.abs(angleDiff(r.az, bearing)));
     const az  = Math.round(r.az);

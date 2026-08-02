@@ -42,6 +42,12 @@ export const DEFAULTS = {
     // more than a week (21,864 stored attempts). A node we have not heard in
     // this many days is not attempted at all.
     max_silence_days:    14,
+    // HOLD THE BEAM for this long once aimed, so the shot goes out on the
+    // bearing we aimed at. The yagi is shared with the garage alarm and the v4
+    // drifts, so "aimed" and "still aimed a few seconds later" differ. Sized to
+    // the real reply window — a measured round trip took 2.9 s — rather than to
+    // the full timeout, which would monopolise the antenna.
+    hold_sec:            15,
     interval_sec:        180,       // seconds between missions
     enabled:             true,      // runner on/off without leaving DISC mode
     // Targeting (docs/DISCOVERY_TARGETING.md). `mode` decides whether AUTO
@@ -74,6 +80,7 @@ const DISCOVERY_LIMITS = {
   attempts_per_target: [1, 50],
   cooldown_min:        [1, 1440],
   max_silence_days:    [1, 365],
+  hold_sec:            [0, 120],
   interval_sec:        [30, 3600],
 };
 const DISCOVERY_STRATEGIES = ['ladder', 'portfolio'];

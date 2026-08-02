@@ -31,7 +31,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 33a57522d78f1e7ab9cc03e15701a3dff0d4e221b5c9c2d79d7b8c8125515d95
+source_hash: dc40b4da9051c9ecb192d9cdc5e36648546102fe22d3ce9a5e23530d40f16d5e
 updated: 2026-07-31
 ---
 
@@ -46,6 +46,10 @@ star pins a node to the sidebar; the crosshair marks it as a discovery target an
 spends airtime. Never merged — see `docs/DISCOVERY_TARGETING.md`. Neither holds
 optimistic browser state: both re-render from the re-broadcast `node_list`.
 ## The config page has a Discovery section
+
+`hold_sec` and `max_silence_days` joined it — how long to hold the shared yagi
+still after aiming, and how long a node may be silent before discovery stops
+attempting it.
 
 `max_silence_days` joined it — how long a node may be silent before discovery
 stops attempting it. Its helper text carries the measured rates (16–26% for a
