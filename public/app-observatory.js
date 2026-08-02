@@ -14,12 +14,26 @@
 // timer; formatting a timestamp it was given is expressly allowed. So rows carry
 // a clock time. When the server starts pushing a formatted age, it can replace
 // this without the page changing shape.
+import { persistSet } from './app-persist.js';
 
 // Enough to fill a tall screen and scroll a while, small enough that an idle tab
 // cannot grow without bound. The server replays 200 on connect.
 const MAX_ROWS = 500;
 
 export const observatoryMixin = {
+  // Sub-tabs. Peter, 2026-08-02: "maybe we need a main menu and sub menus for
+  // this? … that way debug sub pages can be added and we still have the main
+  // nasa dashboard."
+  //
+  // The board stays the board. Raw feeds and diagnostics live behind their own
+  // tabs, so adding the tenth debug view never costs the dashboard a pixel.
+  // Same shape as switchControlTab/switchCfgTab; no data load on switch, because
+  // everything here is WS-pushed regardless of which tab is showing.
+  switchObsTab(name) {
+    this.obsTab = name;
+    persistSet('obsTab', name);
+  },
+
   /** Newest first. Fed by both WS messages below. */
   observations: [],
 

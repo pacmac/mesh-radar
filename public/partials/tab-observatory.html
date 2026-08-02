@@ -1,176 +1,187 @@
-<!-- Observatory — the board, built whole, populated only by real data.
-     Peter, 2026-08-02: "create the page and all of it's elements, but dont
-     populate the data with dummy data, so that I can see more and more real
-     data appearing as the feeds develop."
+<!-- Observatory — the board, plus debug sub-pages beneath it.
+     Peter, 2026-08-02: "maybe we need a main menu and sub menus for this? …
+     that way debug sub pages can be added and we still have the main nasa
+     dashboard."
 
-     So every panel is here and correctly shaped from the start. A panel with no
-     feed yet says exactly what it is waiting for and names the phase that
-     supplies it — no placeholder numbers, no fake rows, nothing that could be
-     mistaken for a measurement. As each Domain 1 phase lands, its panel fills
-     and nothing moves.
+     BOARD stays the board. Raw feeds and diagnostics get their own tabs, so
+     adding the tenth debug view never costs the dashboard a pixel.
+
+     Every panel is present and correctly shaped from the start; one with no feed
+     yet says what it is waiting for and names the phase that supplies it. No
+     placeholder numbers, no fake rows — Peter: "dont populate the data with
+     dummy data, so that I can see more and more real data appearing as the feeds
+     develop."
 
      Design reference: public/_mockup-mission-control.html (frozen).
      Every value arrives over the WS. Nothing is fetched or derived here. -->
 <div class="flex-1 min-h-0 flex flex-col gap-3">
 
-  <!-- ══ HEADLINE ═══════════════════════════════════════════════════════════
-       The one number the project resolves to. Blank until the reach model
-       computes it — a distance is a claim, and an unearned one is worse than
-       none (MESH_REACH_SPEC §1a, §4). -->
   <div class="flex items-baseline gap-4 flex-wrap shrink-0">
     <h1 class="text-lg font-display font-bold tracking-wide">Observatory</h1>
     <span class="text-sm text-base-content/60">how far can we get</span>
-    <span class="ml-auto text-xs font-mono text-base-content/50"
-          x-text="observations.length + ' observations on screen'"></span>
   </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 shrink-0">
-    <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-      <div class="stat-title text-xs">Furthest verified reach</div>
-      <div class="stat-value text-2xl font-display text-base-content/25">—</div>
-      <div class="stat-desc text-xs">awaiting the reach model</div>
-    </div>
-    <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-      <div class="stat-title text-xs">Doors</div>
-      <div class="stat-value text-2xl font-display text-base-content/25">—</div>
-      <div class="stat-desc text-xs">awaiting the relay graph</div>
-    </div>
-    <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-      <div class="stat-title text-xs">Bearings recorded</div>
-      <div class="stat-value text-2xl font-display"
-           :class="observations.filter(obsHasAz).length ? 'text-primary' : 'text-base-content/25'"
-           x-text="observations.filter(obsHasAz).length || '—'"></div>
-      <div class="stat-desc text-xs">on screen, live</div>
-    </div>
-    <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-      <div class="stat-title text-xs">Nodes seen</div>
-      <div class="stat-value text-2xl font-display"
-           :class="obsNodeCount() ? '' : 'text-base-content/25'"
-           x-text="obsNodeCount() || '—'"></div>
-      <div class="stat-desc text-xs">on screen, live</div>
-    </div>
+  <div class="tabs tabs-bordered w-full sm:w-fit shrink-0">
+    <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='board' && 'tab-active font-semibold'"
+       @click="switchObsTab('board')">Board</a>
+    <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='receptions' && 'tab-active font-semibold'"
+       @click="switchObsTab('receptions')">Receptions</a>
   </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-5 gap-3 flex-1 min-h-0">
+  <!-- ══════════════════════ BOARD ══════════════════════════════════════════ -->
+  <div x-show="obsTab==='board'" class="flex-1 min-h-0 flex flex-col gap-3">
 
-    <!-- ══ LEFT: the two geometries ═════════════════════════════════════════ -->
-    <div class="lg:col-span-2 flex flex-col gap-3 min-h-0">
-
-      <div class="card bg-base-100 shadow shrink-0">
-        <div class="card-body p-3 gap-2">
-          <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-            Radar — bearing &amp; range from us</h2>
-          <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
-            <p class="text-xs text-base-content/50">Awaiting the reach model.</p>
-            <p class="text-xs text-base-content/35 mt-1">Needs a verified distance per node.</p>
-          </div>
-        </div>
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 shrink-0">
+      <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+        <div class="stat-title text-xs">Furthest verified reach</div>
+        <div class="stat-value text-2xl font-display text-base-content/25">—</div>
+        <div class="stat-desc text-xs">awaiting the reach model</div>
       </div>
-
-      <div class="card bg-base-100 shadow shrink-0">
-        <div class="card-body p-3 gap-2">
-          <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-            Map — the mesh's own ground</h2>
-          <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
-            <p class="text-xs text-base-content/50">Awaiting the relay graph.</p>
-            <p class="text-xs text-base-content/35 mt-1">Links come from stored routes; no airtime needed.</p>
-          </div>
-        </div>
+      <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+        <div class="stat-title text-xs">Doors</div>
+        <div class="stat-value text-2xl font-display text-base-content/25">—</div>
+        <div class="stat-desc text-xs">awaiting the relay graph</div>
       </div>
-
-      <div class="card bg-base-100 shadow shrink-0">
-        <div class="card-body p-3 gap-2">
-          <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-            Doors — relays our traffic depends on</h2>
-          <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-8 text-center">
-            <p class="text-xs text-base-content/50">Awaiting the relay graph.</p>
-          </div>
-        </div>
+      <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+        <div class="stat-title text-xs">Bearings recorded</div>
+        <div class="stat-value text-2xl font-display"
+             :class="observations.filter(obsHasAz).length ? 'text-primary' : 'text-base-content/25'"
+             x-text="observations.filter(obsHasAz).length || '—'"></div>
+        <div class="stat-desc text-xs">on screen, live</div>
       </div>
-
+      <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+        <div class="stat-title text-xs">Nodes seen</div>
+        <div class="stat-value text-2xl font-display"
+             :class="obsNodeCount() ? '' : 'text-base-content/25'"
+             x-text="obsNodeCount() || '—'"></div>
+        <div class="stat-desc text-xs">on screen, live</div>
+      </div>
     </div>
 
-    <!-- ══ RIGHT: missions, and the live feed ═══════════════════════════════ -->
-    <div class="lg:col-span-3 flex flex-col gap-3 min-h-0">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-1 min-h-0 overflow-y-auto">
 
-      <div class="card bg-base-100 shadow shrink-0">
-        <div class="card-body p-3 gap-2">
-          <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-            Missions — next, and the reason</h2>
-          <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-8 text-center">
-            <p class="text-xs text-base-content/50">Awaiting the scheduler.</p>
-            <p class="text-xs text-base-content/35 mt-1">
-              Blocked on who owns the transmitter (spec §9).
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- ══ LIVE — the only panel with a feed today ═════════════════════════ -->
-      <div class="card bg-base-100 shadow flex-1 min-h-0 overflow-hidden">
-        <div class="card-body p-3 gap-2 min-h-0 flex flex-col">
-          <div class="flex items-baseline gap-2 shrink-0">
+      <div class="flex flex-col gap-3">
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-2">
             <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-              Receptions — live</h2>
-            <span class="text-xs text-base-content/35 ml-auto">every packet heard, and where the antenna was pointing</span>
+              Radar — bearing &amp; range from us</h2>
+            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-14 text-center">
+              <p class="text-xs text-base-content/50">Awaiting the reach model.</p>
+              <p class="text-xs text-base-content/35 mt-1">Needs a verified distance per node.</p>
+            </div>
           </div>
-
-          <template x-if="!observations.length">
-            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-6 py-12 text-center">
-              <p class="text-sm text-base-content/60">Waiting for the first packet.</p>
-              <p class="text-xs text-base-content/40 mt-1">
-                Observations appear as they are recorded — nothing to press.
-              </p>
+        </div>
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-2">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
+              Map — the mesh's own ground</h2>
+            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-14 text-center">
+              <p class="text-xs text-base-content/50">Awaiting the relay graph.</p>
+              <p class="text-xs text-base-content/35 mt-1">Links come from stored routes; no airtime needed.</p>
             </div>
-          </template>
+          </div>
+        </div>
+      </div>
 
-          <template x-if="observations.length">
-            <div class="overflow-auto flex-1 min-h-0">
-              <table class="table table-xs table-pin-rows font-mono tabular-nums">
-                <thead>
-                  <tr>
-                    <th class="w-20">Time</th>
-                    <th class="w-24">Node</th>
-                    <th class="w-20">Radio</th>
-                    <th class="w-16 text-right">Bearing</th>
-                    <th class="w-14 text-right">Beam</th>
-                    <th class="w-16 text-right">RSSI</th>
-                    <th class="w-14 text-right">SNR</th>
-                    <th class="w-12 text-right">Hops</th>
-                    <th>Port</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template x-for="o in observations" :key="o.id">
-                    <tr :class="obsHasAz(o) ? 'bg-primary/5' : ''">
-                      <td class="text-base-content/50" x-text="obsTime(o.ts)"></td>
-                      <td x-text="obsNode(o.entity)"></td>
-                      <td class="text-base-content/60" x-text="obsRadio(o.data?.rx_device)"></td>
-                      <!-- The column this page exists for. Em dash for unknown,
-                           never 0 — north is a real bearing. -->
-                      <td class="text-right font-semibold"
-                          :class="obsHasAz(o) ? 'text-primary' : 'text-base-content/25'"
-                          x-text="obsAz(o)"></td>
-                      <td class="text-right text-base-content/40" x-text="obsNum(o.data?.beam_deg, '°')"></td>
-                      <td class="text-right" x-text="obsNum(o.data?.rssi)"></td>
-                      <td class="text-right text-base-content/60" x-text="obsNum(o.data?.snr)"></td>
-                      <td class="text-right" x-text="obsNum(o.data?.hops)"></td>
-                      <td class="text-base-content/40 truncate" x-text="o.data?.portnum || '—'"></td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
+      <div class="flex flex-col gap-3">
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-2">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
+              Missions — next, and the reason</h2>
+            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
+              <p class="text-xs text-base-content/50">Awaiting the scheduler.</p>
+              <p class="text-xs text-base-content/35 mt-1">Blocked on who owns the transmitter (spec §9).</p>
             </div>
-          </template>
+          </div>
+        </div>
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-2">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
+              Doors — relays our traffic depends on</h2>
+            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
+              <p class="text-xs text-base-content/50">Awaiting the relay graph.</p>
+            </div>
+          </div>
+        </div>
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-2">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
+              Record ladder</h2>
+            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
+              <p class="text-xs text-base-content/50">Awaiting the reach model.</p>
+            </div>
+          </div>
         </div>
       </div>
 
     </div>
+
+    <p class="text-xs text-base-content/40 shrink-0">
+      Empty panels are waiting for a feed, not for data. Each fills when its phase lands and nothing moves.
+    </p>
   </div>
 
-  <p class="text-xs text-base-content/40 shrink-0">
-    A bearing is recorded only when a directional antenna on a settled rotator heard the packet —
-    otherwise blank, never zero. Relayed packets are kept: the distant nodes worth locating are
-    exactly the ones that arrive via relays. Empty panels are waiting for a feed, not for data.
-  </p>
+  <!-- ══════════════════ RECEPTIONS — debug sub-page ═════════════════════════ -->
+  <div x-show="obsTab==='receptions'" class="flex-1 min-h-0 flex flex-col gap-2">
+
+    <div class="flex items-baseline gap-3 flex-wrap shrink-0">
+      <span class="text-xs text-base-content/50">every packet heard, and where the antenna was pointing</span>
+      <span class="ml-auto text-xs font-mono text-base-content/50"
+            x-text="observations.length + ' on screen · ' + observations.filter(obsHasAz).length + ' with a bearing'"></span>
+    </div>
+
+    <template x-if="!observations.length">
+      <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-6 py-14 text-center">
+        <p class="text-sm text-base-content/60">Waiting for the first packet.</p>
+        <p class="text-xs text-base-content/40 mt-1">Observations appear as they are recorded — nothing to press.</p>
+      </div>
+    </template>
+
+    <template x-if="observations.length">
+      <div class="card bg-base-100 shadow flex-1 min-h-0 overflow-hidden">
+        <div class="overflow-auto h-full">
+          <table class="table table-xs table-pin-rows font-mono tabular-nums">
+            <thead>
+              <tr>
+                <th class="w-20">Time</th>
+                <th class="w-28">Node</th>
+                <th class="w-20">Radio</th>
+                <th class="w-20 text-right">Bearing</th>
+                <th class="w-16 text-right">Beam</th>
+                <th class="w-16 text-right">RSSI</th>
+                <th class="w-16 text-right">SNR</th>
+                <th class="w-14 text-right">Hops</th>
+                <th>Port</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="o in observations" :key="o.id">
+                <tr :class="obsHasAz(o) ? 'bg-primary/5' : ''">
+                  <td class="text-base-content/50" x-text="obsTime(o.ts)"></td>
+                  <td x-text="obsNode(o.entity)"></td>
+                  <td class="text-base-content/60" x-text="obsRadio(o.data?.rx_device)"></td>
+                  <!-- Em dash for unknown, never 0 — north is a real bearing. -->
+                  <td class="text-right font-semibold"
+                      :class="obsHasAz(o) ? 'text-primary' : 'text-base-content/25'"
+                      x-text="obsAz(o)"></td>
+                  <td class="text-right text-base-content/40" x-text="obsNum(o.data?.beam_deg, '°')"></td>
+                  <td class="text-right" x-text="obsNum(o.data?.rssi)"></td>
+                  <td class="text-right text-base-content/60" x-text="obsNum(o.data?.snr)"></td>
+                  <td class="text-right" x-text="obsNum(o.data?.hops)"></td>
+                  <td class="text-base-content/40 truncate" x-text="o.data?.portnum || '—'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </template>
+
+    <p class="text-xs text-base-content/40 shrink-0">
+      A bearing is recorded only when a directional antenna on a settled rotator heard the packet —
+      otherwise blank, never zero. Relayed packets are kept: the distant nodes worth locating are
+      exactly the ones that arrive via relays.
+    </p>
+  </div>
+
 </div>

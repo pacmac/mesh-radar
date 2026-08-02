@@ -32,6 +32,9 @@ function dashboard() {
     // (radio-config-into-devices) — a persisted 'radio' would strand the
     // user on a tab that no longer exists.
     cfgTab:        (t => t === 'radio' ? 'bridge' : t)(persistGet('cfgTab', 'bridge')),
+    // Observatory sub-tab. Defaults to the board — the dashboard is the page;
+    // the raw feeds are diagnostics you go looking for.
+    obsTab:        persistGet('obsTab', 'board'),
     drawerOpen:    false,
     sidebarPinned: persistGet('sidebarPinned', true),
 
