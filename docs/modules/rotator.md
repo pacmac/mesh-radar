@@ -1,7 +1,7 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: f690417b77e4a0ab1c1c1060add44d9c9101dcc2e2de045db41541d57b9e03ab
+source_hash: a67ede31445313ae7c916387714dff9f0eb47801fad05029732fc97104c0cdf8
 updated: 2026-07-07
 ---
 
@@ -197,6 +197,17 @@ The yagi has two users — us and the garage alarm — and the v4 drifts. *"Aime
 and *"still aimed a few seconds later"* are different claims, and B58 caught the
 difference: a shot fired at az 120 when the target bearing was 30. A hold across
 the dispatch window closes that structurally.
+
+## `done` merges its azimuth into status
+
+A `done` frame carries **where the move actually finished**, and returning early
+left `status.az` holding a mid-travel sample until the next status frame arrived.
+Anything reading the position immediately after a move got a stale answer.
+
+That is not theoretical: the mission runner's off-beam guard read **141°** while
+the rotator was sitting on **219°** and had said so in its own `done` event, and
+deferred every mission for eleven minutes. The landed azimuth is now merged into
+`_status` before the event is emitted.
 
 ## Invariants
 

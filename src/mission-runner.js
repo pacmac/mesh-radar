@@ -304,7 +304,10 @@ class MissionRunner extends EventEmitter {
     // WHERE IS THE BEAM *NOW*, not where did it land. The hold makes this
     // almost always agree, but almost is not a guarantee with a shared antenna,
     // and a shot fired off-beam tests nothing about the target.
-    const beamNow = rotator.status?.az;
+    // Prefer the azimuth the rotator REPORTED ON LANDING (aim.az, from the done
+    // event) over a status re-read. The status frame is asynchronous and can lag
+    // a move; the done event is the device's own statement of where it stopped.
+    const beamNow = aim.az != null ? aim.az : rotator.status?.az;
     const beamOff = (beamNow != null && m.bearing != null)
       ? Math.abs(angleDiff(beamNow, m.bearing)) : 0;
     const offBeam = beamOff > beamwidthOf(getRotatorAddress()) && aim.az != null;

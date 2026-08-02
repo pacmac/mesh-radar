@@ -250,7 +250,18 @@ class RotatorClient extends EventEmitter {
       //   { evt:'done',    cmd:'move2az', az:89.9, ok:true }
       //   { evt:'busy',    held:true }        ← another user holds the lock
       if (msg.evt === 'started') { console.log(`[rotator] started ${JSON.stringify(msg)}`); this.emit('started', msg); return; }
-      if (msg.evt === 'done')    { console.log(`[rotator] done ${JSON.stringify(msg)}`);    this.emit('done', msg);    return; }
+      if (msg.evt === 'done')    {
+        console.log(`[rotator] done ${JSON.stringify(msg)}`);
+        // MERGE THE LANDED AZIMUTH INTO STATUS. `done` carries where the move
+        // actually finished, and returning early left `status.az` holding a
+        // MID-TRAVEL sample until the next status frame. Anything reading the
+        // position straight after a move got a stale answer — which made the
+        // off-beam guard defer every mission, reading 141° while the rotator
+        // sat on 219°.
+        if (msg.az != null) this._status = { ...this._status, az: msg.az };
+        this.emit('done', msg);
+        return;
+      }
       if (msg.evt === 'busy')    { console.log(`[rotator] busy ${JSON.stringify(msg)}`);    this.emit('busy', msg);    return; }
       if (msg.evt === 'subs') return;
       if (msg.log != null && msg.az == null && msg.evt == null) return;   // bare log echo

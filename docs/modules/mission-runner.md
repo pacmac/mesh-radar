@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: c62870f58bee160844314932d13da8cc480ea54fed3d829584f1718c3994f569
+source_hash: bcff25c7ccb68633bac55e8202e8c7872a5120839764592971f5ba165f54441b
 updated: 2026-08-02
 ---
 
@@ -225,6 +225,17 @@ frames rather than trusting that the code path ran. The whitelist is now explici
 and complete for what this module reads.
 
 Verified live: `ROTATOR held=true holdMs=14984 az=241` during a real mission.
+
+### The off-beam guard reads the landing, not a status re-read
+
+`aim.az` — the azimuth the rotator reported in its `done` event — is preferred
+over `rotator.status.az`. The status frame is asynchronous and can lag a move;
+the `done` event is the device's own statement of where it stopped.
+
+Reading status instead cost eleven minutes of blocked missions: the guard saw a
+mid-travel 141° against a wanted 219° that the rotator had already reached, and
+deferred every attempt. A guard against firing off-beam is worthless if its own
+input is stale.
 
 ## Rate## Rate
 
