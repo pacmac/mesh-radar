@@ -31,13 +31,20 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: cb71e5d67fa842e0d80bafe762c6c401643a358488be897ddd21911f9d4dec2d
+source_hash: 7ff2979f97dc34940c585082c0fe779fcb1507fdace612375fa73f3b71fc1e00
 updated: 2026-07-31
 ---
 
 # Module: browser-playwright-audit
 
 
+
+## Two per-node icons, two meanings
+
+`public/app-nodes.js` gained `toggleObsTarget` beside `toggleFavourite`. The gold
+star pins a node to the sidebar; the crosshair marks it as a discovery target and
+spends airtime. Never merged — see `docs/DISCOVERY_TARGETING.md`. Neither holds
+optimistic browser state: both re-render from the re-broadcast `node_list`.
 ## The config page has a Discovery section
 
 `public/app-config.js` gained `loadDiscoveryCfg`/`saveDiscoveryCfg` and

@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: d0c3bf0340133582de388c88fdd90778ab47c79b7da8a0de3bcb779fc5b9d6a0
+source_hash: 86be582b5bec130330af05095d66c19dac2dcd0fd0cce961a3a32524b5aa8fa8
 updated: 2026-08-02
 ---
 
@@ -160,6 +160,17 @@ never wired to data, never re-pointed, never overwritten by what derives from it
   would always say the same thing.
 - **Empty panels say "waiting for a feed, not for data."**
 - Counts labelled "on screen" are the rendered list, not a claim about the mesh.
+
+## Pins and the MANUAL state
+
+Each Missions row carries a pin. Pinning writes `discovery.pinned`, a single
+value, so pinning another target **moves** the pin rather than growing a list —
+concentration is the point.
+
+The status line reports **`MANUAL · nothing selected`** when the mode is manual
+and the queue is empty. That state is the reason a real `manual` mode exists:
+an empty queue with no explanation reads as broken, which is the failure this
+panel was built to prevent.
 
 ## Invariants
 

@@ -1,7 +1,7 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: 52864bfea5a030563e2aac61f6ffe4edab53d07e96f26103f9be1d7dc40fdf54
+source_hash: c43861157c89c67015ff27128f7d44c2b84826973baa3fcb38ca7e16dbfcdd73
 updated: 2026-07-16
 ---
 
@@ -158,6 +158,13 @@ value is clamped server-side (`docs/modules/config-api.md`).
 States plainly that selection changes take effect at the next recompute (up to
 15 min) while rate and on/off take effect on the next mission, because the two
 have genuinely different latencies and a silent delay reads as a broken form.
+
+## Mode sits above strategy in the Discovery section
+
+`mode` decides whether auto picks targets at all (`auto` / `targets first` /
+`manual`); `strategy` decides how it picks when it does. Orthogonal, and the
+helper text says so — two selects that look alike need to explain how they
+differ.
 
 ## Invariants
 

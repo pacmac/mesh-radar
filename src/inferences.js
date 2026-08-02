@@ -453,8 +453,14 @@ registerInference({
            COALESCE((SELECT value ->> '$.strategy'            FROM config WHERE key = 'discovery'), 'ladder') AS s_strategy,
            COALESCE((SELECT value ->> '$.window_km'           FROM config WHERE key = 'discovery'), 25)   AS s_window_km,
            COALESCE((SELECT value ->> '$.attempts_per_target' FROM config WHERE key = 'discovery'), 6)    AS s_attempts,
-           COALESCE((SELECT value ->> '$.cooldown_min'        FROM config WHERE key = 'discovery'), 30)   AS s_cooldown_min
+           COALESCE((SELECT value ->> '$.cooldown_min'        FROM config WHERE key = 'discovery'), 30)   AS s_cooldown_min,
+           COALESCE((SELECT value ->> '$.mode'                FROM config WHERE key = 'discovery'), 'auto') AS s_mode,
+           (SELECT value ->> '$.pinned'                       FROM config WHERE key = 'discovery')        AS s_pinned,
+           -- The Observatory's OWN target flag. Not nodeinfo.favourite, which
+           -- means "pin to my sidebar" and is set on our own local units.
+           COALESCE(ni.obs_target, 0)                                 AS obs_target
     FROM nodes n
+    LEFT JOIN nodeinfo ni ON ni.num = n.num
     LEFT JOIN traceroute_history th ON th.to_num = n.num
     WHERE n.lat IS NOT NULL AND n.lon IS NOT NULL AND n.lat <> 0
       AND n.num NOT IN (
@@ -492,6 +498,8 @@ registerInference({
     const WINDOW_KM = Number(rows[0].s_window_km) || 25;
     const MAX_TRIES = Number(rows[0].s_attempts) || 6;
     const COOLDOWN  = (Number(rows[0].s_cooldown_min) || 30) * 60;
+    const MODE      = String(rows[0].s_mode || 'auto');
+    const PINNED    = rows[0].s_pinned != null ? Number(rows[0].s_pinned) : null;
     // §12: beyond this a self-reported position is not evidence, it is a
     // claim. 250 rather than the record's 200 because a MISSION may legitimately
     // aim past the current frontier — the point is to beat it — but a node
@@ -547,7 +555,18 @@ registerInference({
 
     for (const r of rows) {
       const km = Math.round(greatCircleKm(HOME.lat, HOME.lon, r.lat, r.lon) * 10) / 10;
-      if (km > CEILING_KM) { skipped.suspect++; continue; }
+
+      // AN EXPLICIT CHOICE OUTRANKS EVERY AUTOMATIC EXCLUSION, including the
+      // §12 distance ceiling. Found in Phase 4: a node starred at 333 km never
+      // reached the queue because the ceiling test ran first, which defeats the
+      // point of choosing it. A traceroute does not care whether the target's
+      // self-reported position is right, and the RECORD is protected
+      // separately — reach.ladder excludes suspect distances outright, so a
+      // reply from a badly-placed node still cannot move the frontier.
+      const isPinned = PINNED != null && Number(r.target) === PINNED;
+      const isTarget = Number(r.obs_target) === 1;
+
+      if (!isPinned && !isTarget && km > CEILING_KM) { skipped.suspect++; continue; }
       const attempts = Number(r.attempts) || 0;
       const hits     = Number(r.hits) || 0;
       const lastAtt  = r.last_attempt ? Number(r.last_attempt) : null;
@@ -561,6 +580,10 @@ registerInference({
       // reached, even though the leap has the bigger headline number.
       const step = Math.round(stepKm(r.lat, r.lon) * 10) / 10;
 
+      // Your choices also bypass the WINDOW, but still respect the COOLDOWN.
+      // Without that guard, pinning plus a 180 s interval is twenty traceroutes
+      // an hour at one stranger's node — pursuit turning into harassment.
+      //
       // THE WINDOW. A ladder climbs one rung at a time: a candidate is only
       // eligible if it sits within WINDOW_KM of ground we have actually
       // reached, and the window ratchets forward when the record moves. Without
@@ -569,11 +592,23 @@ registerInference({
       //
       // `portfolio` keeps the old behaviour so a deliberate long shot is still
       // possible from the dashboard, without a deploy.
-      if (STRATEGY === 'ladder' && step > WINDOW_KM) { skipped.beyond_window++; continue; }
+      if (!isPinned && !isTarget && STRATEGY === 'ladder' && step > WINDOW_KM) {
+        skipped.beyond_window++; continue;
+      }
 
       const stepScore = Math.max(0, 300 - step * 2);
 
-      if (attempts === 0 && km > record) {
+      if (isPinned) {
+        cls = 'pinned';
+        reason = `pinned — worked ahead of everything else (${Math.round(step)} km past the nearest node we have reached`
+          + (km > CEILING_KM ? `; ${km} km is self-reported and unverifiable)` : ')');
+        rank = 1_000_000;
+      } else if (isTarget) {
+        cls = 'target';
+        reason = `your target — ${Math.round(step)} km past the nearest node we have reached`
+          + (km > CEILING_KM ? `; ${km} km is self-reported and unverifiable` : '');
+        rank = 500_000 + stepScore;
+      } else if (attempts === 0 && km > record) {
         cls = 'unknown-record';
         reason = `never attempted — ${Math.round(step)} km past the nearest node we have reached, and would beat the ${Math.round(record)} km record`;
         rank = 1000 + stepScore;
@@ -645,7 +680,16 @@ registerInference({
     // candidates that sit a short hop past a working corridor. `record` and
     // `unknown-record` now share the same rank scale, so the split is about
     // breadth of evidence rather than about which class wins.
-    const QUOTA = { 'unknown-record': 6, 'record': 6, 'reconfirm': 4, 'unknown': 4 };
+    // QUOTAS BY MODE. `mode` decides whether auto picks at all; `strategy`
+    // decides how. In `manual` every automatic class is zero, so a shortlist
+    // with nothing pinned or starred comes back EMPTY — and the panel says
+    // "MANUAL · nothing pinned" rather than idling with no explanation, which
+    // is the failure this whole afternoon was spent chasing.
+    const QUOTA = MODE === 'manual'
+      ? { pinned: 1, target: 20, 'unknown-record': 0, record: 0, reconfirm: 0, unknown: 0 }
+      : MODE === 'targets'
+        ? { pinned: 1, target: 12, 'unknown-record': 3, record: 3, reconfirm: 2, unknown: 1 }
+        : { pinned: 1, target: 4,  'unknown-record': 6, record: 6, reconfirm: 4, unknown: 4 };
     const used = {};
     const top = [];
     for (const m of scored) {
@@ -664,6 +708,8 @@ registerInference({
         cls: 'summary',
         // The panel states the rule it is running under, not just its results.
         strategy: STRATEGY,
+        mode: MODE,
+        pinned: PINNED,
         window_km: STRATEGY === 'ladder' ? WINDOW_KM : null,
         attempts_per_target: MAX_TRIES,
         cooldown_min: Math.round(COOLDOWN / 60),

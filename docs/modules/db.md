@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: fedf76bf1a67eb1bd4a9e0983919466c599a1b3a03c652ff4a99ee0268c31c51
+source_hash: 8d549ab31060b0e4fe09c064cffa6a2997e72bafe81a77e352686f051b030073
 updated: 2026-07-29
 ---
 
@@ -346,6 +346,26 @@ token (PK), from_node_id, to_num, reply_id, channel, created_at, expires_at.
 
 id, ts, from_num, to_num, rx_device, route (JSON), route_back (JSON), snr_towards (JSON),
 snr_back (JSON), relay_positions (JSON).
+
+## `obs_target` — a second flag, never the first
+
+`nodeinfo.obs_target` marks a node as a **discovery target**. It is deliberately
+not `favourite`: that flag pins a node to the sidebar and bypasses the node
+filters, and the three nodes carrying it are our own local units (TA2m, GARG,
+GARG, ~2.5 km away). Wiring discovery to it would spend airtime tracerouting the
+garage alarm. Peter: *"that favourite is used for something else. this favourite
+only applies to this observer app."*
+
+`setObsTarget()` / `listObsTargets()` mirror the favourite pair.
+
+**Guarded with `PRAGMA table_xinfo`, not `table_info`.** `table_info` omits
+generated columns, so a guard reading it can conclude the column is missing on
+every boot and re-`ALTER` forever — which took node-dash and DEV1 down once.
+
+`queryFavouriteNodes` also selects `obs_target`, because `node-list._filter()`
+synthesises a list entry from that row for a favourite that has not transmitted
+this session. Omitting it rendered a targeted node as untargeted — the icon
+silently disagreeing with the database.
 
 ## Invariants
 

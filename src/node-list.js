@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { getConfig, setConfig, getMqttNode, listFavourites, listFavouriteNodes, stmts } from './db.js';
+import { getConfig, setConfig, getMqttNode, listFavourites, listFavouriteNodes, listObsTargets, stmts } from './db.js';
 import { getRotatorAddress } from './device-config.js';
 import { passesFilter, ownDeviceNums } from './node-filter.js';
 import { haversine, bearing } from './utils.js';
@@ -35,7 +35,10 @@ function enrichFromCache(node) {
   // always wins — this only fills the gap.
   const hopsExtra = (node.hops == null && cached.hops_away != null) ? { hops: cached.hops_away } : {};
   // Persisted on nodeinfo, so it survives clearNodeCache().
-  const favExtra = { favourite: !!cached.favourite };
+  // Both flags ride the payload so the browser renders from the server and
+  // holds no local toggle state. They are separate on purpose — see
+  // docs/DISCOVERY_TARGETING.md.
+  const favExtra = { favourite: !!cached.favourite, obs_target: !!cached.obs_target };
 
   // Node already has identity — just tag _new and attach stored traceroute + warm hops
   if (node.user?.short_name || node.user?.long_name) {
@@ -410,6 +413,19 @@ class NodeList extends EventEmitter {
     this._scheduleEmit();
   }
 
+  /** Sync the discovery-target flag onto cached nodes, exactly as
+   *  syncFavourites does for the sidebar flag. Cached objects were enriched
+   *  when the node was last HEARD, so a toggle must be pushed onto the cache or
+   *  the icon renders stale until the node next transmits. */
+  syncObsTargets() {
+    const targets = new Set(listObsTargets().map(t => t.num));
+    for (const [num, node] of this._cache) {
+      const on = targets.has(num);
+      if (!!node.obs_target !== on) this._cache.set(num, { ...node, obs_target: on });
+    }
+    this._scheduleEmit();
+  }
+
   get homePos() {
     const lat = getConfig('home.lat', null);
     const lon = getConfig('home.lon', null);
@@ -448,6 +464,11 @@ class NodeList extends EventEmitter {
       filtered.push({
         num: f.num,
         favourite: true,
+        // Read from the SAME persisted row, not defaulted to false. This entry
+        // is synthesised for a favourite that has not transmitted this session,
+        // and omitting the flag renders a targeted node as untargeted — the
+        // icon would silently disagree with the database.
+        obs_target: !!f.obs_target,
         _fromCache: true,          // not heard this session — identity only
         hops: f.hops_away ?? null,
         user: { id: f.node_id, short_name: f.short_name, long_name: f.long_name,

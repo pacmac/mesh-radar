@@ -448,6 +448,15 @@
 
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
                     <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Mode</span></div>
+                      <select class="select select-bordered select-sm w-full font-mono" x-model="discoveryCfg.mode">
+                        <option value="auto">auto — the selector chooses</option>
+                        <option value="targets">targets first — your picks get most slots</option>
+                        <option value="manual">manual — only what you pin or star</option>
+                      </select>
+                      <div class="label py-0"><span class="label-text-alt text-xs opacity-40">Mode decides whether auto picks at all; strategy decides how.</span></div>
+                    </label>
+                    <label class="form-control w-full">
                       <div class="label py-1"><span class="label-text text-xs">Strategy</span></div>
                       <select class="select select-bordered select-sm w-full font-mono" x-model="discoveryCfg.strategy">
                         <option value="ladder">ladder — window past the record</option>

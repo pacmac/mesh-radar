@@ -39,6 +39,13 @@ export const DEFAULTS = {
     cooldown_min:        30,        // spacing between shots at the same target
     interval_sec:        180,       // seconds between missions
     enabled:             true,      // runner on/off without leaving DISC mode
+    // Targeting (docs/DISCOVERY_TARGETING.md). `mode` decides whether AUTO
+    // picks at all; `strategy` above decides HOW it picks. Orthogonal.
+    mode:                'auto',    // 'auto' | 'targets' | 'manual'
+    pinned:              null,      // ONE node num, or null. A singleton by
+                                    // construction — the point of pinning is
+                                    // concentration, and a pinned list is just
+                                    // the queue again.
   },
 };
 
@@ -64,6 +71,7 @@ const DISCOVERY_LIMITS = {
   interval_sec:        [30, 3600],
 };
 const DISCOVERY_STRATEGIES = ['ladder', 'portfolio'];
+const DISCOVERY_MODES = ['auto', 'targets', 'manual'];
 const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, Number(v)));
 
 router.get('/radar', (req, res) => {
@@ -139,6 +147,23 @@ router.put('/discovery', (req, res) => {
     cur[k] = n;
   }
   if (body.enabled !== undefined) cur.enabled = !!body.enabled;
+  if (body.mode !== undefined) {
+    if (!DISCOVERY_MODES.includes(body.mode)) {
+      return res.status(400).json({ error: `invalid mode: ${body.mode}` });
+    }
+    cur.mode = body.mode;
+  }
+  if (body.pinned !== undefined) {
+    if (body.pinned === null || body.pinned === '') {
+      cur.pinned = null;
+    } else {
+      const n = Number(body.pinned);
+      if (!Number.isInteger(n) || n <= 0) {
+        return res.status(400).json({ error: 'pinned must be a positive node num or null' });
+      }
+      cur.pinned = n;
+    }
+  }
 
   setConfig('discovery', cur);
   res.json(cur);

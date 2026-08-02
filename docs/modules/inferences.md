@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: 0208f05b29ad3dca5284fd417c9f54b3bc263a48471561237be203ca4fb54636
+source_hash: dbc50ff94d74011a17908074fab6b609d8c154e0a5acf82df2fdc45cec92aa2a
 updated: 2026-08-02
 ---
 
@@ -189,6 +189,37 @@ changed):
 The `global` summary fact publishes the active rule (`strategy`, `window_km`,
 `attempts_per_target`, `cooldown_min`) alongside the counts, so the panel states
 what it is running under rather than only what it produced.
+
+### Your choices outrank the ladder
+
+Full rationale in `docs/DISCOVERY_TARGETING.md`.
+
+Two classes sit above everything automatic: `pinned` (one node, `discovery.pinned`)
+and `target` (any node with `nodeinfo.obs_target`). Both bypass the window **and
+the §12 distance ceiling** — you chose them explicitly, so an automatic exclusion
+does not get to veto it. Found in Phase 4: a node starred at 333 km never reached
+the queue because the ceiling test ran first, which defeats the point of choosing
+it. The record is protected separately (`reach.ladder` excludes suspect
+distances), so a reply from a badly-placed node still cannot move the frontier —
+and the reason string says the distance is self-reported and unverifiable.
+
+**They still respect the cooldown.** Pinning plus a 180 s interval would be twenty
+traceroutes an hour at one stranger's node; that is pursuit turning into
+harassment.
+
+Quotas come from `mode`, which is orthogonal to `strategy` — `mode` decides
+whether auto picks at all, `strategy` decides how:
+
+| mode | pinned | target | automatic classes |
+|---|---|---|---|
+| `auto` | 1 | 4 | 6 / 6 / 4 / 4 |
+| `targets` | 1 | 12 | 3 / 3 / 2 / 1 |
+| `manual` | 1 | 20 | **0** |
+
+Verified live, same data, only the mode changed: `manual` returned exactly
+`pinned:89ec, target:trix` and nothing else; with nothing selected it returned
+**zero rows**, which is what lets the panel say *"MANUAL · nothing selected"*
+rather than idling with no explanation.
 
 ### Classes
 

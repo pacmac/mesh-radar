@@ -89,6 +89,28 @@ export const observatoryMixin = {
     return !!ts && (Date.now() / 1000 - ts) > 6 * 3600;
   },
 
+  /** Pin a mission to the top of the queue, or unpin it.
+   *
+   *  Writes the `discovery` config key, which is where `pinned` lives — one
+   *  value, so pinning another target moves the pin rather than adding to a
+   *  list. No local state: the row re-renders from the next missions push.
+   *
+   *  Selection is recomputed on a timer, so a pin takes effect at the next
+   *  recompute rather than instantly; the panel says as much. */
+  async togglePinned(m) {
+    if (!m?.target) return;
+    const already = String(this.missions?.summary?.pinned ?? '') === String(m.target);
+    try {
+      await fetch('/config/discovery', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: { pinned: already ? null : Number(m.target) } }),
+      }).then(r => { if (!r.ok) throw new Error('pin failed'); });
+    } catch (e) {
+      this.showToast?.(e.message || 'Could not pin target', 'error', 0);
+    }
+  },
+
   /** The radar, built as an SVG string.
    *
    *  NOT `<template x-for>` INSIDE `<svg>`, AND THIS IS NOT A STYLE CHOICE.

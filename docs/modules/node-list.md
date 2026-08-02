@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 056ad3b9ed1c1734f332e25ed601d7f34edc1b8cb4d972703e9ee2e40be81fbe
+source_hash: 417ade98db273aba7a793342d95a7c889cd2aa196f3d8ce520468c8618385d37
 updated: 2026-07-08
 ---
 
@@ -178,6 +178,16 @@ setScanActive(false)
 restoreScanNodes(nodes)  — called on restart when scan was in progress
   → only nodes with _scanAz or _scanSnr (confirmed contacts) are restored
 ```
+
+## `obs_target` rides the payload beside `favourite`
+
+Both flags are enriched onto every node so the browser renders from the server
+and holds no local toggle state. `syncObsTargets()` mirrors `syncFavourites()`.
+
+**The synthesised entry carries it too.** `_filter()` fabricates a list row for a
+favourite that has not transmitted this session; omitting `obs_target` there
+rendered a targeted node as untargeted — the icon silently disagreeing with the
+database. `queryFavouriteNodes` now selects the column for exactly that reason.
 
 ## Invariants
 

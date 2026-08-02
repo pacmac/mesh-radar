@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 4ea59f3b966a5bab647759fb9424770f97033194419d922fde29702c49695ec0
+source_hash: eaf268600d39d85df0fa67f8798f13bf32af33a4fc8d7541a162c58b6da4ce77
 updated: 2026-08-02
 ---
 
@@ -183,6 +183,15 @@ timestamp, not on a ticking timer.
 What the runner is doing now, what it has just done, and what those routes
 revealed. The `found` strings are written by the runner; the page renders them
 verbatim and assembles no explanation of its own.
+
+## `togglePinned`
+
+Writes `discovery.pinned` through the config route rather than a bespoke
+endpoint — pinning *is* a setting, and one value enforces one pinned target by
+construction. No local state; the row re-renders from the next missions push.
+
+Selection recomputes on a timer, so a pin takes effect at the next recompute
+rather than instantly, and the panel says so.
 
 ## Invariants
 

@@ -228,6 +228,18 @@ export const nodesMixin = {
     }
   },
 
+  // Discovery target — the Observatory's own flag, not the sidebar star.
+  // Same no-optimistic-state rule: the icon re-renders from the re-broadcast
+  // node_list, so what you see is always what the server holds.
+  async toggleObsTarget(n) {
+    if (!n?.num) return;
+    try {
+      await fetchJSON(`/nodes/${n.num}/obs_target`, 'PUT', { obs_target: !n.obs_target });
+    } catch (e) {
+      this.showToast(e.message || 'Could not update discovery target', 'error', 0);
+    }
+  },
+
   signalQuality(rssi, snr) {
     const pct = window.signalQuality(rssi, snr);
     if (pct === 0 && rssi == null && snr == null) return { pct: 0, label: 'No signal', cls: 'text-base-content/30', badgeCls: 'badge-ghost', none: true };

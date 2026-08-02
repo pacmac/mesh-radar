@@ -292,6 +292,24 @@ db.exec(`
     db.exec(`ALTER TABLE nodeinfo ADD COLUMN favourite INTEGER NOT NULL DEFAULT 0`);
   }
 }
+// OBSERVATORY TARGETS — a SECOND flag, deliberately not `favourite`.
+//
+// `favourite` drives the sidebar and the node-filter bypass; the three nodes
+// starred today are our own local units (TA2m, GARG, GARG, ~2.5 km away).
+// Wiring discovery to it would spend airtime tracerouting the garage alarm.
+// Peter: "that favourite is used for something else. this favourite only
+// applies to this observer app." See docs/DISCOVERY_TARGETING.md.
+//
+// GUARDED WITH table_xinfo, NOT table_info. table_info OMITS generated columns,
+// so a guard reading it can conclude the column is missing on every boot and
+// re-ALTER forever — which took node-dash and DEV1 down once already.
+{
+  const niCols2 = db.prepare(`PRAGMA table_xinfo(nodeinfo)`).all().map(r => r.name);
+  if (!niCols2.includes('obs_target')) {
+    db.exec(`ALTER TABLE nodeinfo ADD COLUMN obs_target INTEGER NOT NULL DEFAULT 0`);
+  }
+}
+
 const existingCols = db.prepare(`PRAGMA table_info(messages)`).all().map(r => r.name);
 if (!existingCols.includes('reply_id')) {
   db.exec(`ALTER TABLE messages ADD COLUMN reply_id INTEGER`);
@@ -496,7 +514,7 @@ export const stmts = {
   // Full persisted row for a favourite, so it can be shown even when it has not
   // been heard since the last restart (the live cache is in-memory only).
   queryFavouriteNodes: db.prepare(`
-    SELECT num, node_id, short_name, long_name, hw_model, role, lat, lon, alt, hops_away
+    SELECT num, node_id, short_name, long_name, hw_model, role, lat, lon, alt, hops_away, obs_target
     FROM nodeinfo WHERE favourite = 1 AND num IS NOT NULL
   `),
 
@@ -870,6 +888,19 @@ const _finAll = (entry, keys) => {
   for (const k of keys) out[k] = _fin(out[k]);
   return out;
 };
+
+/** Mark a node as a discovery target, or clear it. Mirrors setNodeFavourite —
+ *  a different flag with a different meaning, never the same one. */
+export function setObsTarget(num, on) {
+  return db.prepare(`UPDATE nodeinfo SET obs_target = ? WHERE num = ?`)
+    .run(on ? 1 : 0, num).changes;
+}
+
+/** Every node currently marked as a discovery target. */
+export function listObsTargets() {
+  return db.prepare(`SELECT num, short_name, long_name FROM nodeinfo
+                     WHERE obs_target = 1 AND num IS NOT NULL`).all();
+}
 
 export function setNodeFavourite(num, favourite) {
   return stmts.setFavourite.run({ num, favourite: favourite ? 1 : 0 }).changes;

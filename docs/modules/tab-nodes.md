@@ -1,7 +1,7 @@
 ---
 module: tab-nodes
 source: public/partials/tab-nodes.html
-source_hash: 6b008762f2e7725b89720eb43ec1792413c36251aeabd2c507c8ba131a635c82
+source_hash: 90d32ed8f89ac39dc97802da11dba0018252c826481c96eb41ba1d8419b08e3c
 updated: 2026-07-08
 ---
 
@@ -45,6 +45,13 @@ Kept as-is (sanctioned):
 - Device badge `:style` color (l.148) — runtime-computed from data (§7)
 - `badge-xs` on card meta badges — dense repeating rows
 - "of N" counter `text-xs opacity-50` — caption
+
+## Two icons on a node card, and they mean different things
+
+The gold **star** pins a node to the sidebar and exempts it from every filter.
+The **crosshair** beside it marks the node as a discovery target — it spends
+airtime. Different icon, different colour, different tooltip, and they are never
+merged (`docs/DISCOVERY_TARGETING.md`).
 
 ## Invariants
 

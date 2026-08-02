@@ -1,7 +1,7 @@
 ---
 module: app-nodes
 source: public/app-nodes.js
-source_hash: aac4ff8f14b7adbfa5de46a19b038f1d4785ee0ca144ff8ca067556ded8f536a
+source_hash: 4c69759d4dfc3129e361c8472ed08605afffd651d637fb8cbbd474c2e215a955
 updated: 2026-07-08
 ---
 
@@ -40,3 +40,10 @@ data we prefer it — "we have traceroute data, we should use it". Consumers
 same backend-decided value. NOTE: the backend `max_hops` filter still keys off
 reported live hops (`node-filter.js`) — a deliberate split (proximity filter vs
 displayed distance).
+
+## `toggleObsTarget`
+
+Mirrors `toggleFavourite` — a different flag, never the same one. No optimistic
+mutation: the icon re-renders from the re-broadcast `node_list`, so what you see
+is always what the server holds. See `docs/DISCOVERY_TARGETING.md`.
+
