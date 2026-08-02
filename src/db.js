@@ -851,6 +851,23 @@ export function positionMap() {
   return m;
 }
 
+/** The busiest channel utilisation our own radios currently report, or null.
+ *
+ *  Read from `nodes`, which the telemetry path keeps current — NOT from the
+ *  rotator, which has no such field. The busiest radio is the right one to gate
+ *  on: if either of ours sees a loaded channel, adding to it is the thing the
+ *  brake exists to avoid. */
+export function ourChannelUtil(nums) {
+  if (!nums || !nums.size) return null;
+  const list = [...nums];
+  const rows = db.prepare(
+    `SELECT channel_util FROM nodes
+      WHERE num IN (${list.map(() => '?').join(',')}) AND channel_util IS NOT NULL`
+  ).all(...list);
+  if (!rows.length) return null;
+  return Math.max(...rows.map(r => r.channel_util));
+}
+
 export function lastHeardMap() {
   const m = new Map();
   for (const r of db.prepare(`SELECT num, last_heard FROM nodes WHERE last_heard IS NOT NULL`).all()) {

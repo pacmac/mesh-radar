@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: 4fe200791d6f975a484d937d6399572e832997c9739ad4b5c8baa81383333e93
+source_hash: fbcdad9b685600f05edf102fb95dc63f47edee2af15aa20fe92726f9a389e743
 updated: 2026-08-02
 ---
 
@@ -245,7 +245,32 @@ read from the `discovery` key, because both can change what gets measured —
 cadence. `recent` stays private: how many rows the feed keeps changes no
 measurement.
 
-## Rate## Rate
+## Airtime governance — a budget and a brake
+
+`max_attempts_per_day` (400) is a hard rolling-24h cap; `channel_util_pause`
+(50%) skips a tick while our own radios report the channel busier than that.
+Both are checked **before** anything is selected, so a braked tick costs nothing.
+
+**The rationale is courtesy and control, not a measured speed-up.** High-volume
+days do answer worse (`MESH_REACH_SPEC` §3b) but the congestion explanation for
+it is *disproved* — answer rate is flat against both channel utilisation and our
+own transmit duty. These knobs bound what we put on a shared band and make the
+rate an experiment we can run; they are not known to improve anything.
+
+Utilisation is read from **our radios' telemetry** via `ourChannelUtil()`, using
+`ownDeviceNums()` for which nums are ours. The first attempt read
+`rotator.status.channel_util`, which does not exist — the rotator reports no such
+field. The busiest of our radios wins: if either sees a loaded channel, adding to
+it is what the brake is for.
+
+**A brake is always surfaced** (`brake` in the state, `PAUSED — …` on the panel),
+never a silent skip. An invisible pause reads exactly like a dead loop, and this
+panel has already been caught by that once.
+
+Verified live: threshold set to 5% against 30% measured →
+`channel 30% busy, over 5%`. Clamps hold — 99999 → 5000, 0 → 1.
+
+## Rate## Rate## Rate
 
 One attempt every **180 s** (config `mission_runner.interval_sec`), ≈ 480/day
 against the old ~1,000/day in bursts. Peter's *"not so much as to become a

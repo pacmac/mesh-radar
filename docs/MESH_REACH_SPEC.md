@@ -213,58 +213,68 @@ silent drop is indistinguishable from a quiet channel. Measured on the day the
 rule shipped: zero, across 57 live receptions and 762 `range_test_log` rows. Our
 gateways are not bridging. The counter exists for the day one does.
 
-## 3b. WE JAM OURSELVES — the constraint nobody was looking for
+## 3b. High-volume days answer worse — cause UNKNOWN, and it is not congestion
 
-**Discovered 2026-08-02 from our own stored history, after Peter said: *"look at
-the trend data for when the discoveries spiked / then fell sharply."* It may
-explain the entire plateau in §1a.**
+**Raised 2026-08-02 when Peter said *"look at the trend data for when the
+discoveries spiked / then fell sharply."* The correlation is real. The
+explanation I first gave was wrong, and this section records both.**
 
-Answer rate against **our own** daily transmission volume, July onward:
+Answer rate against our own daily transmission volume, July onward:
 
 | our volume | days | attempts | answers | rate | new nodes/day |
 |---|---|---|---|---|---|
-| < 50/day | 5 | 15 | 6 | **40.0%** | 7.6 |
-| 50–400 | 3 | 455 | 87 | 19.1% | **15.0** |
+| < 50/day | 5 | 15 | 6 | 40.0% | 7.6 |
+| 50–400 | 3 | 455 | 87 | 19.1% | 15.0 |
 | 400–800 | 10 | 6,845 | 1,346 | 19.7% | 9.7 |
-| **800+** | 14 | 14,122 | 1,411 | **10.0%** | **6.2** |
+| **800+** | 14 | 14,122 | 1,411 | **10.0%** | 6.2 |
 
-Push past 800/day and the answer rate **halves** and discovery drops by a third.
-In raw counts the effect is starker: early July at ~700 attempts/day returned
-139–234 answers; late July at ~1,050 attempts/day returned **35–78**. More
-transmissions, fewer replies — not a lower rate, *fewer replies in absolute
-terms*.
+In raw counts: early July at ~700 attempts/day returned 139–234 answers; late
+July at ~1,050 returned 35–78. More transmissions, fewer replies.
 
-**The mechanism is almost certainly self-congestion.** LoRa is half-duplex, so
-while our radio transmits it cannot hear. Every traceroute floods several hops of
-rebroadcast. Channel utilisation measured **22–25%** during this work. Above
-that, backoff lengthens mesh-wide and the first thing lost is exactly what we
-care about: weak NODEINFO and reply frames from the far edge.
+### The congestion explanation is DISPROVED
 
-**This reframes §2.** The machine ramped to ~1,000/day on 24 June and the record
-never moved again. Read as "iterating without learning" it looks like a selection
-failure. Read against this table it looks like the prober was **drowning its own
-return path**, and trying harder made it worse.
+I claimed self-jamming — LoRa being half-duplex, our own floods drowning the
+return path — and called it major before testing it. Two direct tests, each
+matching every attempt to the congestion signal **at the moment it was sent**:
 
-### Consequences
+| channel utilisation | rate | | our own TX duty | rate |
+|---|---|---|---|---|
+| <10% | 7.6% | | <1% | 6.7% |
+| 10–20% | 6.6% | | 1–2% | 7.8% |
+| 20–30% | 6.9% | | 2–4% | 7.0% |
+| 30%+ | 6.4% | | 4–8% | 6.6% |
+| | | | 8%+ | 5.1% (n=296) |
 
-- **Transmitting less is a first-class strategy**, not a courtesy. §1's "not so
-  much as to become a nuisance" turns out to be self-interest as well as manners.
-- **Passive reception is degraded by our own traffic.** §3 calls it free evidence;
-  it is free only if we stay quiet enough to receive it. 15 new nodes/day at
-  50–400 against 6.2 at 800+.
-- **Attempt concentration has an airtime price.** Six shots at one target is six
-  transmissions; the statistical gain must be weighed against the congestion cost,
-  not assumed to be free.
+**Flat.** If we were jamming ourselves the rate would fall as our own transmit
+duty rose. It does not — 6.7% at idle against 6.6% at 4–8% duty. Both signals
+come from `device_metrics_history`, 41,153 and 41,155 samples, and were available
+the entire time.
 
-### What is NOT established
+### Target mix does not explain it either
 
-Observational, not controlled. Volume was never varied deliberately — the bands
-are periods that happened to differ, so season, mesh growth and the 27 July
-`traceroute.enabled` cliff are all confounded with it. The `<50/day` band is 5
-days and **15 attempts**; its 40% is not a reliable number, only a direction.
+The obvious alternative — that high-volume days hammered hopeless targets — is
+also insufficient. Share of attempts aimed at targets that have *ever* answered:
+**75.3%** in the 800+ band against **80.8%** at 400–800. Nearly identical, while
+the rate halves.
 
-**The clean test is a deliberate rate experiment**, which requires the timing
-knobs of §3c to be enforced first. Do not treat the table above as settled.
+### What is actually established
+
+- The correlation between daily volume and answer rate is real and large.
+- It is **not** explained by channel utilisation, by our own transmit duty, or by
+  a crude answerable/hopeless target split.
+- **The cause is unknown.** Not ruled out: the mesh itself changed across July,
+  per-target retry composition inside the "answerable" group, or something else
+  entirely coincident with late July.
+
+**Do not act on this as if the mechanism were known.** It is a real pattern
+awaiting an explanation, and the deliberate rate experiment §3c enables is still
+the way to get one.
+
+### The lesson, recorded because it cost trust
+
+I drew a mechanism from a daily aggregate, called it major, and wrote it into
+this spec before running two tests that took four minutes. A correlation is not a
+mechanism, and the data that would have checked it was already in the database.
 
 ## 3c. A timing conclusion requires an enforced knob
 

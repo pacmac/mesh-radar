@@ -48,8 +48,9 @@ import { EventEmitter } from 'events';
 import { traceroute, tracerouteEnabled } from './traceroute.js';
 import { transmitterForMode, isTransmitterForMode, dashMode, modeName } from './dash-mode.js';
 import { rotator } from './rotator.js';
+import { ownDeviceNums } from './node-filter.js';
 import { getRotatorAddress, getAllDeviceCfgs } from './device-config.js';
-import { getConfig } from './db.js';
+import { getConfig, ourChannelUtil } from './db.js';
 import { resolveNodeLabel } from './node-label.js';
 
 const DEFAULTS = {
@@ -59,6 +60,8 @@ const DEFAULTS = {
   // pattern was a thousand attempts in a day and then nothing for a week, which
   // is worse for the mesh and worse for the data.
   interval_sec: 180,
+  max_attempts_per_day: 400,
+  channel_util_pause: 50,
   // Backstop only — the rotator's own `done` event is what we wait for. This
   // covers a device that never answers, and is generous because a 180° sweep
   // on the v4 takes real time.
@@ -95,6 +98,8 @@ function cfg() {
     ...(d.hold_sec            != null ? { hold_sec: d.hold_sec } : {}),
     ...(d.mission_timeout_sec != null ? { timeout_sec: d.mission_timeout_sec } : {}),
     ...(d.aim_timeout_sec     != null ? { aim_timeout_sec: d.aim_timeout_sec } : {}),
+    ...(d.max_attempts_per_day != null ? { max_attempts_per_day: d.max_attempts_per_day } : {}),
+    ...(d.channel_util_pause  != null ? { channel_util_pause: d.channel_util_pause } : {}),
     ...(d.attempts_per_target != null ? { attempts_per_target: d.attempts_per_target } : {}),
   };
 }
@@ -108,6 +113,11 @@ class MissionRunner extends EventEmitter {
     // see _tick().
     this._holding  = null;
     this._left     = 0;
+    // Rolling 24h dispatch log, for the daily budget. Timestamps only — the
+    // stored rows are the record; this just has to answer "how many in the last
+    // day" without a query on every tick.
+    this._sent     = [];
+    this._brake    = null;   // why we are not transmitting, or null
     this._current  = null;
     this._recent   = [];
     this._timer    = null;
@@ -176,6 +186,9 @@ class MissionRunner extends EventEmitter {
       interval:  c.interval_sec,
       running:   this._started,
       queued:    this._queue.length + (this._holding ? 1 : 0),
+      brake:     this._brake,
+      sent_today: this._sent.length,
+      daily_cap: Number(c.max_attempts_per_day) || 400,
       holding:   this._holding ? { target: this._holding.target, label: this._holding.label, left: this._left } : null,
       current:   this._current,
       recent:    this._recent,
@@ -226,6 +239,28 @@ class MissionRunner extends EventEmitter {
     // checked HERE as well as inside dispatch() so a gated attempt never
     // consumes a queue slot or a cooldown — the same reasoning dispatch() gives
     // for checking before its own cooldown guard.
+    // AIRTIME GOVERNANCE, checked before anything is chosen so a braked tick
+    // costs nothing. Both reasons are SURFACED (this._brake) rather than
+    // silently skipping — an invisible pause is indistinguishable from a dead
+    // loop, which this project has already learned the hard way.
+    const dayAgo = Date.now() - 86_400_000;
+    this._sent = this._sent.filter(ts => ts > dayAgo);
+    if (this._sent.length >= (Number(c.max_attempts_per_day) || 400)) {
+      this._brake = `daily budget spent (${this._sent.length}/${c.max_attempts_per_day})`;
+      this._emit();
+      return;
+    }
+    // From OUR radios' telemetry, via the mode SSOT for which nums are ours —
+    // not from the rotator, which reports no such thing.
+    const util = ourChannelUtil(ownDeviceNums());
+    const utilCap = Number(c.channel_util_pause) || 100;
+    if (util != null && util > utilCap) {
+      this._brake = `channel ${Math.round(util)}% busy, over ${utilCap}%`;
+      this._emit();
+      return;
+    }
+    this._brake = null;
+
     // DISCOVERY IS ITS OWN MODE. Peter, 2026-08-02: "well this is a new mode
     // isnt it?" — it is, and the runner only works in it. Mode owns every
     // per-mode behaviour including which radio transmits (Peter's standing
@@ -323,6 +358,7 @@ class MissionRunner extends EventEmitter {
     }
 
     this._discovered.attempts++;
+    this._sent.push(Date.now());
     this._emit();
 
     let outcome;

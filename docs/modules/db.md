@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 5eb84876857ff37987ddee630b92750b7774a23b4b252821a00e7c780337dd49
+source_hash: 4f16a76876a239b84ca56addafd00873549ee5bc3208d219395e0c1a2ae7ee0a
 updated: 2026-07-29
 ---
 
@@ -374,6 +374,14 @@ aggregation belongs in the display feed: the catalogue's rule is *small, and one
 thing*, and a chart series is something the system **draws** rather than
 something it **works out**. Distance banding is done in SQL from stored positions
 and the configured home. See `docs/OBSERVATORY_CHARTS.md`.
+
+## `ourChannelUtil(nums)`
+
+The busiest channel utilisation our own radios currently report. Read from
+`nodes`, which telemetry keeps current — **not** from the rotator, which has no
+such field. Used by the discovery brake; the busiest radio wins, because if
+either of ours sees a loaded channel then adding to it is the thing the brake
+exists to avoid.
 
 ## Invariants
 

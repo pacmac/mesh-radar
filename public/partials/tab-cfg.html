@@ -510,6 +510,18 @@
                       <div class="label py-0"><span class="label-text-alt text-xs opacity-40">Stops the shared yagi drifting or being taken mid-shot. 0 disables.</span></div>
                     </label>
                     <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Daily attempt budget</span><span class="label-text-alt text-xs opacity-50">per 24h</span></div>
+                      <input type="number" min="1" max="5000" step="50" class="input input-bordered input-sm w-full font-mono"
+                             x-model.number="discoveryCfg.max_attempts_per_day">
+                      <div class="label py-0"><span class="label-text-alt text-xs opacity-40">A hard cap on what we put on a shared band. Courtesy, not a measured speed-up.</span></div>
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Pause while channel busier than</span><span class="label-text-alt text-xs opacity-50">%</span></div>
+                      <input type="number" min="1" max="100" step="5" class="input input-bordered input-sm w-full font-mono"
+                             x-model.number="discoveryCfg.channel_util_pause">
+                      <div class="label py-0"><span class="label-text-alt text-xs opacity-40">No answer-rate effect was measurable at any utilisation — this is for the mesh, not for us.</span></div>
+                    </label>
+                    <label class="form-control w-full">
                       <div class="label py-1"><span class="label-text text-xs">Interval between missions</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
                       <input type="number" min="30" max="3600" step="30" class="input input-bordered input-sm w-full font-mono"
                              x-model.number="discoveryCfg.interval_sec">

@@ -55,6 +55,19 @@ export const DEFAULTS = {
     mission_timeout_sec: 90,
     aim_timeout_sec:     90,
     recompute_min:       15,
+    // AIRTIME GOVERNANCE. Peter's "not so much as to become a nuisance" (§1)
+    // with numbers attached.
+    //
+    // The rationale is COURTESY AND CONTROL, not a measured performance fix.
+    // High-volume days do answer worse (§3b) but the cause is unknown and the
+    // congestion explanation is disproved — so these exist to bound what we put
+    // on a shared band and to make the rate an experiment we can run, NOT
+    // because throttling is known to raise the answer rate.
+    max_attempts_per_day: 400,
+    // Skip a tick while the transmitting radio reports the channel busier than
+    // this. Deliberately generous: no answer-rate effect was measurable at any
+    // utilisation (§3b), so this is a brake for the mesh's benefit, not ours.
+    channel_util_pause:   50,
     // WHAT COUNTS AS PROVEN GROUND — the anchor the window measures from.
     // "Answered once" let a 1-in-63 fluke at 189.1 km drag the search 90 km
     // into a band the charts show answering ~0%. Reliable reach ends at 95 km.
@@ -102,6 +115,8 @@ const DISCOVERY_LIMITS = {
   mission_timeout_sec: [10, 300],
   aim_timeout_sec:     [10, 300],
   recompute_min:       [1, 240],
+  max_attempts_per_day: [1, 5000],
+  channel_util_pause:   [1, 100],
   interval_sec:        [30, 3600],
 };
 // BOUNDS FOR THE OLDER TIMING KNOBS. These wrote `Number(x)` with no limits,
