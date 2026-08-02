@@ -118,6 +118,7 @@ export const wsMixin = {
     // on arrival. Pure state application; nothing is derived here.
     if (ev.type === 'observations_replay') { this.applyObservationsReplay(ev); return; }
     if (ev.type === 'observation')         { this.applyObservation(ev); return; }
+    if (ev.type === 'relay_usage')         { this.applyRelayUsage(ev); return; }
     if (ev.type === 'node_status')        { this.applyNodeStatus(ev); return; }
     if (ev.type === 'node_status_update') { this.onNodeStatusUpdate(ev.num); return; }
     if (ev.type === 'node_status_age')    { this.applyNodeStatusAge(ev); return; }

@@ -55,14 +55,70 @@
 // here.
 import { registerInference } from './observatory.js';
 
-// Referenced so the import is not "unused" to a reader or a linter, and so the
-// first contributor has the function in front of them rather than having to go
-// and find it.
-void registerInference;
-
-// registerInference({
-//   key:  'bearing.peak_rssi',
-//   deps: [],
-//   mode: 'batch',
-//   run: (evidence) => { ... return { value, confidence, evidence_count } | null },
-// });
+// ─── relay.usage ────────────────────────────────────────────────────────────
+//
+// WHICH RELAYS CARRY OUR TRAFFIC, AND HOW MUCH OF THE MESH SITS BEHIND EACH.
+// The doors of MESH_REACH_SPEC §7a: our reach is not a radius, it is a tree with
+// a few load-bearing doors, and 57 relays carry every route we have ever
+// completed. If T4 goes off air, 79 targets go with it — a fact worth seeing
+// before it happens rather than after.
+//
+// EVIDENCE IS DECLARED, NOT FETCHED. The inference cannot query without
+// destroying its own purity, and the engine cannot query on its behalf without
+// learning what a route is. So the SQL lives here, with the inference that owns
+// it, and the engine executes it understanding nothing.
+//
+// json_each expands the route ARRAY inside the JSON payload into one row per
+// hop — so a nested array inside a JSON column inside a view over a table nobody
+// migrated becomes a graph, in SQL, with no parsing in JavaScript. Verified on
+// SQLite 3.53.2.
+//
+// BOTH DIRECTIONS. route_back is included because the way home is not the way
+// out: 23 relays appear ONLY on return paths (§7b). They carried our traffic and
+// nothing ever chose them.
+//
+// 0xffffffff IS EXCLUDED. The broadcast address appears in stored route fields
+// and is not a node — it ranked eighth in the door list on first run, with 49
+// targets "behind" it, which is meaningless. MESH_REACH_SPEC §7b flags it as a
+// question about our own parsing rather than a relay to go and find; until that
+// is settled it must not be presented as a door.
+registerInference({
+  key:  'relay.usage',
+  deps: [],
+  mode: 'batch',   // recomputed from all history; cheap enough at this size
+  evidence: `
+    SELECT j.value                    AS relay,
+           o.entity                   AS target,
+           1                          AS uses
+    FROM obs_v_traceroute o, json_each(o.data ->> '$.route') j
+    WHERE o.data ->> '$.status' = 'ok' AND j.value <> 4294967295
+    UNION ALL
+    SELECT j.value, o.entity, 1
+    FROM obs_v_traceroute o, json_each(o.data ->> '$.route_back') j
+    WHERE o.data ->> '$.status' = 'ok' AND j.value <> 4294967295
+  `,
+  /** Pure: rows in, facts out. No database, no clock, no randomness.
+   *
+   *  `targets` is what makes a relay a door — how much becomes unreachable if
+   *  it stops. `uses` is how much traffic it has actually carried, which is a
+   *  different question and the two disagree often enough to be worth keeping
+   *  apart. */
+  run(rows) {
+    const byRelay = new Map();
+    for (const r of rows) {
+      const relay = String(r.relay);
+      let e = byRelay.get(relay);
+      if (!e) byRelay.set(relay, e = { uses: 0, targets: new Set() });
+      e.uses += 1;
+      if (r.target != null) e.targets.add(String(r.target));
+    }
+    return [...byRelay].map(([entity, e]) => ({
+      entity,
+      value: { uses: e.uses, targets: e.targets.size },
+      // No confidence offered: this is a count of what was observed, not an
+      // estimate. A made-up 1.0 would imply a judgement nothing here made.
+      confidence: null,
+      evidence_count: e.uses,
+    }));
+  },
+});

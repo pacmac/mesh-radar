@@ -39,8 +39,10 @@
       </div>
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
         <div class="stat-title text-xs">Doors</div>
-        <div class="stat-value text-2xl font-display text-base-content/25">—</div>
-        <div class="stat-desc text-xs">awaiting the relay graph</div>
+        <div class="stat-value text-2xl font-display"
+             :class="relayUsage.length ? 'text-secondary' : 'text-base-content/25'"
+             x-text="relayUsage.length || '—'"></div>
+        <div class="stat-desc text-xs">relays carrying our routes</div>
       </div>
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
         <div class="stat-title text-xs">Bearings recorded</div>
@@ -96,11 +98,47 @@
         </div>
         <div class="card bg-base-100 shadow">
           <div class="card-body p-3 gap-2">
-            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-              Doors — relays our traffic depends on</h2>
-            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
-              <p class="text-xs text-base-content/50">Awaiting the relay graph.</p>
+            <div class="flex items-baseline gap-2">
+              <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
+                Doors — relays our traffic depends on</h2>
+              <span class="text-xs text-base-content/35 ml-auto"
+                    x-show="relayUsage.length"
+                    x-text="relayUsage.length + ' carry every route we have completed'"></span>
             </div>
+
+            <template x-if="!relayUsage.length">
+              <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
+                <p class="text-xs text-base-content/50">Computing from stored routes.</p>
+              </div>
+            </template>
+
+            <template x-if="relayUsage.length">
+              <table class="table table-xs font-mono tabular-nums">
+                <thead>
+                  <tr>
+                    <th>Relay</th>
+                    <th class="text-right pr-4">Behind</th>
+                    <th class="text-right pr-4">Carried</th>
+                    <th class="w-24">Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="r in relayUsage.slice(0, 8)" :key="r.relay">
+                    <tr>
+                      <td class="text-secondary" x-text="r.label"></td>
+                      <td class="text-right pr-4" x-text="r.targets"></td>
+                      <td class="text-right pr-4 text-base-content/60" x-text="r.uses"></td>
+                      <td>
+                        <div class="h-1 bg-secondary rounded" :style="'width:' + obsRelayShare(r.uses) + '%'"></div>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </template>
+            <p class="text-xs text-base-content/35" x-show="relayUsage.length">
+              If the top relay goes off air, everything behind it goes with it.
+            </p>
           </div>
         </div>
         <div class="card bg-base-100 shadow">

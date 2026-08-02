@@ -1,7 +1,7 @@
 ---
 module: observatory
 source: src/observatory.js
-source_hash: 18b152d471d3f3141edc0b11f7f1e484ae8b993b4b8425ae22f54e3e72dbe15c
+source_hash: c59458a46f7fa597d4ee194711dbaa206a7a52331cf5158fcbbc7a46630a474c
 updated: 2026-08-02
 ---
 

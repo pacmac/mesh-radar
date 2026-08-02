@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: e4a4951177fa99269ef722ab97c9a74c1da04193dd152cfac062fa104cb21f23
+source_hash: 31896c150df5b11f50badb817daacbce420df142f8903c24971c94468ae7b966
 updated: 2026-08-02
 ---
 

@@ -12,8 +12,9 @@
 // names it explicitly so a fourth entry is again a visible choice.
 //
 // See docs/WS_PLUGIN_HOOKS_SPEC.md and docs/PLUGIN_BOUNDARY_SPEC.md.
-import { events, recentObservations } from './observatory.js';
+import { events, recentObservations, facts, runInference } from './observatory.js';
 import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
+import { resolveNodeLabel } from './node-label.js';
 
 // How much history a freshly-connected page starts with. On a quiet channel a
 // page that waits for the next packet looks broken for minutes, so it opens with
@@ -52,12 +53,59 @@ registerWsWiring(({ broadcast }) => {
 // node-dash without the observatory behave identically.
 registerConnectReplay(() => {
   try {
-    return [{
-      type: 'observations_replay',
-      observations: recentObservations('reception', REPLAY_LIMIT).map(toMessage),
-    }];
+    return [
+      {
+        type: 'observations_replay',
+        observations: recentObservations('reception', REPLAY_LIMIT).map(toMessage),
+      },
+      { type: 'relay_usage', relays: relayUsage() },
+    ];
   } catch (e) {
     console.error(`[observatory-ws] replay failed: ${e.message}`);
     return [];
   }
+});
+
+/** Current relay usage, heaviest first.
+ *
+ *  A pure read of stored facts — the inference already ran; this does not
+ *  recompute on a page load. Provenance rides along (`at`, `evidence`) so the
+ *  page can say when it was last worked out rather than implying it is live. */
+function relayUsage() {
+  return facts('relay.usage')
+    .map(f => ({
+      relay:    f.entity,
+      // NAME RESOLVED HERE, not in the browser. The page tried
+      // this.nodes.find(...) and got 4 nodes — that list is FILTERED, so every
+      // relay rendered as a raw number. It is also a BROWSER_CONTRACT breach:
+      // a label is a display value and belongs to the server.
+      label:    resolveNodeLabel(Number(f.entity)) || String(f.entity),
+      uses:     f.value?.uses ?? 0,
+      targets:  f.value?.targets ?? 0,
+      at:       f.ts,
+      evidence: f.evidence_count,
+    }))
+    .sort((a, b) => b.uses - a.uses);
+}
+
+// RECOMPUTED ON BOOT, then on a slow timer. `relay.usage` is a batch inference
+// over all history — cheap at this size (12,268 evidence rows, ~40 ms) but not
+// something to run per packet, and the answer moves slowly: a new relay appears
+// only when a traceroute completes through it.
+//
+// Deferred past startup so a slow query cannot delay the port opening, and
+// wrapped so a failure degrades the doors panel rather than the process.
+function recompute(broadcast) {
+  try {
+    const r = runInference('relay.usage');
+    console.log(`[observatory] relay.usage: ${r.facts} relays from ${r.rows} hop observations`);
+    broadcast?.({ type: 'relay_usage', relays: relayUsage() });
+  } catch (e) {
+    console.error(`[observatory] relay.usage failed: ${e.message}`);
+  }
+}
+
+registerWsWiring(({ broadcast }) => {
+  setTimeout(() => recompute(broadcast), 10_000);
+  setInterval(() => recompute(broadcast), 15 * 60_000);
 });

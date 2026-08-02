@@ -37,6 +37,12 @@ export const observatoryMixin = {
   /** Newest first. Fed by both WS messages below. */
   observations: [],
 
+  /** Relay usage — the doors. Server-computed by the relay.usage inference and
+   *  pushed; the browser ranks nothing and counts nothing. */
+  relayUsage: [],
+
+  applyRelayUsage(ev) { this.relayUsage = ev.relays || []; },
+
   /** Replayed to every new connection — see observatory-ws.js. Without this the
    *  page is blank until the next packet, which on a quiet channel is minutes
    *  and reads as broken. */
@@ -99,4 +105,16 @@ export const observatoryMixin = {
    *  claim and belongs to the server (BROWSER_CONTRACT). Labelled "on screen"
    *  in the UI for exactly that reason. */
   obsNodeCount() { return new Set(this.observations.map(o => o.entity)).size; },
+
+  // obsRelayName() was here and is gone. It looked the name up in this.nodes,
+  // which is a FILTERED list — 4 entries at the time — so every relay rendered
+  // as a raw number. The server now sends `label` with each relay, which is
+  // where a display value belongs anyway (BROWSER_CONTRACT).
+
+  /** Bar width relative to the busiest door. Presentation of pushed values —
+   *  the ranking itself was done by the server. */
+  obsRelayShare(uses) {
+    const top = this.relayUsage[0]?.uses || 0;
+    return top ? Math.max(3, Math.round((uses / top) * 100)) : 0;
+  },
 };

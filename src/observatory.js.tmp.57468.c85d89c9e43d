@@ -21,11 +21,11 @@
 import { EventEmitter } from 'node:events';
 import db from './db.js';
 
-/** Fires `observation` with the stored row after every successful write.
+/** Emits 'observation' with the stored row, immediately after it is written.
  *
- *  Generic machinery: the engine announces that something was recorded and says
- *  nothing about what it means. Consumers that DO know what a reception is
- *  subscribe from outside — see observatory-ws.js. */
+ *  Generic machinery: the engine does not know or care who listens, and nothing
+ *  here formats for a consumer. A WS plugin subscribes and decides what the
+ *  browser sees — see observatory-ws.js. */
 export const events = new EventEmitter();
 
 // ─── Schema ─────────────────────────────────────────────────────────────────
@@ -77,76 +77,6 @@ export function _columns(table) {
   const cols = _columns('obs_observation');
   void cols;   // no migrations yet — the guard exists so the first one is correct
 }
-
-// ─── Facts — what we worked out, as opposed to what we were told ────────────
-//
-// APPEND-ONLY, like observations. A fact is not updated; a new computation
-// writes a new row and the CURRENT value is the newest one (obs_v_fact). That
-// is what makes a derivation auditable: you can see what an inference believed
-// last week and what changed its mind, and a bad run can be superseded rather
-// than having destroyed what it replaced.
-//
-// PROVENANCE IS COLUMNS, NOT CONVENTION (MESH_REACH_SPEC §7f). Every row records
-// which inference produced it, when, from how much evidence, and how confident
-// it was. Without that an inference is indistinguishable from a measurement —
-// which is precisely how an estimated position would come to set a distance
-// record.
-db.exec(`
-  CREATE TABLE IF NOT EXISTS obs_fact (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts             INTEGER NOT NULL,   -- epoch SECONDS, when it was computed
-    entity         TEXT    NOT NULL,   -- the subject, opaque here
-    key            TEXT    NOT NULL,   -- what was worked out, e.g. 'relay.usage'
-    value          TEXT,               -- JSON, shape owned by the inference
-    confidence     REAL,               -- 0..1, or null when the inference offers none
-    evidence_count INTEGER,            -- how many rows it was derived from
-    inference      TEXT    NOT NULL    -- which inference produced it
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_fact_entity_key ON obs_fact(entity, key, id DESC);
-  CREATE INDEX IF NOT EXISTS idx_fact_key        ON obs_fact(key, id DESC);
-
-  -- Current value = the newest row per (entity, key). A view rather than a
-  -- column, so nothing has to be kept in sync and history is never lost.
-  CREATE VIEW IF NOT EXISTS obs_v_fact AS
-  SELECT f.* FROM obs_fact f
-  JOIN (SELECT entity, key, MAX(id) AS id FROM obs_fact GROUP BY entity, key) m
-    ON m.id = f.id;
-`);
-
-const _insertFact = db.prepare(`
-  INSERT INTO obs_fact (ts, entity, key, value, confidence, evidence_count, inference)
-  VALUES (@ts, @entity, @key, @value, @confidence, @evidence_count, @inference)
-`);
-
-/** Current value of every fact under a key.
- *
- *  RETURNS THE LATEST RUN'S COMPLETE OUTPUT, not the newest row per entity, and
- *  the difference is a real defect this fixes rather than a preference.
- *
- *  Append-only storage cannot retract. A batch inference that STOPS producing an
- *  entity leaves that entity's last row standing as the newest — so it lingers
- *  for ever with a value nothing believes any more. Observed live: excluding the
- *  broadcast address 0xffffffff from relay.usage dropped it from the inference's
- *  output, and it went on being served to the page as a door with 49 targets
- *  behind it, because no newer row contradicted it.
- *
- *  A batch inference's output IS the complete set as of that run, so the honest
- *  read is "everything from the most recent run". Nothing is deleted — the old
- *  rows remain and the history is still auditable, which is the point of
- *  append-only. They simply stop being current.
- *
- *  An incremental inference would need a different rule; when one exists, this
- *  branches on `mode` rather than being quietly widened. */
-export function facts(key) {
-  return db.prepare(`
-    SELECT * FROM obs_fact
-    WHERE key = ? AND ts = (SELECT MAX(ts) FROM obs_fact WHERE key = ?)
-    ORDER BY entity
-  `).all(key, key).map(r => ({ ...r, value: _parse(r.value) }));
-}
-
-const _parse = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
 
 // ─── Adapters: existing tables, read in place ───────────────────────────────
 //
@@ -205,32 +135,13 @@ const _insert = db.prepare(`
  *  accidentally store `[object Object]`. */
 export function observe({ ts, kind, entity, source = null, data = null }) {
   if (!kind || entity == null) throw new Error('observe: kind and entity are required');
-  const row = {
+  _insert.run({
     ts: Math.floor(ts ?? Date.now() / 1000),
     kind: String(kind),
     entity: String(entity),
     source,
     data: data == null ? null : JSON.stringify(data),
-  };
-  const info = _insert.run(row);
-  // Emitted AFTER the write, so a subscriber can never see a row that failed to
-  // store. The listener is called synchronously and its throw would propagate
-  // into the caller's ingest path — subscribers wrap their own work.
-  events.emit('observation', { id: info.lastInsertRowid, ...row });
-}
-
-const _recent = db.prepare(`
-  SELECT id, ts, kind, entity, source, data
-  FROM obs_observation WHERE kind = @kind ORDER BY id DESC LIMIT @limit
-`);
-
-/** The last N observations of a kind, newest first.
- *
- *  For replaying to a client that has just connected: without it a new page
- *  shows nothing until the next packet happens to arrive, which on a quiet
- *  channel can be minutes and reads as broken. */
-export function recentObservations(kind, limit = 200) {
-  return _recent.all({ kind, limit: Math.min(Math.max(1, limit | 0), 1000) });
+  });
 }
 
 // ─── The inference registry ─────────────────────────────────────────────────
@@ -259,14 +170,14 @@ const _inferences = new Map();
  *
  *  Provenance is stamped by the runner, never by the author, so an inference
  *  cannot launder itself as a fact. */
-export function registerInference({ key, deps = [], mode = 'batch', evidence = null, run }) {
+export function registerInference({ key, deps = [], mode = 'batch', run }) {
   if (!key) throw new Error('registerInference: key is required');
   if (typeof run !== 'function') throw new Error(`registerInference(${key}): run must be a function`);
   if (_inferences.has(key)) throw new Error(`registerInference: duplicate key ${key}`);
   if (mode !== 'incremental' && mode !== 'batch') {
     throw new Error(`registerInference(${key}): mode must be 'incremental' or 'batch'`);
   }
-  _inferences.set(key, { key, deps: [...deps], mode, evidence, run });
+  _inferences.set(key, { key, deps: [...deps], mode, run });
 }
 
 /** Registered inferences in dependency order.
@@ -294,63 +205,6 @@ export function inferenceOrder() {
 
 /** Read-only view of what is registered. */
 export function inferences() { return [..._inferences.values()]; }
-
-// ─── The runner ─────────────────────────────────────────────────────────────
-//
-// HOW A PURE INFERENCE GETS EVIDENCE, which is the one design problem this
-// layer exists to solve. The inference cannot query — that would break purity
-// and with it the ability to recompute over history. The engine cannot fetch on
-// its behalf — it has no idea what a route or a reception is. So the inference
-// DECLARES its evidence as SQL and the engine executes it without understanding
-// a word of it, exactly as a database driver does. `run(rows)` stays a pure
-// function of what came back.
-//
-// The SQL is domain knowledge and lives in the catalogue with the inference that
-// owns it. The engine only knows how to run a query and store a result.
-
-/** Run one inference and store what it produced.
- *
- *  Returns { key, rows, facts, skipped } — counts, not values, so a caller can
- *  log progress without the engine deciding what is worth saying.
- *
- *  An inference returning null for an entity stores NOTHING. "Not enough
- *  evidence yet" must not leave a row that later reads as a computed answer. */
-export function runInference(key, now = Math.floor(Date.now() / 1000)) {
-  const inf = _inferences.get(key);
-  if (!inf) throw new Error(`runInference: unknown inference ${key}`);
-  if (!inf.evidence) throw new Error(`runInference(${key}): no evidence query declared`);
-
-  const rows = db.prepare(inf.evidence).all();
-  const out = inf.run(rows) ?? [];
-  const results = Array.isArray(out) ? out : [out];
-
-  let stored = 0, skipped = 0;
-  const write = db.transaction((items) => {
-    for (const r of items) {
-      // null is a real answer and stores nothing.
-      if (!r || r.value == null || r.entity == null) { skipped++; continue; }
-      _insertFact.run({
-        ts: now,
-        entity: String(r.entity),
-        key,
-        value: JSON.stringify(r.value),
-        confidence: typeof r.confidence === 'number' ? r.confidence : null,
-        evidence_count: Number.isInteger(r.evidence_count) ? r.evidence_count : null,
-        // STAMPED BY THE RUNNER, never by the author — an inference that wrote
-        // its own provenance could launder itself as a fact.
-        inference: key,
-      });
-      stored++;
-    }
-  });
-  write(results);
-  return { key, rows: rows.length, facts: stored, skipped };
-}
-
-/** Run every registered inference in dependency order. */
-export function runAllInferences() {
-  return inferenceOrder().map(inf => runInference(inf.key));
-}
 
 // Test seam: the registry is module-level state, so a test that registers needs
 // a way back to empty. Not exported for production use — nothing in src/ calls
