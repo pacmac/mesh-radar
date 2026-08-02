@@ -64,6 +64,17 @@
 // confidently place every unplaced node at 119°.
 import { registerInference } from './observatory.js';
 
+/** "3h ago" / "6d ago" — how long a node has been silent, for the reason string.
+ *  Written here because a reason is a display value and the browser must not
+ *  assemble one (BROWSER_CONTRACT). Pure: it is handed a duration, not a clock. */
+function fmtSilence(sec) {
+  if (!Number.isFinite(sec)) return 'never';
+  const h = sec / 3600;
+  if (h < 1)  return 'within the hour';
+  if (h < 48) return `${Math.round(h)}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
 // ─── relay.usage ────────────────────────────────────────────────────────────
 //
 // WHICH RELAYS CARRY OUR TRAFFIC, AND HOW MUCH OF THE MESH SITS BEHIND EACH.
@@ -454,6 +465,7 @@ registerInference({
            COALESCE((SELECT value ->> '$.window_km'           FROM config WHERE key = 'discovery'), 25)   AS s_window_km,
            COALESCE((SELECT value ->> '$.attempts_per_target' FROM config WHERE key = 'discovery'), 6)    AS s_attempts,
            COALESCE((SELECT value ->> '$.cooldown_min'        FROM config WHERE key = 'discovery'), 30)   AS s_cooldown_min,
+           COALESCE((SELECT value ->> '$.max_silence_days'    FROM config WHERE key = 'discovery'), 14)   AS s_max_silence,
            COALESCE((SELECT value ->> '$.mode'                FROM config WHERE key = 'discovery'), 'auto') AS s_mode,
            (SELECT value ->> '$.pinned'                       FROM config WHERE key = 'discovery')        AS s_pinned,
            -- The Observatory's OWN target flag. Not nodeinfo.favourite, which
@@ -498,6 +510,7 @@ registerInference({
     const WINDOW_KM = Number(rows[0].s_window_km) || 25;
     const MAX_TRIES = Number(rows[0].s_attempts) || 6;
     const COOLDOWN  = (Number(rows[0].s_cooldown_min) || 30) * 60;
+    const MAX_SILENT = (Number(rows[0].s_max_silence) || 14) * 86_400;
     const MODE      = String(rows[0].s_mode || 'auto');
     const PINNED    = rows[0].s_pinned != null ? Number(rows[0].s_pinned) : null;
     // §12: beyond this a self-reported position is not evidence, it is a
@@ -507,7 +520,7 @@ registerInference({
     const CEILING_KM = 250;
 
     const scored = [];
-    const skipped = { cooling: 0, suspect: 0, exhausted: 0, beyond_window: 0 };
+    const skipped = { cooling: 0, suspect: 0, exhausted: 0, beyond_window: 0, silent: 0 };
 
     // The record is computed from the same rows, not passed in: an inference
     // that took the record as a dependency would rank against a stale one on
@@ -567,6 +580,31 @@ registerInference({
       const isTarget = Number(r.obs_target) === 1;
 
       if (!isPinned && !isTarget && km > CEILING_KM) { skipped.suspect++; continue; }
+
+      // IS THE NODE EVEN ALIVE? This is the strongest predictor we have and it
+      // was going unused, while `last_heard` sat in the evidence already
+      // selected. Measured across all 21,864 stored attempts:
+      //
+      //   heard on direct RF   26.1%      heard within 7d    7.0%
+      //   heard within 24h     16.0%      silent over 7d     1.8%
+      //
+      // A 14x spread — far larger than any distance effect. MESH_REACH_SPEC §3
+      // said so all along: "passive reception is free evidence and must be
+      // mined first... it is proof the node is alive and roughly where, which
+      // is what makes an attempt worth spending."
+      //
+      // Measured on the shortlist this replaces: only 4 of 14 entries had been
+      // heard within 24 h. The rest were 4-33 days silent, and that is where
+      // the budget was going while 40+ attempts produced nothing.
+      const silentFor = r.last_heard ? (now - Number(r.last_heard)) : Infinity;
+      if (!isPinned && !isTarget && silentFor > MAX_SILENT) { skipped.silent++; continue; }
+
+      // Tiered rather than smooth: the measured curve is a cliff between "today"
+      // and "last week", not a gentle decay, so the score should be too.
+      const liveScore = silentFor <= 86_400   ? 400
+                      : silentFor <= 3*86_400 ? 220
+                      : silentFor <= 7*86_400 ?  90
+                      :                          20;
       const attempts = Number(r.attempts) || 0;
       const hits     = Number(r.hits) || 0;
       const lastAtt  = r.last_attempt ? Number(r.last_attempt) : null;
@@ -610,22 +648,22 @@ registerInference({
         rank = 500_000 + stepScore;
       } else if (attempts === 0 && km > record) {
         cls = 'unknown-record';
-        reason = `never attempted — ${Math.round(step)} km past the nearest node we have reached, and would beat the ${Math.round(record)} km record`;
-        rank = 1000 + stepScore;
+        reason = `never attempted — ${Math.round(step)} km past the nearest node we have reached, heard ${fmtSilence(silentFor)}, and would beat the ${Math.round(record)} km record`;
+        rank = 1000 + stepScore + liveScore;
       } else if (attempts === 0) {
         cls = 'unknown';
         reason = 'never attempted — one try tells us more than a repeat anywhere';
-        rank = 700 + stepScore;
+        rank = 700 + stepScore + liveScore;
       } else if (hits === 0 && km > record) {
         cls = 'record';
-        reason = `${attempts} attempt${attempts === 1 ? '' : 's'}, no reply yet — ${Math.round(step)} km past the nearest node we have reached, would beat the ${Math.round(record)} km record`;
+        reason = `${attempts} attempt${attempts === 1 ? '' : 's'}, no reply yet — ${Math.round(step)} km past the nearest node we have reached, heard ${fmtSilence(silentFor)}, would beat the ${Math.round(record)} km record`;
         // Diminishing: the twentieth silent attempt is worth less than the
         // second. §4 says silence proves nothing, not that it is free.
-        rank = 1000 + stepScore - Math.min(120, attempts * 6);
+        rank = 1000 + stepScore + liveScore - Math.min(120, attempts * 6);
       } else if (hits > 0 && km > 100 && ageDays != null && ageDays >= 7) {
         cls = 'reconfirm';
         reason = `verified ${hits}/${attempts}, untried for ${ageDays} days — is the corridor still open?`;
-        rank = 300 + km;
+        rank = 300 + km + liveScore;
       } else if (hits === 0 && attempts >= MAX_TRIES) {
         // THE ATTEMPT BUDGET. At the frontier's own ~4% base rate one attempt
         // settles nothing, so a target gets MAX_TRIES shots spaced by the
@@ -720,6 +758,8 @@ registerInference({
         skipped_suspect: skipped.suspect,
         skipped_exhausted: skipped.exhausted,
         skipped_beyond_window: skipped.beyond_window,
+        skipped_silent: skipped.silent,
+        max_silence_days: Math.round(MAX_SILENT / 86_400),
       },
       confidence: null,
       evidence_count: rows.length,

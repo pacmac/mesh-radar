@@ -1,7 +1,7 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: c43861157c89c67015ff27128f7d44c2b84826973baa3fcb38ca7e16dbfcdd73
+source_hash: ae150534bd2b884f0597c58ded7139c2ad2db84065e900ecfc96c70ec9f333ed
 updated: 2026-07-16
 ---
 
@@ -165,6 +165,12 @@ have genuinely different latencies and a silent delay reads as a broken form.
 `manual`); `strategy` decides how it picks when it does. Orthogonal, and the
 helper text says so — two selects that look alike need to explain how they
 differ.
+
+## The silence cutoff is on the Discovery section
+
+`max_silence_days`, with the measured rates in its helper text: a node heard
+today answers 16–26% of the time, one silent over a week 1.8%. A number without
+that context reads as arbitrary.
 
 ## Invariants
 

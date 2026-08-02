@@ -31,7 +31,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 7ff2979f97dc34940c585082c0fe779fcb1507fdace612375fa73f3b71fc1e00
+source_hash: 33a57522d78f1e7ab9cc03e15701a3dff0d4e221b5c9c2d79d7b8c8125515d95
 updated: 2026-07-31
 ---
 
@@ -46,6 +46,12 @@ star pins a node to the sidebar; the crosshair marks it as a discovery target an
 spends airtime. Never merged — see `docs/DISCOVERY_TARGETING.md`. Neither holds
 optimistic browser state: both re-render from the re-broadcast `node_list`.
 ## The config page has a Discovery section
+
+`max_silence_days` joined it — how long a node may be silent before discovery
+stops attempting it. Its helper text carries the measured rates (16–26% for a
+node heard today, 1.8% for one silent over a week) because a threshold without
+its evidence reads as arbitrary.
+
 
 `public/app-config.js` gained `loadDiscoveryCfg`/`saveDiscoveryCfg` and
 `tab-cfg.html` a `discovery` sub-tab — how the discovery runner chooses and

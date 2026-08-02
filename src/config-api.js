@@ -37,6 +37,11 @@ export const DEFAULTS = {
     window_km:           25,        // ladder: furthest step past proven ground worth attempting
     attempts_per_target: 6,         // shots at one target before it retires
     cooldown_min:        30,        // spacing between shots at the same target
+    // LIVENESS. Reception recency predicts a reply better than anything else we
+    // measure — 26.1% for a node heard on direct RF against 1.8% for one silent
+    // more than a week (21,864 stored attempts). A node we have not heard in
+    // this many days is not attempted at all.
+    max_silence_days:    14,
     interval_sec:        180,       // seconds between missions
     enabled:             true,      // runner on/off without leaving DISC mode
     // Targeting (docs/DISCOVERY_TARGETING.md). `mode` decides whether AUTO
@@ -68,6 +73,7 @@ const DISCOVERY_LIMITS = {
   window_km:           [1, 250],
   attempts_per_target: [1, 50],
   cooldown_min:        [1, 1440],
+  max_silence_days:    [1, 365],
   interval_sec:        [30, 3600],
 };
 const DISCOVERY_STRATEGIES = ['ladder', 'portfolio'];

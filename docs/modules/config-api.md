@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 7095fc2cdaa1cb08463785c334a762079c5a22df70614eb4724c00bb437bb167
+source_hash: 89130f9b4db0347a9250d81e9499c0c96fe7d60a249ff6a6d0df5c4cefbc10e1
 updated: 2026-07-27
 ---
 
@@ -155,6 +155,12 @@ allowlisted fields in.
 would hammer a shared mesh and `window_km: 0` would empty the queue. Verified:
 `{interval_sec:0, window_km:9999, attempts_per_target:0, cooldown_min:99999}`
 stored as `{30, 250, 1, 1440}`, and an unknown `strategy` returns 400.
+
+## `max_silence_days`
+
+How long a node may have been silent before discovery stops attempting it.
+Default 14, clamped 1–365. A node heard today answers 16–26% of the time; one
+silent over a week, 1.8% — so this is the highest-leverage setting on the page.
 
 ## Invariants
 

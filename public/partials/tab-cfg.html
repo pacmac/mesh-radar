@@ -481,6 +481,12 @@
                              x-model.number="discoveryCfg.cooldown_min">
                     </label>
                     <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Ignore nodes silent longer than</span><span class="label-text-alt text-xs opacity-50">days</span></div>
+                      <input type="number" min="1" max="365" step="1" class="input input-bordered input-sm w-full font-mono"
+                             x-model.number="discoveryCfg.max_silence_days">
+                      <div class="label py-0"><span class="label-text-alt text-xs opacity-40">A node heard today answers ~16-26% of the time; one silent over a week, 1.8%.</span></div>
+                    </label>
+                    <label class="form-control w-full">
                       <div class="label py-1"><span class="label-text text-xs">Interval between missions</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
                       <input type="number" min="30" max="3600" step="30" class="input input-bordered input-sm w-full font-mono"
                              x-model.number="discoveryCfg.interval_sec">

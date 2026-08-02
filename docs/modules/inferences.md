@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: dbc50ff94d74011a17908074fab6b609d8c154e0a5acf82df2fdc45cec92aa2a
+source_hash: 9fc863a7105fb0fd0503fb1975b6bc6c2b42e961f59f467414ec1143e70191a2
 updated: 2026-08-02
 ---
 
@@ -220,6 +220,38 @@ Verified live, same data, only the mode changed: `manual` returned exactly
 `pinned:89ec, target:trix` and nothing else; with nothing selected it returned
 **zero rows**, which is what lets the panel say *"MANUAL · nothing selected"*
 rather than idling with no explanation.
+
+### Liveness — the strongest predictor we have, and it was unused
+
+Measured across all 21,864 stored attempts:
+
+| last heard | attempts | answers |
+|---|---|---|
+| directly, 0-hop RF | 4,345 | **26.1%** |
+| within 24 h | 12,847 | **16.0%** |
+| within 7 d | 1,024 | 7.0% |
+| silent over 7 d | 3,648 | **1.8%** |
+
+A **14× spread** — far larger than any distance effect the ranking was built on.
+`MESH_REACH_SPEC` §3 stated the principle from the start — *"passive reception is
+free evidence and must be mined first… it is proof the node is alive and roughly
+where, which is what makes an attempt worth spending"* — and the selector did not
+implement it, while `last_heard` sat unused in evidence it already selected.
+
+The shortlist this replaced had **4 of 14** entries heard within 24 h; the rest
+were 4–33 days silent. That is where the attempt budget was going while 40+
+shots produced nothing.
+
+`max_silence_days` (default 14, settable) excludes silent nodes outright, counted
+as `skipped_silent` — 150 on the first run. Above that, a tiered bonus (400 / 220
+/ 90 / 20) is added to every automatic class. **Tiered rather than smooth,
+because the measured curve is a cliff between "today" and "last week", not a
+gentle decay.**
+
+A pinned or starred target bypasses the cutoff, as it bypasses the window and the
+ceiling — an explicit choice still outranks an automatic exclusion.
+
+Result: **11 of 11** shortlist entries heard within 24 h, against 4 of 14 before.
 
 ### Classes
 
