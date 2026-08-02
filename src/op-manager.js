@@ -106,6 +106,13 @@ const REGISTRY = new Map([
     example_payload: { target: null, values: { display: { max_range_km: 100, log_scale: false, crosshair: true } } },
     timeout_s: 5, reboot: false,
   }],
+  ['discovery_config', {
+    class: 'Local', description: 'Discovery strategy settings',
+    method: 'PUT', endpoint: () => '/config/discovery',
+    read_back_path: () => '/config/discovery', match_fields: [],
+    example_payload: { target: null, values: { strategy: 'ladder', window_km: 25, attempts_per_target: 6, cooldown_min: 30, interval_sec: 180, enabled: true } },
+    timeout_s: 5, reboot: false,
+  }],
   ['auto_purge_settings', {
     class: 'Local', description: 'Scheduled auto-purge settings',
     method: 'PUT', endpoint: () => '/auto-purge',

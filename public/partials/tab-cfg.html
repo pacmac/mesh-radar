@@ -5,6 +5,7 @@
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='modes'   && 'tab-active font-semibold'" @click="switchCfgTab('modes')">Modes</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='radar'   && 'tab-active font-semibold'" @click="switchCfgTab('radar')">Radar</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='discovery' && 'tab-active font-semibold'" @click="switchCfgTab('discovery')">Discovery</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='alerts'  && 'tab-active font-semibold'" @click="switchCfgTab('alerts')">Alerts</a>
           </div>
 
@@ -428,6 +429,75 @@
           </div>
 
           <!-- ===================== ALERTS ===================== -->
+          <!-- ── DISCOVERY ────────────────────────────────────────────────────
+               How the discovery runner chooses and pursues targets. Loaded on
+               first view, saved through the discovery_config op; every value is
+               clamped server-side (docs/DISCOVERY_STRATEGY.md). -->
+          <div x-show="cfgTab==='discovery'" x-effect="cfgTab==='discovery' && !discoveryCfg && loadDiscoveryCfg()"
+               class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
+            <template x-if="discoveryCfg">
+              <div class="card bg-base-100 shadow">
+                <div class="card-body py-3">
+                  <h2 class="card-title">Discovery — how targets are chosen</h2>
+                  <p class="text-sm text-base-content/60 mb-2">
+                    A ladder climbs one rung at a time: only targets within the window of ground
+                    we have actually reached are attempted, and the window moves forward when the
+                    record does. Selection changes take effect at the next recompute (up to 15 min);
+                    rate and on/off take effect on the next mission.
+                  </p>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Strategy</span></div>
+                      <select class="select select-bordered select-sm w-full font-mono" x-model="discoveryCfg.strategy">
+                        <option value="ladder">ladder — window past the record</option>
+                        <option value="portfolio">portfolio — no window, long shots allowed</option>
+                      </select>
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Window past proven ground</span><span class="label-text-alt text-xs opacity-50">km</span></div>
+                      <input type="number" min="1" max="250" step="1" class="input input-bordered input-sm w-full font-mono"
+                             :disabled="discoveryCfg.strategy !== 'ladder'"
+                             x-model.number="discoveryCfg.window_km">
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Attempts per target</span><span class="label-text-alt text-xs opacity-50">before it retires</span></div>
+                      <input type="number" min="1" max="50" step="1" class="input input-bordered input-sm w-full font-mono"
+                             x-model.number="discoveryCfg.attempts_per_target">
+                      <div class="label py-0"><span class="label-text-alt text-xs opacity-40">Proven corridors answer about 4% of the time — one attempt settles nothing.</span></div>
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Cooldown per target</span><span class="label-text-alt text-xs opacity-50">min</span></div>
+                      <input type="number" min="1" max="1440" step="5" class="input input-bordered input-sm w-full font-mono"
+                             x-model.number="discoveryCfg.cooldown_min">
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Interval between missions</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
+                      <input type="number" min="30" max="3600" step="30" class="input input-bordered input-sm w-full font-mono"
+                             x-model.number="discoveryCfg.interval_sec">
+                      <div class="label py-0"><span class="label-text-alt text-xs opacity-40"
+                           x-text="discoveryCfg.interval_sec ? '~' + Math.round(86400 / discoveryCfg.interval_sec) + ' attempts/day' : ''"></span></div>
+                    </label>
+                    <label class="form-control w-full cursor-pointer">
+                      <div class="label py-1"><span class="label-text text-xs">Runner enabled</span></div>
+                      <input type="checkbox" class="toggle toggle-sm" x-model="discoveryCfg.enabled">
+                      <div class="label py-0"><span class="label-text-alt text-xs opacity-40">Stops dispatch without leaving DISC mode.</span></div>
+                    </label>
+                  </div>
+
+                  <div class="card-actions justify-end items-center gap-3 mt-2">
+                    <span class="text-xs text-success" x-show="discoveryCfgSaved">Saved</span>
+                    <span class="text-xs text-error" x-show="discoveryCfgError" x-text="discoveryCfgError"></span>
+                    <button class="btn btn-sm btn-primary" :disabled="discoveryCfgSaving" @click="saveDiscoveryCfg()">
+                      <span x-show="discoveryCfgSaving" class="loading loading-spinner loading-xs"></span>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
           <div x-show="cfgTab==='alerts'" x-effect="cfgTab==='alerts' && !alertRules.length && loadAlertRules()"
                class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
 

@@ -71,8 +71,23 @@ const DEFAULTS = {
   recent: 60,
 };
 
+/** Effective settings.
+ *
+ *  `interval_sec` and `enabled` come from the USER-FACING `discovery` key
+ *  (docs/DISCOVERY_STRATEGY.md); the rest are module internals and stay here.
+ *  A setting nobody should be turning is not a setting — aim_timeout_sec and
+ *  timeout_sec are protocol timing, not policy.
+ *
+ *  Read per tick, so a change from the dashboard takes effect on the next
+ *  mission with no restart. */
 function cfg() {
-  return { ...DEFAULTS, ...(getConfig('mission_runner', {}) || {}) };
+  const d = getConfig('discovery', {}) || {};
+  return {
+    ...DEFAULTS,
+    ...(getConfig('mission_runner', {}) || {}),
+    ...(d.interval_sec != null ? { interval_sec: d.interval_sec } : {}),
+    ...(d.enabled      != null ? { enabled:      d.enabled      } : {}),
+  };
 }
 
 class MissionRunner extends EventEmitter {

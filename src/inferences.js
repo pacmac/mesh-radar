@@ -445,7 +445,15 @@ registerInference({
            MAX(th.ts)                                                 AS last_attempt,
            (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat') AS home_lat,
            (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon,
-           (SELECT MAX(strftime('%s','now'))) 					      AS now_ts
+           (SELECT MAX(strftime('%s','now'))) 					      AS now_ts,
+           -- SETTINGS ARRIVE AS EVIDENCE, NOT AS A CALL. This inference is pure
+           -- and the boundary test enforces it, so it cannot reach getConfig().
+           -- Same trick as home.lat above. COALESCE gives the default in SQL, so
+           -- an unset key can never produce a null that silently disables a rule.
+           COALESCE((SELECT value ->> '$.strategy'            FROM config WHERE key = 'discovery'), 'ladder') AS s_strategy,
+           COALESCE((SELECT value ->> '$.window_km'           FROM config WHERE key = 'discovery'), 25)   AS s_window_km,
+           COALESCE((SELECT value ->> '$.attempts_per_target' FROM config WHERE key = 'discovery'), 6)    AS s_attempts,
+           COALESCE((SELECT value ->> '$.cooldown_min'        FROM config WHERE key = 'discovery'), 30)   AS s_cooldown_min
     FROM nodes n
     LEFT JOIN traceroute_history th ON th.to_num = n.num
     WHERE n.lat IS NOT NULL AND n.lon IS NOT NULL AND n.lat <> 0
@@ -476,11 +484,14 @@ registerInference({
     const HOME = { lat: rows[0].home_lat, lon: rows[0].home_lon };
     if (HOME.lat == null || HOME.lon == null) return null;
 
-    // 24 hours. Peter's "not so much as to become a nuisance" (§1) with a
-    // number attached: a target tried today is not a candidate today, however
-    // attractive it looks. This is the only rate rule the selector owns — a
-    // real budget belongs to whatever dispatches, which is not this.
-    const COOLDOWN = 86_400;
+    // SETTABLE FROM THE DASHBOARD (docs/DISCOVERY_STRATEGY.md). These were
+    // hardcoded, and the 24 h cooldown was the specific reason the queue drifted
+    // out to 133 km steps: it retired every good candidate after a single
+    // attempt, so selection had nothing near to work on.
+    const STRATEGY  = String(rows[0].s_strategy || 'ladder');
+    const WINDOW_KM = Number(rows[0].s_window_km) || 25;
+    const MAX_TRIES = Number(rows[0].s_attempts) || 6;
+    const COOLDOWN  = (Number(rows[0].s_cooldown_min) || 30) * 60;
     // §12: beyond this a self-reported position is not evidence, it is a
     // claim. 250 rather than the record's 200 because a MISSION may legitimately
     // aim past the current frontier — the point is to beat it — but a node
@@ -488,7 +499,7 @@ registerInference({
     const CEILING_KM = 250;
 
     const scored = [];
-    const skipped = { cooling: 0, suspect: 0, exhausted: 0 };
+    const skipped = { cooling: 0, suspect: 0, exhausted: 0, beyond_window: 0 };
 
     // The record is computed from the same rows, not passed in: an inference
     // that took the record as a dependency would rank against a stale one on
@@ -549,6 +560,17 @@ registerInference({
       // proven corridor outranks a 100 km leap into a direction we have never
       // reached, even though the leap has the bigger headline number.
       const step = Math.round(stepKm(r.lat, r.lon) * 10) / 10;
+
+      // THE WINDOW. A ladder climbs one rung at a time: a candidate is only
+      // eligible if it sits within WINDOW_KM of ground we have actually
+      // reached, and the window ratchets forward when the record moves. Without
+      // it, ranking by smallest step still walks outward as near candidates go
+      // into cooldown — measured at 106-133 km before this existed.
+      //
+      // `portfolio` keeps the old behaviour so a deliberate long shot is still
+      // possible from the dashboard, without a deploy.
+      if (STRATEGY === 'ladder' && step > WINDOW_KM) { skipped.beyond_window++; continue; }
+
       const stepScore = Math.max(0, 300 - step * 2);
 
       if (attempts === 0 && km > record) {
@@ -569,7 +591,12 @@ registerInference({
         cls = 'reconfirm';
         reason = `verified ${hits}/${attempts}, untried for ${ageDays} days — is the corridor still open?`;
         rank = 300 + km;
-      } else if (hits === 0 && attempts >= 40) {
+      } else if (hits === 0 && attempts >= MAX_TRIES) {
+        // THE ATTEMPT BUDGET. At the frontier's own ~4% base rate one attempt
+        // settles nothing, so a target gets MAX_TRIES shots spaced by the
+        // cooldown and then retires. Six at thirty minutes is six shots over
+        // three hours — against one per day before, which is what made the
+        // whole exercise a survey of breadth rather than a search.
         skipped.exhausted++;
         continue;
       } else {
@@ -635,12 +662,18 @@ registerInference({
       entity: 'global',
       value: {
         cls: 'summary',
+        // The panel states the rule it is running under, not just its results.
+        strategy: STRATEGY,
+        window_km: STRATEGY === 'ladder' ? WINDOW_KM : null,
+        attempts_per_target: MAX_TRIES,
+        cooldown_min: Math.round(COOLDOWN / 60),
         record_km: Math.round(record * 10) / 10,
         candidates: scored.length,
         shown: top.length,
         skipped_cooling: skipped.cooling,
         skipped_suspect: skipped.suspect,
         skipped_exhausted: skipped.exhausted,
+        skipped_beyond_window: skipped.beyond_window,
       },
       confidence: null,
       evidence_count: rows.length,

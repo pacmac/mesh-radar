@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 7d264a23eb8984bcf968840fd3e096d969a18d91a40f78aa9b52c621411c5a3d
+source_hash: 1fa9995d0e43541efeaf26899be1e07f89dd82177b4890041d473853b661b0d5
 updated: 2026-07-27
 ---
 
@@ -138,6 +138,23 @@ Body: `{ [key]: value, ... }`. Updates multiple keys at once.
 - 400 if body is not an object or any key is unknown (returns list of unknown keys)
 - Calls `nodeList.refilter()` once if any of the updated keys is a `node_filter` key
 - Returns the updates object
+
+## `discovery` — one key, two jobs
+
+`DEFAULTS` governs **both** persistence and browser visibility: `PUT /:key`
+rejects anything not in it (line 133), and `ws-relay.js` `settingsEvent()`
+iterates the same object to build the settings WS payload. Declaring `discovery`
+there is what makes these settings survive a restart *and* reach the browser
+without a fetch. An earlier `PUT mission_runner` failed with *"Unknown config
+key"* for exactly this reason.
+
+`GET/PUT /config/discovery` mirror `/config/radar`: merged defaults out,
+allowlisted fields in.
+
+**Clamps are server-side.** A browser is not a validator — `interval_sec: 0`
+would hammer a shared mesh and `window_km: 0` would empty the queue. Verified:
+`{interval_sec:0, window_km:9999, attempts_per_target:0, cooldown_min:99999}`
+stored as `{30, 250, 1, 1440}`, and an unknown `strategy` returns 400.
 
 ## Invariants
 

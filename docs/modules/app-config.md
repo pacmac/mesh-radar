@@ -1,7 +1,7 @@
 ---
 module: app-config
 source: public/app-config.js
-source_hash: 854aba0ebb8bbb818687eb89d4f3356b6b60f035d3423ff40db48b3ad1e26672
+source_hash: 75b9f2efa4f733c51729002d2a45550e2da97bc7c07ff38b5cc647efef77acfe
 updated: 2026-08-01
 ---
 
@@ -125,6 +125,17 @@ read, which is Domain 1 and needs mesh-gw's cooperation — see task
 `docs/gw/API_REST.md:83` claims a write refreshes the cache. It does not, and the
 comment at `app-config.js` in `saveChannel` — written from observation — is the
 one to believe.
+
+## `loadDiscoveryCfg` / `saveDiscoveryCfg`
+
+Mirrors the radar pair. Fetched on first view rather than WS-pushed: this is a
+**form flow**, which `BROWSER_CONTRACT` permits a GET for — the WS-only rule is
+about display values, not the current contents of a settings form the user is
+about to edit.
+
+**Re-reads after saving** instead of trusting the form. The server clamps
+(`docs/modules/config-api.md`), so what was typed and what was stored are not
+always the same value.
 
 ## Files changed
 

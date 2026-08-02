@@ -31,12 +31,20 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 3df61dd3007d4e2f154d718139f8ae275b03711801461cd32359b47256653bcd
+source_hash: cb71e5d67fa842e0d80bafe762c6c401643a358488be897ddd21911f9d4dec2d
 updated: 2026-07-31
 ---
 
 # Module: browser-playwright-audit
 
+
+## The config page has a Discovery section
+
+`public/app-config.js` gained `loadDiscoveryCfg`/`saveDiscoveryCfg` and
+`tab-cfg.html` a `discovery` sub-tab — how the discovery runner chooses and
+pursues targets. Form flow, so a GET is permitted; every value is clamped
+server-side and the page re-reads after saving rather than trusting what it sent.
+See `docs/DISCOVERY_STRATEGY.md`.
 ## The header's mode group is four buttons, not three
 
 `public/index.html` gained **DISC** beside PASV / ACTV / SCAN. It is a real mode

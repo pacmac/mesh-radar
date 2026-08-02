@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: 51776ead4bb660cdfcad4abcca106493805868ae592589c7c294d56846d352a2
+source_hash: fdbb298338fd3b1a81b72649096e52de974354e8cd04f813757cbf23f3ff76a4
 updated: 2026-08-02
 ---
 
@@ -167,6 +167,16 @@ waiting for a reply that never comes. Rescheduling from the *end* would silently
 halve the configured rate. The next tick is scheduled at
 `interval − elapsed`, with a 5 s floor so a long mission cannot immediately
 trigger the next one.
+
+## Settings come from the `discovery` key
+
+`interval_sec` and `enabled` are read from `discovery`
+(`docs/DISCOVERY_STRATEGY.md`) on **every tick**, so a change from the dashboard
+takes effect on the next mission with no restart.
+
+`aim_timeout_sec`, `timeout_sec` and `recent` stay in this module's own
+`DEFAULTS` and are deliberately not exposed. They are protocol timing, not
+policy — a setting nobody should be turning is not a setting.
 
 ## Rate
 

@@ -27,6 +27,19 @@ export const DEFAULTS = {
   'range_test.duration':      10,
   'perf.failure_epoch':       null,   // read-only stamp: when traceroute failure recording began
   'traceroute.enabled':       true,   // master switch for AUTOMATIC dispatch; a manual request is never gated
+  // DISCOVERY STRATEGY. One key, because this list governs two things at once:
+  // the generic PUT below rejects anything not in it, and ws-relay's
+  // settingsEvent() iterates it to build the settings WS payload. Declaring it
+  // here is what makes these settings both persistent and visible to the
+  // browser without a fetch. See docs/DISCOVERY_STRATEGY.md.
+  'discovery': {
+    strategy:            'ladder',  // 'ladder' (window past the record) | 'portfolio' (no window)
+    window_km:           25,        // ladder: furthest step past proven ground worth attempting
+    attempts_per_target: 6,         // shots at one target before it retires
+    cooldown_min:        30,        // spacing between shots at the same target
+    interval_sec:        180,       // seconds between missions
+    enabled:             true,      // runner on/off without leaving DISC mode
+  },
 };
 
 router.get('/', (req, res) => {
@@ -40,6 +53,18 @@ router.get('/', (req, res) => {
 const PASV_DEFAULTS = { stale_sec: 1800, stale_fail_sec: 600, timeout_sec: 60 };
 const ACTV_DEFAULTS = { dwell_sec: 90,   retry_sec: 30 };
 const SCAN_DEFAULTS = { step_deg:  5,    dwell_sec: 60 };
+
+// Server-side clamps for the discovery settings. A BROWSER IS NOT A VALIDATOR:
+// interval_sec 0 would hammer a shared mesh, and window_km 0 would empty the
+// queue. Enforced on the way in so a hand-rolled PUT cannot bypass the form.
+const DISCOVERY_LIMITS = {
+  window_km:           [1, 250],
+  attempts_per_target: [1, 50],
+  cooldown_min:        [1, 1440],
+  interval_sec:        [30, 3600],
+};
+const DISCOVERY_STRATEGIES = ['ladder', 'portfolio'];
+const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, Number(v)));
 
 router.get('/radar', (req, res) => {
   const pasv = { ...PASV_DEFAULTS, ...getConfig('pasv_config', {}) };
@@ -88,6 +113,35 @@ router.put('/radar', (req, res) => {
   }
 
   res.json({ ok: true });
+  broadcastSettings();
+});
+
+// Discovery strategy — same shape as /radar above: GET returns the effective
+// settings (defaults merged with the stored override), PUT allowlists and clamps.
+router.get('/discovery', (req, res) => {
+  res.json({ ...DEFAULTS.discovery, ...getConfig('discovery', {}) });
+});
+
+router.put('/discovery', (req, res) => {
+  const body = req.body?.values ?? req.body ?? {};
+  const cur  = { ...DEFAULTS.discovery, ...getConfig('discovery', {}) };
+
+  if (body.strategy !== undefined) {
+    if (!DISCOVERY_STRATEGIES.includes(body.strategy)) {
+      return res.status(400).json({ error: `invalid strategy: ${body.strategy}` });
+    }
+    cur.strategy = body.strategy;
+  }
+  for (const [k, range] of Object.entries(DISCOVERY_LIMITS)) {
+    if (body[k] === undefined) continue;
+    const n = clamp(body[k], range);
+    if (!Number.isFinite(n)) return res.status(400).json({ error: `invalid ${k}` });
+    cur[k] = n;
+  }
+  if (body.enabled !== undefined) cur.enabled = !!body.enabled;
+
+  setConfig('discovery', cur);
+  res.json(cur);
   broadcastSettings();
 });
 

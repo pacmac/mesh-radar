@@ -1,7 +1,7 @@
 ---
 module: op-manager
 source: src/op-manager.js
-source_hash: 1c76a62c5bc1d36c3a9c4910b62e14cf5ab71409ba22df7ef53eeac6facbe193
+source_hash: 54d89f6fab5f2379b8c77cd0186ad0d03d6618385c8051e7931462782728a311
 updated: 2026-07-22
 ---
 
@@ -205,6 +205,12 @@ Returns `{ count, ops[] }` — full REGISTRY serialized. Each entry includes `ki
 
 Returns the current op state: `{ op_id, kind, target, state, result, error, ts }`.
 - 404 if op not found or already GC'd (completed ops are GC'd after 5 minutes).
+
+## `discovery_config`
+
+`Local` class, `PUT /config/discovery`, read-back from the same path — mirroring
+`radar_config`. Carries the six discovery settings; the server clamps them, so
+the browser re-reads after a save rather than trusting what it sent.
 
 ## Invariants
 

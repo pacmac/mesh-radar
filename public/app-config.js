@@ -381,6 +381,45 @@ export const configMixin = {
     } catch (_) {} // opFlow already showed the error toast
   },
 
+  /** Discovery strategy settings. Same shape as loadRadarCfg/saveRadarCfg below.
+   *
+   *  Fetched on first view rather than pushed: this is a FORM FLOW, which
+   *  BROWSER_CONTRACT permits a GET for — the page-data rule is about display
+   *  values, not about the current contents of a settings form the user is
+   *  about to edit. Every value is clamped server-side; the min/max on the
+   *  inputs are a courtesy, not the validation. */
+  discoveryCfg: null,
+  discoveryCfgSaving: false,
+  discoveryCfgSaved: false,
+  discoveryCfgError: '',
+
+  async loadDiscoveryCfg() {
+    try {
+      this.discoveryCfg = await fetchJSON('/config/discovery');
+    } catch (e) {
+      console.warn('loadDiscoveryCfg failed', e);
+    }
+  },
+
+  async saveDiscoveryCfg() {
+    this.discoveryCfgSaving = true;
+    this.discoveryCfgSaved  = false;
+    this.discoveryCfgError  = '';
+    try {
+      await opFlow('discovery_config', null, { values: this.discoveryCfg }, { successMsg: 'Discovery settings saved' });
+      // Re-read rather than trusting the form: the server clamps, so what was
+      // typed and what was stored are not always the same value.
+      await this.loadDiscoveryCfg();
+      this.discoveryCfgSaved = true;
+      setTimeout(() => { this.discoveryCfgSaved = false; }, 3000);
+    } catch (e) {
+      this.discoveryCfgError = e.message || 'Save failed';
+      setTimeout(() => { this.discoveryCfgError = ''; }, 5000);
+    } finally {
+      this.discoveryCfgSaving = false;
+    }
+  },
+
   async loadRadarCfg() {
     try {
       this.radarCfg = await fetchJSON('/config/radar');

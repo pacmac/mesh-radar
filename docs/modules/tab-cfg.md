@@ -1,7 +1,7 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: 77a7994c4fe9fd0b4c62ccb18e086d3382f1e819d4c216db9997342f3566abd5
+source_hash: 52864bfea5a030563e2aac61f6ffe4edab53d07e96f26103f9be1d7dc40fdf54
 updated: 2026-07-16
 ---
 
@@ -144,6 +144,20 @@ Kept as-is (sanctioned):
 - Group/box title class (l.37):
   `'text-xs font-semibold uppercase text-base-content/50 mb-2'` →
   `'text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2'`
+
+## Discovery sub-tab
+
+How the discovery runner chooses and pursues targets — strategy, window,
+attempts per target, cooldown, interval, enabled. Same shape as the Radar
+section: loaded on first view via `x-effect`, saved through the
+`discovery_config` op.
+
+The `min`/`max` on the inputs are a **courtesy, not the validation** — every
+value is clamped server-side (`docs/modules/config-api.md`).
+
+States plainly that selection changes take effect at the next recompute (up to
+15 min) while rate and on/off take effect on the next mission, because the two
+have genuinely different latencies and a silent delay reads as a broken form.
 
 ## Invariants
 

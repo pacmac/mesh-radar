@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: 07e4cf54551aa6b9a438c506fe6227002bcf8b1a4f0dc749d27ffbc590cec0c6
+source_hash: 0208f05b29ad3dca5284fd417c9f54b3bc263a48471561237be203ca4fb54636
 updated: 2026-08-02
 ---
 
@@ -156,6 +156,39 @@ Suspect distances are excluded from `proven` (§12): a claim is not a place.
 
 `rank = 1000 + max(0, 300 − step × 2)`, so `record` and `unknown-record` share one
 scale and the smallest step wins regardless of which class it is in.
+
+### The window and the attempt budget — settable, and read as evidence
+
+Full rationale in `docs/DISCOVERY_STRATEGY.md`.
+
+Ranking by smallest step was right and insufficient. The 24 h cooldown retired
+every good candidate after one attempt, so the queue walked outward until it was
+shooting **106–133 km** past anything we had reached, with 44 targets locked out
+at any moment.
+
+Four settings now arrive **through the declared SQL evidence**, the same way
+`home.lat` always has — this inference is pure and cannot call `getConfig`.
+`COALESCE` supplies the default in SQL, so an unset key can never produce a null
+that silently disables a rule.
+
+| setting | effect |
+|---|---|
+| `strategy` | `ladder` applies the window; `portfolio` is the old behaviour |
+| `window_km` | a candidate further than this past proven ground is excluded |
+| `attempts_per_target` | replaces the hardcoded `attempts >= 40` retire rule |
+| `cooldown_min` | replaces the hardcoded 24 h lockout |
+
+**Proven reached, not merely present** (2026-08-02, same data, only the strategy
+changed):
+
+| strategy | candidates | max step shown | `skipped_beyond_window` |
+|---|---|---|---|
+| `ladder` 25 km | 131 | **15.8 km** | 129 |
+| `portfolio` | 222 | **163.7 km** | 0 |
+
+The `global` summary fact publishes the active rule (`strategy`, `window_km`,
+`attempts_per_target`, `cooldown_min`) alongside the counts, so the panel states
+what it is running under rather than only what it produced.
 
 ### Classes
 
