@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: f8f0592e7609cce47bff8e7d93e55e485bef551c035c2004a75f71e4ac61b2a7
+source_hash: 1899bfc726992ee8b5e155a39cbf11766490caa15f362d4e89a450180701c743
 updated: 2026-08-02
 ---
 
@@ -72,6 +72,26 @@ they compile; the SVG fills cannot be and use DaisyUI variables instead.
 The caption under the map explains the two size encodings — relay radius is
 traffic carried, line weight is how often that hop was witnessed — because a
 size difference with no stated meaning is decoration.
+
+## Discovery panel — full width, at the top
+
+Peter, 2026-08-02: *"I still see no signs of activity on the dashboard, as far as
+I can see it is static"*, then on finding it: *"the discovery card should be
+above missions, i.e. at the top"* and *"well if it's there it's not very
+obvious."*
+
+All three were the same fault. The panel was working — 23 attempts, 22 completed,
+a mission in flight — but it sat **third in the right-hand column, below the
+fold**, while the left column ended at the Frontier table and left half the board
+empty. The one thing on the page that is happening *right now* required
+scrolling to find.
+
+It is now full width, directly under the stat row, above everything. The status
+is a badge with a pulsing dot rather than grey micro-text, and the header carries
+`24 tried · 0 answered` so the counters move where they can be seen.
+
+If a glance cannot tell you whether the mesh is being probed, the panel has
+failed at its only job.
 
 ## Discovery panel
 
