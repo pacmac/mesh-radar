@@ -26,10 +26,14 @@ export const dashMode = new DashMode();
 // live at call time: 'rotator'→YAGI, 'primary'→OMNI, 'non-rotator'→any radio
 // except the YAGI, 'all'→every radio, 'rx' (tx only)→whichever radio heard the
 // packet. The defaults reproduce the historic hardcoded behaviour exactly.
+// `passive` — does the passive tracer act in this mode? It is a system rule, not
+// a user knob: PUT /config/modes copies only rx and tx, so an override can never
+// carry it. It gates ONLY whether passive acts; passive keeps PASV's radio roles
+// in every mode and never takes the YAGI.
 const MODE_DEFAULTS = {
-  pasv: { rx: 'non-rotator', tx: 'rx' },      // passive: hear on non-rotator radios, re-trace via the hearer
-  actv: { rx: 'rotator',     tx: 'rotator' }, // active: the aimed YAGI hears and transmits
-  scan: { rx: 'rotator',     tx: 'rotator' }, // scan: the sweeping YAGI hears and transmits
+  pasv: { rx: 'non-rotator', tx: 'rx',      passive: true  }, // passive: hear on non-rotator radios, re-trace via the hearer
+  actv: { rx: 'rotator',     tx: 'rotator', passive: false }, // active: the aimed YAGI hears and transmits
+  scan: { rx: 'rotator',     tx: 'rotator', passive: false }, // scan: the sweeping YAGI hears and transmits
   // DISC — discovery. Peter, 2026-08-02: "well this is a new mode isnt it?"
   //
   // It is, and the roles are why. A discovery mission chooses a distant target
@@ -41,7 +45,19 @@ const MODE_DEFAULTS = {
   //
   // That rx:'all' + tx:'rotator' combination is what makes it a mode of its own
   // rather than a flag on ACTV, whose rx is the rotator alone.
-  disc: { rx: 'all',         tx: 'rotator' },
+  //
+  // passive: TRUE. Selecting DISC used to switch the passive tracer off entirely
+  // — `passive-tracer.js` tested `dashMode.value !== 0`. Measured 2026-08-02:
+  // passive ran 17.0 traces/h answering 3.8% (n=5,557) before DISC was selected
+  // at 10:53, then managed 1 trace in 9.5 h while DISC returned 0 answers for
+  // 132 attempts. The only prober that was working got silently disabled by the
+  // mode meant to improve reach.
+  //
+  // They do not compete for the antenna: passive keeps PASV's roles in every
+  // mode, so it works the OMNI while missions work the YAGI. The one real
+  // conflict is airtime, and passive already yields on missionRunner.dispatching
+  // for the seconds a mission packet is actually in the air.
+  disc: { rx: 'all',         tx: 'rotator', passive: true },
 };
 const MODE_NAME = { 0: 'pasv', 1: 'actv', 2: 'scan', 3: 'disc' };
 
@@ -101,6 +117,13 @@ export function isValidRole(role, kind) {
   if (typeof role !== 'string' || !role) return false;
   const known = kind === 'tx' ? TX_ROLES : RX_ROLES;
   return known.includes(role) || MAC_RE.test(role);
+}
+
+// Does the passive tracer act in this mode? Consumers must ask this rather than
+// testing a mode number — a bare `dashMode.value !== 0` in passive-tracer.js is
+// what silently disabled passive tracing for the whole of DISC.
+export function passiveTracingAllowed(mode) {
+  return modeCfg(mode).passive === true;
 }
 
 // The full effective per-mode config (defaults merged with any stored override).

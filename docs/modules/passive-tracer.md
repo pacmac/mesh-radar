@@ -1,25 +1,33 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: 4c85713ba217057cc524901c34a83a50cb61ba4ee85c07c8241d8b073b6b9a9f
-updated: 2026-07-27
+source_hash: ec8c91d249094ec09adb1a27602eb13265c02c214f8b15672950b495b8912920
+updated: 2026-08-02
 ---
 
 # Module: passive-tracer
 
 ## Purpose
 
-Automatic traceroute scheduling for PASV mode. Listens to bridge `packet` events and
-triggers a traceroute for each new remote node seen, subject to concurrency and staleness
-guards. Delegates dispatch, timeout, and decode to `traceroute.js` (V2 path).
+Automatic traceroute scheduling for the modes that permit it. Listens to bridge `packet`
+events and triggers a traceroute for each new remote node seen, subject to concurrency and
+staleness guards. Delegates dispatch, timeout, and decode to `traceroute.js` (V2 path).
 
-Does not decide which mode is active — it checks `dashMode.value` and only acts in
-PASV mode (value 0).
+Does not decide which mode is active, and **does not decide which modes it runs in** —
+it asks `passiveTracingAllowed(dashMode.value)`. Today that is PASV and DISC.
+
+Whatever the active mode, this module always uses **PASV's radio roles** and never moves
+the rotator. It replies through the radio that heard the packet (`tx: 'rx'`).
+
+It does **not** follow that it never touches the YAGI: the `pasv` `rx` default is
+`'non-rotator'`, but the stored `mode_config` override on this host sets `pasv.rx = 'all'`
+(verified 2026-08-02), so a packet heard by the YAGI is traced back out on the YAGI. See
+`docs/modules/dash-mode.md` § `passive` and ledger **B60**.
 
 ## Responsibilities
 
 - Register once as a bridge event listener via `init()` (called once at startup)
-- Filter inbound packets: PASV mode only, not busy, not own device, not rotator, not MQTT
+- Filter inbound packets: mode permits passive (PASV or DISC), not busy, not own device, not a non-listener radio, not MQTT, no mission packet in the air
 - Check per-node staleness via `_attempted`/`_failed` Maps and `nodeList._cache.last_traceroute`
 - Enforce single-trace concurrency (`_busy` flag)
 - Dispatch via `traceroute.dispatch` (V2) and track outcome in `_attempted` / `_failed`
@@ -29,7 +37,7 @@ PASV mode (value 0).
 
 - `bridge.js` — `bridge.on('event', …)` for packet ingestion
 - `node-list.js` — `nodeList._cache` (staleness check) and `ownDeviceNums` (via node-filter)
-- `dash-mode.js` — `dashMode.value` gate; `isListenerForMode('pasv', rxDevice)` (reception gate); `transmitterForMode('pasv', {rxDevice})` for the dispatch radio
+- `dash-mode.js` — `passiveTracingAllowed(dashMode.value)` gate; `isListenerForMode('pasv', rxDevice)` (reception gate); `transmitterForMode('pasv', {rxDevice})` for the dispatch radio. The two role lookups stay pinned to `'pasv'` **deliberately** — they are this prober's own radio contract, not the active mode's. Resolving them from the live mode would hand passive `tx: 'rotator'` in DISC and fire an unaimed trace down the beam.
 - `db.js` — `getConfig` for `pasv_config`
 - `node-filter.js` — `ownDeviceNums`
 - `feature-flags.js` — `FF.SSOT_TRACEROUTE` gate
@@ -82,14 +90,18 @@ passiveTracer.init()        // register bridge event listener — call once at s
 A packet triggers a trace only if ALL conditions pass:
 
 1. `ev.type === 'packet'`
-2. `dashMode.value === 0` (PASV mode)
+2. `passiveTracingAllowed(dashMode.value)` — PASV or DISC. **Was `dashMode.value === 0`**,
+   which switched passive tracing off entirely whenever DISC was selected: 17.0 traces/h
+   answering 3.8% became 1 trace in 9.5 h on 2026-08-02, while DISC returned 0 for 132.
+   No log line reported it, because the return is silent and upstream of every counter.
 3. `!this._busy` — no trace currently in flight
 4. `pkt.from` is non-null
-5. `rxDevice` (`ev.addr ?? ev.device`) is non-null
+5. `rxDevice` (`ev.__ble_addr ?? ev.addr ?? ev.device`) is non-null. `__ble_addr` heads the chain to match `persist.js` ("V2: __ble_addr is the device key on every event"); added 2026-08-02. It was **not** the cause of the starvation, but it was not a guess either: the invariants below already carried it as an open v1 defect ("after bridge.js v2 alignment, this must become `ev.__ble_addr`"), now closed.
 6. `pkt.decoded.portnum !== 'TRACEROUTE_APP'` — don't self-trigger on responses
 7. `!ownDeviceNums().has(pkt.from)` — not a local BLE radio
-8. `isListenerForMode('pasv', rxDevice)` — the receiving radio is a PASV listener (default role `'non-rotator'`, i.e. any radio except the YAGI; configurable via `mode_config`)
+8. `isListenerForMode('pasv', rxDevice)` — the receiving radio is a PASV listener. Default role `'non-rotator'` (any radio except the YAGI), but **the stored `mode_config` on this host overrides it to `'all'`** — see ledger B60.
 9. `!pkt.via_mqtt` — MQTT nodes return NO_ROUTE immediately
+9a. `!missionRunner.dispatching` — a discovery packet is in the air
 10. `needsTrace(pkt.from) === true` — not within stale or fail-backoff window
 
 ## `needsTrace` logic
@@ -123,7 +135,7 @@ _trace(from_num, device)
 Peter, 2026-08-02: *"the traceroute should be used by us, when a discovery is in
 progress."*
 
-`if (missionRunner.busy) return;` — one line, before the staleness gate.
+`if (missionRunner.dispatching) return;` — one line, before the staleness gate.
 
 Spending the instrument on whatever happened to arrive is the reactive behaviour
 that put **5,046 attempts into 335 targets that have never answered** (we keep
@@ -132,8 +144,25 @@ reactive tracer can only ever confirm the shape of what already reaches the
 antenna; it cannot pursue.
 
 This module is not obsolete — between missions it still records the mesh as it
-arrives, which is free evidence (spec §3). It is now subordinate to a chosen
-target rather than competing with one.
+arrives, which is free evidence (spec §3). It is subordinate to a chosen target
+rather than competing with one.
+
+### `dispatching`, not `busy` — and why "subordinate" nearly meant "off"
+
+The gate was written as `missionRunner.busy`, which is true for the **whole**
+mission cycle: aim, hold, dispatch, timeout, and the ~18 minutes one target is
+held across six attempts. That is not "a discovery is in progress", it is "a
+discovery is queued", and it leaves almost no window.
+
+`dispatching` is true only between the packet leaving and its reply or timeout.
+That is the interval where sharing the air would actually cost something.
+
+**This was not, however, what starved the tracer.** The `busy` gate was too wide
+and is fixed here, but the measured collapse to zero came from the mode gate
+above (guard 1) — `busy` never got the chance to block anything, because DISC had
+already switched the module off wholesale. Recorded plainly because the wrong
+cause was believed first, and the metrics in this spec were nearly attributed to
+it.
 
 ## Invariants
 
@@ -141,7 +170,7 @@ target rather than competing with one.
 - Only one trace runs at a time (`_busy` flag). Subsequent packets during an in-flight trace are dropped — not queued.
 - `'traced'` always fires after `'tracing'`, even on failure. ws-relay depends on this to clear the `passive_trace_start` UI state.
 - `_attempted` and `_failed` are module-level Maps — they survive bridge reconnects but not process restarts. On restart, staleness falls back to `nodeList._cache.last_traceroute.ts` from the DB.
-- **v1 defect**: `rxDevice = ev.addr ?? ev.device ?? null` uses the v1 `device` field. After bridge.js v2 alignment, this must become `ev.__ble_addr`.
+- ~~**v1 defect**: `rxDevice = ev.addr ?? ev.device ?? null` uses the v1 `device` field. After bridge.js v2 alignment, this must become `ev.__ble_addr`.~~ **CLOSED 2026-08-02** — the chain is now `ev.__ble_addr ?? ev.addr ?? ev.device ?? null`, matching `persist.js`. The v1 fields are kept as fallbacks rather than removed, because no measurement was taken of whether any live event still arrives without `__ble_addr`.
 - **Encapsulation leak**: `needsTrace` reads `nodeList._cache` directly (private Map). This should be replaced with a public `nodeList.getLastTraceroute(num)` accessor when node-list.js is refactored.
 
 ## Test notes

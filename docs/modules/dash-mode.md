@@ -1,8 +1,8 @@
 ---
 module: dash-mode
 source: src/dash-mode.js
-source_hash: 5b6c076575e091ec9727956c7e5074aed011b110aff12f2d654f42ec614aae42
-updated: 2026-07-09
+source_hash: 563f0e84cb54179f9f4ad7dc9e6ac83cb88421808efb8426a6c4115abeeca2d9
+updated: 2026-08-02
 ---
 
 # Module: dash-mode
@@ -36,17 +36,18 @@ dashMode.value         // getter → number — current mode (reads DB each call
 dashMode.set(mode)     // → void — persist mode and emit 'change'
 dashMode.on('change', ({ _mode }) => {})  // EventEmitter listener
 
-export function modeName(mode)              // number|string → 'pasv'|'actv'|'scan'
+export function modeName(mode)              // number|string → 'pasv'|'actv'|'scan'|'disc'
 export function transmitterForMode(mode, ctx = {})  // → node_id — the single radio that TXs in this mode
 export function isListenerForMode(mode, mac)        // → bool — is this radio a listener (rx) in this mode?
 export function isTransmitterForMode(mode, mac)     // → bool — is this radio a transmitter in this mode? (tx:'rx' follows the listener)
 
 // Config-editor surface (consumed by config-api's GET/PUT /config/modes)
-export const MODE_KEYS   // ['pasv','actv','scan']
+export const MODE_KEYS   // ['pasv','actv','scan','disc']
 export const RX_ROLES    // valid listener roles: ['rotator','non-rotator','primary','all']
 export const TX_ROLES    // valid transmitter roles: ['rotator','primary','non-rotator','all','rx']
 export function isValidRole(role, kind)  // 'rx'|'tx' → bool — known keyword or a MAC
-export function modeConfigAll()          // → { pasv:{rx,tx}, actv:{…}, scan:{…} } effective (defaults+override)
+export function modeConfigAll()          // → { pasv:{rx,tx,passive}, actv:{…}, scan:{…}, disc:{…} } effective (defaults+override)
+export function passiveTracingAllowed(mode)  // → bool — does the passive tracer act in this mode?
 ```
 
 ## Per-mode radio roles (single source of truth)
@@ -79,8 +80,11 @@ call time.
     (through `macToNodeId`) for a traceroute; `'rx'` uses `ctx.rxDevice`.
 - Defaults live in `MODE_DEFAULTS` and **reproduce the historic hardcoded
   behaviour exactly**. A browser-editable override is read from config key
-  **`mode_config`** (per-mode `{ rx, tx }`), merged over the defaults — its
-  read/write endpoint and config UI are later phases; unset today, so defaults apply.
+  **`mode_config`** (per-mode `{ rx, tx }` only — `passive` is never overridable),
+  merged over the defaults. **It is NOT unset on this host**: the stored value is
+  `{"pasv":{"rx":"all","tx":"rx"},"actv":{"rx":"primary","tx":"rotator"},"scan":{"rx":"rotator","tx":"rotator"}}`
+  (verified 2026-08-02), so the defaults table above does **not** describe live
+  behaviour for `pasv` or `actv`. See ledger B60.
 
 ### Mode values
 
@@ -89,6 +93,7 @@ call time.
 | `0` | PASV | Passive monitoring. `passiveTracer` auto-traces nodes heard via radio. |
 | `1` | ACTV | Active tracking. `activeTracker` runs the ACTV scan cycle. |
 | `2` | SCAN | BLE scan. `scanner` drives the antenna rotation sweep. |
+| `3` | DISC | Discovery. `missionRunner` pursues chosen distant targets on the aimed YAGI; `passiveTracer` also runs. |
 
 ## State
 
@@ -127,12 +132,90 @@ per Peter's standing rule that dash mode owns every per-mode behaviour, includin
 which radio transmits, the mission runner **reads** the mode and never picks a
 radio itself.
 
+## `passive` — which modes run the passive tracer
+
+Task: `passive-tracer-starved`.
+
+`MODE_DEFAULTS` carries a third per-mode field beside `rx` and `tx`:
+
+| mode | `passive` | why |
+|---|---|---|
+| `pasv` | **true** | it is the mode's entire purpose |
+| `actv` | false | the YAGI is held on one tracked node; a passive trace would compete for it |
+| `scan` | false | the YAGI is sweeping; nothing may interrupt the sweep |
+| `disc` | **true** | see below |
+
+Read through `passiveTracingAllowed(mode)`. Before this task the rule lived in
+`passive-tracer.js` as `if (dashMode.value !== 0) return;` — a bare magic number
+in the consumer, which is exactly the arrangement Peter's mode-SSOT rule exists
+to forbid. It also silently made DISC mutually exclusive with passive tracing,
+and nothing said so.
+
+### Why DISC runs both
+
+Measured 2026-08-02: passive ran at **17.0 traces/hour and answered 3.8%** across
+5,557 traces before DISC was selected at 10:53. In the 9.5 hours after, passive
+managed **1 trace** while DISC managed **132 attempts and 0 answers**. Two of the
+day's three hits overall were passive. Turning DISC on silently switched off the
+only prober that was producing results.
+
+They are not rivals for the **aim**, because **passive keeps PASV's radio roles in
+every mode** and never moves the rotator. It replies through the radio that heard
+the packet (`tx: 'rx'`).
+
+**They can, however, share the YAGI's airtime — because of live config, not the
+defaults.** The `pasv` default `rx` is `'non-rotator'`, which would confine
+passive to the OMNI, but the stored `mode_config` override on this host sets
+`pasv.rx = 'all'` (verified 2026-08-02). With `rx: 'all'` + `tx: 'rx'`, a packet
+heard *by the YAGI* produces a passive trace *transmitted on the YAGI*, at
+whatever bearing the mission is holding.
+
+That does not steal the aim and does not cancel the mission, but it does spend
+mission airtime on an unrelated target. Enabling passive in DISC is what activates
+the path, so it is recorded here rather than left to be discovered later —
+ledger **B60**. The narrower `dispatching` yield limits it to the gaps between
+mission packets rather than the moment one is in the air, which bounds the damage
+without removing it. Setting `pasv.rx` back to `'non-rotator'` would remove it
+entirely; that is a config decision, not a code one, and is deliberately not taken
+here.
+
+This is why the fix is a `passive` flag and **not** resolving passive's roles
+from the live mode. Doing that in DISC would give passive `tx: 'rotator'`, firing
+an untargeted trace at whatever bearing the YAGI happens to be holding — wrong
+for the trace and destructive to the mission.
+
+The one genuine conflict is airtime, and that is already handled: passive yields
+on `missionRunner.dispatching`, so it never transmits while a mission packet is
+in the air.
+
+### Scope of the flag
+
+`passive` gates **whether the passive tracer acts**, nothing else. It does not
+gate reception, storage, or any other prober. `actv`/`scan` keep their existing
+behaviour byte for byte — the flag reproduces the old `!== 0` test for all three
+pre-existing modes and changes only DISC.
+
+It is **not a browser-editable knob**. `PUT /config/modes` copies only `rx` and
+`tx` from the request and ignores every other key (`config-api.js:249`), so the
+stored `mode_config` override can never carry a `passive` field and the default
+always wins. `GET /config/modes` does return it, via `modeConfigAll()` — read-only
+by construction rather than by validation, which is why no validator was added.
+If it ever should become editable that is a deliberate change to the PUT handler,
+not an oversight to be quietly corrected.
+
 ## Invariants
 
 - `dashMode.value` always reflects the DB value. There is no in-memory cache — a change written by any path is immediately visible to the next `value` read.
 - `'change'` fires on every `set()` call. Callers must not assume it fires only on actual transitions — idempotent handlers required.
 - Config key is `'rotator.dash_mode'` with default `0` (PASV). This key is owned by this module; no other module writes it.
 - Mode is stored as an integer in the config table (JSON-serialised by `setConfig`).
+- **No consumer tests a mode number to decide its own behaviour.** Every per-mode
+  question is answered by a function here — `isListenerForMode`,
+  `transmitterForMode`, `passiveTracingAllowed`. A bare `dashMode.value !== 0` in
+  a consumer is the defect this rule names; it starved the passive tracer for
+  9.5 hours on 2026-08-02 without a single log line.
+- `passive` gates only whether the passive tracer acts. It never changes which
+  radio the passive tracer uses — those stay PASV's roles in every mode.
 
 ## Test notes
 

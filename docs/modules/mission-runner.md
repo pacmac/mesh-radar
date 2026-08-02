@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: fbcdad9b685600f05edf102fb95dc63f47edee2af15aa20fe92726f9a389e743
+source_hash: 46a682feaea386b9f15f2a7c47ebe140f6db70e7efae69bf65342dbda783ca21
 updated: 2026-08-02
 ---
 
@@ -49,8 +49,9 @@ record. That is what the activity table reports — not hit/miss.
 
 `mission-runner` takes a lock for the duration of a mission. While it is held:
 
-- `passive-tracer` yields — it must not spend the instrument on whatever
-  happened to arrive while a chosen target is being pursued.
+- `passive-tracer` yields — but only while a packet is **actually in the air**
+  (`dispatching`), not for the whole time a mission is in hand (`busy`). See
+  below; getting this wrong took the passive tracer to near zero.
 - A second mission does not start. Serial by design: two traceroutes in flight
   make the SNR attribution ambiguous and double the airtime for no extra
   information.
@@ -58,6 +59,28 @@ record. That is what the activity table reports — not hit/miss.
 A **manual** traceroute is never blocked. `traceroute.dispatch({manual:true})`
 bypasses the master switch already, and a person asking is always more important
 than the schedule.
+
+### `busy` vs `dispatching` — two different questions
+
+| getter | true when | who asks |
+|---|---|---|
+| `busy` | a mission is **in hand** — aiming, holding, dispatching, waiting | the panel; the guard against a second mission |
+| `dispatching` | a discovery **packet is in the air**, until its reply or timeout | `passive-tracer` |
+
+The yield was first written against `busy`. That covers the entire cycle, and the
+runner holds one target for six attempts across roughly **18 minutes**, so passive
+almost never got a window: 17.0 traces/hour became 0.1 (measured 2026-08-02).
+Passive was the half that was answering — 3.8% over 5,557 traces, against 0.0%
+for 132 aimed missions in the same period.
+
+"A discovery is in progress" means the seconds a reply is expected, not the twenty
+minutes a target sits queued. `dispatching` says that; `busy` does not.
+
+**Honest limit:** narrowing this gate was *not* what had actually stopped the
+passive tracer. `passive-tracer.js` separately tested `dashMode.value !== 0` and so
+was switched off entirely in DISC — `busy` never got the chance to block anything.
+Both were real defects; only the second explains the measured collapse. See
+`docs/modules/passive-tracer.md`.
 
 ## It aims before it fires
 
@@ -270,7 +293,7 @@ panel has already been caught by that once.
 Verified live: threshold set to 5% against 30% measured →
 `channel 30% busy, over 5%`. Clamps hold — 99999 → 5000, 0 → 1.
 
-## Rate## Rate## Rate
+## Rate
 
 One attempt every **180 s** (config `mission_runner.interval_sec`), ≈ 480/day
 against the old ~1,000/day in bursts. Peter's *"not so much as to become a
@@ -292,6 +315,8 @@ The runner is a dumb executor: it is handed a list and it works it.
 ```js
 setQueue(missions)   // the shortlist, highest priority first
 state()              // { enabled, running, current, recent[], discovered }
+get busy             // → bool — a mission is in hand (aim/hold/dispatch/wait)
+get dispatching      // → bool — a packet is in the air; what passive-tracer yields to
 events: 'activity'   // emitted on every state change
 ```
 

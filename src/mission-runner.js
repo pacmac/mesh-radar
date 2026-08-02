@@ -118,6 +118,7 @@ class MissionRunner extends EventEmitter {
     // day" without a query on every tick.
     this._sent     = [];
     this._brake    = null;   // why we are not transmitting, or null
+    this._dispatching = false;
     this._current  = null;
     this._recent   = [];
     this._timer    = null;
@@ -130,9 +131,22 @@ class MissionRunner extends EventEmitter {
     this._discovered  = { relays: 0, links: 0, identified: 0, records: 0, replies: 0, attempts: 0 };
   }
 
-  /** True while a mission holds the instrument. passive-tracer consults this
-   *  and yields — the traceroute belongs to the discovery in progress. */
+  /** True while a mission is IN HAND — aiming, holding, dispatching, waiting.
+   *  Used by the panel and to stop a second mission starting. */
   get busy() { return this._current != null; }
+
+  /** True only while a discovery PACKET IS ACTUALLY IN THE AIR.
+   *
+   *  This is what passive-tracer yields to, and the distinction cost a day.
+   *  Yielding on `busy` looked right — "the traceroute belongs to the discovery
+   *  in progress" — but `busy` covers the whole cycle, and the runner holds one
+   *  target for six attempts across ~18 minutes. Passive went from 17 traces an
+   *  hour to 0.1, a 99% cut, and passive was the half that was answering: 3.8%
+   *  against DISC's 0.0% over the same period.
+   *
+   *  A discovery is "in progress" for the seconds a reply is expected, not for
+   *  the twenty minutes a target is queued. */
+  get dispatching() { return this._dispatching; }
 
   /** The shortlist, highest priority first. Pushed in by observatory-ws after
    *  each recompute; the runner never fetches it. */
@@ -362,6 +376,7 @@ class MissionRunner extends EventEmitter {
     this._emit();
 
     let outcome;
+    this._dispatching = true;
     try {
       const result = await traceroute.dispatch({
         to, device, timeoutMs: c.timeout_sec * 1000,
@@ -387,6 +402,8 @@ class MissionRunner extends EventEmitter {
                   : /send failed/i.test(raw) ? 'the radio would not send'
                   : raw.slice(0, 60);
       outcome = { ok: false, error, found: [] };
+    } finally {
+      this._dispatching = false;
     }
 
     // Spend one shot. When the budget runs out the target is released and the

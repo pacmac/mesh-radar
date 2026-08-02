@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { bridge } from './bridge.js';
 import { nodeList } from './node-list.js';
-import { dashMode, transmitterForMode, isListenerForMode } from './dash-mode.js';
+import { dashMode, transmitterForMode, isListenerForMode, passiveTracingAllowed } from './dash-mode.js';
 import { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
 import { FF } from './feature-flags.js';
@@ -89,30 +89,47 @@ class PassiveTracer extends EventEmitter {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Only trigger new traces in PASV mode (0)
-    if (dashMode.value !== 0) return;
+    // Which modes run the passive tracer is dash-mode's decision, not ours. This
+    // was `dashMode.value !== 0`, which switched passive tracing off wholesale
+    // whenever DISC was selected — 17.0 traces/h at 3.8% became 1 trace in 9.5 h
+    // on 2026-08-02, with no log line, because this return is silent and sits
+    // upstream of every counter in this function.
+    if (!passiveTracingAllowed(dashMode.value)) return;
     // Master switch. Checked HERE as well as inside dispatch() — not redundant:
     // the .catch below records _failed and emits an empty `traced` result, so a
     // gated dispatch arriving as a rejection would mark every skipped node as
     // FAILED and push bogus empty routes to the browser (task
     // `traceroute-manual-enable`).
+
     if (!tracerouteEnabled()) return;
     if (this._busy) return;
-    const rxDevice = ev.addr ?? ev.device ?? null;
-    if (!pkt?.from || !rxDevice) return;
+    const rxDevice = ev.__ble_addr ?? ev.addr ?? ev.device ?? null;
+    if (!pkt?.from) return;
+    if (!rxDevice) return;
     if (pkt.decoded?.portnum === 'TRACEROUTE_APP') return;
     // Never traceroute own bridge radios; only act on packets heard by a radio
     // that is a listener for PASV mode (default: any non-rotator radio).
     if (ownDeviceNums().has(pkt.from)) return;
+    // Pinned to 'pasv' DELIBERATELY, in every mode — these are this prober's own
+    // radio contract, not the active mode's. Resolving them from the live mode
+    // would give passive tx:'rotator' in DISC and fire an unaimed trace down the
+    // beam, wrong for the trace and destructive to the mission holding it.
     if (!isListenerForMode('pasv', rxDevice)) return;
     // Skip MQTT-relayed nodes (firmware returns NO_ROUTE immediately)
     if (pkt.via_mqtt) return;
-    // DISCOVERY OWNS THE INSTRUMENT. Peter, 2026-08-02: "the traceroute should
-    // be used by us, when a discovery is in progress." While a mission holds
-    // the traceroute we yield — spending it on whatever happened to arrive is
-    // exactly the reactive behaviour that put 5,046 attempts into 335 targets
-    // that have never answered, while 213 positioned nodes went untried.
-    if (missionRunner.busy) return;
+    // DISCOVERY OWNS THE INSTRUMENT WHILE ITS PACKET IS IN THE AIR — and only
+    // then. Peter, 2026-08-02: "the traceroute should be used by us, when a
+    // discovery is in progress."
+    //
+    // This yielded on `missionRunner.busy`, which covers the entire mission
+    // cycle: aim, hold, dispatch, timeout, and the ~18 minutes a target is held
+    // across six attempts. The effect was a 99% cut — 17 passive traces an hour
+    // became 0.1 — and passive was the half that was ANSWERING: 3.8% over 5,557
+    // traces, against 0.0% for 132 aimed missions in the same window.
+    //
+    // `dispatching` is true only between the packet going out and its reply or
+    // timeout, which is what "in progress" actually means.
+    if (missionRunner.dispatching) return;
     if (!needsTrace(pkt.from)) return;
 
     this._trace(pkt.from, rxDevice);
