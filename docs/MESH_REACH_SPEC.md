@@ -708,14 +708,40 @@ inferences** (declared dependencies, topological order, hard refusal on cycles);
 **cost** (each hook declares incremental or batch — recomputing everything per
 packet does not scale); and **`null` as a first-class result**.
 
+### The database is shared — DECIDED
+
+Peter, 2026-08-02: *"we share the node-dash database, we add tables to it. no
+point in more than 1 db and a LOT of the data is already in those tables."*
+
+So the engine is a **library that is handed a database handle**, never a service
+and never a second store. Three consequences worth stating, because the second
+one is the reason this is the right call:
+
+1. **The engine owns its own tables and their migrations**, namespaced so
+   ownership is legible at a glance. Core never writes them directly — core
+   emits, the engine writes. The boundary is unchanged by sharing a file.
+2. **Existing tables become observation SOURCES, not things to migrate.**
+   `traceroute_history`, `signal_history`, `messages` and `nodes` stay where they
+   are and are read through adapters. Nothing is copied, nothing is reshaped, and
+   21,793 attempts plus 18,826 hop observations are available to inferences
+   immediately. **This is what makes §7f's retroactive property real on day one
+   rather than after a migration** — a new inference written next month runs over
+   five weeks of history that already exists.
+3. **Still testable without a radio.** A library given a handle can be given a
+   temporary database in tests; that property came from the boundary, not from
+   owning a file.
+
+The open question this leaves is narrower and belongs to the implementing task:
+whether the engine's migrations run through `db.js`'s existing mechanism or its
+own. Either way, guarded with `PRAGMA table_xinfo`.
+
 ### Open decisions
 
-1. **Who owns the database** — node-dash's SQLite with the engine as a library,
-   or its own store. Library is simpler; a second database is a second thing to
-   back up and reconcile.
-2. **The name.**
-3. **Whether it becomes a sibling repo**, as `radar-scope` did. If so this section
-   is its seed and moves out wholesale. Noted against a real risk:
+1. **The name.**
+2. **Whether it becomes a sibling repo**, as `radar-scope` did — now a smaller
+   question than it was, since a shared database means it stays a library either
+   way. If it does move, this section is its seed and goes wholesale. Noted
+   against a real risk:
    `MESSAGING_SERVICE_SPEC.md` was specced as task 750 in July and **still does
    not exist** — which is why this is a section here rather than a fourth
    standalone document.
