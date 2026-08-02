@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: dfad1b8bf5a81ab6a3e92d7db66474f52a385ec8207934141d9e9634556ace83
+source_hash: 8b9e77ccc7b3e6a32283f2cdb89c302a0774c84040310e58222e672c908d70ee
 updated: 2026-08-02
 ---
 
@@ -24,6 +24,7 @@ replayed on connect, appended on arrival.
 | `relayUsage` | doors, server-ranked and server-labelled |
 | `reach` | the reach model — record, ladder, frontier, radar plot |
 | `meshLinks` | `{ total, links[], marks[], nodes[], legend[] }` — geometry, captions, classes |
+| `missions` | `{ missions[], summary }` — ranked, classified and explained by the server |
 | `obsTab` | `'board'` \| `'radar'` \| `'map'` \| `'receptions'`, persisted, declared in `app.js` |
 
 `MAX_ROWS = 500` — enough to fill a tall screen and scroll, small enough that an

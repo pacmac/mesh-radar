@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 28c609f8dfb27ab0de2cc77e7f3f5c424aace30179ce00e74194e702b7e2ab0d
+source_hash: f8da8d1b53f350b1aed8e9e829a05ae5b5920f853cafb5f70a2524173aab1bbe
 updated: 2026-08-02
 ---
 
@@ -58,6 +58,18 @@ ownership (`device_list.active_device`) will supersede this mechanism.
 - `node_list` handler seeds `nodeSelf.num` from `my_node_num` even when node
   filters exclude the self node (keeps `tilt_update`/`telemetry_update`
   matching alive) — task `overview-data-fix`.
+
+## Plugin message routing — one line per type, no logic
+
+Observatory messages are dispatched here and nowhere else:
+`observation`, `observations_replay`, `relay_usage`, `reach_model`,
+`mesh_links`, `missions`. Each is a single line handing the event to the
+observatory mixin's `apply*` method.
+
+That is deliberately all this file does for them. The router must not learn what
+a mission or a relay is — the moment it branches on plugin content, core knows
+about a plugin, which is the boundary `observatory-ws.js` exists to keep
+(`docs/PLUGIN_BOUNDARY_SPEC.md`).
 
 ## Out of scope
 

@@ -53,6 +53,12 @@ export const observatoryMixin = {
   meshLinks: null,
   applyMeshLinks(ev) { this.meshLinks = ev.links || null; },
 
+  /** The mission shortlist — what to try next and why. Ranked, classified and
+   *  explained by the reach.mission inference; the page orders nothing and
+   *  writes no reasons (BROWSER_CONTRACT). */
+  missions: null,
+  applyMissions(ev) { this.missions = ev.missions || null; },
+
   /** The radar, built as an SVG string.
    *
    *  NOT `<template x-for>` INSIDE `<svg>`, AND THIS IS NOT A STYLE CHOICE.

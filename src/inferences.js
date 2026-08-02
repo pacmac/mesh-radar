@@ -46,10 +46,12 @@
 //   reach.target    per target: km, bearing, attempts, hits, verified
 //   reach.ladder    one global fact: every moment the frontier moved
 //   link.observed   every witnessed node-to-node hop, both ends placed
+//   reach.mission   what to try next, and why — the memory the prober lacks
 //
-// All four are BATCH and read obs_v_traceroute — a view over traceroute_history
-// — so they run over five weeks of history that already existed and spend no
-// airtime at all.
+// All five are BATCH and spend no airtime at all: four read obs_v_traceroute, a
+// view over five weeks of traceroute history that already existed, and
+// reach.mission reads `nodes` LEFT JOINed to it so that targets never attempted
+// are in the pool rather than invisible.
 //
 // This file was created EMPTY by task `observatory-inference-catalogue-boundary`
 // so the boundary test was correct BEFORE anything pressed on it. Widening a
@@ -402,5 +404,192 @@ registerInference({
       confidence: null,
       evidence_count: v.count,
     }));
+  },
+});
+
+// ─── reach.mission ──────────────────────────────────────────────────────────
+//
+// WHICH TARGET TO TRY NEXT, AND WHY. The memory MESH_REACH_SPEC §2 says the
+// prober does not have: "the machine is not selecting; it is iterating."
+//
+// Peter, 2026-08-02: "why is everything blocked by something else meaning that
+// this will never be completed?" — a fair challenge, and the honest answer is
+// that §9 was mis-framed. It was treated as a block on the whole Missions
+// panel. It is not. node-dash ALREADY dispatches traceroutes itself
+// (traceroute.js:128, passive-tracer.js:122 — 21,793 over five weeks, from both
+// radios). No new authority is needed to govern sending that is already
+// happening ungoverned. Only the BROADCAST CALLOUT is contested, and that is
+// one instrument of three.
+//
+// This inference spends no airtime whatsoever. It ranks; it does not send.
+//
+// EVIDENCE STARTS FROM `nodes`, NOT FROM THE TRACEROUTE VIEW, and that is the
+// whole point. A LEFT JOIN is the difference between "which of the targets we
+// have tried deserves another go" and "what have we never looked at". Measured
+// 2026-08-02: 213 positioned nodes have NEVER been attempted once, 39 of them
+// beyond the 189.1 km record — while 423 attempts went to a single node with no
+// position that has never answered. The pool the prober never saw is where the
+// information is.
+registerInference({
+  key:  'reach.mission',
+  deps: [],
+  mode: 'batch',
+  evidence: `
+    SELECT n.num                                                      AS target,
+           n.lat                                                      AS lat,
+           n.lon                                                      AS lon,
+           n.last_heard                                               AS last_heard,
+           COUNT(th.id)                                               AS attempts,
+           SUM(CASE WHEN th.status = 'ok' THEN 1 ELSE 0 END)          AS hits,
+           MAX(CASE WHEN th.status = 'ok' THEN th.ts END)             AS last_ok,
+           MAX(th.ts)                                                 AS last_attempt,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat') AS home_lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon,
+           (SELECT MAX(strftime('%s','now'))) 					      AS now_ts
+    FROM nodes n
+    LEFT JOIN traceroute_history th ON th.to_num = n.num
+    WHERE n.lat IS NOT NULL AND n.lon IS NOT NULL AND n.lat <> 0
+      AND n.num NOT IN (
+        SELECT DISTINCT from_num FROM traceroute_history WHERE from_num IS NOT NULL
+      )
+    GROUP BY n.num
+  `,
+  /** Pure: rows in, facts out. `now_ts` arrives IN the evidence rather than
+   *  being read from a clock here. The catalogue may not call one at all — the
+   *  boundary test greps for it, so ages are computed against a timestamp SQL
+   *  supplied, which also means a recompute over history stays repeatable.
+   *
+   *  OUR OWN RADIOS ARE EXCLUDED VIA `from_num`, not via `nodes.device`. A
+   *  mission to traceroute the radio doing the tracerouting is not a mission,
+   *  but the first attempt used `n.device IS NULL` and that is a different
+   *  thing entirely: `device` is the MAC of the radio that HEARD the node, so
+   *  it is set on 903 nodes and the filter cut the pool from 601 to 3, with a
+   *  0 km "record" to match. `from_num` is the addressee of a traceroute reply
+   *  and is only ever one of ours — measured: TA2o, TA2y, GARG, nothing else.
+   *
+   *  EVERY MISSION CARRIES ITS REASON AS A STRING, written here. The browser
+   *  must not assemble an explanation out of numbers (BROWSER_CONTRACT), and a
+   *  ranked list with no stated reason is a magic number wearing a table. */
+  run(rows) {
+    if (!rows.length) return null;
+    const now = Number(rows[0].now_ts) || 0;
+    const HOME = { lat: rows[0].home_lat, lon: rows[0].home_lon };
+    if (HOME.lat == null || HOME.lon == null) return null;
+
+    // 24 hours. Peter's "not so much as to become a nuisance" (§1) with a
+    // number attached: a target tried today is not a candidate today, however
+    // attractive it looks. This is the only rate rule the selector owns — a
+    // real budget belongs to whatever dispatches, which is not this.
+    const COOLDOWN = 86_400;
+    // §12: beyond this a self-reported position is not evidence, it is a
+    // claim. 250 rather than the record's 200 because a MISSION may legitimately
+    // aim past the current frontier — the point is to beat it — but a node
+    // claiming 1,681 km is not a target, it is a bad coordinate.
+    const CEILING_KM = 250;
+
+    const scored = [];
+    const skipped = { cooling: 0, suspect: 0, exhausted: 0 };
+
+    // The record is computed from the same rows, not passed in: an inference
+    // that took the record as a dependency would rank against a stale one on
+    // the run where the record itself moved.
+    let record = 0;
+    for (const r of rows) {
+      if (!r.hits) continue;
+      const km = greatCircleKm(HOME.lat, HOME.lon, r.lat, r.lon);
+      if (km <= 200 && km > record) record = km;
+    }
+
+    for (const r of rows) {
+      const km = Math.round(greatCircleKm(HOME.lat, HOME.lon, r.lat, r.lon) * 10) / 10;
+      if (km > CEILING_KM) { skipped.suspect++; continue; }
+      const attempts = Number(r.attempts) || 0;
+      const hits     = Number(r.hits) || 0;
+      const lastAtt  = r.last_attempt ? Number(r.last_attempt) : null;
+      const ageDays  = lastAtt ? Math.floor((now - lastAtt) / 86_400) : null;
+      if (lastAtt != null && (now - lastAtt) < COOLDOWN) { skipped.cooling++; continue; }
+
+      let cls = null, reason = null, rank = 0;
+
+      if (attempts === 0 && km > record) {
+        cls = 'unknown-record';
+        reason = `never attempted, and would beat the ${Math.round(record)} km record`;
+        rank = 1000 + km;
+      } else if (attempts === 0) {
+        cls = 'unknown';
+        reason = 'never attempted — one try tells us more than a repeat anywhere';
+        rank = 700 + km;
+      } else if (hits === 0 && km > record) {
+        cls = 'record';
+        reason = `${attempts} attempt${attempts === 1 ? '' : 's'}, no reply yet — would beat the ${Math.round(record)} km record`;
+        // Diminishing: the twentieth silent attempt is worth less than the
+        // second. §4 says silence proves nothing, not that it is free.
+        rank = 500 + km - Math.min(120, attempts * 6);
+      } else if (hits > 0 && km > 100 && ageDays != null && ageDays >= 7) {
+        cls = 'reconfirm';
+        reason = `verified ${hits}/${attempts}, untried for ${ageDays} days — is the corridor still open?`;
+        rank = 300 + km;
+      } else if (hits === 0 && attempts >= 40) {
+        skipped.exhausted++;
+        continue;
+      } else {
+        continue;
+      }
+
+      scored.push({
+        entity: String(r.target),
+        value: {
+          km, cls, reason, attempts, hits,
+          last_attempt: lastAtt,
+          last_ok: r.last_ok ? Number(r.last_ok) : null,
+          age_days: ageDays,
+          rank: Math.round(rank),
+        },
+        confidence: null,
+        evidence_count: attempts,
+      });
+    }
+
+    scored.sort((a, b) => b.value.rank - a.value.rank);
+
+    // A PORTFOLIO, NOT A SORT. Ranked purely by score the shortlist came back as
+    // twenty rows of "never attempted, and would beat the 189 km record" —
+    // technically the highest information gain, and useless as a mission list.
+    // One class swamping the panel hides the record attempts already in flight
+    // and the frontier corridors going stale, and those are different kinds of
+    // work that want doing in parallel.
+    //
+    // So each class gets a quota and keeps its own internal ranking. The quotas
+    // are a judgement about balance, stated here rather than buried in a score:
+    // most effort on ground never covered, real effort on beating the record,
+    // and a standing tax on re-confirming what we already hold.
+    const QUOTA = { 'unknown-record': 8, 'record': 5, 'reconfirm': 4, 'unknown': 3 };
+    const used = {};
+    const top = [];
+    for (const m of scored) {
+      const c = m.value.cls;
+      if ((used[c] = (used[c] || 0)) >= (QUOTA[c] ?? 0)) continue;
+      used[c]++;
+      top.push(m);
+    }
+
+    // THE EXCLUSIONS ARE PUBLISHED, not silent. A shortlist that quietly drops
+    // most of the pool reads as "these are the only options", and §4's whole
+    // point is that what we chose not to look at matters as much as what we did.
+    top.push({
+      entity: 'global',
+      value: {
+        cls: 'summary',
+        record_km: Math.round(record * 10) / 10,
+        candidates: scored.length,
+        shown: top.length,
+        skipped_cooling: skipped.cooling,
+        skipped_suspect: skipped.suspect,
+        skipped_exhausted: skipped.exhausted,
+      },
+      confidence: null,
+      evidence_count: rows.length,
+    });
+    return top;
   },
 });

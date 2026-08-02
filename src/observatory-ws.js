@@ -67,6 +67,7 @@ registerConnectReplay(() => {
       { type: 'relay_usage', relays: relayUsage() },
       { type: 'reach_model', reach: reachModel() },
       { type: 'mesh_links', links: meshLinks() },
+      { type: 'missions', missions: missions() },
     ];
   } catch (e) {
     console.error(`[observatory-ws] replay failed: ${e.message}`);
@@ -201,6 +202,32 @@ function reachModel() {
   };
 }
 
+/** The mission shortlist — what to try next, and why.
+ *
+ *  Ranking and reasons are the inference's (`reach.mission`); this resolves
+ *  names and places and hands over a list. The summary row is separated out
+ *  rather than being filtered away silently: the counts it carries are what
+ *  stop a shortlist reading as "these are the only options". */
+function missions() {
+  const all = facts('reach.mission');
+  const summary = all.find(f => f.entity === 'global')?.value ?? null;
+  const list = all
+    .filter(f => f.entity !== 'global' && f.value)
+    .sort((a, b) => b.value.rank - a.value.rank)
+    .map(f => ({
+      target: f.entity,
+      label:  resolveNodeLabel(Number(f.entity)) || String(f.entity),
+      place:  shortPlace(getCachedGeocode(Number(f.entity))),
+      km:     f.value.km,
+      cls:    f.value.cls,
+      reason: f.value.reason,
+      attempts: f.value.attempts,
+      hits:     f.value.hits,
+      age_days: f.value.age_days,
+    }));
+  return { missions: list, summary };
+}
+
 /** Observed links with both endpoints placed — the mesh map's geometry.
  *
  *  Capped and ordered by traffic so the heaviest corridors survive the cut: a
@@ -322,7 +349,7 @@ function haversine(lat1, lon1, lat2, lon2) {
 // wrapped so a failure degrades the doors panel rather than the process.
 function recompute(broadcast) {
   try {
-    for (const key of ['relay.usage', 'reach.target', 'reach.ladder', 'link.observed']) {
+    for (const key of ['relay.usage', 'reach.target', 'reach.ladder', 'link.observed', 'reach.mission']) {
       const r = runInference(key);
       console.log(`[observatory] ${r.key}: ${r.facts} facts from ${r.rows} evidence rows`);
     }
@@ -336,6 +363,7 @@ function recompute(broadcast) {
     broadcast?.({ type: 'relay_usage', relays: relayUsage() });
     broadcast?.({ type: 'reach_model', reach: reachModel() });
     broadcast?.({ type: 'mesh_links', links: meshLinks() });
+    broadcast?.({ type: 'missions', missions: missions() });
   } catch (e) {
     console.error(`[observatory] relay.usage failed: ${e.message}`);
   }

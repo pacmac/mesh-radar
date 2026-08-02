@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 02f0fc28dece02ab0c12d9c41e7b9cd7b9d6c70804dba3ca1087a1470625d76b
+source_hash: de749057e9784fd431e6fc66b4fc2a8450a3f75f170f09782fb286bf9a497e20
 updated: 2026-08-02
 ---
 
@@ -36,9 +36,24 @@ moves**.
 | Bearings recorded / Nodes seen | **live**, on screen |
 | Radar | **live** — `reach.target`, full page |
 | Map | **live** — `link.observed`, full page, classified and named |
-| Missions | awaiting the scheduler (blocked on spec §9) |
+| Missions | **live** — `reach.mission`, ranked and explained |
 | Record ladder | **live** — `reach.ladder` |
 | Receptions | **live** |
+
+### Missions panel
+
+Rows come ranked, classified and explained. The page renders the server's
+`reason` string verbatim — **it must never assemble an explanation out of
+numbers** — and colours the class dot: `bg-accent` for `unknown-record`,
+`bg-primary` for `record`, `bg-secondary` for `unknown`, muted for `reconfirm`.
+
+The header carries the published exclusions (`19 of 227 candidates · 7 cooling ·
+22 exhausted`), and the footnote states plainly that **nothing is dispatched from
+this panel**: traceroute dispatch already exists elsewhere and is what the list
+is for; the broadcast callout remains unbuilt.
+
+Scrolls at `max-h-80` — verified 853 px of content in a 340 px box, scrolled to
+the bottom, all four classes reachable.
 
 ### The feed summary line
 

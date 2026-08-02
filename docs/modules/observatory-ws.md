@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: bc1bc10f330f138d5cffeabf212d81fe06e7093d9186bbd67e01f1f552e20f93
+source_hash: 3b2e25b04c107f8d1e5c0723c3981fe13e11f071663295aec62c863d9651306b
 updated: 2026-08-02
 ---
 
@@ -38,6 +38,7 @@ is again a visible choice.
 | `relay_usage` | connect, and after each recompute | `relays[]` — the doors, heaviest first |
 | `reach_model` | connect, and after each recompute | `reach` — record, ladder, frontier, plot |
 | `mesh_links` | connect, and after each recompute | `links` — `{ total, links[], marks[], nodes[], legend[] }` |
+| `missions` | connect, and after each recompute | `missions` — `{ missions[], summary }` |
 
 ```
 { id, ts, kind, entity, source, data:{ rx_device, az, beam_deg, rssi, snr, hops, portnum, packet_id } }
@@ -95,6 +96,20 @@ cache: St. Ives, Torteval, Wychavon, St Peter Port, Nanpean, Horeb, Efailwen.
 
 Falls back to `resolveNodeLabel()` and then the raw num — never a placeholder, so
 a node the backfill has not reached yet shows its callsign rather than a lie.
+
+## Missions
+
+`missions()` reads the `reach.mission` facts, resolves labels and places, and
+splits the `global` summary row out of the list. **It ranks nothing and writes no
+reasons** — both are the inference's (`docs/modules/inferences.md`), because a
+mission's justification is a decision and the reason string is a display value.
+
+The summary is passed through rather than filtered away: its candidate / cooling
+/ suspect / exhausted counts are what stop a shortlist reading as *"these are the
+only options"*.
+
+Nothing here dispatches. Selection and sending are separate concerns and this
+file does neither — it forwards a list.
 
 ## Map nodes — classified here, painted there
 

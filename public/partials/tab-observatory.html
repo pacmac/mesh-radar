@@ -111,12 +111,51 @@
       <div class="flex flex-col gap-3">
         <div class="card bg-base-100 shadow">
           <div class="card-body p-3 gap-2">
-            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-              Missions — next, and the reason</h2>
-            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
-              <p class="text-xs text-base-content/50">Awaiting the scheduler.</p>
-              <p class="text-xs text-base-content/35 mt-1">Blocked on who owns the transmitter (spec §9).</p>
+            <div class="flex items-baseline gap-2">
+              <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
+                Missions — next, and the reason</h2>
+              <!-- The exclusions are published. A shortlist that quietly drops
+                   most of the pool reads as "these are the only options". -->
+              <span class="text-xs text-base-content/35 ml-auto" x-show="missions?.summary"
+                    x-text="missions?.summary ? missions.summary.shown + ' of ' + missions.summary.candidates + ' candidates · ' + missions.summary.skipped_cooling + ' cooling · ' + missions.summary.skipped_exhausted + ' exhausted' : ''"></span>
             </div>
+
+            <template x-if="!missions?.missions?.length">
+              <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
+                <p class="text-xs text-base-content/50">Ranking stored attempts.</p>
+              </div>
+            </template>
+
+            <template x-if="missions?.missions?.length">
+              <div class="overflow-y-auto max-h-80">
+                <table class="table table-xs font-mono tabular-nums">
+                  <thead><tr><th>Target</th><th>Where</th><th class="text-right pr-3">km</th><th>Why</th></tr></thead>
+                  <tbody>
+                    <template x-for="m in missions.missions" :key="m.target">
+                      <tr>
+                        <td class="whitespace-nowrap">
+                          <!-- Class colour, server-assigned. A record attempt and
+                               a routine re-confirm must not look the same. -->
+                          <span class="inline-block rounded-full w-2 h-2 mr-1.5 align-middle"
+                                :class="m.cls==='unknown-record' ? 'bg-accent' : m.cls==='record' ? 'bg-primary' : m.cls==='unknown' ? 'bg-secondary' : 'bg-base-content/30'"></span>
+                          <span x-text="m.label"></span>
+                        </td>
+                        <td class="text-base-content/50 truncate max-w-[10rem]" x-text="m.place || ''"></td>
+                        <td class="text-right pr-3" x-text="m.km"></td>
+                        <!-- The reason is a server-written string. The page must
+                             never assemble an explanation out of numbers. -->
+                        <td class="text-base-content/60 font-sans" x-text="m.reason"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+            <p class="text-xs text-base-content/35">
+              Selection only — nothing is dispatched from here. The broadcast callout
+              remains unbuilt (spec §9); traceroute dispatch already exists and is what
+              this list is for.
+            </p>
           </div>
         </div>
         <div class="card bg-base-100 shadow">

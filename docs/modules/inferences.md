@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: e0d64ca4c886000f2d1d26357a9760c9c3278a5c7ec039ea642ca72f24df96fb
+source_hash: 9f39598a16393f3a259a07c0be36e46d2a0daeffe0ae60e20876c46f2d720901
 updated: 2026-08-02
 ---
 
@@ -100,6 +100,80 @@ waiting on it, so it is a decision rather than a consequence.
 ## Public interface
 
 None. The module registers on import and exports nothing.
+
+## `reach.mission` — what to try next, and why
+
+The memory §2 says the prober does not have: *"the machine is not selecting; it
+is iterating."*
+
+**§9 was mis-framed and this inference is the correction.** Peter, 2026-08-02:
+*"why is everything blocked by something else meaning that this will never be
+completed?"* — §9 had been treated as a block on the whole Missions panel. It is
+not. node-dash **already dispatches traceroutes itself** (`traceroute.js:128`,
+`passive-tracer.js:122` — 21,793 over five weeks, from both radios). No new
+authority is needed to govern sending that is already happening ungoverned. Only
+the **broadcast callout** is contested, and that is one instrument of three.
+
+This inference spends no airtime. It ranks; it does not send.
+
+### Evidence starts from `nodes`, not from the traceroute view
+
+That LEFT JOIN is the whole point. It is the difference between *"which target we
+have tried deserves another go"* and *"what have we never looked at"*. Measured
+2026-08-02: **213 positioned nodes have never been attempted once**, 39 of them
+beyond the 189.1 km record — while **423 attempts went to a single node with no
+position that has never answered**. The pool the prober never saw is where the
+information is.
+
+### Classes
+
+| class | meaning | quota |
+|---|---|---|
+| `unknown-record` | never attempted, and beyond the record | 8 |
+| `record` | attempted, no reply, and beyond the record | 5 |
+| `reconfirm` | verified past 100 km, untried for ≥ 7 days | 4 |
+| `unknown` | never attempted | 3 |
+
+**A portfolio, not a sort.** Ranked purely by score the shortlist came back as
+twenty rows of *"never attempted, and would beat the 189 km record"* — the
+highest information gain, and useless as a mission list. One class swamping the
+panel hides the record attempts already in flight and the frontier corridors
+going stale, which are different kinds of work that want doing in parallel. So
+each class gets a quota and keeps its own internal ranking. The quotas are a
+judgement about balance, stated in the code rather than buried in a score.
+
+Within `record`, rank decays with attempts (`-6` each, capped at `-120`). §4 says
+silence proves nothing; it does not say silence is free, and the twentieth silent
+attempt is worth less than the second.
+
+### Every mission carries its reason as a string
+
+Written by the inference, not assembled by the page (`BROWSER_CONTRACT`). A
+ranked list with no stated reason is a magic number wearing a table.
+
+### Exclusions are published, not silent
+
+`COOLDOWN` 24 h — Peter's *"not so much as to become a nuisance"* with a number
+attached. This is the **only** rate rule the selector owns; a real budget belongs
+to whatever dispatches, which is not this.
+
+`CEILING_KM` 250 — beyond this a self-reported position is a claim, not evidence.
+250 rather than §12's 200 because a mission may legitimately aim *past* the
+frontier — that is the point — but a node claiming 1,681 km is a bad coordinate,
+not a target.
+
+A `global` summary fact reports candidates, shown, and the cooling / suspect /
+exhausted counts. First live run: **19 of 227 candidates, 7 cooling, 125 suspect,
+22 exhausted.** A shortlist that quietly drops most of the pool reads as "these
+are the only options".
+
+### Our own radios are excluded via `from_num`, not `nodes.device`
+
+The first attempt used `n.device IS NULL`, which is a different thing entirely:
+`device` is the MAC of the radio that **heard** the node, so it is set on 903
+nodes and the filter cut the pool from 601 to 3 — with a `0 km` record to match.
+`from_num` is the addressee of a traceroute reply and is only ever one of ours
+(measured: TA2o, TA2y, GARG, nothing else).
 
 ## Invariants
 
