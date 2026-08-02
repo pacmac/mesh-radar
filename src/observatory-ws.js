@@ -116,7 +116,19 @@ function reachModel() {
       last_ok: f.value.last_ok,
     }));
 
+  // EVERY plottable target, not just the frontier's top 12: a radar showing a
+  // dozen dots is a list with extra steps. Suspect distances stay out (§12).
+  const plot = usable.map(f => ({
+    target:  f.entity,
+    label:   resolveNodeLabel(Number(f.entity)) || String(f.entity),
+    km:      f.value.km,
+    bearing: f.value.bearing,
+    hits:    f.value.hits,
+    attempts: f.value.attempts,
+  })).filter(p => p.bearing != null);
+
   return {
+    plot,
     record_km:    ladder?.record_km ?? null,
     record_at:    ladder?.record_at ?? null,
     rungs:        (ladder?.rungs ?? []).map(r => ({

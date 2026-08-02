@@ -139,6 +139,14 @@ registerInference({
 // only relabels its evidence is not really a calculation — and haversine over
 // plain numbers is the easiest thing in the world to test.
 const HAVERSINE_R_KM = 6371;
+/** Initial great-circle bearing, degrees from true north. Pure. */
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180;
+  const y = Math.sin((lon2 - lon1) * rad) * Math.cos(lat2 * rad);
+  const x = Math.cos(lat1 * rad) * Math.sin(lat2 * rad)
+          - Math.sin(lat1 * rad) * Math.cos(lat2 * rad) * Math.cos((lon2 - lon1) * rad);
+  return (Math.atan2(y, x) / rad + 360) % 360;
+}
 function greatCircleKm(lat1, lon1, lat2, lon2) {
   const rad = Math.PI / 180;
   const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
@@ -181,10 +189,18 @@ registerInference({
       const km = (r.lat != null && r.lon != null && r.home_lat != null && r.home_lon != null)
         ? Math.round(greatCircleKm(r.home_lat, r.home_lon, r.lat, r.lon) * 10) / 10
         : null;
+      const bearing = (r.lat != null && r.lon != null && r.home_lat != null && r.home_lon != null)
+        ? Math.round(bearingDeg(r.home_lat, r.home_lon, r.lat, r.lon))
+        : null;
       return {
         entity: String(r.target),
         value: {
           km,
+          // Bearing FROM US to the target, computed from stored positions. Not
+          // to be confused with the antenna bearing recorded on a reception
+          // (docs/modules/observations.md) — that one is a measurement, this is
+          // geometry. Keeping the two apart matters: one can verify the other.
+          bearing,
           attempts:     r.attempts,
           hits:         r.hits,
           verified:     r.hits > 0,

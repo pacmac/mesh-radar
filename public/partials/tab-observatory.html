@@ -24,6 +24,10 @@
   <div class="tabs tabs-bordered w-full sm:w-fit shrink-0">
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='board' && 'tab-active font-semibold'"
        @click="switchObsTab('board')">Board</a>
+    <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='radar' && 'tab-active font-semibold'"
+       @click="switchObsTab('radar')">Radar</a>
+    <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='map' && 'tab-active font-semibold'"
+       @click="switchObsTab('map')">Map</a>
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='receptions' && 'tab-active font-semibold'"
        @click="switchObsTab('receptions')">Receptions</a>
   </div>
@@ -99,16 +103,6 @@
                 </tbody>
               </table>
             </template>
-          </div>
-        </div>
-        <div class="card bg-base-100 shadow">
-          <div class="card-body p-3 gap-2">
-            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-              Map — the mesh's own ground</h2>
-            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-14 text-center">
-              <p class="text-xs text-base-content/50">Awaiting the relay graph.</p>
-              <p class="text-xs text-base-content/35 mt-1">Links come from stored routes; no airtime needed.</p>
-            </div>
           </div>
         </div>
       </div>
@@ -200,6 +194,54 @@
     <p class="text-xs text-base-content/40 shrink-0">
       Empty panels are waiting for a feed, not for data. Each fills when its phase lands and nothing moves.
     </p>
+  </div>
+
+
+  <!-- ══════════════════ RADAR — full page ═══════════════════════════════════
+       Peter, 2026-08-02: "the radar and mesh map can be full page sub menus,
+       that would free up a lot of space and make them more readable?" Correct —
+       and the board had no radar at all, because a 400px square could not show
+       a hundred targets legibly. Given the page, it can. -->
+  <div x-show="obsTab==='radar'" class="flex-1 min-h-0 flex flex-col gap-2">
+    <div class="flex items-baseline gap-3 flex-wrap shrink-0">
+      <span class="text-xs text-base-content/50">verified targets by bearing and range from us</span>
+      <span class="ml-auto text-xs font-mono text-base-content/50"
+            x-text="(reach?.plot?.length || 0) + ' plotted · rings every ' + Math.round(obsRadarMax()/4) + ' km'"></span>
+    </div>
+
+    <template x-if="!reach?.plot?.length">
+      <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-6 py-16 text-center">
+        <p class="text-sm text-base-content/60">Computing from stored attempts.</p>
+      </div>
+    </template>
+
+    <template x-if="reach?.plot?.length">
+      <div class="card bg-base-100 shadow flex-1 min-h-0 overflow-hidden">
+        <div class="h-full flex items-center justify-center p-2">
+          <svg viewBox="0 0 1000 1000" class="h-full max-h-full" style="aspect-ratio:1"
+               x-html="obsRadarSvg()"></svg>
+        </div>
+      </div>
+    </template>
+    <p class="text-xs text-base-content/40 shrink-0">
+      Rings scale to the record, not a fixed range. A faded dot has been reached rarely —
+      the dot says reached, the fade says how dependably. Distances beyond 200 km are excluded as unverifiable.
+    </p>
+  </div>
+
+  <!-- ══════════════════ MAP — full page ═════════════════════════════════════ -->
+  <div x-show="obsTab==='map'" class="flex-1 min-h-0 flex flex-col gap-2">
+    <div class="flex items-baseline gap-3 flex-wrap shrink-0">
+      <span class="text-xs text-base-content/50">the mesh's own ground — nodes, links and the corridors between them</span>
+    </div>
+    <div class="rounded border border-dashed border-base-300 bg-base-200/40 flex-1 min-h-0 flex items-center justify-center">
+      <div class="text-center">
+        <p class="text-sm text-base-content/60">Awaiting link geometry.</p>
+        <p class="text-xs text-base-content/40 mt-1">
+          The relay graph knows which links exist; drawing them needs each link's two endpoints.
+        </p>
+      </div>
+    </div>
   </div>
 
   <!-- ══════════════════ RECEPTIONS — debug sub-page ═════════════════════════ -->

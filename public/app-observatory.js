@@ -49,6 +49,93 @@ export const observatoryMixin = {
 
   applyReachModel(ev) { this.reach = ev.reach || null; },
 
+  /** The radar, built as an SVG string.
+   *
+   *  NOT `<template x-for>` INSIDE `<svg>`, AND THIS IS NOT A STYLE CHOICE.
+   *  The HTML parser treats a <template> inside <svg> as an SVG-namespaced
+   *  element with no .content, so Alpine cannot use it as a loop scope: every
+   *  binding inside reports "ring is not defined", "b is not defined",
+   *  "t is not defined", and the attributes land empty ("Expected length, ''").
+   *  30 console errors on the first attempt. The static mockup built its SVG as
+   *  a string for the same reason and it is the right answer here too.
+   *
+   *  Presentation arithmetic over server-supplied values — the km and bearing
+   *  were both computed by the reach model; this only decides where on a circle
+   *  to put them (BROWSER_CONTRACT permits layout).
+   *
+   *  Range scales to the RECORD, not a fixed 200 km: the ring the eye lands on
+   *  should be the frontier we actually hold. */
+  obsRadarSvg() {
+    // COLOURS COME FROM DAISYUI'S CSS VARIABLES, NOT TAILWIND CLASSES. Tailwind
+    // here is the in-browser JIT build, and utility classes injected into SVG
+    // via x-html are never compiled — the first attempt rendered a solid black
+    // disc because `fill-base-200/30` resolved to nothing and SVG defaults to
+    // black. oklch(var(--b2)) needs no build step and still follows the theme,
+    // so the plot is correct in both light and dark.
+    const C_DISC   = 'oklch(var(--b2)/0.35)';
+    const C_LINE   = 'oklch(var(--b3))';
+    const C_LABEL  = 'oklch(var(--bc)/0.45)';
+    const C_FAR    = 'oklch(var(--p))';
+    const C_NEAR   = 'oklch(var(--s))';
+    const C_CENTRE = 'oklch(var(--bc))';
+    const plot = this.reach?.plot || [];
+    if (!plot.length) return '';
+    const C = 500, R = 430;
+    const max = this.obsRadarMax();
+    const pt = (km, brg, radius = null) => {
+      const r = radius ?? (km / max) * R;
+      const a = (brg - 90) * Math.PI / 180;
+      return [C + Math.cos(a) * r, C + Math.sin(a) * r];
+    };
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const p = [`<circle cx="${C}" cy="${C}" r="${R}" fill="${C_DISC}" stroke="${C_LINE}" stroke-width="2"/>`];
+
+    for (let i = 1; i <= 4; i++) {
+      const km = Math.round((max / 4) * i), r = (km / max) * R;
+      p.push(`<circle cx="${C}" cy="${C}" r="${r.toFixed(1)}" fill="none" stroke="${C_LINE}" stroke-width="1.5" stroke-dasharray="4 8"/>`);
+      p.push(`<text x="${C + 8}" y="${(C - r + 22).toFixed(1)}" fill="${C_LABEL}" font-size="20" font-family="JetBrains Mono">${km}</text>`);
+    }
+    for (let b = 0; b < 360; b += 45) {
+      const [x, y] = pt(0, b, R), [lx, ly] = pt(0, b, R + 38);
+      p.push(`<line x1="${C}" y1="${C}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${C_LINE}" stroke-width="${b % 90 ? 1 : 2}"/>`);
+      p.push(`<text x="${lx.toFixed(1)}" y="${(ly + 8).toFixed(1)}" text-anchor="middle" fill="${C_LABEL}" font-size="22" font-family="Oxanium">${b}</text>`);
+    }
+    // Nearest first, so the distant targets that matter draw on top.
+    const labels = [];
+    for (const t of [...plot].sort((a, b) => a.km - b.km)) {
+      const [x, y] = pt(t.km, t.bearing);
+      const far = t.km > 100;
+      // Opacity carries reliability: 1 hit in 63 must not look like a standing
+      // link. The dot says reached; the fade says how dependably.
+      const op = Math.max(0.25, Math.min(1, (t.hits / t.attempts) * 3)).toFixed(2);
+      p.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${far ? 9 : 5}" fill="${far ? C_FAR : C_NEAR}" opacity="${op}"><title>${esc(t.label)} — ${t.km} km @ ${t.bearing}°, ${t.hits}/${t.attempts}</title></circle>`);
+      if (t.km > 120) labels.push({ x, y, label: t.label });
+    }
+
+    // DE-COLLIDE THE LABELS. Targets that share a corridor share a bearing —
+    // CBay and Ives are both 187.7 km at 242°, and the Guernsey pair sit on top
+    // of each other at ~150°. Drawn naively they overprint into an unreadable
+    // smudge, which is the thing that makes a plot look broken.
+    //
+    // Nudged apart vertically, with a leader offset, and the side chosen so a
+    // label never runs off the disc.
+    labels.sort((a, b) => a.y - b.y);
+    let lastY = -Infinity;
+    for (const L of labels) {
+      const y = (L.y - lastY < 22) ? lastY + 22 : L.y;
+      lastY = y;
+      const left = L.x > C;
+      p.push(`<text x="${(L.x + (left ? -15 : 15)).toFixed(1)}" y="${(y + 7).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}" fill="${C_FAR}" font-size="20" font-family="JetBrains Mono">${esc(L.label)}</text>`);
+    }
+    p.push(`<circle cx="${C}" cy="${C}" r="8" fill="${C_CENTRE}"/>`);
+    return p.join('');
+  },
+
+  obsRadarMax() {
+    const rec = this.reach?.record_km || 0;
+    return rec ? Math.ceil(rec / 50) * 50 : 0;
+  },
+
   /** Ladder rungs are dated, not aged — same absolute-time rule as obsTime(). */
   obsDate(ts) {
     if (!ts) return '';
