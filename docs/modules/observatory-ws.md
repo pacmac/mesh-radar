@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: 3356b0dc8d379b643805d98dd9d84e4dada87eb3b350b76d72688d6e3c74283e
+source_hash: 903faeed0ff138cf8e0d7e66cf52f8f89d2ebb5cbe9045cf30a9ec566e7a290f
 updated: 2026-08-02
 ---
 
@@ -37,7 +37,7 @@ is again a visible choice.
 | `observation` | each write | one `observation` |
 | `relay_usage` | connect, and after each recompute | `relays[]` — the doors, heaviest first |
 | `reach_model` | connect, and after each recompute | `reach` — record, ladder, frontier, plot |
-| `mesh_links` | connect, and after each recompute | `links` — `{ total, links[], marks[] }` |
+| `mesh_links` | connect, and after each recompute | `links` — `{ total, links[], marks[], nodes[], legend[] }` |
 
 ```
 { id, ts, kind, entity, source, data:{ rx_device, az, beam_deg, rssi, snr, hops, portnum, packet_id } }
@@ -95,6 +95,43 @@ cache: St. Ives, Torteval, Wychavon, St Peter Port, Nanpean, Horeb, Efailwen.
 
 Falls back to `resolveNodeLabel()` and then the raw num — never a placeholder, so
 a node the backfill has not reached yet shows its callsign rather than a lie.
+
+## Map nodes — classified here, painted there
+
+Peter, 2026-08-02: *"we need some node plot point colour differences so we can
+more easily read the map and what it's telling us."* The map was drawing 92
+identical grey dots: it showed where the mesh is and nothing about what any of it
+does for us.
+
+Classification is a decision, so `meshLinks().nodes` carries it and the browser
+maps a class name to a fill (BROWSER_CONTRACT).
+
+| class | meaning | count |
+|---|---|---|
+| `relay` | has carried our traffic — a door | 57 |
+| `endpoint` | route verified, but nothing has ever relayed through it | 35 |
+| `seen` | on the map only through someone else's route | 0 |
+
+**`seen` being zero is expected, not a bug.** `link.observed` is built *from* our
+own traceroute routes, so every endpoint on the map is by definition in a route
+we obtained. The class exists because the moment a second evidence source lands —
+passive `relay_node` capture, §7b — it starts filling, and a map that silently
+reclassified those as `endpoint` would be claiming verification it never had.
+
+`weight` is a door's share of relayed traffic, `log1p(uses) / log1p(maxUses)`.
+**Log, not linear**, and that matters at this spread: the busiest relay carried
+4,434 hops and the quietest carried one. Linear would draw a single enormous dot
+and ninety-one specks; log puts `T4` at 1.00, `fir` at 0.91, `TE 5` at 0.87 —
+one or two rungs apart, which is what they actually are.
+
+`legend[]` ships the class names and counts so the page never counts anything.
+
+### What it showed immediately
+
+The relay mass is **local** and the distant reach is **all leaves**: nothing
+beyond about 50 km has ever relayed for us. The far corridors are single shots
+through nearby doors, not a distant network we are part of. That is a fact about
+the frontier the map could not express before it had colour.
 
 ## BROWSER_CONTRACT
 

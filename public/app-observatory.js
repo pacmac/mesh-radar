@@ -157,6 +157,14 @@ export const observatoryMixin = {
     const C_NODE   = 'oklch(var(--s)/0.7)';
     const C_FAR    = 'oklch(var(--p))';
     const C_HOME   = 'oklch(var(--bc))';
+    // One colour per server-assigned class. DaisyUI variables, not Tailwind
+    // classes — see the note on obsRadarSvg(); injected utility classes are
+    // never compiled and render as black.
+    const C_CLS = {
+      relay:    'oklch(var(--a))',        // doors — the thing the mesh runs on
+      endpoint: 'oklch(var(--p))',        // reached, but relays for nobody
+      seen:     'oklch(var(--bc)/0.35)',  // known only through someone else
+    };
     const W = 1000, H = 700, PAD = 40;
 
     const pts = [];
@@ -176,12 +184,33 @@ export const observatoryMixin = {
       const f = Math.log1p(l.count) / Math.log1p(maxC);
       p.push(`<line x1="${X(l.a_lon).toFixed(1)}" y1="${Y(l.a_lat).toFixed(1)}" x2="${X(l.b_lon).toFixed(1)}" y2="${Y(l.b_lat).toFixed(1)}" stroke="${C_LINK}" stroke-width="${(0.6 + f * 3).toFixed(2)}" opacity="${(0.18 + f * 0.55).toFixed(2)}"><title>${l.km} km, seen ${l.count}x</title></line>`);
     }
-    const seen = new Set();
-    for (const l of L) {
-      for (const [n, lat, lon] of [[l.a, l.a_lat, l.a_lon], [l.b, l.b_lat, l.b_lon]]) {
-        if (seen.has(n)) continue;
-        seen.add(n);
-        p.push(`<circle cx="${X(lon).toFixed(1)}" cy="${Y(lat).toFixed(1)}" r="4" fill="${C_NODE}" opacity="0.8"/>`);
+    // NODES, COLOURED BY WHAT THEY DO FOR US. The class and the weight are the
+    // server's (`meshLinks().nodes`); this maps them to a fill and a radius.
+    // Ninety-two identical grey dots said where the mesh is and nothing about
+    // what any of it does — Peter, 2026-08-02.
+    //
+    // Radius carries the door's share of relayed traffic. A relay is drawn
+    // larger the more it has carried, so the corridors that actually work read
+    // as thick nodes on thick lines.
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const nodes = this.meshLinks?.nodes || [];
+    if (nodes.length) {
+      for (const n of [...nodes].sort((a, b) => a.weight - b.weight)) {
+        const r = n.cls === 'relay' ? 3.5 + n.weight * 8 : 3.5;
+        const tip = `${n.label}${n.place ? ` — ${n.place}` : ''}, ${n.km} km`
+          + (n.cls === 'relay' ? `, relayed ${n.uses}x` : n.cls === 'endpoint' ? ', route verified' : ', seen only');
+        p.push(`<circle cx="${X(n.lon).toFixed(1)}" cy="${Y(n.lat).toFixed(1)}" r="${r.toFixed(1)}" fill="${C_CLS[n.cls] || C_NODE}" opacity="${n.cls === 'seen' ? 0.5 : 0.9}"><title>${esc(tip)}</title></circle>`);
+      }
+    } else {
+      // Fallback for a payload from before classification shipped — the map
+      // still draws rather than going blank on an older server.
+      const drawn = new Set();
+      for (const l of L) {
+        for (const [n, lat, lon] of [[l.a, l.a_lat, l.a_lon], [l.b, l.b_lat, l.b_lon]]) {
+          if (drawn.has(n)) continue;
+          drawn.add(n);
+          p.push(`<circle cx="${X(lon).toFixed(1)}" cy="${Y(lat).toFixed(1)}" r="4" fill="${C_NODE}" opacity="0.8"/>`);
+        }
       }
     }
     // PLACE LABELS on the outliers only — server-chosen (meshLinks().marks), so
@@ -193,7 +222,6 @@ export const observatoryMixin = {
     // CLAMPED INTO THE PANEL. Pushing collisions downwards walked the Guernsey
     // stack straight off the bottom edge and four labels vanished — text that
     // is silently outside the viewBox looks like missing data, not overflow.
-    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const marks = [...(this.meshLinks?.marks || [])]
       .map(m => ({ ...m, px: X(m.lon), py: Y(m.lat) }))
       .sort((a, b) => a.py - b.py);

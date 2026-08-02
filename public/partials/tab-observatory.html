@@ -239,6 +239,16 @@
   <div x-show="obsTab==='map'" class="flex-1 min-h-0 flex flex-col gap-2">
     <div class="flex items-baseline gap-3 flex-wrap shrink-0">
       <span class="text-xs text-base-content/50">the mesh's own ground — every hop we have witnessed</span>
+      <!-- Legend. Classes and counts are the server's (meshLinks().legend); this
+           only picks the swatch colour, which must match C_CLS in obsMapSvg(). -->
+      <template x-for="l in (meshLinks?.legend || [])" :key="l.cls">
+        <span class="flex items-center gap-1.5 text-xs text-base-content/50" x-show="l.count">
+          <span class="inline-block rounded-full w-2.5 h-2.5"
+                :class="l.cls==='relay' ? 'bg-accent' : l.cls==='endpoint' ? 'bg-primary' : 'bg-base-content/30'"></span>
+          <span x-text="l.text"></span>
+          <span class="font-mono text-base-content/35" x-text="l.count"></span>
+        </span>
+      </template>
       <span class="ml-auto text-xs font-mono text-base-content/50" x-show="meshLinks"
             x-text="(meshLinks?.total || 0) + ' links, both ends placed'"></span>
     </div>
@@ -256,6 +266,11 @@
         </div>
       </div>
     </template>
+    <p class="text-xs text-base-content/40 shrink-0">
+      A relay is drawn larger the more of our traffic it has carried. Line weight is
+      how often that hop has been witnessed. Only the far clusters are named — one label
+      per neighbourhood, with <span class="font-mono">+n</span> for the nodes underneath.
+    </p>
   </div>
 
   <!-- ══════════════════ RECEPTIONS — debug sub-page ═════════════════════════ -->

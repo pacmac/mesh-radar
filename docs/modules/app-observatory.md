@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 8f525b5a93b38d1172e09a2d93f596fc6d1bf8d8f7cdde810256a313455c52cb
+source_hash: 6fdf746da36411a2b22ef2ce4c11f1e977509744dca31dab985db0a9b9d56563
 updated: 2026-08-02
 ---
 
@@ -23,7 +23,7 @@ replayed on connect, appended on arrival.
 | `observations` | newest first, capped at 500 |
 | `relayUsage` | doors, server-ranked and server-labelled |
 | `reach` | the reach model — record, ladder, frontier, radar plot |
-| `meshLinks` | `{ total, links[], marks[] }` — the map's geometry and captions |
+| `meshLinks` | `{ total, links[], marks[], nodes[], legend[] }` — geometry, captions, classes |
 | `obsTab` | `'board'` \| `'radar'` \| `'map'` \| `'receptions'`, persisted, declared in `app.js` |
 
 `MAX_ROWS = 500` — enough to fill a tall screen and scroll, small enough that an
@@ -107,6 +107,28 @@ outside the viewBox looks like missing data, not overflow.
 
 `+7` after a distance means seven more nodes sit under that dot. The count is the
 server's — a cluster never quietly hides its members.
+
+### Node colour — class from the server, swatch from `C_CLS`
+
+`meshLinks().nodes` arrives pre-classified (`relay` / `endpoint` / `seen`) with a
+`weight`. This maps class → fill and weight → radius, and nothing more.
+
+```
+relay     oklch(var(--a))        radius 3.5 + weight * 8
+endpoint  oklch(var(--p))        radius 3.5
+seen      oklch(var(--bc)/0.35)  radius 3.5, opacity 0.5
+```
+
+The legend swatches in `tab-observatory.html` use `bg-accent` / `bg-primary` /
+`bg-base-content/30` — **these must stay in step with `C_CLS`**. They are Tailwind
+classes on real elements, which do compile; the SVG fills cannot be, for the
+reason above.
+
+Drawn lightest-weight first so the heavy doors land on top rather than being
+buried under the specks.
+
+There is a fallback path for a payload with no `nodes[]` — an older server still
+gets a drawn map instead of a blank panel.
 
 ### `obsNodeCount()` counts what is on screen, and says so
 

@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: f7243ced281d2c8929cd5279aa65b9d56253b405c3a75683b8181b1a44dba0b9
+source_hash: ad1080af1183277e86671c961d33822b60634d927bc6a93d235e6081615322f6
 updated: 2026-08-02
 ---
 
@@ -31,14 +31,26 @@ moves**.
 
 | panel | today |
 |---|---|
-| Furthest verified reach | awaiting the reach model |
+| Furthest verified reach | **live** — `reach.ladder` |
 | Doors | **live** — `relay.usage` |
 | Bearings recorded / Nodes seen | **live**, on screen |
-| Radar | awaiting the reach model |
-| Map | awaiting the relay graph |
+| Radar | **live** — `reach.target`, full page |
+| Map | **live** — `link.observed`, full page, classified and named |
 | Missions | awaiting the scheduler (blocked on spec §9) |
-| Record ladder | awaiting the reach model |
+| Record ladder | **live** — `reach.ladder` |
 | Receptions | **live** |
+
+### Map legend
+
+Three swatches, shown only when their count is non-zero, driven by
+`meshLinks().legend`. The page counts nothing and names no class — it picks a
+swatch colour per class, and those colours **must stay in step with `C_CLS` in
+`app-observatory.js`**. Legend swatches are Tailwind classes on real elements, so
+they compile; the SVG fills cannot be and use DaisyUI variables instead.
+
+The caption under the map explains the two size encodings — relay radius is
+traffic carried, line weight is how often that hop was witnessed — because a
+size difference with no stated meaning is decoration.
 
 ## Sub-tabs
 

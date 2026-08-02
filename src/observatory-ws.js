@@ -251,7 +251,54 @@ function meshLinks() {
            || resolveNodeLabel(n.node) || String(n.node),
   }));
 
-  return { total: all.length, links, marks };
+  // EVERY PLOTTED NODE, CLASSIFIED HERE. The page was drawing 92 identical grey
+  // dots, so the map showed where the mesh is and nothing about what it does for
+  // us. Peter, 2026-08-02: "we need some node plot point colour differences so we
+  // can more easily read the map and what it's telling us."
+  //
+  // Classification is a decision, so it is the server's (BROWSER_CONTRACT). The
+  // browser gets a class name and a weight and paints them.
+  //
+  //   relay    — carried our traffic. A door. 57 of 92.
+  //   endpoint — we have a verified route to it, but nothing has ever relayed
+  //              through it. A leaf. 35 of 92.
+  //   seen     — on the map through someone else's route only. Currently zero,
+  //              and that is expected rather than a bug: link.observed is built
+  //              FROM our traceroute routes, so every endpoint is by definition
+  //              in a route we obtained. The class exists because the moment a
+  //              second evidence source lands (passive relay_node, §7b) it will
+  //              start filling, and a map that silently reclassified them as
+  //              endpoints would be lying.
+  //
+  // `weight` is the door's share of relayed traffic, 0..1, linear on log(uses)
+  // — the busiest relay is not fifty times more important than the quietest, it
+  // is one or two rungs up, and a linear scale would draw one huge dot and
+  // ninety-one specks.
+  const usage = new Map(facts('relay.usage').map(f => [f.entity, f.value?.uses ?? 0]));
+  const reached = new Set(
+    facts('reach.target').filter(f => f.value?.verified).map(f => f.entity));
+  const maxUses = Math.max(1, ...usage.values());
+
+  const nodes = [...seen.values()].map(n => {
+    const key = String(n.node);
+    const uses = usage.get(key) ?? 0;
+    return {
+      node: n.node, lat: n.lat, lon: n.lon, km: Math.round(n.km),
+      cls: uses > 0 ? 'relay' : (reached.has(key) ? 'endpoint' : 'seen'),
+      uses,
+      weight: uses > 0 ? Math.log1p(uses) / Math.log1p(maxUses) : 0,
+      label: resolveNodeLabel(n.node) || String(n.node),
+      place: placeName(getCachedGeocode(n.node)),
+    };
+  });
+
+  const legend = [
+    { cls: 'relay',    text: 'relayed for us', count: nodes.filter(n => n.cls === 'relay').length },
+    { cls: 'endpoint', text: 'route verified', count: nodes.filter(n => n.cls === 'endpoint').length },
+    { cls: 'seen',     text: 'seen only',      count: nodes.filter(n => n.cls === 'seen').length },
+  ];
+
+  return { total: all.length, links, marks, nodes, legend };
 }
 
 /** Great-circle km. Duplicated from the catalogue on purpose: this file must not
