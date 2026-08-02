@@ -34,9 +34,15 @@ before its first consumer would be designed against an imagined caller.
 
 ## The boundary
 
-**One import, from the composition root.** `src/index.js` names it; nothing else
-in `src/` may. Core emits, the engine consumes — core never imports an
-inference, never queries mid-flow, never branches on its presence.
+**Two files may import it, and the list is explicit** — `src/index.js` (the
+composition root) and `src/inferences.js` (the catalogue of domain calculations,
+which is a plugin, not core). Nothing else in `src/` may. Core emits, the engine
+consumes — core never queries mid-flow and never branches on its presence.
+
+*The first version of this test said "only `index.js`", which was the rule stated
+slightly wrong: it would have rejected the catalogue. Corrected in task
+`observatory-inference-catalogue-boundary` **before** any inference existed, so
+the widening was a decision rather than a concession to code already written.*
 
 **Enforced by test, not by intention.** This repo has stated the rule twice and
 broken it twice: `PLUGIN_BOUNDARY_SPEC.md` exists because 164 lines of alarm

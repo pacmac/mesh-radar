@@ -63,8 +63,13 @@ import './alarm-browser.js';
 // the schema is created on load, and a registration made later inside listen()
 // silently never fires.
 //
-// Delete this line and the observatory's own files and node-dash is unchanged.
+// Delete these lines and the observatory's own files and node-dash is unchanged.
 import './observatory.js';
+// The catalogue of domain calculations. Separate from the engine on purpose:
+// this file knows what a bearing is, the engine must never learn. It is the ONE
+// place every inference is registered, so the whole of what node-dash works out
+// can be read top to bottom (docs/modules/inferences.md). Empty today.
+import './inferences.js';
 
 registerNodeIdToMacResolver(getLiveMacByNodeId);
 registerMacToNodeIdResolver(getLiveNodeIdByMac);
