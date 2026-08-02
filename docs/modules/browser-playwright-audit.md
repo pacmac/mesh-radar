@@ -31,7 +31,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 26bfa235d7a1f010d2ec25acd8e50971f843e7ed374c2fdc09049ffd66991426
+source_hash: 049ed9a0290403c7627cf9e96096bfd28dd373e7e038a61cf39a74ce72503f88
 updated: 2026-07-31
 ---
 
@@ -46,6 +46,11 @@ star pins a node to the sidebar; the crosshair marks it as a discovery target an
 spends airtime. Never merged — see `docs/DISCOVERY_TARGETING.md`. Neither holds
 optimistic browser state: both re-render from the re-broadcast `node_list`.
 ## The config page has a Discovery section
+
+`max_attempts_per_day` and `channel_util_pause` joined it — a hard daily cap and
+a brake that pauses while the channel is busy. Their helper text says plainly
+that the rationale is courtesy rather than a measured speed-up, because the
+congestion explanation that motivated them was disproved (`MESH_REACH_SPEC` §3b).
 
 `hold_sec` and `max_silence_days` joined it — how long to hold the shared yagi
 still after aiming, and how long a node may be silent before discovery stops
