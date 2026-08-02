@@ -4,12 +4,12 @@ import { persistGet, persistSet } from './app-persist.js';
 // Core routes. Plugin routes are merged in below from window.__dashPlugins —
 // core names no plugin tab or path (docs/BROWSER_PLUGIN_SPEC.md).
 const _PATH_TO_TAB = {
-  '/': 'overview', '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
+  '/': 'overview', '/overview': 'overview', '/radar': 'radar', '/observatory': 'observatory', '/nodes': 'nodes',
   '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/devices': 'devices',
   '/device-config': 'devices', '/performance': 'perf',
 };
 const _TAB_TO_PATH = {
-  overview: '/', radar: '/radar', nodes: '/nodes',
+  overview: '/', radar: '/radar', observatory: '/observatory', nodes: '/nodes',
   cfg: '/config', range: '/range', messages: '/messages', devices: '/devices',
   perf: '/performance',
 };

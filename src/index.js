@@ -196,7 +196,7 @@ function serveIndex(req, res) {
 const _servePage = (req, res, next) =>
   req.headers.accept?.includes('text/html') ? serveIndex(req, res) : next();
 
-for (const p of ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range','/performance','/control']) {
+for (const p of ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range','/performance','/control','/observatory']) {
   app.get(p, _servePage);
 }
 

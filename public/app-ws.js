@@ -114,6 +114,10 @@ export const wsMixin = {
 
     // Node focus page. The reply carries display-ready sections; the hint
     // carries only a num, so we re-request rather than trust a pushed value.
+    // Observatory feed (src/observatory-ws.js) — replayed on connect, appended
+    // on arrival. Pure state application; nothing is derived here.
+    if (ev.type === 'observations_replay') { this.applyObservationsReplay(ev); return; }
+    if (ev.type === 'observation')         { this.applyObservation(ev); return; }
     if (ev.type === 'node_status')        { this.applyNodeStatus(ev); return; }
     if (ev.type === 'node_status_update') { this.onNodeStatusUpdate(ev.num); return; }
     if (ev.type === 'node_status_age')    { this.applyNodeStatusAge(ev); return; }
