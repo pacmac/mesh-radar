@@ -86,11 +86,12 @@
             </template>
             <template x-if="reach?.frontier?.length">
               <table class="table table-xs font-mono tabular-nums">
-                <thead><tr><th>Target</th><th class="text-right pr-4">km</th><th class="text-right pr-4">Hits</th><th class="text-right">Rate</th></tr></thead>
+                <thead><tr><th>Target</th><th>Where</th><th class="text-right pr-4">km</th><th class="text-right pr-4">Hits</th><th class="text-right">Rate</th></tr></thead>
                 <tbody>
                   <template x-for="f in reach.frontier" :key="f.target">
                     <tr>
                       <td class="text-primary" x-text="f.label"></td>
+                      <td class="text-base-content/50 truncate max-w-[14rem]" x-text="f.place || ''"></td>
                       <td class="text-right pr-4" x-text="f.km"></td>
                       <td class="text-right pr-4 text-base-content/60" x-text="f.hits + '/' + f.attempts"></td>
                       <!-- Hit rate is the honest headline for a single target:
@@ -139,6 +140,7 @@
                 <thead>
                   <tr>
                     <th>Relay</th>
+                    <th>Where</th>
                     <th class="text-right pr-4">Behind</th>
                     <th class="text-right pr-4">Carried</th>
                     <th class="w-24">Share</th>
@@ -148,6 +150,7 @@
                   <template x-for="r in relayUsage.slice(0, 8)" :key="r.relay">
                     <tr>
                       <td class="text-secondary" x-text="r.label"></td>
+                      <td class="text-base-content/50 truncate max-w-[12rem]" x-text="r.place || ''"></td>
                       <td class="text-right pr-4" x-text="r.targets"></td>
                       <td class="text-right pr-4 text-base-content/60" x-text="r.uses"></td>
                       <td>

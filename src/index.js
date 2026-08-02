@@ -28,7 +28,7 @@ import tracerouteRouter from './traceroute-api.js';
 import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
-import geocodeRouter from './geocode.js';
+import geocodeRouter, { startGeocodeBackfill } from './geocode.js';
 import { registerBridgeEvents } from './bridge-events.js';
 import nodesApi from './nodes-api.js';
 import { registerStartupHandlers } from './startup.js';
@@ -88,6 +88,10 @@ import './inferences.js';
 // recent past to every new connection. Plugin wiring, not core — ws-relay.js
 // never names the observatory.
 import './observatory-ws.js';
+
+// Name every positioned node we have never looked up. Deferred, paced, and
+// idempotent — see src/geocode.js.
+startGeocodeBackfill();
 
 registerNodeIdToMacResolver(getLiveMacByNodeId);
 registerMacToNodeIdResolver(getLiveNodeIdByMac);

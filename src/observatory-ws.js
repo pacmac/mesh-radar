@@ -15,7 +15,7 @@
 import { events, recentObservations, facts, runInference } from './observatory.js';
 import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
 import { resolveNodeLabel } from './node-label.js';
-import { getConfig } from './db.js';
+import { getConfig, getCachedGeocode } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
 // every distance from it. A page load must not re-read config.
@@ -73,6 +73,23 @@ registerConnectReplay(() => {
   }
 });
 
+/** The readable tail of a reverse-geocoded address: town, county.
+ *
+ *  The stored form is "Ash Lane, Winsford, TA24 7AD, Somerset, United Kingdom".
+ *  A door list wants "Winsford, Somerset" — the street and the postcode are
+ *  precision nobody is using, and the country is the same for all of them.
+ *  Returns null rather than a placeholder when nothing is cached yet, so the
+ *  column stays empty instead of filling with noise while the backfill runs. */
+function shortPlace(address) {
+  if (!address) return null;
+  const parts = address.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length < 2) return parts[0] || null;
+  const noCountry = parts.length > 2 ? parts.slice(0, -1) : parts;
+  const postcodeish = s => /\d/.test(s) && s.length <= 9;
+  const keep = noCountry.filter(s => !postcodeish(s));
+  return keep.slice(-2).join(', ') || null;
+}
+
 /** Current relay usage, heaviest first.
  *
  *  A pure read of stored facts — the inference already ran; this does not
@@ -87,6 +104,7 @@ function relayUsage() {
       // relay rendered as a raw number. It is also a BROWSER_CONTRACT breach:
       // a label is a display value and belongs to the server.
       label:    resolveNodeLabel(Number(f.entity)) || String(f.entity),
+      place:    shortPlace(getCachedGeocode(Number(f.entity))),
       uses:     f.value?.uses ?? 0,
       targets:  f.value?.targets ?? 0,
       at:       f.ts,
@@ -120,6 +138,10 @@ function reachModel() {
       hits:    f.value.hits,
       attempts: f.value.attempts,
       last_ok: f.value.last_ok,
+      // A place beats a callsign for judging a corridor: "St Ives, Cornwall"
+      // says why the shot is hard in a way "Ives" never can. Trimmed to the
+      // town-and-county tail — the street number is noise at this zoom.
+      place:   shortPlace(getCachedGeocode(Number(f.entity))),
     }));
 
   // EVERY plottable target, not just the frontier's top 12: a radar showing a

@@ -213,6 +213,36 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_traceroute_ts     ON traceroute_history(ts DESC);
   CREATE INDEX IF NOT EXISTS idx_traceroute_to_num ON traceroute_history(to_num, ts DESC);
 `);
+// ─── Geocode cache ──────────────────────────────────────────────────────────
+//
+// ITS OWN TABLE, and that is a fix rather than a preference. The cache used to
+// live in `nodeinfo.address`, written with
+//     UPDATE nodeinfo SET address = ? WHERE num = ?
+// and nodeinfo's primary key is node_id, not num — so for any node without a
+// nodeinfo row the UPDATE matched nothing and SILENTLY stored nothing. Measured
+// 2026-08-02: 193 of the 407 unnamed positioned nodes had no nodeinfo row, so
+// each would have been fetched from Nominatim, returned to the caller, discarded,
+// and fetched again on the next request. For ever. Against a public service with
+// a published etiquette policy.
+//
+// A cache also does not belong inside identity data: creating sparse nodeinfo
+// rows to hold an address would put nodes in the nodeinfo table that never sent
+// a nodeinfo packet, which getMqttNode() would then hand back as if they had.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS geocode_cache (
+    num     INTEGER PRIMARY KEY,
+    address TEXT NOT NULL,
+    ts      INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+`);
+// One-time carry-across of the 194 addresses already stored on nodeinfo, so the
+// backfill does not re-request work already paid for.
+db.exec(`
+  INSERT OR IGNORE INTO geocode_cache (num, address)
+  SELECT num, address FROM nodeinfo
+  WHERE num IS NOT NULL AND address IS NOT NULL AND address <> ''
+`);
+
 // Migrations for columns added after initial schema
 {
   const thCols = db.prepare(`PRAGMA table_info(traceroute_history)`).all().map(r => r.name);
@@ -550,8 +580,15 @@ export const stmts = {
     WHERE num = @num
   `),
 
-  getGeocode:  db.prepare(`SELECT address FROM nodeinfo WHERE num = ? AND address IS NOT NULL LIMIT 1`),
-  setGeocode:  db.prepare(`UPDATE nodeinfo SET address = ? WHERE num = ?`),
+  getGeocode:  db.prepare(`SELECT address FROM geocode_cache WHERE num = ? LIMIT 1`),
+  setGeocode:  db.prepare(`INSERT INTO geocode_cache (num, address) VALUES (?, ?)
+                           ON CONFLICT(num) DO UPDATE SET address = excluded.address, ts = unixepoch()`),
+  // Positioned nodes with no cached address, nearest work first. Drives the
+  // backfill; an empty result is the normal steady state.
+  geocodeTodo: db.prepare(`SELECT n.num FROM nodes n
+                           LEFT JOIN geocode_cache g ON g.num = n.num
+                           WHERE n.lat IS NOT NULL AND n.lon IS NOT NULL AND g.num IS NULL
+                           LIMIT ?`),
 
   getConfig:   db.prepare(`SELECT value FROM config WHERE key = ?`),
   setConfig:   db.prepare(`INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
@@ -865,7 +902,12 @@ export function getCachedGeocode(num) {
 }
 
 export function setCachedGeocode(num, address) {
-  stmts.setGeocode.run(address, num);
+  stmts.setGeocode.run(num, address);
+}
+
+/** Positioned nodes still lacking an address. */
+export function geocodeBacklog(limit = 5000) {
+  return stmts.geocodeTodo.all(limit).map(r => r.num);
 }
 
 const _getNodeinfo = db.prepare(`SELECT * FROM nodeinfo WHERE num = ? LIMIT 1`);
