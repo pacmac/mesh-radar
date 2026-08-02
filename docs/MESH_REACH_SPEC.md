@@ -213,6 +213,74 @@ silent drop is indistinguishable from a quiet channel. Measured on the day the
 rule shipped: zero, across 57 live receptions and 762 `range_test_log` rows. Our
 gateways are not bridging. The counter exists for the day one does.
 
+## 3b. WE JAM OURSELVES — the constraint nobody was looking for
+
+**Discovered 2026-08-02 from our own stored history, after Peter said: *"look at
+the trend data for when the discoveries spiked / then fell sharply."* It may
+explain the entire plateau in §1a.**
+
+Answer rate against **our own** daily transmission volume, July onward:
+
+| our volume | days | attempts | answers | rate | new nodes/day |
+|---|---|---|---|---|---|
+| < 50/day | 5 | 15 | 6 | **40.0%** | 7.6 |
+| 50–400 | 3 | 455 | 87 | 19.1% | **15.0** |
+| 400–800 | 10 | 6,845 | 1,346 | 19.7% | 9.7 |
+| **800+** | 14 | 14,122 | 1,411 | **10.0%** | **6.2** |
+
+Push past 800/day and the answer rate **halves** and discovery drops by a third.
+In raw counts the effect is starker: early July at ~700 attempts/day returned
+139–234 answers; late July at ~1,050 attempts/day returned **35–78**. More
+transmissions, fewer replies — not a lower rate, *fewer replies in absolute
+terms*.
+
+**The mechanism is almost certainly self-congestion.** LoRa is half-duplex, so
+while our radio transmits it cannot hear. Every traceroute floods several hops of
+rebroadcast. Channel utilisation measured **22–25%** during this work. Above
+that, backoff lengthens mesh-wide and the first thing lost is exactly what we
+care about: weak NODEINFO and reply frames from the far edge.
+
+**This reframes §2.** The machine ramped to ~1,000/day on 24 June and the record
+never moved again. Read as "iterating without learning" it looks like a selection
+failure. Read against this table it looks like the prober was **drowning its own
+return path**, and trying harder made it worse.
+
+### Consequences
+
+- **Transmitting less is a first-class strategy**, not a courtesy. §1's "not so
+  much as to become a nuisance" turns out to be self-interest as well as manners.
+- **Passive reception is degraded by our own traffic.** §3 calls it free evidence;
+  it is free only if we stay quiet enough to receive it. 15 new nodes/day at
+  50–400 against 6.2 at 800+.
+- **Attempt concentration has an airtime price.** Six shots at one target is six
+  transmissions; the statistical gain must be weighed against the congestion cost,
+  not assumed to be free.
+
+### What is NOT established
+
+Observational, not controlled. Volume was never varied deliberately — the bands
+are periods that happened to differ, so season, mesh growth and the 27 July
+`traceroute.enabled` cliff are all confounded with it. The `<50/day` band is 5
+days and **15 attempts**; its 40% is not a reliable number, only a direction.
+
+**The clean test is a deliberate rate experiment**, which requires the timing
+knobs of §3c to be enforced first. Do not treat the table above as settled.
+
+## 3c. A timing conclusion requires an enforced knob
+
+Peter, 2026-08-02: *"my first question to any conclusion that is a result of
+timing would always be: do we have knobs for that with max and min values
+enforced?"*
+
+The right question, and the audit failed it. `PUT /config/radar` accepted and
+stored `stale_sec: 0` and `timeout_sec: -99` — a negative traceroute timeout
+would time out every dispatch instantly and record a miss without ever waiting,
+manufacturing a blackout indistinguishable from a dead mesh.
+
+**Rule: any timing that can change a measurement must be settable, bounded, and
+bounded on the server.** A browser is not a validator, and a conclusion drawn
+from an unenforced timing is not a conclusion.
+
 ## 4. A miss proves nothing — the censoring rule
 
 **This is the single most important statistical constraint and the model must be

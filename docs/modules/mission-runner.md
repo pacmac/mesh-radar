@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: bcff25c7ccb68633bac55e8202e8c7872a5120839764592971f5ba165f54441b
+source_hash: 4fe200791d6f975a484d937d6399572e832997c9739ad4b5c8baa81383333e93
 updated: 2026-08-02
 ---
 
@@ -236,6 +236,14 @@ Reading status instead cost eleven minutes of blocked missions: the guard saw a
 mid-travel 141° against a wanted 219° that the rotator had already reached, and
 deferred every attempt. A guard against firing off-beam is worthless if its own
 input is stale.
+
+### The timings are the operator's, not the module's
+
+`timeout_sec` and `aim_timeout_sec` were module constants at 90 s. Both are now
+read from the `discovery` key, because both can change what gets measured —
+`timeout_sec` in particular decides what counts as a miss and sets the true
+cadence. `recent` stays private: how many rows the feed keeps changes no
+measurement.
 
 ## Rate## Rate
 

@@ -495,7 +495,12 @@ function recompute(broadcast) {
 
 registerWsWiring(({ broadcast }) => {
   setTimeout(() => recompute(broadcast), 10_000);
-  setInterval(() => recompute(broadcast), 15 * 60_000);
+  // Settable (discovery.recompute_min): selection latency is a timing that
+  // changes what the operator sees, so it needs a bounded knob like the rest.
+  // Read once at wiring — a live re-read would need the interval torn down and
+  // rebuilt, which is not worth it for a value nobody changes mid-session.
+  const recomputeMin = Number((getConfig('discovery', {}) || {}).recompute_min) || 15;
+  setInterval(() => recompute(broadcast), recomputeMin * 60_000);
 
   // Live activity: every state change, pushed. This is the panel Peter asked
   // for — "what it's done, doing right now, and whether a discovery is in

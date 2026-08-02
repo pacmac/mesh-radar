@@ -48,6 +48,13 @@ export const DEFAULTS = {
     // the real reply window — a measured round trip took 2.9 s — rather than to
     // the full timeout, which would monopolise the antenna.
     hold_sec:            15,
+    // WAS HARDCODED IN mission-runner, and it underpins every rate conclusion:
+    // timeout_sec decides what counts as a miss AND dominates the real cadence,
+    // because a 90 s wait inside a 180 s interval means the configured rate is
+    // not the achieved rate. A timing that changes a measurement must be a knob.
+    mission_timeout_sec: 90,
+    aim_timeout_sec:     90,
+    recompute_min:       15,
     // WHAT COUNTS AS PROVEN GROUND — the anchor the window measures from.
     // "Answered once" let a 1-in-63 fluke at 189.1 km drag the search 90 km
     // into a band the charts show answering ~0%. Reliable reach ends at 95 km.
@@ -92,8 +99,22 @@ const DISCOVERY_LIMITS = {
   proven_min_hits:     [1, 50],
   proven_min_rate:     [0, 100],
   new_node_hours:      [0, 720],
+  mission_timeout_sec: [10, 300],
+  aim_timeout_sec:     [10, 300],
+  recompute_min:       [1, 240],
   interval_sec:        [30, 3600],
 };
+// BOUNDS FOR THE OLDER TIMING KNOBS. These wrote `Number(x)` with no limits,
+// and it was not theoretical: PUT /config/radar {"pasv":{"timeout_sec":-99}}
+// was accepted and stored. A negative traceroute timeout times out every
+// dispatch instantly and records a miss WITHOUT EVER WAITING — manufacturing a
+// blackout indistinguishable from a dead mesh. MESH_REACH_SPEC §3c.
+const RADAR_LIMITS = {
+  pasv: { stale_sec: [30, 86400], stale_fail_sec: [30, 86400], timeout_sec: [5, 300] },
+  actv: { dwell_sec: [5, 3600],   retry_sec: [5, 3600] },
+  scan: { step_deg:  [1, 180],    dwell_sec: [5, 3600] },
+};
+
 const DISCOVERY_STRATEGIES = ['ladder', 'portfolio'];
 const DISCOVERY_MODES = ['auto', 'targets', 'manual'];
 const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, Number(v)));
@@ -123,7 +144,10 @@ router.put('/radar', (req, res) => {
     const current = getConfig('pasv_config', {});
     const allowed = ['stale_sec', 'stale_fail_sec', 'timeout_sec'];
     for (const k of allowed) {
-      if (pasv[k] !== undefined) current[k] = Number(pasv[k]);
+      if (pasv[k] === undefined) continue;
+      const n = Number(pasv[k]);
+      if (!Number.isFinite(n)) return res.status(400).json({ error: `invalid pasv.${k}` });
+      current[k] = clamp(n, RADAR_LIMITS.pasv[k]);
     }
     setConfig('pasv_config', current);
   }
@@ -131,7 +155,10 @@ router.put('/radar', (req, res) => {
     const current = getConfig('actv_config', {});
     const allowed = ['dwell_sec', 'retry_sec'];
     for (const k of allowed) {
-      if (actv[k] !== undefined) current[k] = Number(actv[k]);
+      if (actv[k] === undefined) continue;
+      const n = Number(actv[k]);
+      if (!Number.isFinite(n)) return res.status(400).json({ error: `invalid actv.${k}` });
+      current[k] = clamp(n, RADAR_LIMITS.actv[k]);
     }
     setConfig('actv_config', current);
   }
@@ -139,7 +166,10 @@ router.put('/radar', (req, res) => {
     const current = getConfig('scan_config', {});
     const allowed = ['step_deg', 'dwell_sec'];
     for (const k of allowed) {
-      if (scan[k] !== undefined) current[k] = Number(scan[k]);
+      if (scan[k] === undefined) continue;
+      const n = Number(scan[k]);
+      if (!Number.isFinite(n)) return res.status(400).json({ error: `invalid scan.${k}` });
+      current[k] = clamp(n, RADAR_LIMITS.scan[k]);
     }
     setConfig('scan_config', current);
   }

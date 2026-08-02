@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 179e029442fd4916d68abea181d0def06e0bf1f51afda12b456e37193ab15d8d
+source_hash: 46ab84e3c681f3b9635b244de545f692fc1979d5decb75cb0ddedcaab2ef4db8
 updated: 2026-07-27
 ---
 
@@ -168,6 +168,29 @@ What counts as proven ground, and how long a newly discovered node stays
 eligible. Defaults 3 / 10% / 48 h. The first two decide where the search window
 is anchored — see `docs/modules/inferences.md`; "answered once" let a 1-in-63
 fluke anchor it 90 km past anything reliable.
+
+## Every timing is bounded, on the server
+
+Peter, 2026-08-02: *"my first question to any conclusion that is a result of
+timing would always be: do we have knobs for that with max and min values
+enforced?"*
+
+The audit failed. `PUT /config/radar` wrote `Number(x)` with no limits and
+**accepted `stale_sec: 0` and `timeout_sec: -99`** — a negative traceroute
+timeout times out every dispatch instantly and records a miss without ever
+waiting, manufacturing a blackout indistinguishable from a dead mesh.
+
+`RADAR_LIMITS` now bounds pasv / actv / scan; non-finite input is a 400, out of
+range is clamped. Verified: `0 → 30`, `−99 → 5`, `0 → 5`, `9999 → 180`.
+
+Three timings that were **hardcoded** are now knobs, because each can change a
+measurement: `mission_timeout_sec` (decides what counts as a miss, and dominates
+the real cadence — a 90 s wait inside a 180 s interval means the configured rate
+is not the achieved rate), `aim_timeout_sec`, and `recompute_min` (selection
+latency).
+
+**A conclusion drawn from an unenforced timing is not a conclusion.**
+`MESH_REACH_SPEC` §3c.
 
 ## Invariants
 

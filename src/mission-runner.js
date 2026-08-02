@@ -93,6 +93,8 @@ function cfg() {
     ...(d.interval_sec        != null ? { interval_sec: d.interval_sec } : {}),
     ...(d.enabled             != null ? { enabled: d.enabled } : {}),
     ...(d.hold_sec            != null ? { hold_sec: d.hold_sec } : {}),
+    ...(d.mission_timeout_sec != null ? { timeout_sec: d.mission_timeout_sec } : {}),
+    ...(d.aim_timeout_sec     != null ? { aim_timeout_sec: d.aim_timeout_sec } : {}),
     ...(d.attempts_per_target != null ? { attempts_per_target: d.attempts_per_target } : {}),
   };
 }
