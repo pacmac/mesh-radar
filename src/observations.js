@@ -70,6 +70,18 @@ export function packetObservation(packet, device, ts, replay, rotatorStatus, dev
  *      however far it travelled, not a measurement.
  *    - an azimuth is actually present.
  *
+ *  `held` IS DELIBERATELY NOT A DISQUALIFIER, and this needs saying because it
+ *  reads like an oversight. The rotator has TWO users — node-dash and the garage
+ *  alarm — and the alarm periodically points the yagi somewhere and holds it
+ *  (Peter, 2026-08-02). A held antenna is stationary at a known azimuth, so
+ *  every packet heard during that hold carries a perfectly good bearing. It is
+ *  only *commanding* that is blocked while held, not measuring.
+ *
+ *  That is a gift rather than an obstacle: the alarm moving the antenna for its
+ *  own reasons donates azimuth diversity we did not have to ask for, and azimuth
+ *  diversity is the entire input the bearing estimator is missing (B54 — 305
+ *  bearings spanning two degrees, because nothing has moved it).
+ *
  *  NOTE FOR WHOEVER WRITES THE ESTIMATOR: this is not a bearing to the node. A
  *  yagi's front-to-back ratio means a strong nearby node is heard whichever way
  *  it faces — measured errors up to 108° on known-position nodes. The signal

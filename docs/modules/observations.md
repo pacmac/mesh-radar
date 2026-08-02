@@ -1,7 +1,7 @@
 ---
 module: observations
 source: src/observations.js
-source_hash: 291e988323dc17f03fbdba90d55299b88a7401aa43b423305911ba8a5d499d80
+source_hash: 4ac6179364863c4fc5d5b8ddb8e53e89a78cf3909f14735b7ac2ff3faa880370
 updated: 2026-08-02
 ---
 
@@ -77,6 +77,23 @@ Null unless all hold:
 | radio `is_rotator` and `beam_deg` in (0, 360) | an omnidirectional antenna's bearing is noise; storing it invites averaging the two radios later |
 | rotator settled (`moving`/`busy` false) | a bearing mid-slew is a smear, not a value |
 | `az` present | — |
+
+### `held` is deliberately NOT a disqualifier
+
+**The rotator has two users** — node-dash and the garage alarm — and the alarm
+periodically points the yagi and holds it (Peter, 2026-08-02). A *held* antenna
+is stationary at a known azimuth, so every packet heard during that hold carries
+a perfectly good bearing. Only **commanding** is blocked while held; measuring is
+not.
+
+That makes the alarm's use of the rotator a **gift rather than an obstacle**: it
+donates azimuth diversity we did not have to ask for, and azimuth diversity is
+the entire input the bearing estimator currently lacks (B54 — 305 bearings
+spanning two degrees, because nothing has moved it).
+
+Anything that later *drives* the antenna must be a good citizen of a shared
+resource: check `busy`/`held`, back off on a busy response, resume where it left
+off, and never fight the alarm for control.
 
 Read from the **stored per-device profile**, never a hardcoded MAC. It already
 exists:
