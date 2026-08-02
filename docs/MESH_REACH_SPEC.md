@@ -735,6 +735,23 @@ The open question this leaves is narrower and belongs to the implementing task:
 whether the engine's migrations run through `db.js`'s existing mechanism or its
 own. Either way, guarded with `PRAGMA table_xinfo`.
 
+**Three mechanisms are available for getting data in, and the choice is per
+source, at implementation time.** Peter, 2026-08-02, on triggers: *"I'm not
+saying they are needed but they are also a tool in our toolbox."* Recorded as
+options, not as a decision:
+
+| need | mechanism | note |
+|---|---|---|
+| existing data, in the observations shape | **view** | no copy, no drift, no second source of truth |
+| capture at write time, from data already in the row | **trigger** | one declaration in the engine's migration; core is not touched at all, which is stronger isolation than a call site |
+| enrich with runtime state — azimuth, channel load | **JS at ingest** | nothing else can reach it |
+
+The trigger's strength is that core does not even know it is being observed. Its
+cost is invisibility: someone reading `persist.js` sees no reason a row appeared
+elsewhere. Acceptable if the engine's schema documents every trigger it installs
+and the boundary test knows to look for them — otherwise it is how a mystery
+table is born.
+
 ### Open decisions
 
 1. **The name.**
