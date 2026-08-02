@@ -1,7 +1,7 @@
 ---
 module: observatory
 source: src/observatory.js
-source_hash: f12349d558bd453542c5a7c64aa05308ac6ca5ccb9d6d54e3f4be244a5d34b4d
+source_hash: 18b152d471d3f3141edc0b11f7f1e484ae8b993b4b8425ae22f54e3e72dbe15c
 updated: 2026-08-02
 ---
 
@@ -34,9 +34,10 @@ before its first consumer would be designed against an imagined caller.
 
 ## The boundary
 
-**Two files may import it, and the list is explicit** — `src/index.js` (the
-composition root) and `src/inferences.js` (the catalogue of domain calculations,
-which is a plugin, not core). Nothing else in `src/` may. Core emits, the engine
+**Three files may import it, and the list is explicit** — `src/index.js` (the
+composition root), `src/inferences.js` (the catalogue of domain calculations) and
+`src/observatory-ws.js` (the engine's own WS wiring). The latter two are plugins,
+not core. Nothing else in `src/` may. Core emits, the engine
 consumes — core never queries mid-flow and never branches on its presence.
 
 *The first version of this test said "only `index.js`", which was the rule stated
@@ -119,6 +120,8 @@ arrives, both move to a domain-owned module and the engine keeps only machinery.
 
 ```js
 observe({ ts, kind, entity, source, data })   // append-only; no update, no delete
+events                                        // EventEmitter — 'observation' after each write
+recentObservations(kind, limit = 200)         // last N of a kind, newest first, capped at 1000
 registerInference({ key, deps, mode, run })   // mode: 'incremental' | 'batch'
 inferenceOrder()                              // dependency order; throws on cycle or missing dep
 inferences()                                  // read-only list
@@ -144,11 +147,11 @@ available here.
   own boundary — see `docs/modules/pac-host.md` → "Units on this boundary".
 - `kind` is an open vocabulary. The engine stores it and never branches on it.
 - Migrations use `table_xinfo`.
-- Exactly one `src/` file imports this module.
+- Exactly three `src/` files import this module, named in the boundary test.
 
 ## Test notes
 
-- `node tests/test_observatory_boundary.mjs` — passes with one import; **proved
+- `node tests/test_observatory_boundary.mjs` — passes with the three-file allowlist; **proved
   reached** by planting `import { observe } from './observatory.js'` into
   `src/node-label.js` and confirming it fails with *"Found in: node-label.js"*,
   then restoring.

@@ -34,7 +34,11 @@ const MODULE = 'observatory.js';
 // wrong — it would have rejected the catalogue and forced the boundary to be
 // loosened under pressure from code that already existed. Widened here first,
 // with nothing waiting on it (task `observatory-inference-catalogue-boundary`).
-const ALLOWED = new Set(['index.js', 'inferences.js']);
+//   observatory-ws.js  the engine's own WS wiring — a plugin, exactly as
+//                      alarm-ws.js is the alarm's. ws-relay.js (core) still does
+//                      not name the observatory; this file does, and core does
+//                      not name this file.
+const ALLOWED = new Set(['index.js', 'inferences.js', 'observatory-ws.js']);
 
 const offenders = [];
 for (const file of readdirSync(SRC).filter(f => f.endsWith('.js'))) {

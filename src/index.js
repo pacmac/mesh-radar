@@ -84,6 +84,10 @@ registerPacketObserver((packet, device, ts, replay) => {
 // place every inference is registered, so the whole of what node-dash works out
 // can be read top to bottom (docs/modules/inferences.md). Empty today.
 import './inferences.js';
+// Pushes each observation to the browser as it is recorded, and replays the
+// recent past to every new connection. Plugin wiring, not core — ws-relay.js
+// never names the observatory.
+import './observatory-ws.js';
 
 registerNodeIdToMacResolver(getLiveMacByNodeId);
 registerMacToNodeIdResolver(getLiveNodeIdByMac);

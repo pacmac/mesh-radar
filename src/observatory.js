@@ -18,7 +18,15 @@
 //      arrives with the first inference that needs it.
 //
 // Name is provisional (MESH_REACH_SPEC §7f, open decision 1).
+import { EventEmitter } from 'node:events';
 import db from './db.js';
+
+/** Fires `observation` with the stored row after every successful write.
+ *
+ *  Generic machinery: the engine announces that something was recorded and says
+ *  nothing about what it means. Consumers that DO know what a reception is
+ *  subscribe from outside — see observatory-ws.js. */
+export const events = new EventEmitter();
 
 // ─── Schema ─────────────────────────────────────────────────────────────────
 //
@@ -127,13 +135,32 @@ const _insert = db.prepare(`
  *  accidentally store `[object Object]`. */
 export function observe({ ts, kind, entity, source = null, data = null }) {
   if (!kind || entity == null) throw new Error('observe: kind and entity are required');
-  _insert.run({
+  const row = {
     ts: Math.floor(ts ?? Date.now() / 1000),
     kind: String(kind),
     entity: String(entity),
     source,
     data: data == null ? null : JSON.stringify(data),
-  });
+  };
+  const info = _insert.run(row);
+  // Emitted AFTER the write, so a subscriber can never see a row that failed to
+  // store. The listener is called synchronously and its throw would propagate
+  // into the caller's ingest path — subscribers wrap their own work.
+  events.emit('observation', { id: info.lastInsertRowid, ...row });
+}
+
+const _recent = db.prepare(`
+  SELECT id, ts, kind, entity, source, data
+  FROM obs_observation WHERE kind = @kind ORDER BY id DESC LIMIT @limit
+`);
+
+/** The last N observations of a kind, newest first.
+ *
+ *  For replaying to a client that has just connected: without it a new page
+ *  shows nothing until the next packet happens to arrive, which on a quiet
+ *  channel can be minutes and reads as broken. */
+export function recentObservations(kind, limit = 200) {
+  return _recent.all({ kind, limit: Math.min(Math.max(1, limit | 0), 1000) });
 }
 
 // ─── The inference registry ─────────────────────────────────────────────────
