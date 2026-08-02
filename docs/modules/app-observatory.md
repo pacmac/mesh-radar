@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: d9e837dd9d6c528a2aba7ef5751c9bdb3ded5397eb61d9711466ae67952376be
+source_hash: 63aae559c7b821cf9e919967a4fc91b1d8fa60ffa620c1e86437efbc41db800f
 updated: 2026-08-02
 ---
 
@@ -201,6 +201,10 @@ dialects. SVG strings with DaisyUI variable colours, for the two reasons already
 documented on `obsRadarSvg()`.
 
 Every number is server-computed; these scale and position only.
+
+`obsShortDate()` renders `24 Jun` — no year, `en-GB` forced so the axis does not
+change shape with the viewer's locale. Formatting a timestamp the server supplied
+is expressly allowed; computing an age on a timer is not, and this does not.
 
 ## Invariants
 

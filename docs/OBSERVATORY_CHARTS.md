@@ -1,6 +1,6 @@
 ---
 module: OBSERVATORY_CHARTS
-source_hash: 32a3c02e89917c9faf357943d8f069e2b3b2eb24297e3dd8d309e6a3586b772a
+source_hash: a79c2838fb4a8d8ea4c12ae831fb7397c2c9c4727ca54d6d58b58c35de96fa58
 updated: 2026-08-02
 ---
 
@@ -110,6 +110,21 @@ attempts produced nothing.
 
 That was invisible before this page existed, and it changes what the ladder
 should be aiming at.
+
+## Axes
+
+Both time charts carry an x axis with five evenly spaced ticks. The record chart
+shipped without one — it plotted time and never said what the horizontal meant.
+Peter: *"records over time has no x axis, and you can use a very short form for
+date/time, we know what year it is."*
+
+Format is `24 Jun` — **no year**, because the series is all one year and the label
+must fit the column rather than the column stretching for the label. Forced to
+`en-GB`, not the browser default: the default renders `Jun 24` on a US locale, so
+the axis would silently change shape depending on who was looking at it.
+
+The daily chart thins its labels to roughly five so they never collide across 30
+bars, and uses the same formatter, so the two charts read as a pair.
 
 ## Invariants
 

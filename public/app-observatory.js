@@ -127,7 +127,7 @@ export const observatoryMixin = {
   obsChartLadder() {
     const r = this.charts?.ladder || [];
     if (r.length < 2) return '';
-    const W = 520, H = 190, L = 42, B = 26;
+    const W = 520, H = 190, L = 42, B = 30;
     const t0 = r[0].ts, t1 = r[r.length - 1].ts || t0 + 1;
     const kmMax = Math.ceil(Math.max(...r.map(x => x.km)) / 50) * 50 || 50;
     const X = ts => L + ((ts - t0) / Math.max(1, t1 - t0)) * (W - L - 10);
@@ -150,7 +150,35 @@ export const observatoryMixin = {
     }
     const last = r[r.length - 1];
     p.push(`<text x="${W - 12}" y="${(Y(last.km) - 7).toFixed(1)}" text-anchor="end" fill="oklch(var(--p))" font-size="11" font-weight="700" font-family="JetBrains Mono">${last.km} km</text>`);
+
+    // THE X AXIS. It had none — the chart plotted time and never said what the
+    // horizontal meant. Peter, 2026-08-02: "records over time has no x axis, and
+    // you can use a very short form for date/time, we know what year it is."
+    //
+    // Five evenly spaced ticks across the real span, "24 Jun" — no year, because
+    // the whole series is this year and the column has to fit the data.
+    p.push(`<line x1="${L}" y1="${H - B}" x2="${W - 10}" y2="${H - B}" stroke="oklch(var(--bc)/0.25)"/>`);
+    for (let i = 0; i <= 4; i++) {
+      const ts = t0 + ((t1 - t0) / 4) * i;
+      const x  = X(ts);
+      p.push(`<line x1="${x.toFixed(1)}" y1="${H - B}" x2="${x.toFixed(1)}" y2="${H - B + 4}" stroke="oklch(var(--bc)/0.25)"/>`);
+      p.push(`<text x="${x.toFixed(1)}" y="${H - B + 15}" text-anchor="${i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${this.obsShortDate(ts)}</text>`);
+    }
     return p.join('');
+  },
+
+  /** "24 Jun" — the shortest form that is still unambiguous at this zoom.
+   *
+   *  No year: the whole series is the current one, and Peter's rule is that the
+   *  label fits the data, not the other way around. Formatting a timestamp the
+   *  server supplied is expressly allowed (BROWSER_CONTRACT); computing an age
+   *  on a timer is not, and this does not. */
+  obsShortDate(ts) {
+    // en-GB explicitly, not the browser default: the default renders "Jun 24"
+    // on a US locale and "24 Jun" here, so the axis would silently change shape
+    // depending on who is looking at it. The mesh is in Somerset; day-first is
+    // the right and stable answer.
+    return new Date(ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   },
 
   /** ATTEMPTS AND ANSWERS PER DAY. The 27 July cliff — ~1,000/day to 1, because
@@ -174,8 +202,15 @@ export const observatoryMixin = {
       p.push(`<rect x="${(bx + 1).toFixed(1)}" y="${Y(x.attempts).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${((H - B) - Y(x.attempts)).toFixed(1)}" fill="oklch(var(--bc)/0.22)"><title>${x.day}: ${x.attempts} attempts</title></rect>`);
       if (x.answers) p.push(`<rect x="${(bx + 1).toFixed(1)}" y="${Y(x.answers).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${((H - B) - Y(x.answers)).toFixed(1)}" fill="oklch(var(--su))"><title>${x.day}: ${x.answers} answered</title></rect>`);
     });
-    p.push(`<text x="${L}" y="${H - 8}" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${r[0].day.slice(5)}</text>`);
-    p.push(`<text x="${W - 10}" y="${H - 8}" text-anchor="end" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${r[r.length - 1].day.slice(5)}</text>`);
+    // Same axis treatment as the ladder, so the two read as a pair. Labels are
+    // thinned to roughly five so they never collide at 30 bars.
+    p.push(`<line x1="${L}" y1="${H - B}" x2="${W - 10}" y2="${H - B}" stroke="oklch(var(--bc)/0.25)"/>`);
+    const every = Math.max(1, Math.ceil(r.length / 5));
+    r.forEach((x, i) => {
+      if (i % every && i !== r.length - 1) return;
+      const cx = L + i * bw + bw / 2;
+      p.push(`<text x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${this.obsShortDate(Date.parse(x.day + 'T00:00:00Z') / 1000)}</text>`);
+    });
     return p.join('');
   },
 
