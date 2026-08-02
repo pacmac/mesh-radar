@@ -118,6 +118,8 @@ export const observatoryMixin = {
     const C_FAR    = 'oklch(var(--p))';
     const C_NEAR   = 'oklch(var(--s))';
     const C_CENTRE = 'oklch(var(--bc))';
+    const C_BEAM   = 'oklch(var(--a)/0.16)';   // the wedge — context, not subject
+    const C_BEAMLN = 'oklch(var(--a))';        // the boresight and its readout
     const plot = this.reach?.plot || [];
     if (!plot.length) return '';
     const C = 500, R = 430;
@@ -140,6 +142,36 @@ export const observatoryMixin = {
       p.push(`<line x1="${C}" y1="${C}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${C_LINE}" stroke-width="${b % 90 ? 1 : 2}"/>`);
       p.push(`<text x="${lx.toFixed(1)}" y="${(ly + 8).toFixed(1)}" text-anchor="middle" fill="${C_LABEL}" font-size="22" font-family="Oxanium">${b}</text>`);
     }
+    // ── THE BEAM ────────────────────────────────────────────────────────────
+    // Peter, 2026-08-02: "the radar sub page does not show the yagi's current
+    // bearing and it's beam width as is done in the main radar page."
+    //
+    // It matters more here than on the main radar now that DISC aims the beam
+    // at each mission's bearing: this page is where you watch a discovery
+    // happen, and a plot of targets with no indication of where the antenna is
+    // looking cannot show that.
+    //
+    // Same two inputs the main radar uses (_drawRadarBeam): `yagiAz`, pushed
+    // over the WS, and the rotator's configured beam_deg. Both are server
+    // values; drawing a wedge from them is layout.
+    //
+    // DRAWN BEFORE THE TARGETS so a dot inside the beam stays legible — the
+    // wedge is context, not the subject.
+    const rotId = this.rotatorDeviceId?.();
+    const beamDeg = Math.max(1, Math.min(rotId ? (this.deviceConfigs?.[rotId]?.beam_deg ?? 35) : 35, 180));
+    if (this.yagiAz != null) {
+      const az = Number(this.yagiAz);
+      const [x1, y1] = pt(0, az - beamDeg / 2, R);
+      const [x2, y2] = pt(0, az + beamDeg / 2, R);
+      const [tx, ty] = pt(0, az, R + 6);
+      // large-arc-flag 0: the beam is always the minor sector — a beamwidth is
+      // clamped to 180 above, so the wedge can never be the reflex side.
+      p.push(`<path d="M ${C} ${C} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${R} ${R} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="${C_BEAM}" stroke="none"/>`);
+      p.push(`<line x1="${C}" y1="${C}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="${C_BEAMLN}" stroke-width="2"/>`);
+      const [lx, ly] = pt(0, az, R + 78);
+      p.push(`<text x="${lx.toFixed(1)}" y="${(ly + 8).toFixed(1)}" text-anchor="middle" fill="${C_BEAMLN}" font-size="22" font-weight="700" font-family="Oxanium">${Math.round(az)}° · ${Math.round(beamDeg)}°</text>`);
+    }
+
     // Nearest first, so the distant targets that matter draw on top.
     const labels = [];
     for (const t of [...plot].sort((a, b) => a.km - b.km)) {

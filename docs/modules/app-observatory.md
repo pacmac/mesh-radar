@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 2f42327279b72dcaf3d06098b1ac40d7e1ab9b3d5ba05ffb0d359e25219a029a
+source_hash: 4ea59f3b966a5bab647759fb9424770f97033194419d922fde29702c49695ec0
 updated: 2026-08-02
 ---
 
@@ -105,6 +105,26 @@ never compiled — the first radar rendered as a solid black disc because
 
 The arithmetic in both is *layout* — where on a circle, where in a rectangle. The
 kilometres, bearings, ranks and captions were all computed server-side.
+
+### The beam — bearing and beamwidth on the radar
+
+Peter, 2026-08-02: *"the radar sub page does not show the yagi's current bearing
+and it's beam width as is done in the main radar page."*
+
+It matters more here than on the main radar now that DISC aims the beam at each
+mission's bearing (`docs/modules/dash-mode.md`): this page is where you watch a
+discovery happen, and a plot of targets with no indication of where the antenna
+is looking cannot show that.
+
+Same two inputs as `_drawRadarBeam()` in `app-radar.js` — `yagiAz`, pushed over
+the WS, and the rotator's configured `beam_deg` (default 35). Both are server
+values; drawing a wedge from them is layout.
+
+**Drawn before the targets**, so a dot inside the beam stays legible — the wedge
+is context, not the subject. `large-arc-flag` is 0 and safe: beamwidth is clamped
+to 180, so the wedge can never be the reflex sector.
+
+The readout is `147° · 35°` — where it points, and how wide.
 
 ### Map labels — de-collided **and clamped**
 
