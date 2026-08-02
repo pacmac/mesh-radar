@@ -1,7 +1,7 @@
 ---
 module: dash-mode
 source: src/dash-mode.js
-source_hash: 3993c9beb33d09a307b58eda59d0a25c27a48770520b253f8ca8e3f9b9e7a865
+source_hash: 5b6c076575e091ec9727956c7e5074aed011b110aff12f2d654f42ec614aae42
 updated: 2026-07-09
 ---
 
@@ -99,6 +99,33 @@ No in-memory state. Mode is read directly from the config DB on every `value` ac
 | Event | Payload | When |
 |---|---|---|
 | `'change'` | `{ _mode: number }` | Every `set()` call, even if mode is unchanged |
+
+## DISC — the fourth mode
+
+Peter, 2026-08-02: *"well this is a new mode isnt it?"*
+
+It is, and the radio roles are why:
+
+| mode | rx | tx |
+|---|---|---|
+| `pasv` | non-rotator | `rx` (the radio that heard it) |
+| `actv` | rotator | rotator |
+| `scan` | rotator | rotator |
+| **`disc`** | **all** | **rotator** |
+
+A discovery mission chooses a distant target and pursues it, so it must
+**transmit on the aimed YAGI** — the first implementation dispatched a 234 km
+attempt on the omni at no particular azimuth, which is close to worthless. But it
+must **listen on everything**: the reply can return by any path and arrive at
+either radio, and hearing it on the omni is still hearing it.
+
+That `rx:'all'` + `tx:'rotator'` combination is what makes it a mode rather than a
+flag on ACTV, whose `rx` is the rotator alone.
+
+Mode number **3**. `MODE_NAME`, `MODE_DEFAULTS` and `MODE_KEYS` are the SSOT —
+per Peter's standing rule that dash mode owns every per-mode behaviour, including
+which radio transmits, the mission runner **reads** the mode and never picks a
+radio itself.
 
 ## Invariants
 

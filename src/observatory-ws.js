@@ -16,6 +16,7 @@ import { events, recentObservations, facts, runInference } from './observatory.j
 import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
 import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
+import { missionRunner } from './mission-runner.js';
 import { getConfig, getCachedGeocode } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
@@ -68,6 +69,7 @@ registerConnectReplay(() => {
       { type: 'reach_model', reach: reachModel() },
       { type: 'mesh_links', links: meshLinks() },
       { type: 'missions', missions: missions() },
+      { type: 'mission_activity', activity: missionRunner.state() },
     ];
   } catch (e) {
     console.error(`[observatory-ws] replay failed: ${e.message}`);
@@ -153,6 +155,12 @@ function relayUsage() {
  *  so the exclusion is visible rather than silent. */
 function reachModel() {
   const targets = facts('reach.target');
+  // HOW OLD IS ALL THIS? Peter, 2026-08-02: "if a traceroute was last done 4
+  // days ago, then our entire page is dead and old data." Every panel here is
+  // derived from traceroute_history, so the board must state the age of its
+  // newest evidence rather than presenting five-day-old figures as current.
+  const newest = targets.reduce(
+    (mx, f) => Math.max(mx, f.value?.last_attempt || 0), 0) || null;
   const ladder  = facts('reach.ladder')[0]?.value ?? null;
 
   const usable = targets.filter(f => f.value?.verified && f.value?.km != null && !f.value?.suspect);
@@ -199,6 +207,7 @@ function reachModel() {
     unverified:   targets.filter(f => !f.value?.verified).length,
     without_km:   targets.filter(f => f.value?.verified && f.value?.km == null).length,
     suspect:      targets.filter(f => f.value?.suspect).length,
+    last_attempt: newest,
   };
 }
 
@@ -219,6 +228,7 @@ function missions() {
       label:  resolveNodeLabel(Number(f.entity)) || String(f.entity),
       place:  shortPlace(getCachedGeocode(Number(f.entity))),
       km:     f.value.km,
+      bearing: f.value.bearing ?? null,
       cls:    f.value.cls,
       reason: f.value.reason,
       attempts: f.value.attempts,
@@ -363,7 +373,19 @@ function recompute(broadcast) {
     broadcast?.({ type: 'relay_usage', relays: relayUsage() });
     broadcast?.({ type: 'reach_model', reach: reachModel() });
     broadcast?.({ type: 'mesh_links', links: meshLinks() });
-    broadcast?.({ type: 'missions', missions: missions() });
+    const list = missions();
+    broadcast?.({ type: 'missions', missions: list });
+
+    // FEED THE ACTUATOR. The runner never fetches — it is handed the shortlist
+    // and works it. This file is already an allowed importer of the engine; the
+    // runner deliberately is not, so the coupling lives here.
+    missionRunner.setQueue(list.missions);
+    // Seed what was already known BEFORE any mission ran, so the first route
+    // does not report the whole existing mesh as newly discovered.
+    missionRunner.seed({
+      relays: facts('relay.usage').map(f => f.entity),
+      links:  facts('link.observed').map(f => f.entity),
+    });
   } catch (e) {
     console.error(`[observatory] relay.usage failed: ${e.message}`);
   }
@@ -372,4 +394,15 @@ function recompute(broadcast) {
 registerWsWiring(({ broadcast }) => {
   setTimeout(() => recompute(broadcast), 10_000);
   setInterval(() => recompute(broadcast), 15 * 60_000);
+
+  // Live activity: every state change, pushed. This is the panel Peter asked
+  // for — "what it's done, doing right now, and whether a discovery is in
+  // progress" — so it must not wait on the 15-minute recompute.
+  missionRunner.on('activity', (activity) => {
+    try { broadcast({ type: 'mission_activity', activity }); }
+    catch (e) { console.error(`[observatory-ws] activity broadcast failed: ${e.message}`); }
+  });
+
+  // Started after the first recompute has had a chance to fill the queue.
+  setTimeout(() => missionRunner.start(), 20_000);
 });

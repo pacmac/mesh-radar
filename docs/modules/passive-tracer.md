@@ -1,7 +1,7 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: 5d03fe589f10623c68f1206a14ce62391f2c028ef2ff5769946ff8175f2ccfd1
+source_hash: 4c85713ba217057cc524901c34a83a50cb61ba4ee85c07c8241d8b073b6b9a9f
 updated: 2026-07-27
 ---
 
@@ -117,6 +117,23 @@ _trace(from_num, device)
       .catch(err)    → _failed.set(from_num, now), emit 'traced' with empty result
       .finally()     → this._busy = false, this._pendingFrom = null
 ```
+
+## It yields while a discovery is in progress
+
+Peter, 2026-08-02: *"the traceroute should be used by us, when a discovery is in
+progress."*
+
+`if (missionRunner.busy) return;` — one line, before the staleness gate.
+
+Spending the instrument on whatever happened to arrive is the reactive behaviour
+that put **5,046 attempts into 335 targets that have never answered** (we keep
+hearing them, so it kept asking) while **213 positioned nodes went untried**. A
+reactive tracer can only ever confirm the shape of what already reaches the
+antenna; it cannot pursue.
+
+This module is not obsolete — between missions it still records the mesh as it
+arrives, which is free evidence (spec §3). It is now subordinate to a chosen
+target rather than competing with one.
 
 ## Invariants
 

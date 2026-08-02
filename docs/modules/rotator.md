@@ -1,7 +1,7 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: 095603595f33979e384b6dc081626f30567874f815f188e7cf9769d527f964de
+source_hash: 2813adfc6aef6c03d4f34348583818c67221f6030260c95cf367d87ebf9e5c8f
 updated: 2026-07-07
 ---
 
@@ -129,6 +129,44 @@ unchanged. The aliases are why `scanner.js` and `ws-relay.js` need no edit.
 |---|---|---|---|
 | `'point_target'` | `active-tracker.js` | `{ point_target, az, _mode, yagi_* stats }` | `index.js`, `ws-relay.js` |
 | `'signal_update'` | `active-tracker.js` | `{ signal_num, rssi, snr, ts }` | `ws-relay.js` |
+
+## The closed-loop handshake — `started` / `done` / `busy`
+
+Peter, 2026-08-02: *"do not hammer the rotator, send it the command and wait for
+it to says it's ready"*, *"there's a handshake"*, and *"the core firmware already
+has a point function, you dont need to duplicate it."*
+
+All three landed on one mistake. These frames arrived and were **discarded** —
+`if (msg.evt === 'subs' || msg.evt === 'started' || msg.evt === 'done') return;`
+— so every consumer had to send a move and then sample `az` on a timer, guessing
+when it had finished.
+
+That guessing is measurably wrong. Sampling at 22 s intervals during travel read
+errors of −134°, −52° and +90° against the commanded bearing and concluded the
+hardware was badly out. Given the handshake instead, it lands within a degree:
+**commanded 200, settled 199.** The rotator was never the problem.
+
+Shapes are identical on v4 and v5 (`docs/ROTATOR_API_V5.md`, *v4 compatibility*),
+so both variants get a real completion signal:
+
+```
+{ evt:'started', cmd:'move2az', target:90 }
+{ evt:'done',    cmd:'move2az', az:89.9, ok:true }
+{ evt:'busy',    held:true }        ← another user holds the lock
+```
+
+### `point(az, { timeoutMs })`
+
+Sends one command and listens for the device's own answer. **No tolerance loop,
+no settle polling, no retry** — the firmware already does closed-loop shortest
+path with stall, runaway and drift-hold guards, and reimplementing that here
+would be a second, worse copy.
+
+Resolves `{ ok, az }` on `done`; `{ ok:false, busy:true }` when another user holds
+the lock. The YAGI has two users — node-dash and the garage alarm, which points
+it and **holds** it — so `busy` is a reason to wait, never to fight for the beam.
+
+The timeout is a backstop for a device that never answers. It is not a poll.
 
 ## Invariants
 

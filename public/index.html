@@ -183,6 +183,15 @@
                     :disabled="!rotatorConnected || !rotatorDeviceId()"
                     @click="scanMode ? abortScan() : startScan()"
                     x-text="scanMode ? 'ABORT' : 'SCAN'"></button>
+            <!-- DISC — discovery. A fourth mode, not a flag: it listens on every
+                 radio (the reply can come back anywhere) but transmits on the
+                 AIMED yagi, which no other mode combines. Peter, 2026-08-02:
+                 "well this is a new mode isnt it?" -->
+            <button class="btn btn-xs font-mono tracking-widest px-2"
+                    :class="rotatorMode === 3 && !scanMode ? 'btn-secondary' : 'btn-ghost opacity-40'"
+                    :disabled="scanMode || !rotatorConnected"
+                    title="Discovery — pursue the mission queue on the aimed yagi"
+                    @click="setRotatorMode(3)">DISC</button>
           </div>
         </div>
         <!-- Traceroute master switch. Deliberately OUTSIDE the rotator group's

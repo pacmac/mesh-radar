@@ -140,6 +140,40 @@ class RotatorClient extends EventEmitter {
     this._send({ action: cmd, args: [Number(az)] });
   }
 
+  /** Point the beam and RESOLVE WHEN THE ROTATOR SAYS IT IS THERE.
+   *
+   *  The firmware already does the pointing — closed-loop, shortest path,
+   *  stall and runaway guards, drift hold. Peter, 2026-08-02: "the core
+   *  firmware already has a point function, you dont need to duplicate it."
+   *  So this adds no tolerance loop, no settle polling and no retry: it sends
+   *  one command and listens for the device's own answer.
+   *
+   *  Resolves `{ ok, az }` on `done`, or `{ ok:false, busy:true }` when another
+   *  user holds the lock — the YAGI is shared with the garage alarm, which
+   *  points it and holds it, and that is a reason to wait rather than to fight
+   *  for it.
+   *
+   *  The timeout is a backstop for a device that never answers, not a poll. */
+  point(az, { timeoutMs = 60_000 } = {}) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (r) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.off('done', onDone);
+        this.off('busy', onBusy);
+        resolve(r);
+      };
+      const onDone = (m) => finish({ ok: m.ok !== false, az: m.az ?? this.status?.az ?? null, err: m.err ?? null });
+      const onBusy = ()  => finish({ ok: false, busy: true, az: this.status?.az ?? null });
+      const timer = setTimeout(() => finish({ ok: false, timeout: true, az: this.status?.az ?? null }), timeoutMs);
+      this.on('done', onDone);
+      this.on('busy', onBusy);
+      this.move(az);
+    });
+  }
+
   sendAction(action, args) {
     this._send(args !== undefined ? { action, args } : { action });
   }
@@ -179,7 +213,20 @@ class RotatorClient extends EventEmitter {
         if (p) { clearTimeout(p.t); this._cfgPending.delete(msg.cmd); p.resolve({ ok: !!msg.ok, msg: msg.msg, value: msg.value }); }
         return;
       }
-      if (msg.evt === 'subs' || msg.evt === 'started' || msg.evt === 'done') return;
+      // THE CLOSED-LOOP HANDSHAKE. These were swallowed here, which is why
+      // every consumer had to poll az on a timer and guess when a move had
+      // finished — Peter, 2026-08-02: "do not hammer the rotator, send it the
+      // command and wait for it to says it's ready… there's a handshake."
+      //
+      // Shapes are identical on v4 and v5 (docs/ROTATOR_API_V5.md, "v4
+      // compatibility"), so both variants get a real completion signal:
+      //   { evt:'started', cmd:'move2az', target:90 }
+      //   { evt:'done',    cmd:'move2az', az:89.9, ok:true }
+      //   { evt:'busy',    held:true }        ← another user holds the lock
+      if (msg.evt === 'started') { this.emit('started', msg); return; }
+      if (msg.evt === 'done')    { this.emit('done', msg);    return; }
+      if (msg.evt === 'busy')    { this.emit('busy', msg);    return; }
+      if (msg.evt === 'subs') return;
       if (msg.log != null && msg.az == null && msg.evt == null) return;   // bare log echo
 
       // Auto-detect variant from the announced api version. v5 status frames

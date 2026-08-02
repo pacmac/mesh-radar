@@ -1,7 +1,7 @@
 ---
 module: rotator-api
 source: src/rotator-api.js
-source_hash: 0abde947f919778002115824fd2b24ac2479f8555376793a401850a0a268e90d
+source_hash: 9078e54e0af933b2e425280ba21f6c0a4c18bb3b0de1918d41a09c7a0290eb50
 updated: 2026-07-07
 ---
 
@@ -91,6 +91,13 @@ _N/A_ — all state lives in rotator.js, scanner.js, dashMode.js, db.js.
 ## Events emitted
 
 _N/A_
+
+## DISC is refused during a scan, on the same terms as ACTV
+
+`POST /mode` already refused ACTV while the scanner was running. DISC aims the
+YAGI at each mission's bearing, so it collides with a sweep in exactly the same
+way and is refused identically. SCAN takes precedence over every mode that wants
+to point the rotator.
 
 ## Invariants
 

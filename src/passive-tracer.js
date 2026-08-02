@@ -6,6 +6,7 @@ import { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
 import { FF } from './feature-flags.js';
 import { traceroute, tracerouteEnabled } from './traceroute.js';
+import { missionRunner } from './mission-runner.js';
 
 const log = {
   info: (...a) => console.log('[passive-tracer]', ...a),
@@ -106,6 +107,12 @@ class PassiveTracer extends EventEmitter {
     if (!isListenerForMode('pasv', rxDevice)) return;
     // Skip MQTT-relayed nodes (firmware returns NO_ROUTE immediately)
     if (pkt.via_mqtt) return;
+    // DISCOVERY OWNS THE INSTRUMENT. Peter, 2026-08-02: "the traceroute should
+    // be used by us, when a discovery is in progress." While a mission holds
+    // the traceroute we yield — spending it on whatever happened to arrive is
+    // exactly the reactive behaviour that put 5,046 attempts into 335 targets
+    // that have never answered, while 213 positioned nodes went untried.
+    if (missionRunner.busy) return;
     if (!needsTrace(pkt.from)) return;
 
     this._trace(pkt.from, rxDevice);

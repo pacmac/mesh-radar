@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: de749057e9784fd431e6fc66b4fc2a8450a3f75f170f09782fb286bf9a497e20
+source_hash: 8fde5efee4edfb9b5911cc4caf47f1abe91ec979cadce8d05a878b2c3ec268e9
 updated: 2026-08-02
 ---
 
@@ -72,6 +72,27 @@ they compile; the SVG fills cannot be and use DaisyUI variables instead.
 The caption under the map explains the two size encodings — relay radius is
 traffic carried, line weight is how often that hop was witnessed — because a
 size difference with no stated meaning is decoration.
+
+## Discovery panel
+
+Peter, 2026-08-02: *"what I expect to see is a table of the discovery mission,
+i.e what it's done, doing right now and whether a discovery is in progress."*
+
+Three parts, in that order:
+
+1. **Status line** — `IN PROGRESS`, `idle · 1 every 3 min · 18 queued`, `HELD —
+   automatic traceroute is off`, or `stopped`. The panel explains itself when
+   nothing is moving, which is what an empty table never does.
+2. **In progress** — the single target being pursued, with the radio, the place,
+   the distance and the mission's reason.
+3. **Done** — newest first, and the last column is **what it revealed**, not
+   hit/miss. A reply reports hops out and back plus new relays, new links and
+   return-only hops; a miss reports `no reply after 90s`, because §4 says silence
+   is evidence and a feed showing only successes would misrepresent it as absence
+   of attempt.
+
+Above the table, a discovery tally: attempts, replies, new relays, new links,
+records. The point is watching the web grow, not a hit counter.
 
 ## Sub-tabs
 

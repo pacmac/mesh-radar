@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: f8da8d1b53f350b1aed8e9e829a05ae5b5920f853cafb5f70a2524173aab1bbe
+source_hash: 7c2ea75f7acad52128b9a91d582abebcb78af0d6df7cab28eb063c8aacd8d940
 updated: 2026-08-02
 ---
 
@@ -70,6 +70,13 @@ That is deliberately all this file does for them. The router must not learn what
 a mission or a relay is — the moment it branches on plugin content, core knows
 about a plugin, which is the boundary `observatory-ws.js` exists to keep
 (`docs/PLUGIN_BOUNDARY_SPEC.md`).
+
+## Discovery activity
+
+`mission_activity` joins the plugin routing block — one line, straight to
+`applyMissionActivity`. Pushed on every runner state change rather than on a
+poll, because a panel that shows a discovery *in progress* cannot wait for the
+next recompute.
 
 ## Out of scope
 

@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 8b9e77ccc7b3e6a32283f2cdb89c302a0774c84040310e58222e672c908d70ee
+source_hash: 2f42327279b72dcaf3d06098b1ac40d7e1ab9b3d5ba05ffb0d359e25219a029a
 updated: 2026-08-02
 ---
 
@@ -144,6 +144,25 @@ gets a drawn map instead of a blank panel.
 It describes the list being rendered, not a fact about the mesh. A mesh-wide
 count would be a derived claim and belongs to the server — which is why the UI
 labels it "on screen".
+
+## Freshness — the board states the age of its evidence
+
+Peter, 2026-08-02: *"if a traceroute was last done 4 days ago, then our entire
+page is dead and old data."*
+
+Every panel here derives from `traceroute_history`. `obsFreshness()` renders the
+age of the newest attempt and `obsIsStale()` tints it past six hours.
+
+**This deliberately bends the absolute-time rule.** The page computes no relative
+times anywhere else — but here the age *is* the message, and `27 Jul 14:02` does
+not communicate staleness the way `5 days` does. Computed on render from a server
+timestamp, not on a ticking timer.
+
+## `missionActivity` — the discovery feed
+
+What the runner is doing now, what it has just done, and what those routes
+revealed. The `found` strings are written by the runner; the page renders them
+verbatim and assembles no explanation of its own.
 
 ## Invariants
 

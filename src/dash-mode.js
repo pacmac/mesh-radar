@@ -30,8 +30,20 @@ const MODE_DEFAULTS = {
   pasv: { rx: 'non-rotator', tx: 'rx' },      // passive: hear on non-rotator radios, re-trace via the hearer
   actv: { rx: 'rotator',     tx: 'rotator' }, // active: the aimed YAGI hears and transmits
   scan: { rx: 'rotator',     tx: 'rotator' }, // scan: the sweeping YAGI hears and transmits
+  // DISC — discovery. Peter, 2026-08-02: "well this is a new mode isnt it?"
+  //
+  // It is, and the roles are why. A discovery mission chooses a distant target
+  // and pursues it, so it must TRANSMIT on the aimed YAGI — the first
+  // implementation dispatched a 234 km attempt on the omni at no particular
+  // azimuth, which is close to worthless. But it must LISTEN on everything: the
+  // reply can come back down any path and arrive at either radio, and hearing
+  // it on the omni is still hearing it.
+  //
+  // That rx:'all' + tx:'rotator' combination is what makes it a mode of its own
+  // rather than a flag on ACTV, whose rx is the rotator alone.
+  disc: { rx: 'all',         tx: 'rotator' },
 };
-const MODE_NAME = { 0: 'pasv', 1: 'actv', 2: 'scan' };
+const MODE_NAME = { 0: 'pasv', 1: 'actv', 2: 'scan', 3: 'disc' };
 
 // Map a mode (number or name) to its canonical name.
 export function modeName(mode) {
@@ -79,7 +91,7 @@ export function isTransmitterForMode(mode, mac) {
 
 // Role vocabulary (SSOT). rx roles exclude 'rx' (which only means "the hearing
 // radio" and is meaningless as a listener); tx roles include it.
-export const MODE_KEYS = ['pasv', 'actv', 'scan'];
+export const MODE_KEYS = ['pasv', 'actv', 'scan', 'disc'];
 export const RX_ROLES  = ['rotator', 'non-rotator', 'primary', 'all'];
 export const TX_ROLES  = ['rotator', 'primary', 'non-rotator', 'all', 'rx'];
 const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i;

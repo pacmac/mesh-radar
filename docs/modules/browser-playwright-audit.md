@@ -31,11 +31,22 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 26358bf0293cdd3cea2574802fee0cd54d17ab2971ff740bd7ef0461e113f543
+source_hash: 3df61dd3007d4e2f154d718139f8ae275b03711801461cd32359b47256653bcd
 updated: 2026-07-31
 ---
 
 # Module: browser-playwright-audit
+
+## The header's mode group is four buttons, not three
+
+`public/index.html` gained **DISC** beside PASV / ACTV / SCAN. It is a real mode
+(3), not a toggle: it listens on every radio and transmits on the aimed YAGI —
+see `docs/modules/dash-mode.md`. Disabled while scanning or while the rotator is
+disconnected, for the same reason ACTV is.
+
+The traceroute master switch stays deliberately outside that group: it is
+unrelated to the rotator, and hiding it when the rotator drops would remove the
+control at exactly the moment you still want to stop traceroutes.
 
 ## Purpose
 

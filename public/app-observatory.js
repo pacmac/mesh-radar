@@ -59,6 +59,36 @@ export const observatoryMixin = {
   missions: null,
   applyMissions(ev) { this.missions = ev.missions || null; },
 
+  /** Live discovery activity — what the runner is doing right now, what it has
+   *  just done, and what those routes revealed. Entirely server-computed; the
+   *  `found` strings are written by the runner, not assembled here. */
+  missionActivity: null,
+  applyMissionActivity(ev) { this.missionActivity = ev.activity || null; },
+
+  /** How old the newest traceroute attempt is, as a sentence.
+   *
+   *  ABSOLUTE-TIME RULE, DELIBERATELY BENT — and it is worth saying why. The
+   *  page does not compute "3s ago" on a timer anywhere else. Here the whole
+   *  point IS the age: a board built on five-day-old evidence must say so, and
+   *  "27 Jul 14:02" does not communicate staleness the way "5 days" does.
+   *  Computed on render from a server timestamp, not ticking. */
+  obsFreshness() {
+    const ts = this.reach?.last_attempt;
+    if (!ts) return '';
+    const mins = Math.floor((Date.now() / 1000 - ts) / 60);
+    if (mins < 2)    return 'evidence is current';
+    if (mins < 90)   return `newest evidence ${mins} min old`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 48)    return `newest evidence ${hrs}h old`;
+    return `newest evidence ${Math.round(hrs / 24)} days old`;
+  },
+
+  /** Stale enough to be misleading rather than merely old. */
+  obsIsStale() {
+    const ts = this.reach?.last_attempt;
+    return !!ts && (Date.now() / 1000 - ts) > 6 * 3600;
+  },
+
   /** The radar, built as an SVG string.
    *
    *  NOT `<template x-for>` INSIDE `<svg>`, AND THIS IS NOT A STYLE CHOICE.

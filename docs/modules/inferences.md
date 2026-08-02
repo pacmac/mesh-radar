@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: 9f39598a16393f3a259a07c0be36e46d2a0daeffe0ae60e20876c46f2d720901
+source_hash: 40b65d47ec055a663e4a2a3bc4c0c41e047a83fd40e6ebbb996954ce04575bf9
 updated: 2026-08-02
 ---
 

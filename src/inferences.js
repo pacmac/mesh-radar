@@ -540,6 +540,12 @@ registerInference({
         entity: String(r.target),
         value: {
           km, cls, reason, attempts, hits,
+          // THE BEARING TRAVELS WITH THE MISSION. Without it the runner cannot
+          // aim, and an unaimed YAGI is a worse antenna than an omni — the
+          // first discovery run fired a 234 km attempt at whatever azimuth the
+          // garage alarm had left the beam on.
+          bearing: bearingDeg(HOME.lat, HOME.lon, r.lat, r.lon) == null ? null
+                   : Math.round(bearingDeg(HOME.lat, HOME.lon, r.lat, r.lon)),
           last_attempt: lastAtt,
           last_ok: r.last_ok ? Number(r.last_ok) : null,
           age_days: ageDays,

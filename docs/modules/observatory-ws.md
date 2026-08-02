@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: 3b2e25b04c107f8d1e5c0723c3981fe13e11f071663295aec62c863d9651306b
+source_hash: b057c7976c909725badf32177a5528e7648d808fcd32cccb89dd37a72fbc76d6
 updated: 2026-08-02
 ---
 
@@ -147,6 +147,21 @@ The relay mass is **local** and the distant reach is **all leaves**: nothing
 beyond about 50 km has ever relayed for us. The far corridors are single shots
 through nearby doors, not a distant network we are part of. That is a fact about
 the frontier the map could not express before it had colour.
+
+## It drives the actuator
+
+`recompute()` hands the shortlist to `missionRunner.setQueue()` and seeds it with
+what was already known, so the first route does not report the whole existing
+mesh as newly discovered. The runner never fetches — this file is already an
+allowed importer of the engine and `mission-runner.js` deliberately is not, so
+the coupling lives here.
+
+`missionRunner.on('activity')` is broadcast as `mission_activity` **on every
+state change**, not on the 15-minute recompute: the panel has to show a discovery
+while it is in progress, which is the whole point of it.
+
+The runner starts 20 s after boot, once the first recompute has had a chance to
+fill its queue.
 
 ## BROWSER_CONTRACT
 

@@ -82,7 +82,10 @@ router.post('/move', (req, res) => {
 router.post('/mode', (req, res) => {
   const { mode } = req.body;
   if (mode == null) return res.status(400).json({ error: 'mode required' });
-  if (mode === 1 && scanner.active)
+  // SCAN takes precedence over every mode that wants to point the rotator.
+  // DISC aims the yagi at each mission's bearing, so it collides with a sweep
+  // exactly as ACTV does and is refused on the same terms.
+  if ((mode === 1 || mode === 3) && scanner.active)
     return res.json({ mode: dashMode.value, refused: true });
   dashMode.set(mode);
   res.json({ mode });
