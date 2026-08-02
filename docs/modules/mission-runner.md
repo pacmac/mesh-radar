@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: fdbb298338fd3b1a81b72649096e52de974354e8cd04f813757cbf23f3ff76a4
+source_hash: d28b0c47fe9f8b5d8ca675429d451090e6f571f3b038a4ca81ad1ddfcc6ae1a1
 updated: 2026-08-02
 ---
 
@@ -159,6 +159,32 @@ minutes idle** with the rotator free.
 A loop whose continuation depends on remembering to reschedule on every branch is
 a loop that will stop. Now there is one `_schedule()` call, in a `finally`, and
 failures are logged rather than discarded.
+
+### It sticks with a target until the budget is spent
+
+`attempts_per_target` was shipped in `67b45a9` and did **nothing**. Measured
+2026-08-02 14:44: the previous 90 minutes were **22 targets, 22 attempts** —
+exactly one each, the behaviour the setting was introduced to replace.
+
+The cause was a bare `_queue.shift()`. The shortlist is only refreshed on the
+15-minute recompute, and by then the target just attempted is inside its
+30-minute cooldown and excluded, so a fresh set of ~15 different candidates
+replaced it. The budget could never be spent.
+
+The runner now **holds** a mission and its remaining shots, re-attempting the
+same target each tick until either it answers or the budget runs out. The
+cooldown still governs re-selection much later; it simply no longer governs the
+burst, which is what it was accidentally doing.
+
+**A reply ends the run early.** The budget exists to find out whether a path is
+there; once it has answered there is nothing more to learn from hitting it
+again, and the airtime is better spent on the next target.
+
+**A deferral does not spend a shot.** If the beam was unavailable the target
+stays in hand — nothing was tested, so nothing is charged.
+
+Verified: node `1519572419` (191.4 km, +3.6 km step) received **six consecutive
+attempts** between 14:51 and 15:06, against one-each before.
 
 ### Cadence is measured from the START of a tick
 

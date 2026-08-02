@@ -94,6 +94,11 @@ class MissionRunner extends EventEmitter {
   constructor() {
     super();
     this._queue    = [];
+    // THE MISSION IN HAND, and how many shots it has left. The runner sticks
+    // with a target until its budget is spent instead of shifting past it —
+    // see _tick().
+    this._holding  = null;
+    this._left     = 0;
     this._current  = null;
     this._recent   = [];
     this._timer    = null;
@@ -161,7 +166,8 @@ class MissionRunner extends EventEmitter {
       gated:     !tracerouteEnabled(),
       interval:  c.interval_sec,
       running:   this._started,
-      queued:    this._queue.length,
+      queued:    this._queue.length + (this._holding ? 1 : 0),
+      holding:   this._holding ? { target: this._holding.target, label: this._holding.label, left: this._left } : null,
       current:   this._current,
       recent:    this._recent,
       discovered: { ...this._discovered },
@@ -217,11 +223,32 @@ class MissionRunner extends EventEmitter {
     // rule), so the runner reads the mode rather than choosing a radio itself.
     const mode = modeName(dashMode.value);
     if (mode !== 'disc' || c.enabled === false || !tracerouteEnabled()
-        || this.busy || !this._queue.length) {
+        || this.busy || (!this._queue.length && !this._holding)) {
       return;   // the finally in _schedule() brings us back
     }
 
-    const m = this._queue.shift();
+    // STICK WITH A TARGET UNTIL ITS BUDGET IS SPENT.
+    //
+    // This used to be a bare `_queue.shift()`, and that silently defeated the
+    // whole point of `attempts_per_target`. The shortlist is only refreshed on
+    // the 15-minute recompute, and by then the target just attempted is inside
+    // its 30-minute cooldown and excluded — so a fresh set of ~15 different
+    // candidates replaced it and the budget could never be spent. Measured
+    // 2026-08-02: 22 targets, 22 attempts, exactly one each, which is the
+    // behaviour the setting was introduced to replace.
+    //
+    // The statistics are the entire argument. At the frontier's own ~4% base
+    // rate a single attempt settles nothing; six consecutive shots at one
+    // candidate is ~22%, against ~4% each for six candidates tried once.
+    //
+    // The cooldown still governs RE-SELECTION much later. It just no longer
+    // governs the burst, which is what it was accidentally doing.
+    if (!this._holding) {
+      this._holding = this._queue.shift();
+      this._left    = Math.max(1, Number(cfg().attempts_per_target) || 6);
+    }
+    const m  = this._holding;
+    if (!m) return;                    // queue drained between the guard and here
     const to = Number(m.target);
     const device = transmitterForMode(mode);
     if (!to || !device) return;
@@ -260,7 +287,8 @@ class MissionRunner extends EventEmitter {
       // The rotator is busy or held by the garage alarm. Put the mission BACK
       // and try again next tick — firing an unaimed shot at a 234 km target
       // would spend the airtime and prove nothing.
-      this._queue.unshift(m);
+      // Deferred, not spent: the beam was unavailable, so this does not count
+      // against the budget and the target stays in hand.
       this._current = null;
       this._emit();
       return;
@@ -276,6 +304,11 @@ class MissionRunner extends EventEmitter {
       });
       outcome = this._analyse(result);
       this._discovered.replies++;
+      // A REPLY ENDS THE RUN. The budget exists to find out whether a path is
+      // there; once it has answered there is nothing further to learn from
+      // hitting it again, and the airtime is better spent on the next target.
+      this._holding = null;
+      this._left    = 0;
     } catch (err) {
       // §4: A MISS IS DATA. Recorded and shown, never swallowed — silence has
       // four causes the wire cannot distinguish, and a feed that only showed
@@ -292,7 +325,15 @@ class MissionRunner extends EventEmitter {
       outcome = { ok: false, error, found: [] };
     }
 
-    const row = { ...this._current, ...outcome, finished: Math.floor(Date.now() / 1000) };
+    // Spend one shot. When the budget runs out the target is released and the
+    // next tick takes a new one.
+    if (this._holding) {
+      this._left--;
+      if (this._left <= 0) this._holding = null;
+    }
+
+    const row = { ...this._current, ...outcome, finished: Math.floor(Date.now() / 1000),
+                  attempt_of: this._left > 0 ? `${(Number(cfg().attempts_per_target) || 6) - this._left} of ${Number(cfg().attempts_per_target) || 6}` : null };
     this._current = null;
     this._recent.unshift(row);
     this._recent = this._recent.slice(0, c.recent);
