@@ -108,6 +108,116 @@ export const observatoryMixin = {
     }
   },
 
+  /** Chart series — server-computed, pushed. See docs/OBSERVATORY_CHARTS.md. */
+  charts: null,
+  applyCharts(ev) { this.charts = ev.charts || null; },
+
+  // Every chart below is an SVG STRING with DaisyUI variable colours, for the
+  // two reasons already documented on obsRadarSvg(): <template x-for> cannot
+  // work inside <svg>, and Tailwind classes injected via x-html are never
+  // compiled by the in-browser JIT. The page scales and positions; every number
+  // came from the server.
+
+  /** THE RECORD OVER TIME — the product's narrative (MESH_REACH_SPEC §1a).
+   *
+   *  A STEP chart, not a line: the record is a ratchet that holds until it is
+   *  beaten, and interpolating between rungs would draw a slow climb that never
+   *  happened. What it shows is uncomfortable and should be: the whole climb
+   *  took ~18 hours on 24 June, and the frontier has moved 7.5 km since. */
+  obsChartLadder() {
+    const r = this.charts?.ladder || [];
+    if (r.length < 2) return '';
+    const W = 520, H = 190, L = 42, B = 26;
+    const t0 = r[0].ts, t1 = r[r.length - 1].ts || t0 + 1;
+    const kmMax = Math.ceil(Math.max(...r.map(x => x.km)) / 50) * 50 || 50;
+    const X = ts => L + ((ts - t0) / Math.max(1, t1 - t0)) * (W - L - 10);
+    const Y = km => (H - B) - (km / kmMax) * (H - B - 12);
+    const p = [];
+    for (let i = 0; i <= 4; i++) {
+      const km = (kmMax / 4) * i, y = Y(km);
+      p.push(`<line x1="${L}" y1="${y.toFixed(1)}" x2="${W - 10}" y2="${y.toFixed(1)}" stroke="oklch(var(--bc)/0.10)" stroke-width="1"/>`);
+      p.push(`<text x="${L - 6}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${Math.round(km)}</text>`);
+    }
+    let d = `M ${X(r[0].ts).toFixed(1)} ${Y(r[0].km).toFixed(1)}`;
+    for (let i = 1; i < r.length; i++) {
+      d += ` L ${X(r[i].ts).toFixed(1)} ${Y(r[i - 1].km).toFixed(1)}`;
+      d += ` L ${X(r[i].ts).toFixed(1)} ${Y(r[i].km).toFixed(1)}`;
+    }
+    d += ` L ${(W - 10).toFixed(1)} ${Y(r[r.length - 1].km).toFixed(1)}`;
+    p.push(`<path d="${d}" fill="none" stroke="oklch(var(--p))" stroke-width="2"/>`);
+    for (const x of r) {
+      p.push(`<circle cx="${X(x.ts).toFixed(1)}" cy="${Y(x.km).toFixed(1)}" r="3" fill="oklch(var(--p))"><title>${x.km} km — ${x.label}</title></circle>`);
+    }
+    const last = r[r.length - 1];
+    p.push(`<text x="${W - 12}" y="${(Y(last.km) - 7).toFixed(1)}" text-anchor="end" fill="oklch(var(--p))" font-size="11" font-weight="700" font-family="JetBrains Mono">${last.km} km</text>`);
+    return p.join('');
+  },
+
+  /** ATTEMPTS AND ANSWERS PER DAY. The 27 July cliff — ~1,000/day to 1, because
+   *  traceroute.enabled was false — took a database query to find and should
+   *  have taken one glance. */
+  obsChartDaily() {
+    const r = this.charts?.daily || [];
+    if (!r.length) return '';
+    const W = 520, H = 190, L = 42, B = 26;
+    const max = Math.max(1, ...r.map(x => x.attempts));
+    const bw = (W - L - 10) / r.length;
+    const Y = v => (H - B) - (v / max) * (H - B - 12);
+    const p = [];
+    for (let i = 0; i <= 3; i++) {
+      const v = (max / 3) * i, y = Y(v);
+      p.push(`<line x1="${L}" y1="${y.toFixed(1)}" x2="${W - 10}" y2="${y.toFixed(1)}" stroke="oklch(var(--bc)/0.10)"/>`);
+      p.push(`<text x="${L - 6}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${Math.round(v)}</text>`);
+    }
+    r.forEach((x, i) => {
+      const bx = L + i * bw;
+      p.push(`<rect x="${(bx + 1).toFixed(1)}" y="${Y(x.attempts).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${((H - B) - Y(x.attempts)).toFixed(1)}" fill="oklch(var(--bc)/0.22)"><title>${x.day}: ${x.attempts} attempts</title></rect>`);
+      if (x.answers) p.push(`<rect x="${(bx + 1).toFixed(1)}" y="${Y(x.answers).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${((H - B) - Y(x.answers)).toFixed(1)}" fill="oklch(var(--su))"><title>${x.day}: ${x.answers} answered</title></rect>`);
+    });
+    p.push(`<text x="${L}" y="${H - 8}" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${r[0].day.slice(5)}</text>`);
+    p.push(`<text x="${W - 10}" y="${H - 8}" text-anchor="end" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${r[r.length - 1].day.slice(5)}</text>`);
+    return p.join('');
+  },
+
+  /** Shared bar renderer for the two rate charts — same shape, same scale rule,
+   *  so they read as a pair rather than two dialects. */
+  _obsRateBars(rows, labelOf, colourOf) {
+    if (!rows?.length) return '';
+    const W = 520, H = 190, L = 42, B = 34;
+    const rate = x => x.attempts ? (100 * x.answers / x.attempts) : 0;
+    const max = Math.max(5, ...rows.map(rate));
+    const bw = (W - L - 10) / rows.length;
+    const Y = v => (H - B) - (v / max) * (H - B - 14);
+    const p = [];
+    for (let i = 0; i <= 3; i++) {
+      const v = (max / 3) * i, y = Y(v);
+      p.push(`<line x1="${L}" y1="${y.toFixed(1)}" x2="${W - 10}" y2="${y.toFixed(1)}" stroke="oklch(var(--bc)/0.10)"/>`);
+      p.push(`<text x="${L - 6}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${v.toFixed(0)}%</text>`);
+    }
+    rows.forEach((x, i) => {
+      const bx = L + i * bw, v = rate(x), y = Y(v);
+      p.push(`<rect x="${(bx + 3).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, bw - 6).toFixed(1)}" height="${((H - B) - y).toFixed(1)}" fill="${colourOf(x, v)}"><title>${labelOf(x)}: ${x.answers}/${x.attempts} = ${v.toFixed(1)}%</title></rect>`);
+      p.push(`<text x="${(bx + bw / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" fill="oklch(var(--bc)/0.7)" font-size="10" font-family="JetBrains Mono">${v.toFixed(1)}</text>`);
+      p.push(`<text x="${(bx + bw / 2).toFixed(1)}" y="${(H - 18)}" text-anchor="middle" fill="oklch(var(--bc)/0.5)" font-size="9" font-family="JetBrains Mono">${labelOf(x)}</text>`);
+      p.push(`<text x="${(bx + bw / 2).toFixed(1)}" y="${(H - 6)}" text-anchor="middle" fill="oklch(var(--bc)/0.3)" font-size="9" font-family="JetBrains Mono">n=${x.attempts}</text>`);
+    });
+    return p.join('');
+  },
+
+  /** ANSWER RATE BY SILENCE — the strongest predictor measured, and the whole
+   *  justification for max_silence_days. On screen it can be argued with. */
+  obsChartSilence() {
+    return this._obsRateBars(this.charts?.silence || [], x => x.bucket,
+      (x, v) => v >= 15 ? 'oklch(var(--su))' : v >= 5 ? 'oklch(var(--wa))' : 'oklch(var(--er))');
+  },
+
+  /** ANSWER RATE BY DISTANCE — the chart that settles whether a run of silence
+   *  is the targets or the setup. */
+  obsChartDistance() {
+    return this._obsRateBars(this.charts?.distance || [], x => x.band + '+',
+      (x, v) => v >= 15 ? 'oklch(var(--su))' : v >= 5 ? 'oklch(var(--wa))' : 'oklch(var(--er))');
+  },
+
   /** Pin a mission to the top of the queue, or unpin it.
    *
    *  Writes the `discovery` config key, which is where `pinned` lives — one

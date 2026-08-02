@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 641363e09b0d2736bbe8589eb5793902507d8e5dad7cdb05431afa4c37d1275f
+source_hash: d9e837dd9d6c528a2aba7ef5751c9bdb3ded5397eb61d9711466ae67952376be
 updated: 2026-08-02
 ---
 
@@ -192,6 +192,15 @@ construction. No local state; the row re-renders from the next missions push.
 
 Selection recomputes on a timer, so a pin takes effect at the next recompute
 rather than instantly, and the panel says so.
+
+## The charts
+
+`obsChartLadder`, `obsChartDaily`, `obsChartSilence`, `obsChartDistance`, sharing
+`_obsRateBars` for the two rate charts so they read as a pair rather than two
+dialects. SVG strings with DaisyUI variable colours, for the two reasons already
+documented on `obsRadarSvg()`.
+
+Every number is server-computed; these scale and position only.
 
 ## Invariants
 

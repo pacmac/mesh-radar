@@ -28,6 +28,8 @@
        @click="switchObsTab('radar')">Radar</a>
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='map' && 'tab-active font-semibold'"
        @click="switchObsTab('map')">Map</a>
+    <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='charts' && 'tab-active font-semibold'"
+       @click="switchObsTab('charts')">Charts</a>
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='receptions' && 'tab-active font-semibold'"
        @click="switchObsTab('receptions')">Receptions</a>
   </div>
@@ -519,6 +521,66 @@
       how often that hop has been witnessed. Only the far clusters are named — one label
       per neighbourhood, with <span class="font-mono">+n</span> for the nodes underneath.
     </p>
+  </div>
+
+  <!-- ══════════════════ CHARTS ══════════════════════════════════════════════
+       Every chart answers a question that was actually asked, and that was
+       being answered by hand against the same tables. A chart nobody has needed
+       is decoration. docs/OBSERVATORY_CHARTS.md -->
+  <div x-show="obsTab==='charts'" class="flex-1 min-h-0 flex flex-col gap-2">
+    <template x-if="!charts">
+      <div class="rounded border border-dashed border-base-300 bg-base-200/40 flex-1 min-h-0 flex items-center justify-center">
+        <p class="text-sm text-base-content/60">Computing series from stored history.</p>
+      </div>
+    </template>
+    <template x-if="charts">
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 flex-1 min-h-0 overflow-y-auto">
+
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-1">
+            <div class="flex items-baseline gap-2">
+              <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">The record over time</h2>
+              <span class="text-xs text-base-content/35 ml-auto" x-text="charts.record_km ? charts.record_km + ' km' : ''"></span>
+            </div>
+            <svg viewBox="0 0 520 190" class="w-full" x-html="obsChartLadder()"></svg>
+            <p class="text-xs text-base-content/40">
+              A ratchet, so it steps rather than slopes — the record holds until it is beaten.
+            </p>
+          </div>
+        </div>
+
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-1">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Attempts and answers, per day</h2>
+            <svg viewBox="0 0 520 190" class="w-full" x-html="obsChartDaily()"></svg>
+            <p class="text-xs text-base-content/40">
+              Grey is attempts, green answered. The cliff is the day automatic traceroute was switched off.
+            </p>
+          </div>
+        </div>
+
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-1">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Answer rate by how long the node was silent</h2>
+            <svg viewBox="0 0 520 190" class="w-full" x-html="obsChartSilence()"></svg>
+            <p class="text-xs text-base-content/40">
+              The strongest predictor measured, and the reason discovery ignores long-silent nodes.
+            </p>
+          </div>
+        </div>
+
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-1">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Answer rate by distance</h2>
+            <svg viewBox="0 0 520 190" class="w-full" x-html="obsChartDistance()"></svg>
+            <p class="text-xs text-base-content/40">
+              Where the wall is. If a band answers nothing, silence there is the targets, not the rig.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </template>
   </div>
 
   <!-- ══════════════════ RECEPTIONS — debug sub-page ═════════════════════════ -->

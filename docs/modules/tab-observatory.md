@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 60aa439bf31bd2dffd95ea988e48875b5692fde39d242ba08b41c09112060cbf
+source_hash: 316c70be1c04258e012cfcffc0bef2a8a7d0342f26549ddc6221d929f740b67b
 updated: 2026-08-02
 ---
 
@@ -207,6 +207,17 @@ That tint is not decoration — a node heard today answers 16–26% of the time 
 one silent over a week 1.8%, so the colour is the single most useful thing in
 the row. On Doors it is the early warning that matters most: everything behind a
 quiet door goes quiet with it.
+
+## Charts sub-tab
+
+Four charts, each answering a question that was being answered by hand against
+the same tables: the record over time, attempts and answers per day, answer rate
+by silence, answer rate by distance. A chart nobody has needed is decoration —
+that is the selection rule. Full rationale in `docs/OBSERVATORY_CHARTS.md`.
+
+The record chart **steps** rather than slopes: the record is a ratchet that holds
+until beaten, and interpolating between rungs would draw a climb that never
+happened.
 
 ## Invariants
 

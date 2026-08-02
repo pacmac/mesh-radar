@@ -17,7 +17,8 @@ import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
 import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
-import { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets } from './db.js';
+import { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
+         attemptsByDay, answerRateBySilence, answerRateByDistance } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
 // every distance from it. A page load must not re-read config.
@@ -70,6 +71,7 @@ registerConnectReplay(() => {
       { type: 'mesh_links', links: meshLinks() },
       { type: 'missions', missions: missions() },
       { type: 'mission_activity', activity: missionRunner.state() },
+      { type: 'charts', charts: charts() },
     ];
   } catch (e) {
     console.error(`[observatory-ws] replay failed: ${e.message}`);
@@ -259,6 +261,36 @@ function missions() {
   return { missions: list, summary };
 }
 
+/** The chart series. Display aggregation, assembled here rather than inferred —
+ *  see docs/OBSERVATORY_CHARTS.md. `ladder` is reused from the existing fact and
+ *  never recomputed.
+ *
+ *  Wrapped: a chart failing must degrade to an empty panel, not take the feed
+ *  down with it. */
+function charts() {
+  const out = { ladder: [], record_km: null, daily: [], silence: [], distance: [] };
+  try {
+    const l = facts('reach.ladder')[0]?.value ?? null;
+    out.ladder = (l?.rungs ?? []).map(r => ({
+      ts: r.ts, km: r.km,
+      label: resolveNodeLabel(Number(r.target)) || String(r.target),
+    }));
+    out.record_km = l?.record_km ?? null;
+  } catch (e) { console.error(`[observatory-ws] ladder series failed: ${e.message}`); }
+  try { out.daily = attemptsByDay(30); }
+  catch (e) { console.error(`[observatory-ws] daily series failed: ${e.message}`); }
+  try {
+    // Ordered here, not in SQL: the buckets are a scale (best to worst) and the
+    // page must not have to know their order to draw them correctly.
+    const order = ['direct RF', '< 24h', '< 7d', 'silent 7d+'];
+    const by = new Map(answerRateBySilence().map(r => [r.bucket, r]));
+    out.silence = order.filter(k => by.has(k)).map(k => by.get(k));
+  } catch (e) { console.error(`[observatory-ws] silence series failed: ${e.message}`); }
+  try { out.distance = answerRateByDistance(); }
+  catch (e) { console.error(`[observatory-ws] distance series failed: ${e.message}`); }
+  return out;
+}
+
 /** Observed links with both endpoints placed — the mesh map's geometry.
  *
  *  Capped and ordered by traffic so the heaviest corridors survive the cut: a
@@ -424,6 +456,7 @@ function recompute(broadcast) {
     broadcast?.({ type: 'mesh_links', links: meshLinks() });
     const list = missions();
     broadcast?.({ type: 'missions', missions: list });
+    broadcast?.({ type: 'charts', charts: charts() });
 
     // FEED THE ACTUATOR. The runner never fetches — it is handed the shortlist
     // and works it. This file is already an allowed importer of the engine; the

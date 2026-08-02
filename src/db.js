@@ -859,6 +859,76 @@ export function lastHeardMap() {
   return m;
 }
 
+// ─── CHART SERIES ───────────────────────────────────────────────────────────
+//
+// Display aggregation, deliberately NOT inferences: the catalogue's rule is
+// "small, and one thing", and a chart series is something the system draws
+// rather than something it works out. See docs/OBSERVATORY_CHARTS.md.
+
+/** Attempts and answers per day. The 27 July cliff — ~1,000/day to 1, because
+ *  traceroute.enabled was false — took a database query to find and should have
+ *  taken one glance. */
+export function attemptsByDay(days = 30) {
+  return db.prepare(`
+    SELECT date(ts, 'unixepoch')                            AS day,
+           COUNT(*)                                         AS attempts,
+           SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END)   AS answers
+    FROM traceroute_history
+    WHERE ts > strftime('%s','now') - (? * 86400)
+    GROUP BY day ORDER BY day
+  `).all(days);
+}
+
+/** Answer rate against how long the target had been silent. The strongest
+ *  predictor measured (26.1 / 16.0 / 7.0 / 1.8 %) and the justification for
+ *  max_silence_days — on screen so the setting can be argued with. */
+export function answerRateBySilence() {
+  return db.prepare(`
+    WITH heard AS (SELECT DISTINCT num FROM signal_history)
+    SELECT CASE
+             WHEN h.num IS NOT NULL                                        THEN 'direct RF'
+             WHEN n.last_heard > strftime('%s','now') - 86400              THEN '< 24h'
+             WHEN n.last_heard > strftime('%s','now') - 604800             THEN '< 7d'
+             ELSE 'silent 7d+'
+           END                                              AS bucket,
+           COUNT(*)                                         AS attempts,
+           SUM(CASE WHEN th.status = 'ok' THEN 1 ELSE 0 END) AS answers
+    FROM traceroute_history th
+    LEFT JOIN nodes n ON n.num = th.to_num
+    LEFT JOIN heard h ON h.num = th.to_num
+    GROUP BY bucket
+  `).all();
+}
+
+/** Answer rate by 25 km band. The chart that settles whether a run of silence is
+ *  the targets or the setup. Distance is computed in SQL from the stored
+ *  positions and the configured home. */
+export function answerRateByDistance() {
+  return db.prepare(`
+    WITH home AS (
+      SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') AS lat,
+             (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') AS lon
+    ),
+    d AS (
+      SELECT th.status,
+             6371.0 * 2 * asin(min(1.0, sqrt(
+               power(sin((n.lat - home.lat) * 0.0174532925 / 2), 2) +
+               cos(home.lat * 0.0174532925) * cos(n.lat * 0.0174532925) *
+               power(sin((n.lon - home.lon) * 0.0174532925 / 2), 2)
+             ))) AS km
+      FROM traceroute_history th
+      JOIN nodes n ON n.num = th.to_num
+      CROSS JOIN home
+      WHERE n.lat IS NOT NULL AND n.lat <> 0 AND home.lat IS NOT NULL
+    )
+    SELECT CAST(km / 25 AS INTEGER) * 25                    AS band,
+           COUNT(*)                                         AS attempts,
+           SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END)   AS answers
+    FROM d WHERE km <= 250
+    GROUP BY band ORDER BY band
+  `).all();
+}
+
 export function recentAimedTraceroutes(limit = 25) {
   return db.prepare(`
     SELECT ts, to_num, rotator_az, status

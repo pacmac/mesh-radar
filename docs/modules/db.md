@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 4166b528432c8a91d3c2639fb224d711806d3eecf9caa6be46ba4d7e65825ad8
+source_hash: 5eb84876857ff37987ddee630b92750b7774a23b4b252821a00e7c780337dd49
 updated: 2026-07-29
 ---
 
@@ -366,6 +366,14 @@ every boot and re-`ALTER` forever — which took node-dash and DEV1 down once.
 synthesises a list entry from that row for a favourite that has not transmitted
 this session. Omitting it rendered a targeted node as untargeted — the icon
 silently disagreeing with the database.
+
+## Chart series — named queries, not inferences
+
+`attemptsByDay`, `answerRateBySilence`, `answerRateByDistance`. Display
+aggregation belongs in the display feed: the catalogue's rule is *small, and one
+thing*, and a chart series is something the system **draws** rather than
+something it **works out**. Distance banding is done in SQL from stored positions
+and the configured home. See `docs/OBSERVATORY_CHARTS.md`.
 
 ## Invariants
 
