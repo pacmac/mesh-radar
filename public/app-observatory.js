@@ -89,6 +89,25 @@ export const observatoryMixin = {
     return !!ts && (Date.now() / 1000 - ts) > 6 * 3600;
   },
 
+  /** Target a node for discovery, straight from an Observatory table.
+   *
+   *  Same endpoint and same no-local-state rule as the crosshair on the Nodes
+   *  page — this is a second PLACE to reach it, not a second mechanism. It is
+   *  here because the Nodes page is not where this work happens, and a control
+   *  the operator cannot find is a control that does not exist. */
+  async toggleObsTargetNum(num, current) {
+    if (!num) return;
+    try {
+      await fetch(`/nodes/${num}/obs_target`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ obs_target: !current }),
+      }).then(r => { if (!r.ok) throw new Error('could not update target'); });
+    } catch (e) {
+      this.showToast?.(e.message || 'Could not update target', 'error', 0);
+    }
+  },
+
   /** Pin a mission to the top of the queue, or unpin it.
    *
    *  Writes the `discovery` config key, which is where `pinned` lives — one

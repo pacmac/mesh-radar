@@ -836,6 +836,29 @@ export function deleteConfig(key) {
  *
  *  A named query rather than exporting the database handle: `db` is deliberately
  *  module-private, and handing it out invites arbitrary SQL from anywhere. */
+/** num -> last_heard, for every node we have ever heard. One query rather than
+ *  one per row: the Observatory feeds render 100+ rows and a per-row lookup on
+ *  every recompute is a needless N+1. */
+/** num -> {lat, lon}, for every positioned node. Same batching reason as
+ *  lastHeardMap(): the feeds need a bearing per row and a per-row query on
+ *  every recompute is a needless N+1. */
+export function positionMap() {
+  const m = new Map();
+  for (const r of db.prepare(`SELECT num, lat, lon FROM nodes
+                              WHERE lat IS NOT NULL AND lon IS NOT NULL AND lat <> 0`).all()) {
+    m.set(r.num, { lat: r.lat, lon: r.lon });
+  }
+  return m;
+}
+
+export function lastHeardMap() {
+  const m = new Map();
+  for (const r of db.prepare(`SELECT num, last_heard FROM nodes WHERE last_heard IS NOT NULL`).all()) {
+    m.set(r.num, r.last_heard);
+  }
+  return m;
+}
+
 export function recentAimedTraceroutes(limit = 25) {
   return db.prepare(`
     SELECT ts, to_num, rotator_az, status
@@ -892,8 +915,26 @@ const _finAll = (entry, keys) => {
 /** Mark a node as a discovery target, or clear it. Mirrors setNodeFavourite —
  *  a different flag with a different meaning, never the same one. */
 export function setObsTarget(num, on) {
-  return db.prepare(`UPDATE nodeinfo SET obs_target = ? WHERE num = ?`)
+  const changed = db.prepare(`UPDATE nodeinfo SET obs_target = ? WHERE num = ?`)
     .run(on ? 1 : 0, num).changes;
+  if (changed || !on) return changed;
+
+  // NO nodeinfo ROW YET — CREATE ONE RATHER THAN REFUSE.
+  //
+  // 249 of 932 known nodes have never sent a NODEINFO packet, so they have no
+  // nodeinfo row, and among them is the 189.1 km RECORD HOLDER. Refusing to
+  // target the very node we are trying to beat is absurd: we can traceroute it,
+  // we have a position for it, we simply do not know its name.
+  //
+  // node_id is the primary key, so it must be synthesised — Meshtastic's own
+  // convention, '!' plus the num in lowercase hex, which is exactly what the
+  // node would send for itself. If it ever does send identity, the upsert keyed
+  // on that same node_id fills in the names over this row rather than
+  // duplicating it.
+  const nodeId = '!' + (num >>> 0).toString(16).padStart(8, '0');
+  db.prepare(`INSERT OR IGNORE INTO nodeinfo (node_id, num) VALUES (?, ?)`).run(nodeId, num);
+  return db.prepare(`UPDATE nodeinfo SET obs_target = ? WHERE num = ?`)
+    .run(1, num).changes;
 }
 
 /** Every node currently marked as a discovery target. */

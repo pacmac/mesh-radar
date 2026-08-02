@@ -39,9 +39,16 @@ and different icons. See `docs/DISCOVERY_TARGETING.md`.
 - A toggle is an **action**, so `PUT` is correct — `BROWSER_CONTRACT`'s transport
   rule restricts `GET` to form flows, not writes.
 - `400` on a non-numeric num or a non-boolean value.
-- `404` when there is no `nodeinfo` row: the node has never sent identity, so
-  there is nothing persistent to attach the flag to. Saying so beats silently
-  succeeding.
+- `404` when there is no `nodeinfo` row **and the flag is being cleared** —
+  there is nothing to clear, and saying so beats silently succeeding.
+- **Setting `obs_target` on a node with no row CREATES one.** 249 of 932 known
+  nodes have never sent a NODEINFO packet, and among them is the 189.1 km
+  **record holder**. Refusing to target the very node we are trying to beat is
+  absurd: we can traceroute it and we have a position for it, we simply do not
+  know its name. `node_id` is the primary key so it is synthesised as `'!' +
+  num` in lowercase hex — Meshtastic's own convention, exactly what the node
+  would send for itself, so a later identity upsert fills in the names over that
+  row rather than duplicating it. Verified: `3663958688` → `!da6392a0`.
 - The cache is synced afterwards (`syncFavourites` / `syncObsTargets`). Cached
   node objects were enriched when the node was last **heard**, so without the
   sync the flag reads stale until the node next transmits.

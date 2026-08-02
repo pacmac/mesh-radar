@@ -110,6 +110,42 @@
               </span>
             </div>
 
+            <!-- ── THE KNOBS, WHERE THE WORK IS ─────────────────────────────
+                 Peter, 2026-08-02: "I also asked you to add tuning knobs...
+                 I see none of that either." They existed — on Config >
+                 Discovery, which is not the page he works on. A control the
+                 operator cannot find is a control that does not exist, so the
+                 ones that matter live here, on the board, and Config keeps the
+                 full set. Values are clamped server-side either way. -->
+            <div class="flex items-center gap-2 flex-wrap text-xs font-mono border border-base-300 rounded px-2 py-1.5"
+                 x-effect="obsTab==='board' && !discoveryCfg && loadDiscoveryCfg()">
+              <template x-if="discoveryCfg">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <select class="select select-bordered select-xs font-mono" x-model="discoveryCfg.mode" @change="saveDiscoveryCfg()">
+                    <option value="auto">auto</option>
+                    <option value="targets">targets first</option>
+                    <option value="manual">manual only</option>
+                  </select>
+                  <label class="flex items-center gap-1"><span class="text-base-content/50">window</span>
+                    <input type="number" min="1" max="250" class="input input-bordered input-xs w-14 font-mono"
+                           x-model.number="discoveryCfg.window_km" @change="saveDiscoveryCfg()"><span class="text-base-content/40">km</span></label>
+                  <label class="flex items-center gap-1"><span class="text-base-content/50">tries</span>
+                    <input type="number" min="1" max="50" class="input input-bordered input-xs w-12 font-mono"
+                           x-model.number="discoveryCfg.attempts_per_target" @change="saveDiscoveryCfg()"></label>
+                  <label class="flex items-center gap-1"><span class="text-base-content/50">every</span>
+                    <input type="number" min="30" max="3600" step="30" class="input input-bordered input-xs w-16 font-mono"
+                           x-model.number="discoveryCfg.interval_sec" @change="saveDiscoveryCfg()"><span class="text-base-content/40">s</span></label>
+                  <label class="flex items-center gap-1"><span class="text-base-content/50">silent&lt;</span>
+                    <input type="number" min="1" max="365" class="input input-bordered input-xs w-14 font-mono"
+                           x-model.number="discoveryCfg.max_silence_days" @change="saveDiscoveryCfg()"><span class="text-base-content/40">d</span></label>
+                  <label class="flex items-center gap-1 cursor-pointer"><span class="text-base-content/50">on</span>
+                    <input type="checkbox" class="toggle toggle-xs" x-model="discoveryCfg.enabled" @change="saveDiscoveryCfg()"></label>
+                  <span class="text-success" x-show="discoveryCfgSaved">saved</span>
+                  <span class="text-error" x-show="discoveryCfgError" x-text="discoveryCfgError"></span>
+                </div>
+              </template>
+            </div>
+
             <!-- The one target being pursued right now. -->
             <template x-if="missionActivity?.current">
               <div class="rounded border border-primary/40 bg-primary/5 px-3 py-2">
@@ -199,14 +235,34 @@
             </template>
             <template x-if="reach?.frontier?.length">
               <table class="table table-xs font-mono tabular-nums">
-                <thead><tr><th>Target</th><th>Where</th><th class="text-right pr-4">km</th><th class="text-right pr-4">Hits</th><th class="text-right">Rate</th></tr></thead>
+                <!-- HEADERS ARE ABBREVIATED so the column fits the DATA, not the reverse.
+                     Peter, 2026-08-02. BRG = bearing from us, AGE = since we last
+                     heard the node — both server-computed. -->
+                <thead><tr><th>Target</th><th>Where</th><th class="text-right pr-3">km</th><th class="text-right pr-3">BRG</th><th class="text-right pr-3">AGE</th><th class="text-right pr-3">Hits</th><th class="text-right">Rate</th></tr></thead>
                 <tbody>
                   <template x-for="f in reach.frontier" :key="f.target">
                     <tr>
-                      <td class="text-primary" x-text="f.label"></td>
+                      <td class="whitespace-nowrap">
+                        <span class="text-primary" x-text="f.label"></span>
+                        <button class="btn btn-ghost btn-xs px-1 ml-1 align-middle"
+                                :class="f.obs_target ? 'text-secondary' : 'text-base-content/20'"
+                                :title="f.obs_target ? 'Stop targeting' : 'Target for discovery'"
+                                @click="toggleObsTargetNum(f.target, f.obs_target)">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
+                               viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="7"/><path stroke-linecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
+                          </svg>
+                        </button>
+                      </td>
                       <td class="text-base-content/50 truncate max-w-[14rem]" x-text="f.place || ''"></td>
-                      <td class="text-right pr-4" x-text="f.km"></td>
-                      <td class="text-right pr-4 text-base-content/60" x-text="f.hits + '/' + f.attempts"></td>
+                      <td class="text-right pr-3" x-text="f.km"></td>
+                      <td class="text-right pr-3 text-base-content/50" x-text="f.bearing != null ? f.bearing + '°' : '—'"></td>
+                      <!-- Tinted by liveness: a node silent for weeks answers
+                           1.8% of the time, one heard today 16-26%. -->
+                      <td class="text-right pr-3"
+                          :class="f.since_sec == null ? 'text-base-content/25' : f.since_sec < 86400 ? 'text-success' : f.since_sec < 604800 ? 'text-base-content/50' : 'text-warning'"
+                          x-text="f.since"></td>
+                      <td class="text-right pr-3 text-base-content/60" x-text="f.hits + '/' + f.attempts"></td>
                       <!-- Hit rate is the honest headline for a single target:
                            189 km on one hit in 63 tries is a rare event, not a link. -->
                       <td class="text-right"
@@ -242,7 +298,7 @@
             <template x-if="missions?.missions?.length">
               <div class="overflow-y-auto max-h-80">
                 <table class="table table-xs font-mono tabular-nums">
-                  <thead><tr><th>Target</th><th>Where</th><th class="text-right pr-3">km</th><th class="text-right pr-3">step</th><th>Why</th></tr></thead>
+                  <thead><tr><th>Target</th><th>Where</th><th class="text-right pr-2">km</th><th class="text-right pr-2">BRG</th><th class="text-right pr-2">AGE</th><th class="text-right pr-2">±</th><th>Why</th></tr></thead>
                   <tbody>
                     <template x-for="m in missions.missions" :key="m.target">
                       <tr>
@@ -254,7 +310,18 @@
                           <span x-text="m.label"></span>
                           <!-- Pin — work this one next. One at a time by
                                construction; clicking another moves the pin. -->
+                          <!-- Target for discovery — the Observatory's own flag,
+                               reachable from the table you are reading. -->
                           <button class="btn btn-ghost btn-xs px-1 ml-1 align-middle"
+                                  :class="m.obs_target ? 'text-secondary' : 'text-base-content/25'"
+                                  :title="m.obs_target ? 'Stop targeting' : 'Target for discovery'"
+                                  @click="toggleObsTargetNum(m.target, m.obs_target)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none"
+                                 viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <circle cx="12" cy="12" r="7"/><path stroke-linecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
+                            </svg>
+                          </button>
+                          <button class="btn btn-ghost btn-xs px-1 align-middle"
                                   :class="missions?.summary?.pinned == m.target ? 'text-error' : 'text-base-content/25'"
                                   :title="missions?.summary?.pinned == m.target ? 'Unpin' : 'Pin — work this one next'"
                                   @click="togglePinned(m)">
@@ -265,12 +332,16 @@
                           </button>
                         </td>
                         <td class="text-base-content/50 truncate max-w-[10rem]" x-text="m.place || ''"></td>
-                        <td class="text-right pr-3" x-text="m.km"></td>
+                        <td class="text-right pr-2" x-text="m.km"></td>
+                        <td class="text-right pr-2 text-base-content/50" x-text="m.bearing != null ? m.bearing + '°' : '—'"></td>
+                        <td class="text-right pr-2"
+                            :class="m.since_sec == null ? 'text-base-content/25' : m.since_sec < 86400 ? 'text-success' : m.since_sec < 604800 ? 'text-base-content/50' : 'text-warning'"
+                            x-text="m.since"></td>
                         <!-- THE STEP. How far past the nearest node we have
                              actually reached — the number that says whether an
                              attempt is an extension or a leap. Blank for the
                              classes where the target is itself proven ground. -->
-                        <td class="text-right pr-3"
+                        <td class="text-right pr-2"
                             :class="m.step_km > 50 ? 'text-warning' : 'text-success'"
                             x-text="m.step_km ? '+' + Math.round(m.step_km) : ''"></td>
                         <!-- The reason is a server-written string. The page must
@@ -310,10 +381,12 @@
                   <tr>
                     <th>Relay</th>
                     <th>Where</th>
-                    <th class="text-right pr-4">Behind</th>
-                    <th class="text-right pr-4">Furthest</th>
-                    <th class="text-right pr-4">Carried</th>
-                    <th class="w-24">Share</th>
+                    <th class="text-right pr-2">BRG</th>
+                    <th class="text-right pr-2">AGE</th>
+                    <th class="text-right pr-2">Behind</th>
+                    <th class="text-right pr-2">Furthest</th>
+                    <th class="text-right pr-2">Carried</th>
+                    <th class="w-20">Share</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -321,10 +394,16 @@
                     <tr>
                       <td class="text-secondary" x-text="r.label"></td>
                       <td class="text-base-content/50 truncate max-w-[12rem]" x-text="r.place || ''"></td>
-                      <td class="text-right pr-4" x-text="r.targets"></td>
-                      <td class="text-right pr-4" :class="r.furthest_km > 150 ? 'text-primary font-semibold' : 'text-base-content/60'"
+                      <td class="text-right pr-2 text-base-content/50" x-text="r.bearing != null ? r.bearing + '°' : '—'"></td>
+                      <!-- A door that has gone quiet is the thing you most want
+                           to notice: everything behind it goes with it. -->
+                      <td class="text-right pr-2"
+                          :class="r.since_sec == null ? 'text-base-content/25' : r.since_sec < 86400 ? 'text-success' : r.since_sec < 604800 ? 'text-base-content/50' : 'text-warning'"
+                          x-text="r.since"></td>
+                      <td class="text-right pr-2" x-text="r.targets"></td>
+                      <td class="text-right pr-2" :class="r.furthest_km > 150 ? 'text-primary font-semibold' : 'text-base-content/60'"
                           x-text="r.furthest_km ? r.furthest_km + ' km' : '—'"></td>
-                      <td class="text-right pr-4 text-base-content/60" x-text="r.uses"></td>
+                      <td class="text-right pr-2 text-base-content/60" x-text="r.uses"></td>
                       <td>
                         <div class="h-1 bg-secondary rounded" :style="'width:' + obsRelayShare(r.uses) + '%'"></div>
                       </td>

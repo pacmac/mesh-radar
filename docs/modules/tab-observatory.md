@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 86be582b5bec130330af05095d66c19dac2dcd0fd0cce961a3a32524b5aa8fa8
+source_hash: 60aa439bf31bd2dffd95ea988e48875b5692fde39d242ba08b41c09112060cbf
 updated: 2026-08-02
 ---
 
@@ -171,6 +171,42 @@ The status line reports **`MANUAL · nothing selected`** when the mode is manual
 and the queue is empty. That state is the reason a real `manual` mode exists:
 an empty queue with no explanation reads as broken, which is the failure this
 panel was built to prevent.
+
+## The controls live where the work is
+
+Peter, 2026-08-02: *"I also asked you to add tuning knobs, and the ability to
+select a node and favourite it, and to be able to override and select nodes
+myself to target. I see none of that either."*
+
+All three existed — on **Config → Discovery** and the **Nodes** page. Neither is
+the page he works on. Confirmed not a caching problem: the service worker only
+handles `/`, `/app.js`, `/style.css`, `/config.js`, network-first.
+
+**A control the operator cannot find is a control that does not exist.** This was
+the second time in one session that something built and Playwright-verified was
+invisible in practice, so the rule now is: put it where the work happens.
+
+- A **control strip** at the top of the Discovery panel: mode, window, tries,
+  interval, silence cutoff, on/off. Saves on change; values still clamped
+  server-side. Config → Discovery keeps the full set with the explanatory text —
+  the strip is the subset you reach for mid-session.
+- A **crosshair** on every Missions and Frontier row, and the pin beside it. The
+  same endpoint the Nodes page uses; a second *place*, not a second mechanism.
+
+## BRG and AGE on every table
+
+Peter: *"something missing from every table is 1: bearing, 2: since. the column
+titles can be abbreviated (or use an icon instead) so that the title fits the
+data in the column and not the other way around."*
+
+`BRG` and `AGE` on Frontier, Missions and Doors, both server-computed
+(`observatory-ws.js`), `AGE` shipped as the short string the column shows plus
+raw seconds for tinting: green under a day, muted under a week, warning beyond.
+
+That tint is not decoration — a node heard today answers 16–26% of the time and
+one silent over a week 1.8%, so the colour is the single most useful thing in
+the row. On Doors it is the early warning that matters most: everything behind a
+quiet door goes quiet with it.
 
 ## Invariants
 

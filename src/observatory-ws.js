@@ -17,7 +17,7 @@ import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
 import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
-import { getConfig, getCachedGeocode, recentAimedTraceroutes } from './db.js';
+import { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
 // every distance from it. A page load must not re-read config.
@@ -125,6 +125,8 @@ function placeName(address) {
  *  recompute on a page load. Provenance rides along (`at`, `evidence`) so the
  *  page can say when it was last worked out rather than implying it is live. */
 function relayUsage() {
+  const heard = lastHeardMap(), pos = positionMap();
+  const now = Math.floor(Date.now() / 1000);
   return facts('relay.usage')
     .map(f => ({
       relay:    f.entity,
@@ -137,6 +139,9 @@ function relayUsage() {
       uses:     f.value?.uses ?? 0,
       targets:  f.value?.targets ?? 0,
       furthest_km: f.value?.furthest_km ?? null,
+      bearing:  bearingFromHome(pos.get(Number(f.entity))?.lat, pos.get(Number(f.entity))?.lon),
+      since:    sinceStr(heard.has(Number(f.entity)) ? now - heard.get(Number(f.entity)) : null),
+      since_sec: heard.has(Number(f.entity)) ? now - heard.get(Number(f.entity)) : null,
       at:       f.ts,
       evidence: f.evidence_count,
     }))
@@ -154,6 +159,9 @@ function relayUsage() {
  *  frontier — a flag nobody reads is not a guard — but their count is reported
  *  so the exclusion is visible rather than silent. */
 function reachModel() {
+  const targeted = new Set(listObsTargets().map(x => x.num));
+  const heard = lastHeardMap();
+  const nowS = Math.floor(Date.now() / 1000);
   const targets = facts('reach.target');
   // HOW OLD IS ALL THIS? Peter, 2026-08-02: "if a traceroute was last done 4
   // days ago, then our entire page is dead and old data." Every panel here is
@@ -171,6 +179,10 @@ function reachModel() {
       target:  f.entity,
       label:   resolveNodeLabel(Number(f.entity)) || String(f.entity),
       km:      f.value.km,
+      bearing: f.value.bearing ?? null,
+      since:   sinceStr(heard.has(Number(f.entity)) ? nowS - heard.get(Number(f.entity)) : null),
+      since_sec: heard.has(Number(f.entity)) ? nowS - heard.get(Number(f.entity)) : null,
+      obs_target: targeted.has(Number(f.entity)),
       hits:    f.value.hits,
       attempts: f.value.attempts,
       last_ok: f.value.last_ok,
@@ -218,6 +230,11 @@ function reachModel() {
  *  rather than being filtered away silently: the counts it carries are what
  *  stop a shortlist reading as "these are the only options". */
 function missions() {
+  // So the crosshair on each row can show its own state without the browser
+  // holding any (BROWSER_CONTRACT).
+  const targeted = new Set(listObsTargets().map(x => x.num));
+  const heard = lastHeardMap();
+  const nowM = Math.floor(Date.now() / 1000);
   const all = facts('reach.mission');
   const summary = all.find(f => f.entity === 'global')?.value ?? null;
   const list = all
@@ -229,6 +246,9 @@ function missions() {
       place:  shortPlace(getCachedGeocode(Number(f.entity))),
       km:     f.value.km,
       bearing: f.value.bearing ?? null,
+      since:   sinceStr(heard.has(Number(f.entity)) ? nowM - heard.get(Number(f.entity)) : null),
+      since_sec: heard.has(Number(f.entity)) ? nowM - heard.get(Number(f.entity)) : null,
+      obs_target: targeted.has(Number(f.entity)),
       step_km: f.value.step_km ?? null,
       cls:    f.value.cls,
       reason: f.value.reason,
@@ -338,6 +358,34 @@ function meshLinks() {
   ];
 
   return { total: all.length, links, marks, nodes, legend };
+}
+
+/** BEARING and SINCE — the two columns every table was missing.
+ *
+ *  Peter, 2026-08-02: "something missing from every table is 1: bearing,
+ *  2: since." Both are display values, so both are computed here rather than in
+ *  the browser (BROWSER_CONTRACT), and `since` ships as the STRING the column
+ *  shows plus the raw seconds the page needs to tint it.
+ *
+ *  Short by design — "6h", "3d" — because the column has to fit the data, not
+ *  the other way round. */
+function sinceStr(sec) {
+  if (sec == null || !Number.isFinite(sec)) return '—';
+  const h = sec / 3600;
+  if (h < 1)  return `${Math.max(1, Math.round(sec / 60))}m`;
+  if (h < 48) return `${Math.round(h)}h`;
+  return `${Math.round(h / 24)}d`;
+}
+
+/** Bearing FROM us, degrees. Duplicated from the catalogue for the same reason
+ *  haversine is: this layer must not import domain calculations. */
+function bearingFromHome(lat, lon) {
+  if (lat == null || lon == null || HOME.lat == null || HOME.lon == null) return null;
+  const r = Math.PI / 180;
+  const y = Math.sin((lon - HOME.lon) * r) * Math.cos(lat * r);
+  const x = Math.cos(HOME.lat * r) * Math.sin(lat * r)
+          - Math.sin(HOME.lat * r) * Math.cos(lat * r) * Math.cos((lon - HOME.lon) * r);
+  return Math.round((Math.atan2(y, x) / r + 360) % 360);
 }
 
 /** Great-circle km. Duplicated from the catalogue on purpose: this file must not
