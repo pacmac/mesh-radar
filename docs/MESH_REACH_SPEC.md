@@ -232,6 +232,11 @@ outcomes).
 Nothing is ever updated in place. A later reply is a new row referencing the
 attempt, not a mutation of it.
 
+**Where this lives is settled in §7f: this is the `observations` store**, fixed
+columns and append-only. It is not a mesh-specific table — an attempt, a
+reception and a decision are all observations, and the engine that holds them
+knows nothing about what any of them mean.
+
 ### What we record today — audited, not assumed
 
 Peter, 2026-08-01: *"the target increases, a fairly simple loop, but what is
@@ -293,6 +298,10 @@ Peter described. Without it, an observer can only watch results scroll past.
 **Requirement: every attempt row carries the decision that produced it — the
 candidates considered, the exclusions applied and why, the scores, and the
 winner's margin.**
+
+A decision is itself an observation (§7f), not a special case: append-only,
+immutable, and readable by any later inference that wants to ask why the
+scheduler behaved as it did.
 
 ## 6a. The unit of work is a MISSION, not a target
 
@@ -595,9 +604,12 @@ neighbours it can be *estimated*.
 constant — the same mesh shows 3 km links and 300 km links — so one neighbour
 constrains almost nothing and the estimate only tightens with several. Therefore:
 
-- An estimated position is stored in **its own field**, never written into the
-  position a node reported for itself.
-- It carries its **error region** and the neighbour count it was derived from.
+- An estimated position is **an inferred fact** (§7f) — it lives in the facts
+  bag, never written into the position a node reported for itself. Reported
+  position is a fixed column; inferred position is a bag key. The separation is
+  structural, not a matter of care.
+- It carries its **error region** and the neighbour count it was derived from —
+  as provenance, which §7f makes mandatory rather than optional.
 - **It never enters the km headline** (§1a). A record must rest on a position the
   node claimed, not one we inferred — otherwise the frontier becomes a function
   of our own arithmetic.
@@ -611,6 +623,108 @@ one is, which are load-bearing, and which clusters are joined by a single hop.
 
 Nobody had to be asked for any of it, and it accumulates on its own every time a
 traceroute completes.
+
+## 7f. The engine — observations, facts, inferences (a dedicated module)
+
+Peter, 2026-08-02: *"we need to know everything about a node, including things it
+does not tell us but we infer… as we uncover new pieces of valuable data, each
+one would mean a schema change which is messy"*, *"we will continue to discover
+new ones that need their own code to calculate… some kind of hooks design, so we
+can add new functions to it rather than scattering them all over the code"*, and
+*"this needs to be a dedicated new nodejs module… I dont want this code scattered
+all over core, it has a distinct function / role."*
+
+**Provisional name: `observatory`.** Not settled.
+
+### The boundary — first, because it is the part that gets broken
+
+**The module must not know what a node, a bearing, a packet or a mesh is.** It is
+a generic engine over entities, observations and facts. Every piece of domain
+knowledge lives in the inference modules node-dash registers with it. Get this
+wrong and there are two places where mesh logic lives, and they will disagree.
+
+The payoff for that discipline is that it is testable without a radio: feed it
+synthetic observations, assert the facts that fall out.
+
+Enforced, not merely stated — **this repo has broken exactly this rule before**:
+
+1. **One import, in the composition root.** `index.js` wires it; nothing else in
+   `src/` names it.
+2. **One-way dependency: core emits, the engine consumes.** Core never imports an
+   inference, never queries the engine mid-flow, never branches on its presence.
+   If core needs to *ask* it something, the boundary has already leaked.
+3. **A test that fails on violation** — assert the reference count in core is one.
+   `check_specs` cannot catch this; only a test can. Precedent: task
+   `ws-relay-plugin-boundary` Phase 6 exists because the rule was stated and
+   broken, and `PLUGIN_BOUNDARY_SPEC.md` exists because it was broken again.
+   Verified 2026-08-02: ws-relay's couplings *are* now gone (one comment
+   remains), but `index.js` still carries six alarm references while
+   `docs/modules/index.md` claims there are three — B48, open. The rule holds
+   only where something checks it.
+
+### Three stores, split by shape rather than by certainty
+
+| store | shape | why |
+|---|---|---|
+| **observations** | append-only, immutable, **fixed columns** | high volume, every row identical in shape. A key/value bag here would be millions of rows of the string `"rssi"`. |
+| **facts** | per entity: fixed columns for what the device states, plus a **growable key/value bag** for what we infer | the inferred set is open-ended and unknown in advance — exactly where a fixed schema is wrong |
+| **inferences** | a registry of pure functions | new derivations arrive as modules, not as edits scattered through core |
+
+Fixed columns hold what the device tells us. The bag holds what we work out.
+
+### Rules that make it survive
+
+- **Provenance is a column, not a convention.** Every inferred value carries what
+  produced it, when, from how much evidence, and how wrong it might be. Without
+  that, an inference is indistinguishable from a fact — which is exactly how an
+  estimated position would come to set a distance record (§1a, §7e).
+- **Append, never overwrite.** Store observations of a fact and *derive* the
+  current best. A bag you `UPDATE` destroys the history that made it credible.
+- **`null` is a real answer.** "Not enough evidence yet" is first-class, never a
+  zero and never an exception.
+- **The bag is a nursery, not a home.** SQLite's `json_extract` plus a generated
+  column promotes a hot key to a real indexed column with no data migration — so
+  anything that proves stable graduates. Guard that migration with
+  `PRAGMA table_xinfo`, **not** `table_info`, which omits generated columns and
+  once took node-dash down in a boot loop.
+- **Declare the keys somewhere**, however loosely, or `az`, `azimuth` and
+  `bearing` will mean the same thing within a month.
+
+### Why the hooks design pays off
+
+Because observations are immutable atoms, **every inference is a pure function
+over them, and therefore retroactive.** Write the bearing estimator in October and
+it computes over July's data. Get it wrong, fix it, recompute — nothing stored is
+authoritative except the raw observations. That is the return on §5's "store
+atoms, not tables", and it is what makes a registry worth building rather than
+merely tidy.
+
+Each inference declares: the key it produces, what it feeds on, when it runs, and
+a pure function `evidence → {value, confidence, evidence_count} | null`.
+Provenance is stamped by the runner, never by the author.
+
+Three things that bite if not designed in: **inferences consuming other
+inferences** (declared dependencies, topological order, hard refusal on cycles);
+**cost** (each hook declares incremental or batch — recomputing everything per
+packet does not scale); and **`null` as a first-class result**.
+
+### Open decisions
+
+1. **Who owns the database** — node-dash's SQLite with the engine as a library,
+   or its own store. Library is simpler; a second database is a second thing to
+   back up and reconcile.
+2. **The name.**
+3. **Whether it becomes a sibling repo**, as `radar-scope` did. If so this section
+   is its seed and moves out wholesale. Noted against a real risk:
+   `MESSAGING_SERVICE_SPEC.md` was specced as task 750 in July and **still does
+   not exist** — which is why this is a section here rather than a fourth
+   standalone document.
+
+**First consumer:** the bearing capture (task
+`record-antenna-bearing-on-reception`). Phase 1 there found that
+`signal_history` records only *direct* packets — 17 nodes in 7 days — so it
+cannot host the bearing for the distant, relayed nodes that need locating. The
+observations store is the right home, and that task waits on this one.
 
 ## 8. The budget is enforced in code, not configuration
 
@@ -680,18 +794,25 @@ domain split — model and scoring are Domain 1, rendering is Domain 2, never bo
 in one task.
 
 1. **Settle §9.** No code until it is answered.
-2. **The reach model (Domain 1).** Event store per §5, decision fields per §6,
-   backfilled from the 21,793 traceroute rows we already have — that backfill
-   alone yields a first reach map with zero new transmissions.
-3. **The budget and kill switch (Domain 1).** Before the scheduler, not after.
+2. **The engine (§7f).** Observations, facts and the inference registry, as a
+   dedicated module with its boundary test. Everything below stores into it, so
+   it comes first — retrofitting a store under three consumers is how the
+   scattering this was meant to prevent happens anyway.
+3. **The reach model (Domain 1).** Attempts as observations per §5, decision
+   fields per §6, backfilled from the 21,793 traceroute rows we already have —
+   that backfill alone yields a first reach map with zero new transmissions.
+4. **The relay graph (Domain 1).** Doors, clusters behind them, fragility, and
+   the link set of §7e — derived from the 3,334 routes already stored, so it can
+   be built and be correct before any new attempt is made.
+5. **Geocode backfill (Domain 1, no airtime).** 194 of 596 positioned nodes are
+   named; the module and its rate limit already exist. Turns coordinates into
+   places for every mission dossier.
+6. **The budget and kill switch (Domain 1).** Before the scheduler, not after.
    It is easier to prove a ceiling holds when nothing is yet trying to breach it.
-4. **The scheduler (Domain 1).** Scoring per §7, decision log mandatory.
-5. **The callout instrument (Domain 1).** Wording variation, cooldowns, one in
+7. **The scheduler (Domain 1).** Scoring per §7, decision log mandatory.
+8. **The callout instrument (Domain 1).** Wording variation, cooldowns, one in
    flight.
-6. **The relay graph (Domain 1).** Doors, clusters behind them, fragility —
-   derived from the 3,334 routes already stored, so it can be built and be
-   correct before any new attempt is made.
-7. **Mission Control (Domain 2).** The board. Two columns: radar and map on one
+9. **Mission Control (Domain 2).** The board. Two columns: radar and map on one
    side (§7d), missions, doors and the attempt log on the other. Reach vs
    hearing, per §4's honesty rules. Nothing computed in the browser.
 
@@ -708,13 +829,10 @@ in one task.
    That freeze is the entire value. An untouched original is what lets the
    shipped page be diffed against the agreed design; a reference that gets edited
    alongside the code has stopped being a reference.
-8. **Geocode backfill (Domain 1, no airtime).** 194 of 596 positioned nodes are
-   named; the module and its rate limit already exist. Turns coordinates into
-   places for every mission dossier.
 
-Phases 2 and 6 both run entirely on existing history and transmit nothing. They
+Phases 3, 4 and 5 run entirely on existing history and transmit nothing. They
 are where the first real answers come from, and they are the right place to start
-once §9 is settled.
+once §9 is settled and the engine exists.
 
 ## 12. What is not established
 
