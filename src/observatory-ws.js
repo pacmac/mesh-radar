@@ -15,6 +15,11 @@
 import { events, recentObservations, facts, runInference } from './observatory.js';
 import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
 import { resolveNodeLabel } from './node-label.js';
+import { getConfig } from './db.js';
+
+// Read once: the map marks where we are, and the reach model already computes
+// every distance from it. A page load must not re-read config.
+const HOME = { lat: getConfig('home.lat'), lon: getConfig('home.lon') };
 
 // How much history a freshly-connected page starts with. On a quiet channel a
 // page that waits for the next packet looks broken for minutes, so it opens with
@@ -60,6 +65,7 @@ registerConnectReplay(() => {
       },
       { type: 'relay_usage', relays: relayUsage() },
       { type: 'reach_model', reach: reachModel() },
+      { type: 'mesh_links', links: meshLinks() },
     ];
   } catch (e) {
     console.error(`[observatory-ws] replay failed: ${e.message}`);
@@ -129,6 +135,8 @@ function reachModel() {
 
   return {
     plot,
+    home_lat: HOME.lat,
+    home_lon: HOME.lon,
     record_km:    ladder?.record_km ?? null,
     record_at:    ladder?.record_at ?? null,
     rungs:        (ladder?.rungs ?? []).map(r => ({
@@ -144,6 +152,22 @@ function reachModel() {
   };
 }
 
+/** Observed links with both endpoints placed — the mesh map's geometry.
+ *
+ *  Capped and ordered by traffic so the heaviest corridors survive the cut: a
+ *  map that silently drops its busiest link would be worse than one that admits
+ *  it is showing the top N. */
+function meshLinks() {
+  const all = facts('link.observed').map(f => f.value).filter(Boolean);
+  return {
+    total: all.length,
+    links: all.sort((a, b) => b.count - a.count).slice(0, 400).map(l => ({
+      a: l.a, b: l.b, a_lat: l.a_lat, a_lon: l.a_lon, b_lat: l.b_lat, b_lon: l.b_lon,
+      km: l.km, count: l.count,
+    })),
+  };
+}
+
 // RECOMPUTED ON BOOT, then on a slow timer. `relay.usage` is a batch inference
 // over all history — cheap at this size (12,268 evidence rows, ~40 ms) but not
 // something to run per packet, and the answer moves slowly: a new relay appears
@@ -153,12 +177,13 @@ function reachModel() {
 // wrapped so a failure degrades the doors panel rather than the process.
 function recompute(broadcast) {
   try {
-    for (const key of ['relay.usage', 'reach.target', 'reach.ladder']) {
+    for (const key of ['relay.usage', 'reach.target', 'reach.ladder', 'link.observed']) {
       const r = runInference(key);
       console.log(`[observatory] ${r.key}: ${r.facts} facts from ${r.rows} evidence rows`);
     }
     broadcast?.({ type: 'relay_usage', relays: relayUsage() });
     broadcast?.({ type: 'reach_model', reach: reachModel() });
+    broadcast?.({ type: 'mesh_links', links: meshLinks() });
   } catch (e) {
     console.error(`[observatory] relay.usage failed: ${e.message}`);
   }

@@ -232,16 +232,24 @@
   <!-- ══════════════════ MAP — full page ═════════════════════════════════════ -->
   <div x-show="obsTab==='map'" class="flex-1 min-h-0 flex flex-col gap-2">
     <div class="flex items-baseline gap-3 flex-wrap shrink-0">
-      <span class="text-xs text-base-content/50">the mesh's own ground — nodes, links and the corridors between them</span>
+      <span class="text-xs text-base-content/50">the mesh's own ground — every hop we have witnessed</span>
+      <span class="ml-auto text-xs font-mono text-base-content/50" x-show="meshLinks"
+            x-text="(meshLinks?.total || 0) + ' links, both ends placed'"></span>
     </div>
-    <div class="rounded border border-dashed border-base-300 bg-base-200/40 flex-1 min-h-0 flex items-center justify-center">
-      <div class="text-center">
-        <p class="text-sm text-base-content/60">Awaiting link geometry.</p>
-        <p class="text-xs text-base-content/40 mt-1">
-          The relay graph knows which links exist; drawing them needs each link's two endpoints.
-        </p>
+    <template x-if="!meshLinks?.links?.length">
+      <div class="rounded border border-dashed border-base-300 bg-base-200/40 flex-1 min-h-0 flex items-center justify-center">
+        <div class="text-center">
+          <p class="text-sm text-base-content/60">Computing link geometry.</p>
+        </div>
       </div>
-    </div>
+    </template>
+    <template x-if="meshLinks?.links?.length">
+      <div class="card bg-base-100 shadow flex-1 min-h-0 overflow-hidden">
+        <div class="h-full p-2">
+          <svg viewBox="0 0 1000 700" class="w-full h-full" x-html="obsMapSvg()"></svg>
+        </div>
+      </div>
+    </template>
   </div>
 
   <!-- ══════════════════ RECEPTIONS — debug sub-page ═════════════════════════ -->

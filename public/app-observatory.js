@@ -49,6 +49,10 @@ export const observatoryMixin = {
 
   applyReachModel(ev) { this.reach = ev.reach || null; },
 
+  /** Observed links, both endpoints placed. Server-computed geometry. */
+  meshLinks: null,
+  applyMeshLinks(ev) { this.meshLinks = ev.links || null; },
+
   /** The radar, built as an SVG string.
    *
    *  NOT `<template x-for>` INSIDE `<svg>`, AND THIS IS NOT A STYLE CHOICE.
@@ -134,6 +138,56 @@ export const observatoryMixin = {
   obsRadarMax() {
     const rec = this.reach?.record_km || 0;
     return rec ? Math.ceil(rec / 50) * 50 : 0;
+  },
+
+  /** The mesh map, built as an SVG string — same reason as the radar.
+   *
+   *  EQUIRECTANGULAR, with longitude flattened by cos(latitude). Crude as
+   *  projections go, and correct enough at this scale: over ~4° of latitude the
+   *  distortion is far smaller than the position error in the underlying
+   *  self-reported coordinates (§12). A real projection would be false
+   *  precision on top of fuzzy input.
+   *
+   *  Links are drawn UNDER nodes, weighted by how much traffic each carried, so
+   *  the corridors read as corridors rather than as a wire ball. */
+  obsMapSvg() {
+    const L = this.meshLinks?.links || [];
+    if (!L.length) return '';
+    const C_LINK   = 'oklch(var(--s))';
+    const C_NODE   = 'oklch(var(--p))';
+    const C_HOME   = 'oklch(var(--bc))';
+    const W = 1000, H = 700, PAD = 40;
+
+    const pts = [];
+    for (const l of L) { pts.push([l.a_lat, l.a_lon], [l.b_lat, l.b_lon]); }
+    const lats = pts.map(p => p[0]), lons = pts.map(p => p[1]);
+    const la0 = Math.min(...lats), la1 = Math.max(...lats);
+    const lo0 = Math.min(...lons), lo1 = Math.max(...lons);
+    const k = Math.cos(((la0 + la1) / 2) * Math.PI / 180);   // flatten longitude
+    const spanX = Math.max(1e-6, (lo1 - lo0) * k), spanY = Math.max(1e-6, la1 - la0);
+    const s = Math.min((W - PAD * 2) / spanX, (H - PAD * 2) / spanY);
+    const X = lon => PAD + (lon - lo0) * k * s + ((W - PAD * 2) - spanX * s) / 2;
+    const Y = lat => H - PAD - (lat - la0) * s - ((H - PAD * 2) - spanY * s) / 2;
+
+    const maxC = Math.max(...L.map(l => l.count));
+    const p = [];
+    for (const l of L) {
+      const f = Math.log1p(l.count) / Math.log1p(maxC);
+      p.push(`<line x1="${X(l.a_lon).toFixed(1)}" y1="${Y(l.a_lat).toFixed(1)}" x2="${X(l.b_lon).toFixed(1)}" y2="${Y(l.b_lat).toFixed(1)}" stroke="${C_LINK}" stroke-width="${(0.6 + f * 3).toFixed(2)}" opacity="${(0.18 + f * 0.55).toFixed(2)}"><title>${l.km} km, seen ${l.count}x</title></line>`);
+    }
+    const seen = new Set();
+    for (const l of L) {
+      for (const [n, lat, lon] of [[l.a, l.a_lat, l.a_lon], [l.b, l.b_lat, l.b_lon]]) {
+        if (seen.has(n)) continue;
+        seen.add(n);
+        p.push(`<circle cx="${X(lon).toFixed(1)}" cy="${Y(lat).toFixed(1)}" r="4" fill="${C_NODE}" opacity="0.8"/>`);
+      }
+    }
+    const hl = this.reach?.home_lat, hn = this.reach?.home_lon;
+    if (hl != null && hn != null) {
+      p.push(`<circle cx="${X(hn).toFixed(1)}" cy="${Y(hl).toFixed(1)}" r="8" fill="${C_HOME}"/>`);
+    }
+    return p.join('');
   },
 
   /** Ladder rungs are dated, not aged — same absolute-time rule as obsTime(). */

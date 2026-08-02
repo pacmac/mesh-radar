@@ -269,3 +269,112 @@ registerInference({
     }];
   },
 });
+
+// ─── link.observed ──────────────────────────────────────────────────────────
+//
+// EVERY NODE-TO-NODE HOP WE HAVE EVER WITNESSED, with both endpoints placed.
+// MESH_REACH_SPEC §7e — Peter: "when we have found a node that is relaying, we
+// can see which node was relayed to it and therefore it's location… to stretch
+// the 'spiderweb' overlay on a map… we will end up with the data for a mesh
+// map."
+//
+// A route is a CHAIN OF EDGES, not a pair of endpoints, and we have been storing
+// them since June without reading them that way: `us -> T4 -> fir -> TE 5 ->
+// L5-3 -> Ives` is five observed links.
+//
+// BOTH DIRECTIONS, because the way home is not the way out — 23 relays appear
+// only on return paths.
+//
+// The chain is assembled in run() rather than by a self-join on hop index. The
+// SQL for that is a CTE joined to itself on idx+1 per route, which is harder to
+// read and no faster at this size — and the terminators (us at one end, the
+// target at the other) have to be spliced on in code anyway.
+registerInference({
+  key:  'link.observed',
+  deps: [],
+  mode: 'batch',
+  evidence: `
+    SELECT o.id                              AS route,
+           CAST(o.entity AS INTEGER)         AS target,
+           tn.lat                            AS target_lat,
+           tn.lon                            AS target_lon,
+           j.key                             AS idx,
+           CAST(j.value AS INTEGER)          AS node,
+           hn.lat                            AS lat,
+           hn.lon                            AS lon,
+           0                                 AS reversed,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat') AS home_lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon
+    FROM obs_v_traceroute o
+    LEFT JOIN nodes tn ON tn.num = CAST(o.entity AS INTEGER)
+    , json_each(o.data ->> '$.route') j
+    LEFT JOIN nodes hn ON hn.num = CAST(j.value AS INTEGER)
+    WHERE o.data ->> '$.status' = 'ok' AND j.value <> 4294967295
+    UNION ALL
+    SELECT o.id, CAST(o.entity AS INTEGER), tn.lat, tn.lon,
+           j.key, CAST(j.value AS INTEGER), hn.lat, hn.lon, 1,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat'),
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon')
+    FROM obs_v_traceroute o
+    LEFT JOIN nodes tn ON tn.num = CAST(o.entity AS INTEGER)
+    , json_each(o.data ->> '$.route_back') j
+    LEFT JOIN nodes hn ON hn.num = CAST(j.value AS INTEGER)
+    WHERE o.data ->> '$.status' = 'ok' AND j.value <> 4294967295
+    ORDER BY route, reversed, idx
+  `,
+  /** Pure. Chains in, links out.
+   *
+   *  Each link is keyed on its sorted node pair, so A->B and B->A are ONE link
+   *  observed twice rather than two links. Direction is a property of a
+   *  traversal, not of a radio path.
+   *
+   *  A link is emitted only when BOTH ends are placed — an unplaceable endpoint
+   *  cannot be drawn, and inventing a position for it is exactly the laundering
+   *  §12 warns about. Links with a missing end are counted and reported so the
+   *  omission is visible rather than silent. */
+  run(rows) {
+    const US = 646426545;   // our OMNI; the chain's near terminator
+    const chains = new Map();
+    for (const r of rows) {
+      const key = `${r.route}:${r.reversed}`;
+      let c = chains.get(key);
+      if (!c) chains.set(key, c = { target: r.target, target_lat: r.target_lat,
+                                    target_lon: r.target_lon, reversed: r.reversed,
+                                    home_lat: r.home_lat, home_lon: r.home_lon, hops: [] });
+      c.hops.push({ node: r.node, lat: r.lat, lon: r.lon });
+    }
+
+    const links = new Map();
+    let unplaceable = 0;
+    for (const c of chains.values()) {
+      const us     = { node: US, lat: c.home_lat, lon: c.home_lon };
+      const target = { node: c.target, lat: c.target_lat, lon: c.target_lon };
+      // Outbound runs us -> hops -> target; the return leg runs the other way.
+      const chain = c.reversed ? [target, ...c.hops, us] : [us, ...c.hops, target];
+      for (let i = 0; i < chain.length - 1; i++) {
+        const a = chain[i], b = chain[i + 1];
+        if (a.node === b.node) continue;
+        if (a.lat == null || a.lon == null || b.lat == null || b.lon == null) { unplaceable++; continue; }
+        const [lo, hi] = a.node < b.node ? [a, b] : [b, a];
+        const id = `${lo.node}-${hi.node}`;
+        const e = links.get(id);
+        if (e) { e.count++; continue; }
+        links.set(id, {
+          count: 1,
+          a: lo.node, b: hi.node,
+          a_lat: lo.lat, a_lon: lo.lon,
+          b_lat: hi.lat, b_lon: hi.lon,
+          km: Math.round(greatCircleKm(lo.lat, lo.lon, hi.lat, hi.lon) * 10) / 10,
+        });
+      }
+    }
+    if (!links.size) return null;
+    void unplaceable;
+    return [...links].map(([id, v]) => ({
+      entity: id,
+      value: v,
+      confidence: null,
+      evidence_count: v.count,
+    }));
+  },
+});
