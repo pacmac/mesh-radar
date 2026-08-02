@@ -16,7 +16,17 @@ Peter, 2026-08-02: *"the hooks should be a seperate file, so it's easy to see ou
 calculated functions in 1 place, the file will grow as we think of new things to
 get / extract. so each will be a small func that does one thing."*
 
-**Empty today, deliberately** — see Scope.
+**Four inferences today**, all batch, all recomputed on boot and every 15 minutes:
+
+| key | produces |
+|---|---|
+| `relay.usage` | the doors — traffic carried and targets behind each relay |
+| `reach.target` | per target: km, bearing, attempts, hits, verified |
+| `reach.ladder` | one global fact: every moment the frontier moved |
+| `link.observed` | every witnessed node-to-node hop, both ends placed |
+
+All four read `obs_v_traceroute` — a view over `traceroute_history`, so they run
+over five weeks of history that already existed and spend no airtime.
 
 ## The split from the engine
 
@@ -61,7 +71,22 @@ So the test asserts it directly:
 If an inference needs more evidence, it **declares** it and the runner fetches
 it.
 
-## Scope of this task (`observatory-inference-catalogue-boundary`)
+## Evidence is declared, not fetched
+
+The design problem this layer exists to solve. An inference cannot query without
+destroying its purity — and with it the ability to recompute over history. The
+engine cannot query on its behalf without learning what a route is.
+
+So an inference **declares** its evidence as SQL, the engine executes it
+understanding nothing (exactly as a driver does), and `run(rows)` stays a pure
+function of what came back. The SQL is domain knowledge and lives here, with the
+inference that owns it.
+
+`json_each` earns its keep: it expands the route array inside a JSON payload
+inside a view over a table nobody migrated, turning stored traceroutes into a
+graph in SQL with no parsing in JavaScript.
+
+## Scope of the founding task (`observatory-inference-catalogue-boundary`)
 
 Created **empty**, with the boundary test corrected first.
 
@@ -95,8 +120,11 @@ planting a violation and confirming the failure, then restoring:
 
 ## Out of scope
 
-- Any actual inference. The first is expected to be the antenna-bearing estimate
-  (task `record-antenna-bearing-on-reception`). Note its capture half is **not**
-  an inference — recording where the antenna pointed is an *observation*. Only
-  the estimate derived from many such observations belongs here.
-- The runner. It arrives with the first inference that needs it.
+- **The antenna-bearing estimator.** Its capture half is not an inference —
+  recording where the antenna pointed is an *observation* — and the estimate
+  itself is **blocked on data, not on code**: measured 2026-08-02, 305 recorded
+  bearings span **two distinct azimuths, 119° and 120°**, because the rotator has
+  not moved. An estimator over that would place every unplaced node at 119°, a
+  confident wrong answer. It needs the antenna to sweep first.
+- Anything that transmits. `MESH_REACH_SPEC` §9 is unanswered, and none of the
+  four inferences here sends anything.
