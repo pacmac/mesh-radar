@@ -42,17 +42,24 @@
 //
 // ─── THE CATALOGUE ──────────────────────────────────────────────────────────
 //
-// EMPTY, DELIBERATELY. Created by task
-// `observatory-inference-catalogue-boundary` so the boundary is correct BEFORE
-// there is an inference pressing on it. Widening a boundary test to admit code
-// that already exists is how boundaries die; widening it first, with nothing
-// waiting, makes it a decision instead of a consequence.
+//   relay.usage     the doors — traffic carried, targets behind, furthest reach
+//   reach.target    per target: km, bearing, attempts, hits, verified
+//   reach.ladder    one global fact: every moment the frontier moved
+//   link.observed   every witnessed node-to-node hop, both ends placed
 //
-// The first entry is expected to be the antenna-bearing work (task
-// `record-antenna-bearing-on-reception`, MESH_REACH_SPEC §7c/§7e). Note that its
-// capture half is NOT an inference — recording where the antenna pointed is an
-// observation. Only the estimate derived from many such observations belongs
-// here.
+// All four are BATCH and read obs_v_traceroute — a view over traceroute_history
+// — so they run over five weeks of history that already existed and spend no
+// airtime at all.
+//
+// This file was created EMPTY by task `observatory-inference-catalogue-boundary`
+// so the boundary test was correct BEFORE anything pressed on it. Widening a
+// boundary test to admit code that already exists is how boundaries die.
+//
+// STILL MISSING: the antenna-bearing estimator. Its capture half is not an
+// inference — recording where the antenna pointed is an observation — and the
+// estimate is blocked on DATA, not code: 305 recorded bearings span two distinct
+// azimuths because the rotator has not moved (B54). An estimator over that would
+// confidently place every unplaced node at 119°.
 import { registerInference } from './observatory.js';
 
 // ─── relay.usage ────────────────────────────────────────────────────────────
@@ -87,14 +94,20 @@ registerInference({
   deps: [],
   mode: 'batch',   // recomputed from all history; cheap enough at this size
   evidence: `
-    SELECT j.value                    AS relay,
-           o.entity                   AS target,
-           1                          AS uses
-    FROM obs_v_traceroute o, json_each(o.data ->> '$.route') j
+    SELECT j.value AS relay, o.entity AS target, n.lat AS lat, n.lon AS lon,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat') AS home_lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon
+    FROM obs_v_traceroute o
+    LEFT JOIN nodes n ON n.num = CAST(o.entity AS INTEGER)
+    , json_each(o.data ->> '$.route') j
     WHERE o.data ->> '$.status' = 'ok' AND j.value <> 4294967295
     UNION ALL
-    SELECT j.value, o.entity, 1
-    FROM obs_v_traceroute o, json_each(o.data ->> '$.route_back') j
+    SELECT j.value, o.entity, n.lat, n.lon,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat'),
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon')
+    FROM obs_v_traceroute o
+    LEFT JOIN nodes n ON n.num = CAST(o.entity AS INTEGER)
+    , json_each(o.data ->> '$.route_back') j
     WHERE o.data ->> '$.status' = 'ok' AND j.value <> 4294967295
   `,
   /** Pure: rows in, facts out. No database, no clock, no randomness.
@@ -108,13 +121,26 @@ registerInference({
     for (const r of rows) {
       const relay = String(r.relay);
       let e = byRelay.get(relay);
-      if (!e) byRelay.set(relay, e = { uses: 0, targets: new Set() });
+      if (!e) byRelay.set(relay, e = { uses: 0, targets: new Set(), furthest: null });
       e.uses += 1;
       if (r.target != null) e.targets.add(String(r.target));
+      // FURTHEST TARGET BEHIND THIS DOOR — the reason a relay matters, as
+      // opposed to how busy it is. A relay carrying a lot of local chatter and
+      // one holding open the Cornwall corridor look identical in `uses`.
+      // Suspect distances (>200 km, §12) are excluded here too, so a bad
+      // self-reported position cannot make a door look more important than it is.
+      if (r.lat != null && r.lon != null && r.home_lat != null && r.home_lon != null) {
+        const km = greatCircleKm(r.home_lat, r.home_lon, r.lat, r.lon);
+        if (km <= 200 && (e.furthest == null || km > e.furthest)) e.furthest = km;
+      }
     }
     return [...byRelay].map(([entity, e]) => ({
       entity,
-      value: { uses: e.uses, targets: e.targets.size },
+      value: {
+        uses: e.uses,
+        targets: e.targets.size,
+        furthest_km: e.furthest == null ? null : Math.round(e.furthest * 10) / 10,
+      },
       // No confidence offered: this is a count of what was observed, not an
       // estimate. A made-up 1.0 would imply a judgement nothing here made.
       confidence: null,

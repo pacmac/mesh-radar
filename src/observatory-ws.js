@@ -107,6 +107,7 @@ function relayUsage() {
       place:    shortPlace(getCachedGeocode(Number(f.entity))),
       uses:     f.value?.uses ?? 0,
       targets:  f.value?.targets ?? 0,
+      furthest_km: f.value?.furthest_km ?? null,
       at:       f.ts,
       evidence: f.evidence_count,
     }))

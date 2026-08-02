@@ -142,6 +142,7 @@
                     <th>Relay</th>
                     <th>Where</th>
                     <th class="text-right pr-4">Behind</th>
+                    <th class="text-right pr-4">Furthest</th>
                     <th class="text-right pr-4">Carried</th>
                     <th class="w-24">Share</th>
                   </tr>
@@ -152,6 +153,8 @@
                       <td class="text-secondary" x-text="r.label"></td>
                       <td class="text-base-content/50 truncate max-w-[12rem]" x-text="r.place || ''"></td>
                       <td class="text-right pr-4" x-text="r.targets"></td>
+                      <td class="text-right pr-4" :class="r.furthest_km > 150 ? 'text-primary font-semibold' : 'text-base-content/60'"
+                          x-text="r.furthest_km ? r.furthest_km + ' km' : '—'"></td>
                       <td class="text-right pr-4 text-base-content/60" x-text="r.uses"></td>
                       <td>
                         <div class="h-1 bg-secondary rounded" :style="'width:' + obsRelayShare(r.uses) + '%'"></div>
