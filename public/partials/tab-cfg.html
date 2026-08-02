@@ -487,6 +487,23 @@
                       <div class="label py-0"><span class="label-text-alt text-xs opacity-40">A node heard today answers ~16-26% of the time; one silent over a week, 1.8%.</span></div>
                     </label>
                     <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">Proven ground needs</span><span class="label-text-alt text-xs opacity-50">hits</span></div>
+                      <input type="number" min="1" max="50" step="1" class="input input-bordered input-sm w-full font-mono"
+                             x-model.number="discoveryCfg.proven_min_hits">
+                      <div class="label py-0"><span class="label-text-alt text-xs opacity-40">"Answered once" let a 1-in-63 fluke anchor the window 90 km past anything reliable.</span></div>
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">…and an answer rate of</span><span class="label-text-alt text-xs opacity-50">%</span></div>
+                      <input type="number" min="0" max="100" step="5" class="input input-bordered input-sm w-full font-mono"
+                             x-model.number="discoveryCfg.proven_min_rate">
+                    </label>
+                    <label class="form-control w-full">
+                      <div class="label py-1"><span class="label-text text-xs">New nodes stay eligible for</span><span class="label-text-alt text-xs opacity-50">hours</span></div>
+                      <input type="number" min="0" max="720" step="12" class="input input-bordered input-sm w-full font-mono"
+                             x-model.number="discoveryCfg.new_node_hours">
+                      <div class="label py-0"><span class="label-text-alt text-xs opacity-40">~7 discovered a day. A probation window, not a priority spike. 0 disables.</span></div>
+                    </label>
+                    <label class="form-control w-full">
                       <div class="label py-1"><span class="label-text text-xs">Hold the beam after aiming</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
                       <input type="number" min="0" max="120" step="5" class="input input-bordered input-sm w-full font-mono"
                              x-model.number="discoveryCfg.hold_sec">

@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: 9fc863a7105fb0fd0503fb1975b6bc6c2b42e961f59f467414ec1143e70191a2
+source_hash: 58adcb03c8f9724080cf4089d6c4c3221c0786cb2f4d7f83f4c9f44ac111a3bc
 updated: 2026-08-02
 ---
 
@@ -252,6 +252,44 @@ A pinned or starred target bypasses the cutoff, as it bypasses the window and th
 ceiling — an explicit choice still outranks an automatic exclusion.
 
 Result: **11 of 11** shortlist entries heard within 24 h, against 4 of 14 before.
+
+### Focus = distance + last heard + first heard
+
+Peter, 2026-08-02: *"so our window focus should be based on distance and
+last/first heard."*
+
+**Distance — proven ground means RELIABLY reached, not reached once.** The anchor
+admitted any node that had ever answered, and the furthest was the 189.1 km
+record holder at **1 hit in 63 = 1.6%**. So the window measured from 189 km and
+admitted candidates to 214 km — a band answering 0.0–1.3% across 2,088 attempts.
+One lucky packet on 4 July was dragging the whole search 90 km past anything real.
+
+| anchor | nodes | furthest |
+|---|---|---|
+| ever answered once | 84 | 189.1 km |
+| `proven_min_hits` 3 **and** `proven_min_rate` 10% | 31 | **95.2 km** |
+
+95.2 km is exactly where the distance chart puts the wall.
+
+**The record is unchanged.** `reach.ladder` still reports 189.1 km — *furthest we
+have reached* and *furthest we can rely on* are different claims and both are
+true. Only the search anchor moved.
+
+**Last heard** — the liveness tiers and `max_silence_days` above.
+
+**First heard** — a `new` class for nodes discovered within `new_node_hours`
+(default 48), so a genuinely new node gets one aimed six-shot run instead of the
+single passive trace it gets today. ~6.9 are discovered a day and only 1 of 11
+shortlist entries had been found in the previous week.
+
+**Probation, not a priority spike.** Measured: a first traceroute within an hour
+of discovery answers **5.9%**, against **40.9%** for nodes traced days later —
+new nodes are usually new because their NODEINFO arrived relayed from the edge.
+Ranking them top would move the budget out of a 16–26% pool and into a 5.9% one.
+
+Effect, same data, only the anchor changed: shortlist went from 191–208 km and
+silent for days, to **22–67 km, heard 5 minutes to 35 hours ago**, with 194
+candidates excluded as beyond window.
 
 ### Classes
 

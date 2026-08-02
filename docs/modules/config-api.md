@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: c4250fa898efaea5f75c393e783e8100759c544fee64d76525998c279171a6c0
+source_hash: 179e029442fd4916d68abea181d0def06e0bf1f51afda12b456e37193ab15d8d
 updated: 2026-07-27
 ---
 
@@ -161,6 +161,13 @@ stored as `{30, 250, 1, 1440}`, and an unknown `strategy` returns 400.
 How long a node may have been silent before discovery stops attempting it.
 Default 14, clamped 1–365. A node heard today answers 16–26% of the time; one
 silent over a week, 1.8% — so this is the highest-leverage setting on the page.
+
+## `proven_min_hits`, `proven_min_rate`, `new_node_hours`
+
+What counts as proven ground, and how long a newly discovered node stays
+eligible. Defaults 3 / 10% / 48 h. The first two decide where the search window
+is anchored — see `docs/modules/inferences.md`; "answered once" let a 1-in-63
+fluke anchor it 90 km past anything reliable.
 
 ## Invariants
 

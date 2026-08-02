@@ -466,6 +466,10 @@ registerInference({
            COALESCE((SELECT value ->> '$.attempts_per_target' FROM config WHERE key = 'discovery'), 6)    AS s_attempts,
            COALESCE((SELECT value ->> '$.cooldown_min'        FROM config WHERE key = 'discovery'), 30)   AS s_cooldown_min,
            COALESCE((SELECT value ->> '$.max_silence_days'    FROM config WHERE key = 'discovery'), 14)   AS s_max_silence,
+           COALESCE((SELECT value ->> '$.proven_min_hits'     FROM config WHERE key = 'discovery'), 3)    AS s_proven_hits,
+           COALESCE((SELECT value ->> '$.proven_min_rate'     FROM config WHERE key = 'discovery'), 10)   AS s_proven_rate,
+           COALESCE((SELECT value ->> '$.new_node_hours'      FROM config WHERE key = 'discovery'), 48)   AS s_new_hours,
+           ni.first_heard                                             AS first_heard,
            COALESCE((SELECT value ->> '$.mode'                FROM config WHERE key = 'discovery'), 'auto') AS s_mode,
            (SELECT value ->> '$.pinned'                       FROM config WHERE key = 'discovery')        AS s_pinned,
            -- The Observatory's OWN target flag. Not nodeinfo.favourite, which
@@ -511,6 +515,9 @@ registerInference({
     const MAX_TRIES = Number(rows[0].s_attempts) || 6;
     const COOLDOWN  = (Number(rows[0].s_cooldown_min) || 30) * 60;
     const MAX_SILENT = (Number(rows[0].s_max_silence) || 14) * 86_400;
+    const PROVEN_HITS = Number(rows[0].s_proven_hits) || 3;
+    const PROVEN_RATE = (Number(rows[0].s_proven_rate) || 10) / 100;
+    const NEW_WINDOW  = (Number(rows[0].s_new_hours)  || 48) * 3600;
     const MODE      = String(rows[0].s_mode || 'auto');
     const PINNED    = rows[0].s_pinned != null ? Number(rows[0].s_pinned) : null;
     // §12: beyond this a self-reported position is not evidence, it is a
@@ -530,14 +537,30 @@ registerInference({
     // reached is a place a packet of ours has demonstrably arrived, and the
     // set of them is the shape of what we can do — the single furthest one is a
     // summary of it, not a substitute for it.
+    // PROVEN GROUND MEANS RELIABLY REACHED, NOT REACHED ONCE.
+    //
+    // This admitted any node that had ever answered, and the furthest such node
+    // is the 189.1 km record holder — 1 hit in 63 attempts, 1.6%. So the window
+    // measured from 189 km and admitted candidates out to 214 km, a band the
+    // distance chart shows answering 0.0-1.3% across 2,088 attempts. One lucky
+    // packet on 4 July was dragging the entire search 90 km past anything real.
+    //
+    //   ever answered once        84 nodes, furthest 189.1 km
+    //   3+ hits AND >=10% of tries 31 nodes, furthest  95.2 km   <- reliable
+    //
+    // 95.2 km is exactly where the wall is. THE RECORD IS UNCHANGED — reach.ladder
+    // still reports 189.1 km, because "furthest we have reached" and "furthest we
+    // can rely on" are different claims and both are true.
     let record = 0;
     const proven = [{ lat: HOME.lat, lon: HOME.lon }];   // we are, trivially, reachable
     for (const r of rows) {
       if (!r.hits) continue;
       const km = greatCircleKm(HOME.lat, HOME.lon, r.lat, r.lon);
       if (km > 200) continue;                            // §12 — a claim, not evidence
+      if (km > record) record = km;                      // the record counts every hit
+      if (r.hits < PROVEN_HITS) continue;
+      if (r.attempts && (r.hits / r.attempts) < PROVEN_RATE) continue;
       proven.push({ lat: r.lat, lon: r.lon });
-      if (km > record) record = km;
     }
 
     /** How far past the nearest node we have ACTUALLY REACHED.
@@ -646,6 +669,18 @@ registerInference({
         reason = `your target — ${Math.round(step)} km past the nearest node we have reached`
           + (km > CEILING_KM ? `; ${km} km is self-reported and unverifiable` : '');
         rank = 500_000 + stepScore;
+      } else if (NEW_WINDOW > 0 && r.first_heard
+                 && (now - Number(r.first_heard)) < NEW_WINDOW && attempts < MAX_TRIES) {
+        // PROBATION, NOT A PRIORITY SPIKE. A new node deserves one aimed run
+        // rather than the single passive trace it gets today — 6.9 are
+        // discovered a day and only 1 of 11 shortlist entries had been found in
+        // the past week. But it does NOT deserve the top of the queue: measured,
+        // a first traceroute within an hour of discovery answers 5.9%, against
+        // 40.9% for nodes traced days later. Ranking them first would move the
+        // budget out of a 16-26% pool and into a 5.9% one.
+        cls = 'new';
+        reason = `discovered ${fmtSilence(now - Number(r.first_heard))} — never had a proper look`;
+        rank = 600 + liveScore;
       } else if (attempts === 0 && km > record) {
         cls = 'unknown-record';
         reason = `never attempted — ${Math.round(step)} km past the nearest node we have reached, heard ${fmtSilence(silentFor)}, and would beat the ${Math.round(record)} km record`;
@@ -724,10 +759,10 @@ registerInference({
     // "MANUAL · nothing pinned" rather than idling with no explanation, which
     // is the failure this whole afternoon was spent chasing.
     const QUOTA = MODE === 'manual'
-      ? { pinned: 1, target: 20, 'unknown-record': 0, record: 0, reconfirm: 0, unknown: 0 }
+      ? { pinned: 1, target: 20, new: 0, 'unknown-record': 0, record: 0, reconfirm: 0, unknown: 0 }
       : MODE === 'targets'
-        ? { pinned: 1, target: 12, 'unknown-record': 3, record: 3, reconfirm: 2, unknown: 1 }
-        : { pinned: 1, target: 4,  'unknown-record': 6, record: 6, reconfirm: 4, unknown: 4 };
+        ? { pinned: 1, target: 12, new: 2, 'unknown-record': 3, record: 3, reconfirm: 2, unknown: 1 }
+        : { pinned: 1, target: 4,  new: 3, 'unknown-record': 6, record: 6, reconfirm: 4, unknown: 4 };
     const used = {};
     const top = [];
     for (const m of scored) {
@@ -760,6 +795,12 @@ registerInference({
         skipped_beyond_window: skipped.beyond_window,
         skipped_silent: skipped.silent,
         max_silence_days: Math.round(MAX_SILENT / 86_400),
+        proven_min_hits: PROVEN_HITS,
+        proven_min_rate: Math.round(PROVEN_RATE * 100),
+        new_node_hours: Math.round(NEW_WINDOW / 3600),
+        // The window's real anchor, published so the panel can say what the
+        // search is measuring from rather than implying it is the record.
+        reliable_km: Math.round(Math.max(0, ...proven.map(q => greatCircleKm(HOME.lat, HOME.lon, q.lat, q.lon))) * 10) / 10,
       },
       confidence: null,
       evidence_count: rows.length,

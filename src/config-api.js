@@ -48,6 +48,14 @@ export const DEFAULTS = {
     // the real reply window — a measured round trip took 2.9 s — rather than to
     // the full timeout, which would monopolise the antenna.
     hold_sec:            15,
+    // WHAT COUNTS AS PROVEN GROUND — the anchor the window measures from.
+    // "Answered once" let a 1-in-63 fluke at 189.1 km drag the search 90 km
+    // into a band the charts show answering ~0%. Reliable reach ends at 95 km.
+    proven_min_hits:     3,
+    proven_min_rate:     10,   // percent
+    // A newly discovered node is eligible for the queue for this long, so it
+    // gets one aimed run rather than a single passive trace.
+    new_node_hours:      48,
     interval_sec:        180,       // seconds between missions
     enabled:             true,      // runner on/off without leaving DISC mode
     // Targeting (docs/DISCOVERY_TARGETING.md). `mode` decides whether AUTO
@@ -81,6 +89,9 @@ const DISCOVERY_LIMITS = {
   cooldown_min:        [1, 1440],
   max_silence_days:    [1, 365],
   hold_sec:            [0, 120],
+  proven_min_hits:     [1, 50],
+  proven_min_rate:     [0, 100],
+  new_node_hours:      [0, 720],
   interval_sec:        [30, 3600],
 };
 const DISCOVERY_STRATEGIES = ['ladder', 'portfolio'];
