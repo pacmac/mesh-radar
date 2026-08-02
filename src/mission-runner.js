@@ -102,6 +102,24 @@ class MissionRunner extends EventEmitter {
     this._emit();
   }
 
+  /** THE FEED SURVIVES A RESTART.
+   *
+   *  `_recent` is in-memory, and pm2 watches `src/` — so every edit emptied the
+   *  table and the panel announced "no attempt has completed yet this session"
+   *  while the runner was mid-stride. That reads as *nothing is happening*,
+   *  which is precisely the impression this panel exists to prevent.
+   *
+   *  The attempts were never lost: they are rows in `traceroute_history`. This
+   *  replays them so the feed opens populated. Rows seeded from storage carry
+   *  `seeded: true` — they cannot say what they *revealed*, because the
+   *  discovery counters are session state and re-deriving them would invent
+   *  history. They show what happened and when, and nothing more. */
+  seedRecent(rows) {
+    if (!Array.isArray(rows) || !rows.length) return;
+    this._recent = rows.concat(this._recent).slice(0, cfg().recent);
+    this._emit();
+  }
+
   /** Seed what was already known, so the first route does not report the entire
    *  existing mesh as "newly discovered". */
   seed({ relays = [], links = [] } = {}) {

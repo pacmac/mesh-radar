@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: e5a1e72bfe1c30fab75f6604b2860f9b7303fe3859cf2545eb2d64452041b878
+source_hash: 51776ead4bb660cdfcad4abcca106493805868ae592589c7c294d56846d352a2
 updated: 2026-08-02
 ---
 
@@ -111,6 +111,24 @@ stubbornness.
 
 **The azimuth recorded on the attempt is the one achieved, never the one asked
 for.** Anything later reading `rotator_az` gets where the beam actually was.
+
+### The feed survives a restart
+
+`_recent` is in-memory and pm2 watches `src/`, so every edit emptied the table
+and the panel announced *"no attempt has completed yet this session"* while the
+runner was mid-stride. That reads as **nothing is happening** — precisely the
+impression this panel exists to prevent, and precisely the complaint that led
+here.
+
+The attempts were never lost; they are rows in `traceroute_history`.
+`observatory-ws` replays the 25 most recent **aimed** dispatches
+(`db.recentAimedTraceroutes` — `rotator_az IS NOT NULL` is what distinguishes a
+mission from a passive trace of whatever happened to arrive) so the feed opens
+populated.
+
+Seeded rows carry `seeded: true` and do **not** claim what they revealed. The
+discovery counters are session state, and re-deriving them from storage would be
+inventing history. They say what happened and when, and nothing more.
 
 ### A deferral leaves a trace
 

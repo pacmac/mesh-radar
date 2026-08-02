@@ -74,113 +74,116 @@
       </div>
     </div>
 
-    <!-- ── DISCOVERY IN PROGRESS ──────────────────────────────────────
-         Peter: "what I expect to see is a table of the discovery mission,
-         i.e what it's done, doing right now and whether a discovery is in
-         progress." Every value is the runner's; the page states nothing. -->
-    <div class="card bg-base-100 shadow">
-      <div class="card-body p-3 gap-2">
-        <div class="flex items-baseline gap-2 flex-wrap">
-          <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-            Discovery — the traceroute at work</h2>
-          <!-- OBVIOUS, NOT SUBTLE. Peter, 2026-08-02: "well if it's there it's
-               not very obvious." A pulsing badge, not grey micro-text: this is
-               the one thing on the board that is happening right now, and if a
-               glance cannot tell you whether the mesh is being probed then the
-               panel has failed at its only job. -->
-          <span class="ml-auto flex items-center gap-2">
-            <span class="text-xs font-mono text-base-content/40"
-                  x-show="missionActivity?.discovered?.attempts"
-                  x-text="missionActivity.discovered.attempts + ' tried · ' + missionActivity.discovered.replies + ' answered'"></span>
-            <span class="badge badge-sm font-mono tracking-wider gap-1.5"
-                  :class="missionActivity?.current ? 'badge-primary'
-                          : missionActivity?.gated ? 'badge-warning'
-                          : missionActivity?.running ? 'badge-ghost' : 'badge-ghost opacity-50'">
-              <span class="inline-block w-1.5 h-1.5 rounded-full"
-                    :class="missionActivity?.current ? 'bg-primary-content animate-ping'
-                            : missionActivity?.running ? 'bg-base-content/40' : 'bg-base-content/25'"></span>
-              <span x-text="missionActivity?.current ? 'IN PROGRESS'
-                            : missionActivity?.gated ? 'HELD — traceroute off'
-                            : missionActivity?.running ? ('WAITING · next of ' + missionActivity.queued)
-                            : 'STOPPED'"></span>
-            </span>
-          </span>
-        </div>
-
-        <!-- The one target being pursued right now. -->
-        <template x-if="missionActivity?.current">
-          <div class="rounded border border-primary/40 bg-primary/5 px-3 py-2">
-            <div class="flex items-baseline gap-2 font-mono text-sm">
-              <span class="text-primary">▶</span>
-              <span class="font-semibold" x-text="missionActivity.current.label"></span>
-              <span class="text-base-content/50" x-text="missionActivity.current.place || ''"></span>
-              <span class="text-base-content/60" x-text="missionActivity.current.km ? missionActivity.current.km + ' km' : ''"></span>
-              <span class="ml-auto text-base-content/40" x-text="'via ' + obsRadio(missionActivity.current.device)"></span>
-            </div>
-            <div class="text-xs text-base-content/50 mt-0.5" x-text="missionActivity.current.reason"></div>
-          </div>
-        </template>
-
-        <!-- What the routes revealed. NOT a hit counter. -->
-        <div class="flex gap-4 flex-wrap text-xs font-mono text-base-content/50"
-             x-show="missionActivity?.discovered?.attempts">
-          <span x-text="missionActivity.discovered.attempts + (missionActivity.discovered.attempts === 1 ? ' attempt' : ' attempts')"></span>
-          <span x-text="missionActivity.discovered.replies + (missionActivity.discovered.replies === 1 ? ' reply' : ' replies')"></span>
-          <span class="text-secondary" x-show="missionActivity.discovered.relays"
-                x-text="missionActivity.discovered.relays + ' new relays'"></span>
-          <span class="text-secondary" x-show="missionActivity.discovered.links"
-                x-text="missionActivity.discovered.links + ' new links'"></span>
-          <span class="text-accent" x-show="missionActivity.discovered.records"
-                x-text="missionActivity.discovered.records + ' records'"></span>
-        </div>
-
-        <template x-if="!missionActivity?.recent?.length">
-          <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-8 text-center">
-            <p class="text-xs text-base-content/50">No attempt has completed yet this session.</p>
-            <p class="text-xs text-base-content/35 mt-1"
-               x-text="missionActivity?.gated ? 'Automatic traceroute is switched off — nothing will be dispatched.' : 'The first mission dispatches shortly.'"></p>
-          </div>
-        </template>
-
-        <template x-if="missionActivity?.recent?.length">
-          <div class="overflow-y-auto max-h-72">
-            <table class="table table-xs font-mono tabular-nums">
-              <thead><tr><th class="w-20">Time</th><th>Target</th><th class="text-right pr-3">km</th><th>What it revealed</th></tr></thead>
-              <tbody>
-                <template x-for="r in missionActivity.recent" :key="r.target + '-' + r.finished">
-                  <tr :class="r.ok ? '' : 'opacity-60'">
-                    <td class="text-base-content/50" x-text="obsTime(r.finished)"></td>
-                    <td class="whitespace-nowrap">
-                      <span x-text="r.label"></span>
-                      <span class="text-base-content/40 ml-1" x-text="r.place || ''"></span>
-                    </td>
-                    <td class="text-right pr-3" x-text="r.km ?? '—'"></td>
-                    <td class="font-sans">
-                      <!-- §4: a miss is data. Shown, never swallowed. -->
-                      <template x-if="!r.ok">
-                        <span class="text-base-content/45" x-text="r.error"></span>
-                      </template>
-                      <template x-if="r.ok">
-                        <span>
-                          <span class="text-success" x-text="'reply · ' + r.hops + ' hops out, ' + r.hops_back + ' back'"></span>
-                          <template x-for="f in (r.found || [])" :key="f">
-                            <span class="text-secondary before:content-['·'] before:mx-1" x-text="f"></span>
-                          </template>
-                        </span>
-                      </template>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
-        </template>
-      </div>
-    </div>
-
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-1 min-h-0 overflow-y-auto">
 
       <div class="flex flex-col gap-3">
+        <!-- ── DISCOVERY IN PROGRESS ──────────────────────────────────────
+             Peter: "what I expect to see is a table of the discovery mission,
+             i.e what it's done, doing right now and whether a discovery is in
+             progress." Every value is the runner's; the page states nothing. -->
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-2">
+            <div class="flex items-baseline gap-2 flex-wrap">
+              <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
+                Discovery — the traceroute at work</h2>
+              <!-- OBVIOUS, NOT SUBTLE. Peter, 2026-08-02: "well if it's there it's
+                   not very obvious." A pulsing badge, not grey micro-text: this is
+                   the one thing on the board that is happening right now, and if a
+                   glance cannot tell you whether the mesh is being probed then the
+                   panel has failed at its only job. -->
+              <span class="ml-auto flex items-center gap-2">
+                <span class="text-xs font-mono text-base-content/40"
+                      x-show="missionActivity?.discovered?.attempts"
+                      x-text="missionActivity.discovered.attempts + ' tried · ' + missionActivity.discovered.replies + ' answered'"></span>
+                <span class="badge badge-sm font-mono tracking-wider gap-1.5"
+                      :class="missionActivity?.current ? 'badge-primary'
+                              : missionActivity?.gated ? 'badge-warning'
+                              : missionActivity?.running ? 'badge-ghost' : 'badge-ghost opacity-50'">
+                  <span class="inline-block w-1.5 h-1.5 rounded-full"
+                        :class="missionActivity?.current ? 'bg-primary-content animate-ping'
+                                : missionActivity?.running ? 'bg-base-content/40' : 'bg-base-content/25'"></span>
+                  <span x-text="missionActivity?.current ? 'IN PROGRESS'
+                                : missionActivity?.gated ? 'HELD — traceroute off'
+                                : missionActivity?.running ? ('WAITING · next of ' + missionActivity.queued)
+                                : 'STOPPED'"></span>
+                </span>
+              </span>
+            </div>
+
+            <!-- The one target being pursued right now. -->
+            <template x-if="missionActivity?.current">
+              <div class="rounded border border-primary/40 bg-primary/5 px-3 py-2">
+                <div class="flex items-baseline gap-2 font-mono text-sm">
+                  <span class="text-primary">▶</span>
+                  <span class="font-semibold" x-text="missionActivity.current.label"></span>
+                  <span class="text-base-content/50" x-text="missionActivity.current.place || ''"></span>
+                  <span class="text-base-content/60" x-text="missionActivity.current.km ? missionActivity.current.km + ' km' : ''"></span>
+                  <span class="ml-auto text-base-content/40" x-text="'via ' + obsRadio(missionActivity.current.device)"></span>
+                </div>
+                <div class="text-xs text-base-content/50 mt-0.5" x-text="missionActivity.current.reason"></div>
+              </div>
+            </template>
+
+            <!-- What the routes revealed. NOT a hit counter. -->
+            <div class="flex gap-4 flex-wrap text-xs font-mono text-base-content/50"
+                 x-show="missionActivity?.discovered?.attempts">
+              <span x-text="missionActivity.discovered.attempts + (missionActivity.discovered.attempts === 1 ? ' attempt' : ' attempts')"></span>
+              <span x-text="missionActivity.discovered.replies + (missionActivity.discovered.replies === 1 ? ' reply' : ' replies')"></span>
+              <span class="text-secondary" x-show="missionActivity.discovered.relays"
+                    x-text="missionActivity.discovered.relays + ' new relays'"></span>
+              <span class="text-secondary" x-show="missionActivity.discovered.links"
+                    x-text="missionActivity.discovered.links + ' new links'"></span>
+              <span class="text-accent" x-show="missionActivity.discovered.records"
+                    x-text="missionActivity.discovered.records + ' records'"></span>
+            </div>
+
+            <template x-if="!missionActivity?.recent?.length">
+              <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-8 text-center">
+                <p class="text-xs text-base-content/50">No attempt has completed yet this session.</p>
+                <p class="text-xs text-base-content/35 mt-1"
+                   x-text="missionActivity?.gated ? 'Automatic traceroute is switched off — nothing will be dispatched.' : 'The first mission dispatches shortly.'"></p>
+              </div>
+            </template>
+
+            <template x-if="missionActivity?.recent?.length">
+              <div class="overflow-y-auto max-h-72">
+                <table class="table table-xs font-mono tabular-nums">
+                  <thead><tr><th class="w-20">Time</th><th>Target</th><th class="text-right pr-3">km</th><th>Revealed</th></tr></thead>
+                  <tbody>
+                    <template x-for="r in missionActivity.recent" :key="r.target + '-' + r.finished">
+                      <tr :class="r.ok ? '' : 'opacity-60'">
+                        <td class="text-base-content/50" x-text="obsTime(r.finished)"></td>
+                        <td class="whitespace-nowrap">
+                          <span x-text="r.label"></span>
+                          <span class="text-base-content/40 ml-1" x-text="r.place || ''"></span>
+                        </td>
+                        <td class="text-right pr-3" x-text="r.km ?? '—'"></td>
+                        <td class="font-sans whitespace-normal leading-tight">
+                          <!-- §4: a miss is data. Shown, never swallowed.
+                               whitespace-normal because this column is now half
+                               the board wide: a clipped outcome is the one thing
+                               in the table that must never be clipped. -->
+                          <template x-if="!r.ok">
+                            <span class="text-base-content/45" x-text="r.error"></span>
+                          </template>
+                          <template x-if="r.ok">
+                            <span>
+                              <span class="text-success" x-text="'reply · ' + r.hops + ' hops out, ' + r.hops_back + ' back'"></span>
+                              <template x-for="f in (r.found || [])" :key="f">
+                                <span class="text-secondary before:content-['·'] before:mx-1" x-text="f"></span>
+                              </template>
+                            </span>
+                          </template>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </div>
+        </div>
+
         <div class="card bg-base-100 shadow">
           <div class="card-body p-3 gap-2">
             <div class="flex items-baseline gap-2">

@@ -17,7 +17,7 @@ import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
 import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
-import { getConfig, getCachedGeocode } from './db.js';
+import { getConfig, getCachedGeocode, recentAimedTraceroutes } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
 // every distance from it. A page load must not re-read config.
@@ -383,6 +383,26 @@ function recompute(broadcast) {
     missionRunner.setQueue(list.missions);
     // Seed what was already known BEFORE any mission ran, so the first route
     // does not report the whole existing mesh as newly discovered.
+    // Replay recent attempts so the panel is populated on a cold start. Only
+    // the yagi-dispatched ones: those are the discovery runner's, and a
+    // passive-tracer trace of whatever just arrived is not a mission.
+    try {
+      const rows = recentAimedTraceroutes(25);
+      missionRunner.seedRecent(rows.map(r => ({
+        target: String(r.to_num),
+        label:  resolveNodeLabel(r.to_num) || String(r.to_num),
+        place:  shortPlace(getCachedGeocode(r.to_num)),
+        km: null, step_km: null, az: r.rotator_az,
+        seeded: true,
+        ok: r.status === 'ok',
+        hops: null, hops_back: null, found: [],
+        error: r.status === 'ok' ? null : 'no reply',
+        finished: r.ts,
+      })));
+    } catch (e) {
+      console.error(`[observatory-ws] recent replay failed: ${e.message}`);
+    }
+
     missionRunner.seed({
       relays: facts('relay.usage').map(f => f.entity),
       links:  facts('link.observed').map(f => f.entity),

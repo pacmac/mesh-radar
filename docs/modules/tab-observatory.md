@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 1899bfc726992ee8b5e155a39cbf11766490caa15f362d4e89a450180701c743
+source_hash: d0c3bf0340133582de388c88fdd90778ab47c79b7da8a0de3bcb779fc5b9d6a0
 updated: 2026-08-02
 ---
 
@@ -73,7 +73,7 @@ The caption under the map explains the two size encodings — relay radius is
 traffic carried, line weight is how often that hop was witnessed — because a
 size difference with no stated meaning is decoration.
 
-## Discovery panel — full width, at the top
+## Discovery panel — top of the left column
 
 Peter, 2026-08-02: *"I still see no signs of activity on the dashboard, as far as
 I can see it is static"*, then on finding it: *"the discovery card should be
@@ -86,9 +86,17 @@ fold**, while the left column ended at the Frontier table and left half the boar
 empty. The one thing on the page that is happening *right now* required
 scrolling to find.
 
-It is now full width, directly under the stat row, above everything. The status
-is a badge with a pulsing dot rather than grey micro-text, and the header carries
-`24 tried · 0 answered` so the counters move where they can be seen.
+It now sits at the **top of the left column**, level with Missions, both above
+the fold. Full width was the first attempt and was wrong — Peter: *"no need for
+that to be full width, there's very little data / columns in it, it can be 2 col
+layout."* Four narrow columns do not earn the whole board.
+
+The status is a badge with a pulsing dot rather than grey micro-text, and the
+header carries `24 tried · 0 answered` so the counters move where they can be
+seen. The outcome column wraps rather than clipping: in a half-width panel a
+truncated result is the one thing that must never be truncated.
+
+Board layout is now balanced — Discovery + Frontier | Missions + Doors.
 
 If a glance cannot tell you whether the mesh is being probed, the panel has
 failed at its only job.

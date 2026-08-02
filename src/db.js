@@ -805,6 +805,28 @@ export function deleteConfig(key) {
   stmts.deleteConfig.run(key);
 }
 
+/** Recent traceroutes that a DIRECTIONAL dispatch produced — the discovery
+ *  runner's own attempts, newest first.
+ *
+ *  `rotator_az IS NOT NULL` is what distinguishes them: a passive trace of
+ *  whatever just arrived carries no azimuth, because nothing aimed for it.
+ *
+ *  Exists so the runner's activity feed survives a restart. That feed is
+ *  in-memory and pm2 watches src/, so every edit emptied it and the panel
+ *  announced "no attempt has completed yet this session" mid-stride — which
+ *  reads as nothing happening. The attempts were never lost; they were here.
+ *
+ *  A named query rather than exporting the database handle: `db` is deliberately
+ *  module-private, and handing it out invites arbitrary SQL from anywhere. */
+export function recentAimedTraceroutes(limit = 25) {
+  return db.prepare(`
+    SELECT ts, to_num, rotator_az, status
+    FROM traceroute_history
+    WHERE tx_device IS NOT NULL AND rotator_az IS NOT NULL
+    ORDER BY ts DESC LIMIT ?
+  `).all(limit);
+}
+
 export function insertRangeTestEntry(entry) {
   stmts.insertRangeTest.run(entry);
 }
