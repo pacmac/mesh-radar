@@ -122,3 +122,134 @@ registerInference({
     }));
   },
 });
+
+// ─── reach.target ───────────────────────────────────────────────────────────
+//
+// HOW FAR WE HAVE VERIFIABLY REACHED, PER TARGET. The headline this project
+// resolves to (MESH_REACH_SPEC §1a: "at the end of all calculations the single
+// important value will be in km").
+//
+// Home comes through the EVIDENCE, not from a config read inside run(). Reading
+// it here would make the calculation impure and untestable without a database
+// for the sake of two numbers. Carried on every row is mildly redundant and
+// exactly correct.
+//
+// The distance is computed in run() rather than in SQL. SQLite has the trig
+// (3.53.2 has radians/sin/asin/pi) so either would work, but an inference that
+// only relabels its evidence is not really a calculation — and haversine over
+// plain numbers is the easiest thing in the world to test.
+const HAVERSINE_R_KM = 6371;
+function greatCircleKm(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return HAVERSINE_R_KM * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+registerInference({
+  key:  'reach.target',
+  deps: [],
+  mode: 'batch',
+  evidence: `
+    SELECT o.entity                                                   AS target,
+           COUNT(*)                                                   AS attempts,
+           SUM(CASE WHEN o.data ->> '$.status' = 'ok' THEN 1 ELSE 0 END) AS hits,
+           MAX(CASE WHEN o.data ->> '$.status' = 'ok' THEN o.ts END)  AS last_ok,
+           MAX(o.ts)                                                  AS last_attempt,
+           n.lat                                                      AS lat,
+           n.lon                                                      AS lon,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat') AS home_lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon
+    FROM obs_v_traceroute o
+    LEFT JOIN nodes n ON n.num = CAST(o.entity AS INTEGER)
+    GROUP BY o.entity
+  `,
+  /** Pure. Rows in, facts out.
+   *
+   *  A TARGET WITH NO HIT IS STILL RECORDED, with verified:false and its attempt
+   *  count. MESH_REACH_SPEC §4: silence is censored data, so the stored fact is
+   *  "verified reach >= X", never "unreachable". 335 targets have never once
+   *  answered across 5,046 attempts and dropping them would hide the most
+   *  important number in the project.
+   *
+   *  A TARGET WITH NO POSITION GETS km:null, not 0. It was still reached; we
+   *  simply cannot say how far. Only 84 of 104 verified targets have a position,
+   *  so this is common and must not read as "zero kilometres". */
+  run(rows) {
+    return rows.map(r => {
+      const km = (r.lat != null && r.lon != null && r.home_lat != null && r.home_lon != null)
+        ? Math.round(greatCircleKm(r.home_lat, r.home_lon, r.lat, r.lon) * 10) / 10
+        : null;
+      return {
+        entity: String(r.target),
+        value: {
+          km,
+          attempts:     r.attempts,
+          hits:         r.hits,
+          verified:     r.hits > 0,
+          last_ok:      r.last_ok ?? null,
+          last_attempt: r.last_attempt ?? null,
+          // §12: a self-reported position can be wrong, and a km headline will
+          // launder it into a record. EA1HTF claims 1003 km and arrives at
+          // -44 dBm. Flagged here so nothing downstream has to remember.
+          suspect: km != null && km > 200,
+        },
+        confidence: null,
+        evidence_count: r.attempts,
+      };
+    });
+  },
+});
+
+// ─── reach.ladder ───────────────────────────────────────────────────────────
+//
+// EVERY MOMENT THE FRONTIER MOVED. One fact, entity 'global', because a ladder
+// is a property of the whole record rather than of any node.
+//
+// It is the product's narrative (MESH_REACH_SPEC §1a) and it says something
+// uncomfortable that a single headline number hides: the whole climb from 5 km
+// to 95 km happened in about eighteen hours on 24 June, then 181.6 km the next
+// morning — and the frontier has moved 7.5 km in the five weeks since. A system
+// that iterates without learning plateaus, and this is the shape of the plateau.
+//
+// SUSPECT DISTANCES ARE EXCLUDED from the ladder, not merely flagged. A record
+// is a claim, and §12 is explicit that a km headline will launder a bad
+// self-reported position into one. A flag on a row nobody reads is not a guard.
+registerInference({
+  key:  'reach.ladder',
+  deps: [],
+  mode: 'batch',
+  evidence: `
+    SELECT o.ts                                                       AS ts,
+           o.entity                                                   AS target,
+           n.lat                                                      AS lat,
+           n.lon                                                      AS lon,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat') AS home_lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon
+    FROM obs_v_traceroute o
+    JOIN nodes n ON n.num = CAST(o.entity AS INTEGER)
+    WHERE o.data ->> '$.status' = 'ok' AND n.lat IS NOT NULL AND n.lon IS NOT NULL
+    ORDER BY o.ts
+  `,
+  /** Pure. A running maximum over hits in time order. */
+  run(rows) {
+    let best = 0;
+    const rungs = [];
+    for (const r of rows) {
+      if (r.home_lat == null || r.home_lon == null) continue;
+      const km = Math.round(greatCircleKm(r.home_lat, r.home_lon, r.lat, r.lon) * 10) / 10;
+      if (km > 200) continue;                 // §12 — excluded, not flagged
+      if (km <= best) continue;
+      best = km;
+      rungs.push({ ts: r.ts, target: String(r.target), km });
+    }
+    if (!rungs.length) return null;           // null is a real answer
+    return [{
+      entity: 'global',
+      value: { rungs, record_km: best, record_at: rungs[rungs.length - 1].ts },
+      confidence: null,
+      evidence_count: rows.length,
+    }];
+  },
+});

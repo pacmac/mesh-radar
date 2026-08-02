@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 49f404d198e98f087bf2b60d16b71eb0a57e7f433b4dea82318c7eff5548a3e2
+source_hash: 91436b7d9e82b43799fa4358a72d0bb22f9f81ac5b15cbcb06c02a2972271c77
 updated: 2026-08-02
 ---
 

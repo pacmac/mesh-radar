@@ -59,6 +59,7 @@ registerConnectReplay(() => {
         observations: recentObservations('reception', REPLAY_LIMIT).map(toMessage),
       },
       { type: 'relay_usage', relays: relayUsage() },
+      { type: 'reach_model', reach: reachModel() },
     ];
   } catch (e) {
     console.error(`[observatory-ws] replay failed: ${e.message}`);
@@ -88,6 +89,49 @@ function relayUsage() {
     .sort((a, b) => b.uses - a.uses);
 }
 
+/** The reach model, ready to render.
+ *
+ *  Server-computed per BROWSER_CONTRACT: the record, the ladder and the ranked
+ *  frontier are all decided here, and the page places strings.
+ *
+ *  THE HEADLINE IS "AT LEAST". §4: silence is censored data, so a frontier is a
+ *  lower bound on what we can reach, never a statement about what we cannot.
+ *  Suspect distances (>200 km, §12) are excluded from the record and the
+ *  frontier — a flag nobody reads is not a guard — but their count is reported
+ *  so the exclusion is visible rather than silent. */
+function reachModel() {
+  const targets = facts('reach.target');
+  const ladder  = facts('reach.ladder')[0]?.value ?? null;
+
+  const usable = targets.filter(f => f.value?.verified && f.value?.km != null && !f.value?.suspect);
+  const frontier = usable
+    .sort((a, b) => b.value.km - a.value.km)
+    .slice(0, 12)
+    .map(f => ({
+      target:  f.entity,
+      label:   resolveNodeLabel(Number(f.entity)) || String(f.entity),
+      km:      f.value.km,
+      hits:    f.value.hits,
+      attempts: f.value.attempts,
+      last_ok: f.value.last_ok,
+    }));
+
+  return {
+    record_km:    ladder?.record_km ?? null,
+    record_at:    ladder?.record_at ?? null,
+    rungs:        (ladder?.rungs ?? []).map(r => ({
+      ...r,
+      label: resolveNodeLabel(Number(r.target)) || String(r.target),
+    })),
+    frontier,
+    verified:     targets.filter(f => f.value?.verified).length,
+    targets:      targets.length,
+    unverified:   targets.filter(f => !f.value?.verified).length,
+    without_km:   targets.filter(f => f.value?.verified && f.value?.km == null).length,
+    suspect:      targets.filter(f => f.value?.suspect).length,
+  };
+}
+
 // RECOMPUTED ON BOOT, then on a slow timer. `relay.usage` is a batch inference
 // over all history — cheap at this size (12,268 evidence rows, ~40 ms) but not
 // something to run per packet, and the answer moves slowly: a new relay appears
@@ -97,9 +141,12 @@ function relayUsage() {
 // wrapped so a failure degrades the doors panel rather than the process.
 function recompute(broadcast) {
   try {
-    const r = runInference('relay.usage');
-    console.log(`[observatory] relay.usage: ${r.facts} relays from ${r.rows} hop observations`);
+    for (const key of ['relay.usage', 'reach.target', 'reach.ladder']) {
+      const r = runInference(key);
+      console.log(`[observatory] ${r.key}: ${r.facts} facts from ${r.rows} evidence rows`);
+    }
     broadcast?.({ type: 'relay_usage', relays: relayUsage() });
+    broadcast?.({ type: 'reach_model', reach: reachModel() });
   } catch (e) {
     console.error(`[observatory] relay.usage failed: ${e.message}`);
   }

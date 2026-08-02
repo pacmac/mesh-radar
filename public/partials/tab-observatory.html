@@ -34,8 +34,12 @@
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 shrink-0">
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
         <div class="stat-title text-xs">Furthest verified reach</div>
-        <div class="stat-value text-2xl font-display text-base-content/25">—</div>
-        <div class="stat-desc text-xs">awaiting the reach model</div>
+        <div class="stat-value text-2xl font-display"
+             :class="reach?.record_km ? 'text-primary' : 'text-base-content/25'"
+             x-text="reach?.record_km ? '≥ ' + reach.record_km + ' km' : '—'"></div>
+        <!-- "at least", never "the maximum": silence is censored data (spec §4). -->
+        <div class="stat-desc text-xs"
+             x-text="reach ? reach.verified + ' of ' + reach.targets + ' targets verified' : 'awaiting the reach model'"></div>
       </div>
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
         <div class="stat-title text-xs">Doors</div>
@@ -65,12 +69,36 @@
       <div class="flex flex-col gap-3">
         <div class="card bg-base-100 shadow">
           <div class="card-body p-3 gap-2">
-            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-              Radar — bearing &amp; range from us</h2>
-            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-14 text-center">
-              <p class="text-xs text-base-content/50">Awaiting the reach model.</p>
-              <p class="text-xs text-base-content/35 mt-1">Needs a verified distance per node.</p>
+            <div class="flex items-baseline gap-2">
+              <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
+                Frontier — furthest verified</h2>
+              <span class="text-xs text-base-content/35 ml-auto" x-show="reach?.suspect"
+                    x-text="(reach?.suspect || 0) + ' excluded as unverifiable'"></span>
             </div>
+            <template x-if="!reach?.frontier?.length">
+              <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-14 text-center">
+                <p class="text-xs text-base-content/50">Computing from stored attempts.</p>
+              </div>
+            </template>
+            <template x-if="reach?.frontier?.length">
+              <table class="table table-xs font-mono tabular-nums">
+                <thead><tr><th>Target</th><th class="text-right pr-4">km</th><th class="text-right pr-4">Hits</th><th class="text-right">Rate</th></tr></thead>
+                <tbody>
+                  <template x-for="f in reach.frontier" :key="f.target">
+                    <tr>
+                      <td class="text-primary" x-text="f.label"></td>
+                      <td class="text-right pr-4" x-text="f.km"></td>
+                      <td class="text-right pr-4 text-base-content/60" x-text="f.hits + '/' + f.attempts"></td>
+                      <!-- Hit rate is the honest headline for a single target:
+                           189 km on one hit in 63 tries is a rare event, not a link. -->
+                      <td class="text-right"
+                          :class="(f.hits / f.attempts) < 0.1 ? 'text-warning' : 'text-base-content/60'"
+                          x-text="Math.round((f.hits / f.attempts) * 100) + '%'"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </template>
           </div>
         </div>
         <div class="card bg-base-100 shadow">
@@ -144,10 +172,25 @@
         <div class="card bg-base-100 shadow">
           <div class="card-body p-3 gap-2">
             <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
-              Record ladder</h2>
-            <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
-              <p class="text-xs text-base-content/50">Awaiting the reach model.</p>
-            </div>
+              Record ladder — every time the frontier moved</h2>
+            <template x-if="!reach?.rungs?.length">
+              <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">
+                <p class="text-xs text-base-content/50">Computing from stored attempts.</p>
+              </div>
+            </template>
+            <template x-if="reach?.rungs?.length">
+              <table class="table table-xs font-mono tabular-nums">
+                <tbody>
+                  <template x-for="r in reach.rungs" :key="r.ts">
+                    <tr>
+                      <td class="text-base-content/50 w-20" x-text="obsDate(r.ts)"></td>
+                      <td class="text-right w-20 font-semibold" x-text="r.km + ' km'"></td>
+                      <td class="text-primary" x-text="r.label"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </template>
           </div>
         </div>
       </div>

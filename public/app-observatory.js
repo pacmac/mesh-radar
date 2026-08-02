@@ -43,6 +43,18 @@ export const observatoryMixin = {
 
   applyRelayUsage(ev) { this.relayUsage = ev.relays || []; },
 
+  /** The reach model — record, ladder, frontier, and the honest counts around
+   *  them. Entirely server-computed; the page ranks and decides nothing. */
+  reach: null,
+
+  applyReachModel(ev) { this.reach = ev.reach || null; },
+
+  /** Ladder rungs are dated, not aged — same absolute-time rule as obsTime(). */
+  obsDate(ts) {
+    if (!ts) return '';
+    return new Date(ts * 1000).toLocaleDateString([], { day: '2-digit', month: 'short' });
+  },
+
   /** Replayed to every new connection — see observatory-ws.js. Without this the
    *  page is blank until the next packet, which on a quiet channel is minutes
    *  and reads as broken. */
