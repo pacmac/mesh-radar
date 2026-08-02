@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 0fc3b4603a4e2e21e6eab1829faa6ada59cd32077b8597ad24dd514919f26918
+source_hash: 8f525b5a93b38d1172e09a2d93f596fc6d1bf8d8f7cdde810256a313455c52cb
 updated: 2026-08-02
 ---
 
@@ -22,7 +22,9 @@ replayed on connect, appended on arrival.
 |---|---|
 | `observations` | newest first, capped at 500 |
 | `relayUsage` | doors, server-ranked and server-labelled |
-| `obsTab` | `'board'` \| `'receptions'`, persisted, declared in `app.js` |
+| `reach` | the reach model — record, ladder, frontier, radar plot |
+| `meshLinks` | `{ total, links[], marks[] }` — the map's geometry and captions |
+| `obsTab` | `'board'` \| `'radar'` \| `'map'` \| `'receptions'`, persisted, declared in `app.js` |
 
 `MAX_ROWS = 500` — enough to fill a tall screen and scroll, small enough that an
 idle tab cannot grow without bound. The server replays 200 on connect.
@@ -77,6 +79,35 @@ when measured — so every relay rendered as a raw number. It was also a
 `BROWSER_CONTRACT` breach: a label is a display value and belongs to the server.
 `relayUsage()` in `observatory-ws.js` now resolves it.
 
+## The plots — SVG built as a string, not `<template x-for>`
+
+`obsRadarSvg()` and `obsMapSvg()` return markup, and that is **not** a style
+choice. The HTML parser treats a `<template>` inside `<svg>` as an SVG-namespaced
+element with no `.content`, so Alpine cannot use it as a loop scope: every
+binding reports *"ring is not defined"* and the attributes land empty. Thirty
+console errors on the first attempt. The frozen mockup builds its SVG as a string
+for the same reason.
+
+**Colours come from DaisyUI CSS variables, never Tailwind classes.** Tailwind
+here is the in-browser JIT build, and utility classes injected via `x-html` are
+never compiled — the first radar rendered as a solid black disc because
+`fill-base-200/30` resolved to nothing and SVG defaults to black.
+`oklch(var(--b2))` needs no build step and still follows the theme.
+
+The arithmetic in both is *layout* — where on a circle, where in a rectangle. The
+kilometres, bearings, ranks and captions were all computed server-side.
+
+### Map labels — de-collided **and clamped**
+
+Marks arrive already clustered, counted and named (`observatory-ws.js`); the page
+places them. Labels sharing a corridor are nudged apart vertically, and the
+nudge is **clamped into the viewBox**: pushing collisions downwards walked the
+Guernsey stack off the bottom edge and four captions silently vanished. Text
+outside the viewBox looks like missing data, not overflow.
+
+`+7` after a distance means seven more nodes sit under that dot. The count is the
+server's — a cluster never quietly hides its members.
+
 ### `obsNodeCount()` counts what is on screen, and says so
 
 It describes the list being rendered, not a fact about the mesh. A mesh-wide
@@ -91,9 +122,14 @@ labels it "on screen".
 
 ## Test notes
 
-Live at 1600×1000, both sub-tabs, both themes, 0 console errors, 2026-08-02.
+Live at 1600×1000, all four sub-tabs, both themes, 0 console errors, 2026-08-02.
 `ARW1` rendered at 4 hops, −115 dBm, bearing 119° — a distant relayed node with
 a bearing, the population that had none before this work.
+
+Map, same session: 220 links drawn, ten captions, all inside the panel in light
+and dark. `St. Pierre du Bois 182km +7` is the whole Guernsey cluster under one
+label; `?2A0 189km` is the furthest node still waiting on the geocode backfill
+and correctly shows its callsign rather than an invented place.
 
 ## Out of scope
 

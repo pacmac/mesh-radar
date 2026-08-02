@@ -90,6 +90,31 @@ function shortPlace(address) {
   return keep.slice(-2).join(', ') || null;
 }
 
+/** The TOWN out of a reverse-geocoded address — what a map caption wants.
+ *
+ *  NOT shortPlace()'s first token, which is the street. Nominatim returns
+ *  "Alexandra Road, St. Ives, TR26 2ET, Cornwall, United Kingdom" and
+ *  "Rue des Prés, St. Pierre du Bois, GY7 9RZ, Guernsey" — the same shape with
+ *  a different number of parts, so a fixed index picks the street in one and
+ *  the county in the other.
+ *
+ *  Counted from the END instead: the last surviving part is always the region
+ *  (Cornwall, Guernsey, Ceredigion) and the one before it is the town. Verified
+ *  against every geocoded outlier in the cache — St. Ives, Torteval, Wychavon,
+ *  St Peter Port, Nanpean — and it degrades to the single remaining part for
+ *  the village-only addresses ("Horeb, SA44 4ND, Ceredigion") that have no
+ *  street at all. */
+function placeName(address) {
+  if (!address) return null;
+  const parts = address.split(',').map(s => s.trim()).filter(Boolean);
+  // "United Kingdom" is the same for every node here and carries nothing.
+  // Guernsey and Jersey are NOT dropped — there the country IS the location.
+  const noCountry = parts.filter(s => s !== 'United Kingdom');
+  const keep = noCountry.filter(s => !(/\d/.test(s) && s.length <= 9));
+  if (!keep.length) return null;
+  return keep.length >= 2 ? keep[keep.length - 2] : keep[0];
+}
+
 /** Current relay usage, heaviest first.
  *
  *  A pure read of stored facts — the inference already ran; this does not
@@ -182,13 +207,62 @@ function reachModel() {
  *  it is showing the top N. */
 function meshLinks() {
   const all = facts('link.observed').map(f => f.value).filter(Boolean);
-  return {
-    total: all.length,
-    links: all.sort((a, b) => b.count - a.count).slice(0, 400).map(l => ({
-      a: l.a, b: l.b, a_lat: l.a_lat, a_lon: l.a_lon, b_lat: l.b_lat, b_lon: l.b_lon,
-      km: l.km, count: l.count,
-    })),
-  };
+  const links = all.sort((a, b) => b.count - a.count).slice(0, 400).map(l => ({
+    a: l.a, b: l.b, a_lat: l.a_lat, a_lon: l.a_lon, b_lat: l.b_lat, b_lon: l.b_lon,
+    km: l.km, count: l.count,
+  }));
+
+  // LABEL THE OUTLIERS ONLY. Naming all 200-odd nodes would be a wall of text
+  // over a map; naming the far ones tells you which corridor you are looking at.
+  // Chosen by distance from us — the near cluster is where we live and needs no
+  // caption, and the point of the map is the reach.
+  const seen = new Map();
+  for (const l of links) {
+    for (const [n, lat, lon] of [[l.a, l.a_lat, l.a_lon], [l.b, l.b_lat, l.b_lon]]) {
+      if (seen.has(n)) continue;
+      seen.set(n, { node: n, lat, lon, km: haversine(HOME.lat, HOME.lon, lat, lon) });
+    }
+  }
+
+  // ONE LABEL PER CLUSTER, NOT PER NODE — and this is the whole point of the
+  // marks. The first attempt named nodes and printed six Guernsey street
+  // addresses stacked on one another ("Rue du Closel 176km", "Terramar Court
+  // 177km", "Les Vieux Beaucamps 179km" …), which is six ways of saying
+  // "Guernsey" and one unreadable smudge. At 180 km the map cannot separate
+  // them anyway.
+  //
+  // Greedy from the furthest outward: the first node in a neighbourhood names
+  // it, and the rest only raise its count. CLUSTER_KM is a map-legibility
+  // figure, not a mesh one — 15 km is roughly where two dots stop being
+  // distinguishable at this zoom.
+  const CLUSTER_KM = 15;
+  const clusters = [];
+  for (const n of [...seen.values()].filter(n => n.km > 90).sort((a, b) => b.km - a.km)) {
+    const c = clusters.find(c => haversine(c.lat, c.lon, n.lat, n.lon) < CLUSTER_KM);
+    if (c) { c.count++; continue; }
+    clusters.push({ ...n, count: 1 });
+  }
+
+  const marks = clusters.slice(0, 12).map(n => ({
+    node: n.node, lat: n.lat, lon: n.lon, km: Math.round(n.km), nodes: n.count,
+    // Place beats callsign on a map — "St. Ives" locates you, "Ives" does not.
+    // Falls back to the label, then the raw num; never a placeholder.
+    label: placeName(getCachedGeocode(n.node))
+           || resolveNodeLabel(n.node) || String(n.node),
+  }));
+
+  return { total: all.length, links, marks };
+}
+
+/** Great-circle km. Duplicated from the catalogue on purpose: this file must not
+ *  import domain calculations, and an inference must not be imported for its
+ *  arithmetic — that coupling is how the engine's boundary starts to leak. */
+function haversine(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
 // RECOMPUTED ON BOOT, then on a slow timer. `relay.usage` is a batch inference

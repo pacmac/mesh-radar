@@ -154,7 +154,8 @@ export const observatoryMixin = {
     const L = this.meshLinks?.links || [];
     if (!L.length) return '';
     const C_LINK   = 'oklch(var(--s))';
-    const C_NODE   = 'oklch(var(--p))';
+    const C_NODE   = 'oklch(var(--s)/0.7)';
+    const C_FAR    = 'oklch(var(--p))';
     const C_HOME   = 'oklch(var(--bc))';
     const W = 1000, H = 700, PAD = 40;
 
@@ -183,9 +184,35 @@ export const observatoryMixin = {
         p.push(`<circle cx="${X(lon).toFixed(1)}" cy="${Y(lat).toFixed(1)}" r="4" fill="${C_NODE}" opacity="0.8"/>`);
       }
     }
+    // PLACE LABELS on the outliers only — server-chosen (meshLinks().marks), so
+    // the browser decides nothing about which corridor is worth naming, which
+    // neighbourhoods collapse into one mark, or what a mark is called.
+    // De-collided vertically, same reason as the radar: nodes that share a
+    // corridor share a pixel and overprint into a smudge otherwise.
+    //
+    // CLAMPED INTO THE PANEL. Pushing collisions downwards walked the Guernsey
+    // stack straight off the bottom edge and four labels vanished — text that
+    // is silently outside the viewBox looks like missing data, not overflow.
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const marks = [...(this.meshLinks?.marks || [])]
+      .map(m => ({ ...m, px: X(m.lon), py: Y(m.lat) }))
+      .sort((a, b) => a.py - b.py);
+    let lastY = -Infinity;
+    for (const m of marks) {
+      const y = Math.min(H - 8, Math.max(14, (m.py - lastY < 16) ? lastY + 16 : m.py));
+      lastY = y;
+      const left = m.px > W / 2;
+      // "+3" says three more nodes sit under this dot — the count is the
+      // server's, so a cluster never quietly hides its members.
+      const more = m.nodes > 1 ? ` +${m.nodes - 1}` : '';
+      p.push(`<circle cx="${m.px.toFixed(1)}" cy="${m.py.toFixed(1)}" r="5" fill="${C_FAR}"/>`);
+      p.push(`<text x="${(m.px + (left ? -9 : 9)).toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}" fill="${C_FAR}" font-size="13" font-family="JetBrains Mono">${esc(m.label)} ${m.km}km${more}</text>`);
+    }
+
     const hl = this.reach?.home_lat, hn = this.reach?.home_lon;
     if (hl != null && hn != null) {
       p.push(`<circle cx="${X(hn).toFixed(1)}" cy="${Y(hl).toFixed(1)}" r="8" fill="${C_HOME}"/>`);
+      p.push(`<text x="${(X(hn) + 12).toFixed(1)}" y="${(Y(hl) + 5).toFixed(1)}" fill="${C_HOME}" font-size="14" font-family="JetBrains Mono">us</text>`);
     }
     return p.join('');
   },
