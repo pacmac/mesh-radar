@@ -1,0 +1,204 @@
+// observatory — observations in, derived facts out.
+//
+// A GENERIC ENGINE. It does not know what a node, a bearing, a packet or a mesh
+// is, and it must never learn. Every piece of domain knowledge lives in the
+// inferences that node-dash registers with it (docs/MESH_REACH_SPEC.md §7f).
+// Two places holding mesh logic will disagree within a month; that is the whole
+// reason this file exists rather than the code being spread through core.
+//
+// The boundary is enforced by tests/test_observatory_boundary.mjs, not by good
+// intentions: this repo has stated the same rule twice and broken it twice.
+//
+// SCOPE — deliberately four things and no more (task `observatory-engine-core`):
+//   1. the observations table
+//   2. one view, proving an existing table can be read in the observation shape
+//      without copying it
+//   3. the inference registry — registration and ordering only, no runner
+//   4. nothing else. No facts store, no estimators, no UI. The facts store
+//      arrives with the first inference that needs it.
+//
+// Name is provisional (MESH_REACH_SPEC §7f, open decision 1).
+import db from './db.js';
+
+// ─── Schema ─────────────────────────────────────────────────────────────────
+//
+// Tables are prefixed `obs_` so ownership is legible at a glance in a shared
+// database. Peter, 2026-08-02: "we share the node-dash database, we add tables
+// to it. no point in more than 1 db and a LOT of the data is already in those
+// tables." Core never writes these; core emits and the engine writes.
+//
+// THE ENVELOPE IS FIXED, THE PAYLOAD IS NOT, and that is forced by the boundary.
+// §7f says observations get fixed columns because they are high-volume and
+// uniform. That cannot be literally true here: an engine forbidden from knowing
+// what a reception is cannot declare a reception's columns. So the envelope
+// (ts/kind/entity/source) is fixed and typed, and `data` carries the
+// producer-owned shape as JSON.
+//
+// This is NOT the key/value anti-pattern §7f warns about. That warning was about
+// attribute ROWS — one row per field, millions of rows holding the string
+// "rssi". This is one row per observation. When a payload field turns out to be
+// hot, it is promoted to a generated column indexed over the JSON, which is the
+// "nursery" path §7f already describes — no data migration, no rewrite.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS obs_observation (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      INTEGER NOT NULL,          -- epoch SECONDS, house convention (format.js)
+    kind    TEXT    NOT NULL,          -- open vocabulary; the engine never branches on it
+    entity  TEXT    NOT NULL,          -- the subject, opaque here (a node num, a link, a session)
+    source  TEXT,                      -- which producer wrote it; null means unattributed
+    data    TEXT                       -- JSON payload, shape owned by the producer
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_obs_ts          ON obs_observation(ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_obs_entity_kind ON obs_observation(entity, kind, ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_obs_kind_ts     ON obs_observation(kind, ts DESC);
+`);
+
+// Migrations for columns added after the initial schema go here, and they MUST
+// use PRAGMA table_xinfo, NOT table_info.
+//
+// table_info OMITS GENERATED COLUMNS. Since the nursery path promotes hot JSON
+// fields to generated columns, a table_info guard would fail to see one it had
+// already added and re-ALTER on every boot — a crash loop that has already taken
+// node-dash and DEV1 down once. The rest of db.js still uses table_info; that is
+// safe there only because none of those tables has a generated column yet.
+export function _columns(table) {
+  return db.prepare(`PRAGMA table_xinfo(${table})`).all().map(r => r.name);
+}
+{
+  const cols = _columns('obs_observation');
+  void cols;   // no migrations yet — the guard exists so the first one is correct
+}
+
+// ─── Adapters: existing tables, read in place ───────────────────────────────
+//
+// A VIEW, not a copy and not a trigger. `traceroute_history` holds 21,793 rows
+// and stays exactly where it is; this presents it in the observation shape with
+// nothing duplicated and nothing to keep in sync. It is the reason the
+// retroactive property in §7f is true on day one instead of after a migration —
+// an inference written next month reads five weeks of history that already
+// exists.
+//
+// A trigger would have copied. Two rows holding one fact is the SSOT problem
+// this project keeps paying for, so a view wins wherever the data is already
+// stored.
+//
+// The engine does not know what a traceroute is. This view is DOMAIN knowledge
+// and is the one deliberate exception in this file: it exists to prove the
+// adapter idea against real data. When the second adapter arrives, both move out
+// to a domain-owned module and this file keeps only the machinery.
+db.exec(`
+  CREATE VIEW IF NOT EXISTS obs_v_traceroute AS
+  SELECT
+    -id                       AS id,        -- negative: a view row is not an obs_observation row
+    ts                        AS ts,
+    'traceroute'              AS kind,
+    CAST(to_num AS TEXT)      AS entity,
+    'traceroute_history'      AS source,
+    json_object(
+      'status',      status,
+      'from_num',    from_num,
+      'rx_device',   rx_device,
+      'tx_device',   tx_device,
+      'rotator_az',  rotator_az,
+      'route',       route,
+      'route_back',  route_back,
+      'snr_towards', snr_towards,
+      'snr_back',    snr_back
+    )                         AS data
+  FROM traceroute_history;
+`);
+
+// ─── Writing ────────────────────────────────────────────────────────────────
+
+const _insert = db.prepare(`
+  INSERT INTO obs_observation (ts, kind, entity, source, data)
+  VALUES (@ts, @kind, @entity, @source, @data)
+`);
+
+/** Record one observation. Append-only: there is no update and no delete.
+ *
+ *  `ts` is epoch SECONDS to match the rest of this repo (format.js is
+ *  seconds-based because mesh-gw's timestamps are). Callers holding
+ *  milliseconds must divide once, at their own boundary — see
+ *  docs/modules/pac-host.md "Units on this boundary".
+ *
+ *  `data` is stringified here so producers pass a plain object and cannot
+ *  accidentally store `[object Object]`. */
+export function observe({ ts, kind, entity, source = null, data = null }) {
+  if (!kind || entity == null) throw new Error('observe: kind and entity are required');
+  _insert.run({
+    ts: Math.floor(ts ?? Date.now() / 1000),
+    kind: String(kind),
+    entity: String(entity),
+    source,
+    data: data == null ? null : JSON.stringify(data),
+  });
+}
+
+// ─── The inference registry ─────────────────────────────────────────────────
+//
+// Same shape as the extension points core already uses — registerNodeSection
+// (node-status.js), registerWsWiring / registerConnectReplay (ws-relay.js),
+// registerBrowserPlugin (browser-plugins.js). A proven idiom in this repo, not a
+// new one.
+//
+// REGISTRATION AND ORDERING ONLY. There is no runner here on purpose: a runner
+// without a consumer would be designed against an imagined caller. It arrives
+// with the first inference.
+
+const _inferences = new Map();
+
+/** Register an inference.
+ *
+ *  key    — the fact it produces, e.g. 'bearing.peak_rssi'. Unique.
+ *  deps   — keys of other inferences it consumes. [] for a leaf.
+ *  mode   — 'incremental' | 'batch'. Declared, not inspected: recomputing
+ *           everything per observation does not scale past a few thousand rows,
+ *           and the runner will need to know which it is.
+ *  run    — pure function of evidence. Returns
+ *           {value, confidence, evidence_count} or NULL. Null is a real answer
+ *           meaning "not enough evidence yet" — never a zero and never a throw.
+ *
+ *  Provenance is stamped by the runner, never by the author, so an inference
+ *  cannot launder itself as a fact. */
+export function registerInference({ key, deps = [], mode = 'batch', run }) {
+  if (!key) throw new Error('registerInference: key is required');
+  if (typeof run !== 'function') throw new Error(`registerInference(${key}): run must be a function`);
+  if (_inferences.has(key)) throw new Error(`registerInference: duplicate key ${key}`);
+  if (mode !== 'incremental' && mode !== 'batch') {
+    throw new Error(`registerInference(${key}): mode must be 'incremental' or 'batch'`);
+  }
+  _inferences.set(key, { key, deps: [...deps], mode, run });
+}
+
+/** Registered inferences in dependency order.
+ *
+ *  Throws on a cycle and on a missing dependency rather than resolving to
+ *  something plausible — a silently mis-ordered inference produces a value that
+ *  looks fine and is computed from stale inputs, which is the worst failure
+ *  available here. */
+export function inferenceOrder() {
+  const done = new Set(), visiting = new Set(), out = [];
+  const visit = (key, trail) => {
+    if (done.has(key)) return;
+    if (visiting.has(key)) throw new Error(`inference cycle: ${[...trail, key].join(' -> ')}`);
+    const inf = _inferences.get(key);
+    if (!inf) throw new Error(`unknown inference dependency: ${key} (from ${trail.at(-1) ?? 'root'})`);
+    visiting.add(key);
+    for (const d of inf.deps) visit(d, [...trail, key]);
+    visiting.delete(key);
+    done.add(key);
+    out.push(inf);
+  };
+  for (const key of _inferences.keys()) visit(key, []);
+  return out;
+}
+
+/** Read-only view of what is registered. */
+export function inferences() { return [..._inferences.values()]; }
+
+// Test seam: the registry is module-level state, so a test that registers needs
+// a way back to empty. Not exported for production use — nothing in src/ calls
+// this, and the boundary test asserts as much.
+export function _resetInferences() { _inferences.clear(); }

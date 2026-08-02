@@ -53,6 +53,19 @@ import './alarm-ws.js';
 import './alarm-images.js';
 import './alarm-browser.js';
 
+// ─── OBSERVATORY ─────────────────────────────────────────────────────────────
+// The observations store and inference registry (docs/MESH_REACH_SPEC.md §7f).
+// THIS IS THE ONLY PLACE IN src/ ALLOWED TO NAME IT, and
+// tests/test_observatory_boundary.mjs fails if a second appears. Core emits;
+// core does not reach in.
+//
+// Static and side-effecting, for the same reason the alarm imports above are:
+// the schema is created on load, and a registration made later inside listen()
+// silently never fires.
+//
+// Delete this line and the observatory's own files and node-dash is unchanged.
+import './observatory.js';
+
 registerNodeIdToMacResolver(getLiveMacByNodeId);
 registerMacToNodeIdResolver(getLiveNodeIdByMac);
 registerMacResolver(getLiveMacByNodeId);
