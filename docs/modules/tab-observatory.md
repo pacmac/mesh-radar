@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: db3f126aae0eb7885e4836964a1a0711083750718c79043874c2d824aeae1aa3
+source_hash: 9f133ffefa18884c519d905717f870c746e6d241f7b7b28f6847034f9f67e608
 updated: 2026-08-03
 ---
 
@@ -467,3 +467,22 @@ Two fixes, both from the mockup's own grammar:
 
 A chart whose axis can be misread is not a labelling detail — every conclusion
 drawn from it is wrong in the same direction.
+
+### The labels sit on their notches
+
+Peter, twice: *"189km is still at the end."* The second time was still correct,
+and the cause was not the notch — it was the **label**.
+
+The header row was `flex justify-between`, which pins `189.1 km record` hard
+against the card's right edge no matter where its notch stands. Fixing the axis
+scaling moved the notch to 75.6% and left the label at 100%, so the card still
+read "the record is the end of the line".
+
+Each label is now absolutely positioned at its own notch and opens **outward** —
+best reads leftward from its mark, record rightward from its — so they cannot
+collide despite sitting ~5% apart.
+
+Verified by geometry, not by eye: on a 1336.5 px card, `176.4 km` ends at
+937.4 px against its notch at 936.3 px; `189.1 km record` begins at 1003.9 px
+against its notch at 1002.8 px; 66 px clear between them, and the record label
+now ends at 84% of the card instead of at its edge.

@@ -60,10 +60,20 @@
                belong to the page's type ramp. The two ends CANNOT collide,
                because justify-between puts them at opposite ends by
                construction rather than by a clamp that has to be got right. -->
-          <div class="flex justify-between items-baseline font-mono text-xs">
-            <span class="text-primary font-semibold"
+          <!-- THE LABELS SIT ON THEIR NOTCHES, not at the card's edges.
+               justify-between used to pin "189.1 km record" hard against the
+               right edge while its notch stood at 75.6% — so the record still
+               read as "the end" however correctly the notch was placed. Peter,
+               twice: "189km is still at the end".
+               Each label is anchored to its own notch and opens OUTWARD — best
+               reads leftward from its mark, record rightward from its — so the
+               two cannot collide even though they sit ~5% apart. -->
+          <div class="relative h-4 font-mono text-xs">
+            <span class="absolute -translate-x-full pr-1 text-primary font-semibold whitespace-nowrap"
+                  :style="`left:${obsFrontierPct().window}%`"
                   x-text="((charts.board.frontier.best_km ?? charts.board.frontier.window_km) ?? '—') + ' km'"></span>
-            <span class="text-base-content/50"
+            <span class="absolute pl-1 text-base-content/50 whitespace-nowrap"
+                  :style="`left:${obsFrontierPct().record}%`"
                   x-text="charts.board.frontier.record_km + ' km record'"></span>
           </div>
 
