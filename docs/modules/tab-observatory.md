@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 948e7dcbf42ab506f9db0e04f124ac6cc9bef589e279c1dd71f4464a5ae1be98
+source_hash: 2490f383cf23825670d1120f6ff28a6d25c325bab43035e357371d96d3a9f884
 updated: 2026-08-03
 ---
 
@@ -281,3 +281,65 @@ hand-computed values from the same evening exactly.
 
 - Any derived value the server should own.
 - The panels awaiting a feed — each fills in its own task.
+
+
+## Type does not go inside a stretched SVG
+
+Task `frontier-ruler-type-scale`. Peter, 2026-08-03: *"the frontier and the other
+new stats card text is huge and disproportional with everything else on the
+page."*
+
+The frontier ruler was one `<svg viewBox="0 0 520 40">` holding **both** the bar
+and its labels. Stretched to the card width it rendered **1309 px wide — a 2.52x
+uniform scale** — so `font-size: 11` painted at **27.7 px**, larger than the
+biggest stat value on the page (23.8 px) and more than double body text
+(12.75 px). The `9 px` caption painted at 22.7 px.
+
+The same scale caused the collision: the two value labels were positioned in
+520-unit space with no knowledge of how wide they would actually paint, so
+"175.7 km" and "189.1 km" ran through each other into an unreadable smear.
+
+**The rule, which is the actual fix:** SVG is for geometry, whose whole purpose
+is to scale. Type must not scale — it belongs to the page's type ramp. So text
+is rendered as HTML, always, and `viewBox` units are reserved for shapes.
+
+This is the second time the defect shipped. It was called out first on the bands
+chart (*"why are the fonts so huge, that new chart bears no resemblence id
+design"*), which was fixed as an instance. Fixing the instance again rather than
+naming the rule would have guaranteed a third.
+
+### What replaced it
+
+Three HTML rows, no `viewBox` anywhere:
+
+```
+175.7 km                                  189.1 km record
+[==========================o===========|=========]
+this period                                     all-time
+```
+
+- Rows 1 and 3 are `flex justify-between`. The ends **cannot collide by
+  construction** — no clamp to get wrong.
+- Row 2 is the geometry: a track, a `--p` fill to `window_km`, a dot at its head,
+  a notch at `record_km`, positioned by percentage so it stays responsive.
+- Every size is `text-xs` (12.75 px), already used by `stat-desc`. Nothing new
+  was introduced into the type scale.
+- `obsFrontierRuler()` (returned an SVG string) became `obsFrontierPct()`
+  (returns two percentages). The 8% headroom past the record is kept, so the
+  notch never sits on the edge reading as "we are at the end".
+
+The stat cards were deliberately **not** touched: they measure 23.8 px
+consistently with each other and with the rest of the site, so they were not the
+disproportion. The ruler was.
+
+### The check that keeps it fixed
+
+Effective size, not declared size:
+
+```js
+declaredFontSize * (renderedWidth / viewBoxWidth)
+```
+
+Requirement: **no SVG text on the page exceeds 13 px effective.** Verified 0
+violations after the change, with all four ruler labels at 12.75 px and no
+overlap (first label ends at x=328, next begins at x=1456).

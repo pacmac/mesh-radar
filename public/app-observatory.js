@@ -451,25 +451,37 @@ export const observatoryMixin = {
    *  A sparkline cannot say "92 of 189, and the notch is over there", and that
    *  gap is the entire product. Also honest in a way the bare record never was:
    *  189.1 km alone implied success for a month. */
-  obsFrontierRuler() {
+  /** THE FRONTIER RULER — positions only, no markup.
+   *
+   *  This used to build an SVG string containing both the bar and its labels.
+   *  The SVG was declared `viewBox="0 0 520 40"` and rendered 1309 px wide, so
+   *  everything inside it scaled 2.52x: `font-size: 11` painted at 27.7 px,
+   *  larger than the biggest stat value on the page, and the two value labels
+   *  overlapped into an unreadable smear because they were positioned in
+   *  520-unit space with no knowledge of how wide they would actually paint.
+   *
+   *  Peter has now called this out twice — the bands chart first ("why are the
+   *  fonts so huge, that new chart bears no resemblence id design"), then this.
+   *  So the rule, not just the instance: TEXT DOES NOT GO INSIDE A STRETCHED
+   *  SVG. Geometry scales, which is what SVG is for; type must not, because it
+   *  belongs to the page's type ramp.
+   *
+   *  What is left here is arithmetic. The markup lives in the template, where
+   *  the labels are ordinary HTML at `text-xs` and cannot collide.
+   *
+   *  Returns percentages, because the bar is a responsive HTML element now and
+   *  has no fixed coordinate space to map into. */
+  obsFrontierPct() {
     const f = this.charts?.board?.frontier;
-    if (!f || f.record_km == null) return '';
-    const W = 520, H = 40, L = 8, R = 8;
+    if (!f || f.record_km == null) return { window: 0, record: 0 };
+    // Headroom past the record so the notch never sits on the very edge, where
+    // it reads as "we are at the end" rather than "there is further to go".
     const span = Math.max(f.record_km, f.window_km ?? 0) * 1.08 || 1;
-    const X = km => L + (km / span) * (W - L - R);
-    const p = [];
-    p.push(`<line x1="${L}" y1="24" x2="${W - R}" y2="24" stroke="oklch(var(--bc)/0.2)" stroke-width="2"/>`);
-    if (f.window_km != null) {
-      p.push(`<line x1="${L}" y1="24" x2="${X(f.window_km).toFixed(1)}" y2="24" stroke="oklch(var(--p))" stroke-width="3"/>`);
-      p.push(`<circle cx="${X(f.window_km).toFixed(1)}" cy="24" r="4" fill="oklch(var(--p))"/>`);
-      p.push(`<text x="${X(f.window_km).toFixed(1)}" y="14" text-anchor="middle" fill="oklch(var(--bc)/0.7)" font-size="11" font-family="JetBrains Mono">${f.window_km} km</text>`);
-    }
-    const rx = X(f.record_km).toFixed(1);
-    p.push(`<line x1="${rx}" y1="16" x2="${rx}" y2="32" stroke="oklch(var(--bc)/0.55)" stroke-width="2"/>`);
-    p.push(`<text x="${rx}" y="14" text-anchor="end" fill="oklch(var(--bc)/0.5)" font-size="11" font-family="JetBrains Mono">${f.record_km} km</text>`);
-    p.push(`<text x="${L}" y="38" fill="oklch(var(--bc)/0.4)" font-size="9" font-family="JetBrains Mono">this period</text>`);
-    p.push(`<text x="${W - R}" y="38" text-anchor="end" fill="oklch(var(--bc)/0.4)" font-size="9" font-family="JetBrains Mono">all-time</text>`);
-    return p.join('');
+    const pct  = km => Math.max(0, Math.min(100, (km / span) * 100));
+    return {
+      window: f.window_km == null ? 0 : +pct(f.window_km).toFixed(2),
+      record: +pct(f.record_km).toFixed(2),
+    };
   },
 
   /** THE SELECTION FUNNEL — where the candidate pool actually goes.

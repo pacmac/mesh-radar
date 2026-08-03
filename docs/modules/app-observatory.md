@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 6d508a32664df5dbb1755d36e350b2506626b7b906544c171be7bc6f06aceecf
+source_hash: d0a02f8551b8aa1c91ffdf8d52b40a3daf74e771a8ff8d704a1e2cb06a6cc446
 updated: 2026-08-03
 ---
 
@@ -255,7 +255,15 @@ sees the same thing."*
 Task `board-panel`. Peter: *"at first glance it has been identical since it was first
 built, I see no progress and no evidence that anything is even happening."*
 
-`obsVerdictClass()` colours; `obsSpark()` draws; `obsFrontierRuler()` draws the gap.
+`obsVerdictClass()` colours; `obsSpark()` draws; `obsFrontierPct()` returns the
+two positions the gap is drawn from.
+
+`obsFrontierPct()` replaced `obsFrontierRuler()`, which returned an SVG string
+containing its own labels. Inside a `viewBox="0 0 520 40"` stretched to 1309 px
+those labels painted at 2.52x — 27.7 px against a 12.75 px page — and overlapped
+each other. Text now lives in the template as HTML and this returns only
+percentages. See `docs/modules/tab-observatory.md`, "Type does not go inside a
+stretched SVG".
 **None of the three decides anything** — state and basis are computed by
 `db.boardVerdicts()` and this file colours what it is told, per BROWSER_CONTRACT.
 

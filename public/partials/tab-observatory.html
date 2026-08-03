@@ -95,7 +95,37 @@
       <div class="card bg-base-100 shadow shrink-0">
         <div class="card-body p-3 gap-1">
           <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Frontier</h2>
-          <svg viewBox="0 0 520 40" class="w-full" x-html="obsFrontierRuler()"></svg>
+
+          <!-- TYPE IS NOT GEOMETRY. This was one <svg viewBox="0 0 520 40">
+               holding both the bar and its labels. Stretched to 1309 px it
+               scaled 2.52x, so font-size 11 painted at 27.7 px — bigger than
+               the largest stat on the page — and the two value labels, placed
+               in 520-unit space with no knowledge of their painted width, ran
+               straight through each other.
+               The bar is geometry and still scales; the words are HTML and
+               belong to the page's type ramp. The two ends CANNOT collide,
+               because justify-between puts them at opposite ends by
+               construction rather than by a clamp that has to be got right. -->
+          <div class="flex justify-between items-baseline font-mono text-xs">
+            <span class="text-primary font-semibold"
+                  x-text="(charts.board.frontier.window_km ?? '—') + ' km'"></span>
+            <span class="text-base-content/50"
+                  x-text="charts.board.frontier.record_km + ' km record'"></span>
+          </div>
+
+          <div class="relative h-2 my-1 rounded-full bg-base-content/10">
+            <div class="absolute inset-y-0 left-0 rounded-full bg-primary"
+                 :style="`width:${obsFrontierPct().window}%`"></div>
+            <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-base-100"
+                 :style="`left:${obsFrontierPct().window}%`"></div>
+            <div class="absolute -inset-y-1 w-0.5 -translate-x-1/2 bg-base-content/55"
+                 :style="`left:${obsFrontierPct().record}%`"></div>
+          </div>
+
+          <div class="flex justify-between font-mono text-xs text-base-content/40">
+            <span>this period</span>
+            <span>all-time</span>
+          </div>
         </div>
       </div>
     </template>
