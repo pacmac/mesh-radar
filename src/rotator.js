@@ -32,6 +32,12 @@ function loadTargets() {
   return DEFAULT_TARGETS;
 }
 
+// How long after a reported hold lapses before we ask again. The device reports
+// whole milliseconds remaining; asking at exactly that instant races the
+// firmware clearing its own lock, and losing that race costs another full
+// round trip. Small, fixed, and not a user knob.
+const HOLD_LAPSE_MARGIN_MS = 250;
+
 class RotatorClient extends EventEmitter {
   constructor() {
     super();
@@ -154,8 +160,87 @@ class RotatorClient extends EventEmitter {
    *  points it and holds it, and that is a reason to wait rather than to fight
    *  for it.
    *
-   *  The timeout is a backstop for a device that never answers, not a poll. */
-  point(az, { timeoutMs = 60_000 } = {}) {
+   *  The timeout is a backstop for a device that never answers, not a poll.
+   *
+   *  ONE OWNER FOR POINTING — A NEGOTIATION, NOT A COMMAND. Peter, 2026-08-03:
+   *  "point is a negotiation with the pointer: are you free, if so move now and
+   *  maybe hold; if not free, either wait for it to be free or tell the caller
+   *  to try again in x ms", and "one SSOT with rotator handshake and intelligent
+   *  decisions and modes."
+   *
+   *  So the whole handshake lives here rather than being re-implemented by each
+   *  caller, and the caller states a POLICY rather than re-implementing one:
+   *
+   *    point(az)                       ask; if held, come straight back with
+   *                                    retryInMs — the caller decides
+   *    point(az, { hold })             aim, then hold the beam for `hold` ms
+   *    point(az, { patienceMs: 5000 }) queue for a hold of up to 5 s, then retry
+   *    point(az, { patienceMs: true }) queue however long it says it needs
+   *    point(az, { patienceMs: 0 })    never queue (the default)
+   *
+   *  EXISTING CALLERS ARE UNTOUCHED. `point(az)` and `point(az, { timeoutMs })`
+   *  behave exactly as they did — the default patience is 0, so an unaware
+   *  caller still gets one ask and an immediate answer. The new fields are
+   *  additions to the result, never changes to it.
+   *
+   *  `patienceMs`, not `wait`: this function already had a wait — `timeoutMs`,
+   *  which waits for the device to ANSWER. Patience is the different thing,
+   *  waiting for the beam to be FREE. Naming both "wait" is how a caller ends up
+   *  setting one and meaning the other.
+   *
+   *  Every return answers the same three questions, whatever the policy was:
+   *
+   *    { ok, az,                       did it land, and where
+   *      busy, holdMs, retryInMs,      if not: who has it, and until when
+   *      waitedMs, timeout, err }      what this call spent, and how it ended
+   *
+   *  `retryInMs` is the whole point of carrying the busy frame. Before this the
+   *  busy frame was discarded, so a caller learned it had been refused but not
+   *  for how long — and the mission runner deferred a full 180 s tick over a
+   *  hold the firmware reported as 423 ms.
+   *
+   *  PATIENCE IS A CEILING, NOT A PROMISE. The YAGI is shared with the
+   *  garage alarm. A brief hold is the alarm finishing a move and is worth
+   *  waiting out; a long one means it owns the beam, and queueing behind that
+   *  starves the alarm rather than helping us. That is why the default is not to
+   *  wait at all, and why callers state a bound rather than a boolean. */
+  async point(az, { timeoutMs = 60_000, hold = 0, patienceMs = 0 } = {}) {
+    const started = this._now();
+    let r = await this._pointOnce(az, timeoutMs);
+
+    // ARE YOU FREE? — no. How long? Wait it out if the caller's policy allows,
+    // then ask exactly once more. One retry, never a loop: if it is still held
+    // after its own stated hold has lapsed, something else took it and spinning
+    // here would hold up the caller indefinitely.
+    if (r.busy && patienceMs) {
+      const ceiling = patienceMs === true ? Infinity : Number(patienceMs) || 0;
+      const holdMs  = Number(r.holdMs) || 0;
+      if (holdMs > 0 && holdMs <= ceiling) {
+        const waitMs = holdMs + HOLD_LAPSE_MARGIN_MS;
+        await new Promise(res => setTimeout(res, waitMs));
+        r = await this._pointOnce(az, timeoutMs);
+      }
+    }
+
+    // REQUESTING THE HOLD IS PART OF POINTING. Callers that aimed and then held
+    // were issuing two calls with a gap between them, and that gap is precisely
+    // when another user can take the beam.
+    if (hold > 0 && r.ok && !r.busy && !r.timeout) this.hold(hold);
+
+    const waitedMs = this._now() - started;
+    return {
+      timeout: false, busy: false, err: null, ...r,
+      // TELL THE CALLER WHEN TO COME BACK. Only meaningful while still refused;
+      // null otherwise, so `if (r.retryInMs)` is a safe test for "not now".
+      retryInMs: r.busy ? (Number(r.holdMs) || 0) + HOLD_LAPSE_MARGIN_MS : null,
+      waitedMs,
+    };
+  }
+
+  /** Monotonic-ish clock, isolated so the negotiation above stays testable. */
+  _now() { return Date.now(); }
+
+  _pointOnce(az, timeoutMs) {
     return new Promise((resolve) => {
       let settled = false;
       const finish = (r) => {
@@ -167,7 +252,23 @@ class RotatorClient extends EventEmitter {
         resolve(r);
       };
       const onDone = (m) => finish({ ok: m.ok !== false, az: m.az ?? this.status?.az ?? null, err: m.err ?? null });
-      const onBusy = ()  => finish({ ok: false, busy: true, az: this.status?.az ?? null });
+      // CARRY THE REMAINING HOLD. This discarded the busy frame entirely, so the
+      // caller knew it was refused but not for how long — and deferred a whole
+      // 180 s mission tick over a hold the firmware reported as 423 ms.
+      //
+      // THE STATUS FRAME IS THE SOURCE OF holdMs, NOT THE BUSY FRAME. Measured
+      // against the v4 on 2026-08-03: a refused move answers with exactly
+      // `{"evt":"busy","held":true}` — no countdown in it. The remaining time
+      // lives only on the status stream (`held:true, holdMs:2233`, ticking
+      // down), which _connect merges into _status. So `m?.holdMs` is the
+      // defensive read and `this.status.holdMs` is the one that actually
+      // supplies the number; do not "simplify" by dropping the status side.
+      // Task `aim-wait-out-the-hold`.
+      const onBusy = (m) => finish({
+        ok: false, busy: true,
+        az: this.status?.az ?? null,
+        holdMs: m?.holdMs ?? this.status?.holdMs ?? null,
+      });
       const timer = setTimeout(() => finish({ ok: false, timeout: true, az: this.status?.az ?? null }), timeoutMs);
       this.on('done', onDone);
       this.on('busy', onBusy);

@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: ac59522ee2c962a68d325350488ed5417469bea054ee4c9c2551c4535cfb6c29
+source_hash: 49bbd6d8d27532cfb668341670ddfc6a7b718db8e3246cecdaaa23722ebade14
 updated: 2026-08-03
 ---
 
@@ -223,13 +223,42 @@ trigger the next one.
 (`docs/DISCOVERY_STRATEGY.md`) on **every tick**, so a change from the dashboard
 takes effect on the next mission with no restart.
 
-`aim_timeout_sec`, `timeout_sec` and `recent` stay in this module's own
-`DEFAULTS` and are deliberately not exposed. They are protocol timing, not
-policy — a setting nobody should be turning is not a setting.
+`hold_sec`, `aim_timeout_sec`, `mission_timeout_sec` and `aim_patience_sec` are
+read from `discovery` too. `recent` stays in this module's own `DEFAULTS` and is
+deliberately not exposed: how many rows the feed keeps changes no measurement.
+
+`aim_patience_sec` (default **5 s**, bounded `[0, 60]`) is how long `point()` may
+queue for a beam another user holds. It is a **ceiling**, not a promise — the
+rotator reports the milliseconds left, and a hold longer than this is the garage
+alarm using the beam, where queueing would starve the alarm rather than help us.
+`0` restores the old behaviour of giving up the whole tick on any hold.
+
+## Aiming is one call, because the negotiation is the rotator's
+
+`_aim()` makes a single `rotator.point(bearing, { timeoutMs, hold, patienceMs })`
+call. It does not sleep, retry a held beam, or issue its own `hold()` — all three
+belong to `point()`, which is the SSOT for talking to the rotator
+(`docs/modules/rotator.md`). Peter, 2026-08-03: *"one SSOT with rotator handshake
+and intelligent decisions and modes."*
+
+This module supplies the **policy** and reads the **answer**:
+
+| from config | passed as | means |
+|---|---|---|
+| `hold_sec` | `hold` | hold the beam this long once it lands |
+| `aim_patience_sec` | `patienceMs` | queue this long for a beam someone else holds |
+| `aim_timeout_sec` | `timeoutMs` | backstop for a device that never answers |
+
+When the beam is still held after `point()` has done its waiting, the mission
+yields for the tick and the note carries `retryInMs` — *"beam held by another
+user — free in ~9960 ms"*. Previously the note said only "beam held by another
+user", which is indistinguishable from a dead rotator in the log, and the tick was
+given up over holds as short as **423 ms**.
 
 ## The beam is held while the shot goes out
 
-`rotator.hold(hold_sec × 1000)` immediately after the aim lands, before dispatch.
+`hold_sec × 1000` is handed to `point()`, which issues the hold as part of the
+same call — not as a second call after the aim.
 Default 15 s — sized to the real reply window (a measured manual round trip took
 **2.9 s**) rather than to the 90 s timeout, which would monopolise an antenna the
 garage alarm also needs. `0` disables it.
@@ -238,6 +267,12 @@ garage alarm also needs. `0` disables it.
 dispatch, not trusted from the `done` event, and if the beam has moved outside
 the beamwidth the mission is deferred without spending one of its attempts — it
 tested nothing about the target, so charging it would be a lie. (B58.)
+
+### Why the hold moved inside `point()`
+
+Aim-then-hold was two calls with a gap between them, and that gap is precisely
+when another user can take the beam. It was also code every future caller would
+have had to copy correctly.
 
 ### The setting existed and did nothing, briefly
 

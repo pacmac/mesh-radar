@@ -1,8 +1,8 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: a67ede31445313ae7c916387714dff9f0eb47801fad05029732fc97104c0cdf8
-updated: 2026-07-07
+source_hash: 2885da3037d290a8bb79a10da8bb276c0aec20bf1889403a379cfbb3cf149d0d
+updated: 2026-08-03
 ---
 
 # Module: rotator
@@ -155,18 +155,87 @@ so both variants get a real completion signal:
 { evt:'busy',    held:true }        ← another user holds the lock
 ```
 
-### `point(az, { timeoutMs })`
+### `point(az, { timeoutMs, hold, patienceMs })` — a negotiation, not a command
 
-Sends one command and listens for the device's own answer. **No tolerance loop,
-no settle polling, no retry** — the firmware already does closed-loop shortest
-path with stall, runaway and drift-hold guards, and reimplementing that here
-would be a second, worse copy.
+Peter, 2026-08-03: *"point is a negotiation with the pointer: are you free, if so
+move now and maybe hold; if not free, either wait for it to be free or tell the
+caller to try again in x ms"*, and *"one SSOT with rotator handshake and
+intelligent decisions and modes."*
 
-Resolves `{ ok, az }` on `done`; `{ ok:false, busy:true }` when another user holds
-the lock. The YAGI has two users — node-dash and the garage alarm, which points
-it and **holds** it — so `busy` is a reason to wait, never to fight for the beam.
+The beam has two users — node-dash and the garage alarm — so *"are you free?"* is
+a real question with three possible answers, and every caller was about to have to
+handle all three itself. They live here instead.
 
-The timeout is a backstop for a device that never answers. It is not a poll.
+| call | behaviour |
+|---|---|
+| `point(az)` | ask once; if held, return immediately with `retryInMs` |
+| `point(az, { hold })` | aim, then hold the beam for `hold` ms |
+| `point(az, { patienceMs: n })` | if held for ≤ `n` ms, wait it out and retry **once** |
+| `point(az, { patienceMs: true })` | wait however long it says it needs |
+
+Every call returns the same shape, whatever the policy was:
+
+```js
+{ ok, az,                     // did it land, and where
+  busy, holdMs, retryInMs,    // if not: who has it, and until when
+  waitedMs, timeout, err }    // what this call spent, and how it ended
+```
+
+**Backward compatible.** `point(az)` and `point(az, { timeoutMs })` behave exactly
+as before — `patienceMs` defaults to `0` and `hold` to `0`, so an unaware caller
+still gets one ask and an immediate answer. The new fields are additions to the
+result, never changes to it. `scanner.js`, `active-tracker.js` and `rotator-api.js`
+use `move()` and are untouched by this.
+
+Internals: `_pointOnce()` is the single-shot handshake (send, listen for the
+device's own answer). **No tolerance loop, no settle polling** — the firmware
+already does closed-loop shortest path with stall, runaway and drift-hold guards,
+and reimplementing that here would be a second, worse copy. The timeout is a
+backstop for a device that never answers; it is not a poll.
+
+#### `holdMs` comes from the STATUS frame, not the busy frame
+
+Measured against the v4 on 2026-08-03. A refused move answers with exactly:
+
+```
+{"evt":"busy","held":true}          ← no countdown in it
+```
+
+The remaining time exists only on the status stream (`held:true, holdMs:2233`,
+ticking down), which `_connect()` merges into `_status`. So `this.status.holdMs`
+is what actually supplies the number and `m?.holdMs` is only a defensive read —
+dropping the status side would silently return `holdMs: null` for every hold.
+
+Busy frames arrive **regardless of the event subscription**: a client subscribed
+to `['status','log','done']` (the production set, `_connect()`) still receives
+them. Verified live, so no subscription change was needed.
+
+#### Why patience is a ceiling and the default is zero
+
+A brief hold is the alarm finishing a move and is worth waiting out. A long one
+means the alarm owns the beam, and queueing behind it starves the alarm rather
+than helping us — so callers state a bound instead of a boolean, and the default
+is not to wait at all.
+
+`HOLD_LAPSE_MARGIN_MS` (250) is added before retrying: asking at exactly the
+reported instant races the firmware clearing its own lock, and losing that race
+costs another round trip. Fixed, not a user knob.
+
+Only **one** retry, never a loop. If it is still held after its own stated hold
+has lapsed, something else took the beam, and spinning here would block the
+caller indefinitely.
+
+#### Verified live (2026-08-03, v4 at .186)
+
+| case | result |
+|---|---|
+| free | landed |
+| held, `patienceMs: 0` | busy in **20 ms**, `holdMs: 5786`, `retryInMs: 6036` |
+| held 3 s, `patienceMs: 8000` | waited, retried, landed `ok:true az:109` |
+| held 10 s, `patienceMs: 2000` | refused in **16 ms**, `retryInMs: 9960` — did not queue |
+
+The third row is the one that matters: before this, that case deferred a whole
+180 s mission tick over a hold the firmware reported as **423 ms**.
 
 ## `hold(ms)` — the firmware verb, and how I got it wrong
 

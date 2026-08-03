@@ -64,6 +64,13 @@ export const DEFAULTS = {
     // the real reply window — a measured round trip took 2.9 s — rather than to
     // the full timeout, which would monopolise the antenna.
     hold_sec:            15,
+    // HOW LONG WE QUEUE FOR A BEAM SOMEONE ELSE HOLDS, before giving the tick
+    // up. The rotator reports the milliseconds left on the current hold, so
+    // this is compared against a real number, not guessed at. 5 s because the
+    // holds we cause are `hold_sec`-sized and the alarm's are short moves; a
+    // longer patience would queue behind the alarm rather than yield to it,
+    // and 0 restores the old behaviour of deferring the whole 180 s tick.
+    aim_patience_sec:    5,
     // WAS HARDCODED IN mission-runner, and it underpins every rate conclusion:
     // timeout_sec decides what counts as a miss AND dominates the real cadence,
     // because a 90 s wait inside a 180 s interval means the configured rate is
@@ -130,6 +137,7 @@ const DISCOVERY_LIMITS = {
   new_node_hours:      [0, 720],
   mission_timeout_sec: [10, 300],
   aim_timeout_sec:     [10, 300],
+  aim_patience_sec:    [0, 60],
   recompute_min:       [1, 240],
   max_attempts_per_day: [1, 5000],
   channel_util_pause:   [1, 100],

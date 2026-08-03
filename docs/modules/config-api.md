@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 80f1fca90c4251eb5b04ed03ae2866fd5ffc4f9cd89032ddb6252e0758562a00
+source_hash: 8c2acb24885981a780b7eeb2a832d2301c7f4be07e2282b2fb2379106f402e3d
 updated: 2026-08-03
 ---
 
@@ -191,6 +191,20 @@ latency).
 
 **A conclusion drawn from an unenforced timing is not a conclusion.**
 `MESH_REACH_SPEC` §3c.
+
+### `aim_patience_sec` — default 5, bounded `[0, 60]`
+
+Task `aim-wait-out-the-hold`. How long `rotator.point()` may queue for a beam
+another user holds before the mission gives the tick up.
+
+It is a **ceiling, not a promise**. The rotator reports the milliseconds left on
+the current hold, so this is compared against a real number rather than guessed
+at: a hold shorter than this is the garage alarm finishing a move and is worth
+waiting out; a longer one means the alarm owns the beam, and queueing behind it
+would starve the alarm rather than help us.
+
+`0` restores the previous behaviour — give up the entire 180 s tick on any hold,
+which is what it did over a hold the firmware reported as **423 ms**.
 
 ## `relay_observation.retain_days`
 

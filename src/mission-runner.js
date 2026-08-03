@@ -57,6 +57,10 @@ import { defineHook, newProbeId } from './hooks.js';
 //
 // Declared in the ORDER THEY RUN — registration order is execution order, and
 // these are a sequence, not a set.
+// How long a hold may be before the mission yields rather than waiting. A brief
+// hold is the alarm finishing a move; a long one means it owns the beam and
+// queueing behind it would starve the alarm, not help us.
+
 const H = {
   idle: defineHook({
     name: 'discovery-idle', scope: 'per-mode', modes: ['disc'],
@@ -96,6 +100,8 @@ const DEFAULTS = {
   // covers a device that never answers, and is generous because a 180° sweep
   // on the v4 takes real time.
   aim_timeout_sec: 90,
+  // How long point() may queue for a beam another user holds. See config-api.
+  aim_patience_sec: 5,
   // Long enough for a multi-hop route to come back. The manager's own default
   // is 60 s and a 5-hop round trip does not always fit in it.
   timeout_sec: 90,
@@ -128,6 +134,7 @@ function cfg() {
     ...(d.hold_sec            != null ? { hold_sec: d.hold_sec } : {}),
     ...(d.mission_timeout_sec != null ? { timeout_sec: d.mission_timeout_sec } : {}),
     ...(d.aim_timeout_sec     != null ? { aim_timeout_sec: d.aim_timeout_sec } : {}),
+    ...(d.aim_patience_sec    != null ? { aim_patience_sec: d.aim_patience_sec } : {}),
     ...(d.max_attempts_per_day != null ? { max_attempts_per_day: d.max_attempts_per_day } : {}),
     ...(d.channel_util_pause  != null ? { channel_util_pause: d.channel_util_pause } : {}),
     ...(d.attempts_per_target != null ? { attempts_per_target: d.attempts_per_target } : {}),
@@ -572,26 +579,32 @@ class MissionRunner extends EventEmitter {
     // enormously better than not transmitting at all. So a near miss is
     // ACCEPTED and NAMED, and the azimuth actually achieved is what gets
     // recorded on the attempt — never the one we asked for.
+    // THE NEGOTIATION IS ROTATOR.POINT'S, NOT OURS. It asks, waits out a short
+    // hold if one is reported, aims, and holds the beam — one call. This was
+    // three separate steps here (point, sleep-and-retry, hold), which every
+    // other caller would have had to copy. Peter, 2026-08-03: "one SSOT with
+    // rotator handshake and intelligent decisions and modes."
     const beam = beamwidthOf(rotMac);
-    let r = await rotator.point(bearing, { timeoutMs: c.aim_timeout_sec * 1000 });
+    const aimArgs = {
+      timeoutMs: c.aim_timeout_sec * 1000,
+      hold: (Number(c.hold_sec) || 0) * 1000,
+      patienceMs: (Number(c.aim_patience_sec) || 0) * 1000,
+    };
+    let r = await rotator.point(bearing, aimArgs);
 
     // One re-issue if it stopped well short. The v4 often lands closer on a
     // second, shorter move; a third would just be stubbornness.
     if (!r.busy && !r.timeout && r.ok === false
         && r.az != null && Math.abs(angleDiff(r.az, bearing)) > beam / 2) {
-      r = await rotator.point(bearing, { timeoutMs: c.aim_timeout_sec * 1000 });
+      r = await rotator.point(bearing, aimArgs);
     }
 
-    if (r.busy)    return { az: r.az, note: 'beam held by another user', wait: true };
+    // Still held after point() did its waiting — so this is a long hold, the
+    // alarm owns the beam, and the mission yields. retryInMs is reported because
+    // "busy" alone is what made this look like a dead rotator in the log.
+    if (r.busy)    return { az: r.az, note: `beam held by another user${r.retryInMs ? ` — free in ~${r.retryInMs} ms` : ''}`, wait: true };
     if (r.timeout) return { az: r.az, note: 'rotator did not answer', wait: true };
     if (r.az == null) return { az: null, note: 'rotator reported no azimuth', wait: true };
-
-    // HOLD IT THERE. The firmware's own verb (rotator.hold(ms)); nothing used
-    // it before. Without this the beam is free to move between the `done` event
-    // and the packet going out — B58 caught a shot fired at az 120 when the
-    // target bearing was 30.
-    const holdMs = (Number(c.hold_sec) || 0) * 1000;
-    if (holdMs > 0) rotator.hold(holdMs);
 
     const off = Math.round(Math.abs(angleDiff(r.az, bearing)));
     const az  = Math.round(r.az);
