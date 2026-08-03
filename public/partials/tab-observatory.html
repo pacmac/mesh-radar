@@ -47,101 +47,70 @@
         <div class="card-body p-3 gap-1">
           <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
             Frontier
-            <span class="font-normal normal-case tracking-normal text-base-content/40">— every positioned node by distance from us</span>
+            <span class="font-normal normal-case tracking-normal text-base-content/40">— how far we reached, over time</span>
           </h2>
 
-          <!-- TYPE IS NOT GEOMETRY. This was one <svg viewBox="0 0 520 40">
-               holding both the bar and its labels. Stretched to 1309 px it
-               scaled 2.52x, so font-size 11 painted at 27.7 px — bigger than
-               the largest stat on the page — and the two value labels, placed
-               in 520-unit space with no knowledge of their painted width, ran
-               straight through each other.
-               The bar is geometry and still scales; the words are HTML and
-               belong to the page's type ramp. The two ends CANNOT collide,
-               because justify-between puts them at opposite ends by
-               construction rather than by a clamp that has to be got right. -->
-          <!-- THE LABELS SIT ON THEIR NOTCHES, not at the card's edges.
-               justify-between used to pin "189.1 km record" hard against the
-               right edge while its notch stood at 75.6% — so the record still
-               read as "the end" however correctly the notch was placed. Peter,
-               twice: "189km is still at the end".
-               Each label is anchored to its own notch and opens OUTWARD — best
-               reads leftward from its mark, record rightward from its — so the
-               two cannot collide even though they sit ~5% apart. -->
-          <div class="relative h-4 font-mono text-xs">
-            <span class="absolute -translate-x-full pr-1 text-primary font-semibold whitespace-nowrap"
-                  :style="`left:${obsFrontierPct().window}%`"
-                  x-text="((charts.board.frontier.best_km ?? charts.board.frontier.window_km) ?? '—') + ' km'"></span>
-            <span class="absolute pl-1 text-base-content/50 whitespace-nowrap"
-                  :style="`left:${obsFrontierPct().record}%`"
-                  x-text="charts.board.frontier.record_km + ' km record'"></span>
+          <!-- TIME on x, DISTANCE on y. Peter said so in his first message
+               about this card and I built a distance ruler twice instead. A
+               ruler cannot answer "is the frontier rising?", and it parks the
+               all-time record near the right edge purely because the record is a
+               big NUMBER — which reads as recent. Against time, the 4 Jul record
+               is a CEILING drawn across the plot and the gap below it is the
+               work left. -->
+          <div class="relative h-24 my-1 border-l border-b border-base-content/15">
+            <!-- y SCALE. Without it the height of a dot is unreadable — the whole
+                 point of putting distance on y. -->
+            <template x-for="(y, yi) in obsReachYTicks()" :key="'y'+yi">
+              <div class="absolute inset-x-0 h-px bg-base-content/8" :style="`bottom:${y.bottom}%`"></div>
+            </template>
+            <template x-for="(y, yi) in obsReachYTicks()" :key="'yl'+yi">
+              <span class="absolute left-1 -translate-y-1/2 font-mono text-[9px] text-base-content/30"
+                    :style="`bottom:${y.bottom}%`" x-text="y.km + ' km'"></span>
+            </template>
+
+            <template x-for="(d, di) in obsReachDays()" :key="'d'+di">
+              <div class="absolute inset-y-0 w-px bg-base-content/8" :style="`left:${d.left}%`"></div>
+            </template>
+
+            <template x-for="(l, li) in obsReachLines()" :key="'l'+li">
+              <div class="absolute inset-x-0 h-px"
+                   :class="l.kind === 'record' ? 'bg-warning/70' : 'bg-primary/50'"
+                   :style="`bottom:${l.bottom}%`" :title="l.text"></div>
+            </template>
+            <!-- The two reference labels sit ~6% apart on a 96 px plot, which is
+                 ~6 px — drawn on the same side they overlapped into an unreadable
+                 smear. Record rides ABOVE its line, best BELOW its own, so they
+                 separate by construction however close the values get. -->
+            <template x-for="(l, li) in obsReachLines()" :key="'lt'+li">
+              <span class="absolute right-1 font-mono text-[10px] px-1 rounded bg-base-100/80"
+                    :class="l.kind === 'record' ? 'text-warning -translate-y-full' : 'text-primary translate-y-full'"
+                    :style="`bottom:${l.bottom}%`" x-text="l.text"></span>
+            </template>
+
+            <template x-for="(p, pi) in obsReachPoints()" :key="'p'+pi">
+              <div class="absolute w-1.5 h-1.5 -translate-x-1/2 translate-y-1/2 rounded-full"
+                   :class="p.direct ? 'bg-success' : 'bg-primary'"
+                   :style="`left:${p.left}%;bottom:${p.bottom}%` + (p.opacity != null ? `;opacity:${p.opacity}` : '')"
+                   :title="p.title"></div>
+            </template>
           </div>
 
-          <!-- THE DISTRIBUTION, not the maximum. One bar per positioned node on
-               a distance axis: height is hit rate, colour is tone. The bar chart
-               replaced a single progress bar that used full page width to carry
-               two numbers.
-               Colour is honest ONLY where we measured it: snr_db is non-null just
-               for nodes heard DIRECTLY (27 of 503). Everything else is flat and
-               neutral, because the signal we hold for a relayed node describes
-               the relay, not the node. -->
-          <div class="relative h-10 my-1">
-            <template x-for="(t, ti) in obsStripTicks()" :key="'t'+ti">
-              <div class="absolute inset-y-0 w-px bg-base-content/10" :style="`left:${t.left}%`"></div>
-            </template>
-
-            <template x-for="(b, bi) in obsStripBars()" :key="'b'+bi">
-              <div class="absolute bottom-0 w-[2px] -translate-x-1/2 rounded-sm"
-                   :class="{ 'bg-success': b.tone === 'signal',
-                             'bg-primary': b.tone === 'answered',
-                             'bg-base-content/35': b.tone === 'tried',
-                             'bg-base-content/15': b.tone === 'untried' }"
-                   :style="`left:${b.left}%;height:${b.height}%` + (b.opacity != null ? `;opacity:${b.opacity}` : '')"
-                   :title="b.title"></div>
-            </template>
-
-            <!-- BEST IN WINDOW. The header prints this number, so it must be
-                 locatable on the axis — a figure stated but not placed is worse
-                 than one omitted. Primary, to match the header value it belongs
-                 to, and distinguished from the all-time notch beside it. -->
-            <template x-if="obsFrontierPct().window > 0">
-              <div class="absolute -inset-y-1 w-0.5 -translate-x-1/2 bg-primary"
-                   :style="`left:${obsFrontierPct().window}%`"
-                   :title="((charts.board.frontier.best_km ?? charts.board.frontier.window_km)) + ' km — best in window'"></div>
-            </template>
-
-            <!-- the record notch, full height so it reads as a threshold -->
-            <div class="absolute -inset-y-1 w-0.5 -translate-x-1/2 bg-warning"
-                 :style="`left:${obsFrontierPct().record}%`"
-                 :title="charts.board.frontier.record_km + ' km record'"></div>
-          </div>
-
-          <!-- THE AXIS IS DISTANCE, NOT TIME, and that was not obvious. Peter
-               read the 189.1 notch at 92% as "weeks ago" rather than "furthest",
-               which is the correct reading of a bar whose left-to-right used to
-               mean this-period -> all-time.
-               The mockup solves it with one word: position 0 is labelled "us",
-               not "0". An axis that starts at "us" cannot be read as a timeline. -->
           <div class="relative h-3 font-mono text-[10px] text-base-content/35">
-            <template x-for="(t, ti) in obsStripTicks()" :key="'l'+ti">
-              <span class="absolute -translate-x-1/2" :style="`left:${t.left}%`"
-                    :class="t.km === 0 ? 'text-base-content/55' : ''"
-                    x-text="t.km === 0 ? 'us' : t.km"></span>
+            <template x-for="(d, di) in obsReachDays()" :key="'x'+di">
+              <span class="absolute -translate-x-1/2" :style="`left:${d.left}%`" x-text="d.text"></span>
             </template>
           </div>
 
           <div class="flex justify-between items-center font-mono text-xs text-base-content/40">
             <span x-text="obsWindowLabel()"></span>
             <span class="flex items-center gap-2 text-[10px]">
-              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-sm bg-success"></i>heard direct — colour is signal</span>
-              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-sm bg-primary"></i>answered</span>
-              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-sm bg-base-content/35"></i>tried</span>
-              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-sm bg-base-content/15"></i>never tried</span>
+              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-full bg-success"></i>heard direct — opacity is signal</span>
+              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-full bg-primary"></i>answered via relay</span>
             </span>
-            <!-- "all-time" used to sit here, from when this was a time-progress
-                 bar. The axis is DISTANCE now, so that label named the wrong
-                 dimension. The record notch carries the all-time reference. -->
-            <span class="text-base-content/30">bar height = hit rate</span>
+            <!-- The legend named the ruler's encodings (bar height = hit rate,
+                 tried / never tried). This plot has neither: one dot per ANSWERED
+                 traceroute, y is how far it reached. -->
+            <span class="text-base-content/30">each dot = one answered traceroute</span>
           </div>
         </div>
       </div>

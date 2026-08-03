@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 9f133ffefa18884c519d905717f870c746e6d241f7b7b28f6847034f9f67e608
+source_hash: 6ce552c46e3b988f4e11fb005cf9aded58e30dfc900ab1a4e3ea2695fdeeb76c
 updated: 2026-08-03
 ---
 
@@ -486,3 +486,32 @@ Verified by geometry, not by eye: on a 1336.5 px card, `176.4 km` ends at
 937.4 px against its notch at 936.3 px; `189.1 km record` begins at 1003.9 px
 against its notch at 1002.8 px; 66 px clear between them, and the record label
 now ends at 84% of the card instead of at its edge.
+
+### The axes were the wrong way round — TIME on x, DISTANCE on y
+
+Peter said this in his **first** message about the card and I built a distance
+ruler anyway, twice, then argued when he repeated it: *"i already told you the x
+axis is time not istance. the y axis is distance."*
+
+A distance ruler cannot answer the question the card exists for — **is the
+frontier rising?** — and it parks the all-time record near the right edge purely
+because the record is a large *number*, which reads as *recent*. Rescaling the
+axis, relabelling `0` as `us`, and moving the labels onto their notches were all
+fixes to the wrong chart. Every one of them left 189.1 "at the end", because the
+axis was the wrong **dimension**.
+
+Now: one dot per answered traceroute at `(when, how far)`, the all-time record as
+a horizontal **ceiling**, the window's best as a second line, day gridlines on x
+and a km scale on y.
+
+Two defects fixed on sight after the first render:
+
+- the reference labels sat ~6% apart on a 96 px plot (~6 px) and overlapped into
+  an unreadable smear. Record now rides **above** its line and best **below**
+  its own, so they separate by construction however close the values get.
+  Measured after: 175 px vs 196 px, 21 px clear.
+- there was no y scale at all, which makes a dot's height unreadable — the entire
+  point of putting distance on y. Ticks now at 50/100/150/200 km.
+
+Verified live: 63 dots in the DOM over a 7-day window, x labels Jul 28 → Aug 3,
+record line at 90.9% and best at 84.8% of the plot height.

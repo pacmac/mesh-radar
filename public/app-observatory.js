@@ -496,6 +496,76 @@ export const observatoryMixin = {
     return Math.max(250, furthest, f?.record_km ?? 0) || 1;
   },
 
+  // TIME on x, DISTANCE on y — the axes the card should always have had.
+  // Display arithmetic only: the server decides the window (from_ts/to_ts), what
+  // counts as answered, and whether a signal reading is honest.
+  obsReachPoints() {
+    const f = this.charts?.board?.frontier;
+    const pts = f?.reach;
+    if (!Array.isArray(pts) || !pts.length) return [];
+    const t0 = f.from_ts, t1 = f.to_ts;
+    const tSpan = Math.max(1, t1 - t0);
+    const yMax = this.obsReachYMax();
+    return pts.map(p => ({
+      left:   +Math.max(0, Math.min(100, ((p.ts - t0) / tSpan) * 100)).toFixed(3),
+      bottom: +Math.max(0, Math.min(100, (p.km / yMax) * 100)).toFixed(3),
+      direct: p.direct,
+      // Signal opacity across the LoRa demod range, -20 to +12 dB. Normalising a
+      // server-supplied number, not deciding what counts as strong.
+      opacity: p.snr_db == null ? null : Math.max(0.4, Math.min(1, (p.snr_db + 20) / 32)),
+      title: `${p.label} · ${p.km} km · ${new Date(p.ts * 1000).toLocaleString()}`
+           + (p.snr_db == null ? ' · no direct signal' : ` · ${p.snr_db} dB direct`),
+    }));
+  },
+
+  // y must include the RECORD even when the window never got near it — the gap
+  // to that line is the entire point of the card.
+  obsReachYMax() {
+    const f = this.charts?.board?.frontier;
+    const furthest = Array.isArray(f?.reach) && f.reach.length
+      ? Math.max(...f.reach.map(p => p.km)) : 0;
+    return Math.max(f?.record_km ?? 0, furthest, 10) * 1.1;
+  },
+
+  // y scale in km. Round steps chosen from the axis height so the labels stay
+  // readable rather than tracking the data exactly.
+  obsReachYTicks() {
+    const yMax = this.obsReachYMax();
+    const step = yMax > 150 ? 50 : yMax > 60 ? 25 : 10;
+    const out = [];
+    for (let km = step; km < yMax; km += step) {
+      out.push({ km, bottom: +((km / yMax) * 100).toFixed(3) });
+    }
+    return out;
+  },
+
+  // Horizontal reference lines: the all-time record, and the window's best.
+  obsReachLines() {
+    const f = this.charts?.board?.frontier;
+    if (!f) return [];
+    const yMax = this.obsReachYMax();
+    const best = f.best_km ?? f.window_km;
+    const at = km => +Math.max(0, Math.min(100, (km / yMax) * 100)).toFixed(3);
+    const out = [];
+    if (f.record_km != null) out.push({ kind: 'record', bottom: at(f.record_km), km: f.record_km, text: `${f.record_km} km record` });
+    if (best != null)        out.push({ kind: 'best',   bottom: at(best),        km: best,        text: `${best} km best` });
+    return out;
+  },
+
+  // Day boundaries down the x axis, so "when" is readable.
+  obsReachDays() {
+    const f = this.charts?.board?.frontier;
+    if (!f?.from_ts) return [];
+    const t0 = f.from_ts, t1 = f.to_ts, span = Math.max(1, t1 - t0);
+    const out = [];
+    const d = new Date(t0 * 1000); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 1);
+    for (let g = d.getTime() / 1000; g < t1; g += 86400) {
+      out.push({ left: +(((g - t0) / span) * 100).toFixed(3),
+                 text: new Date(g * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) });
+    }
+    return out;
+  },
+
   obsStripBars() {
     const f = this.charts?.board?.frontier;
     const strip = f?.strip;
