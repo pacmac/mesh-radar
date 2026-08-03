@@ -49,6 +49,36 @@ import { traceroute, tracerouteEnabled } from './traceroute.js';
 import { transmitterForMode, isTransmitterForMode, dashMode, modeName } from './dash-mode.js';
 import { rotator } from './rotator.js';
 import { ownDeviceNums } from './node-filter.js';
+import { defineHook, newProbeId } from './hooks.js';
+
+// THE PROBE, NARRATED. Task `hooks-discovery-path`. Peter, 2026-08-03: "what I
+// expect to see is a log for each probe, showing the steps that we are cycling
+// through, instead of hiding what is being done in the code."
+//
+// Declared in the ORDER THEY RUN — registration order is execution order, and
+// these are a sequence, not a set.
+const H = {
+  idle: defineHook({
+    name: 'discovery-idle', scope: 'per-mode', modes: ['disc'],
+    purpose: 'reports why the discovery loop is not probing right now',
+  }),
+  select: defineHook({
+    name: 'select-target', scope: 'per-node',
+    purpose: 'takes the highest-ranked candidate and holds it for its attempt budget',
+  }),
+  aim: defineHook({
+    name: 'aim-antenna', scope: 'per-node',
+    purpose: 'points the beam at the target bearing, or defers if it cannot',
+  }),
+  dispatch: defineHook({
+    name: 'dispatch-trace', scope: 'per-node',
+    purpose: 'sends the traceroute and waits for a reply',
+  }),
+  outcome: defineHook({
+    name: 'record-outcome', scope: 'per-node',
+    purpose: 'records what came back, or that nothing did',
+  }),
+};
 import { getRotatorAddress, getAllDeviceCfgs } from './device-config.js';
 import { getConfig, ourChannelUtil } from './db.js';
 import { resolveNodeLabel } from './node-label.js';
@@ -120,6 +150,7 @@ class MissionRunner extends EventEmitter {
     this._brake    = null;   // why we are not transmitting, or null
     this._dispatching = false;
     this._current  = null;
+    this._idleReason = null;   // last reported idle cause; see _sayIdle
     this._recent   = [];
     this._timer    = null;
     this._started  = false;
@@ -246,6 +277,26 @@ class MissionRunner extends EventEmitter {
     }, wait);
   }
 
+  /** Report an idle reason ONCE, and again only when it changes.
+   *
+   *  The tick runs every interval_sec (180 s by default). Emitting every time
+   *  would bury the log in repetition and make the one line that matters
+   *  invisible — the same "notification you learn to ignore" failure as a bar of
+   *  permanently-green badges. A latch turns state into transitions.
+   *
+   *  Recovery is reported too: going from a reason to running again is exactly
+   *  as interesting as the reverse, and a fault that never announces its end
+   *  leaves the reader unsure whether it is still live. */
+  _sayIdle(reason, severity = 'info') {
+    if (reason === this._idleReason) return;
+    if (reason) {
+      H.idle.emit({ summary: `not probing — ${reason}`, severity, detail: { reason } });
+    } else if (this._idleReason) {
+      H.idle.emit({ summary: `probing resumed (was: ${this._idleReason})`, detail: { was: this._idleReason } });
+    }
+    this._idleReason = reason;
+  }
+
   async _tick() {
     if (!this._started) return;
     const c = cfg();
@@ -261,6 +312,7 @@ class MissionRunner extends EventEmitter {
     this._sent = this._sent.filter(ts => ts > dayAgo);
     if (this._sent.length >= (Number(c.max_attempts_per_day) || 400)) {
       this._brake = `daily budget spent (${this._sent.length}/${c.max_attempts_per_day})`;
+      this._sayIdle(this._brake, 'notice');
       this._emit();
       return;
     }
@@ -270,6 +322,7 @@ class MissionRunner extends EventEmitter {
     const utilCap = Number(c.channel_util_pause) || 100;
     if (util != null && util > utilCap) {
       this._brake = `channel ${Math.round(util)}% busy, over ${utilCap}%`;
+      this._sayIdle(this._brake, 'notice');
       this._emit();
       return;
     }
@@ -280,10 +333,24 @@ class MissionRunner extends EventEmitter {
     // per-mode behaviour including which radio transmits (Peter's standing
     // rule), so the runner reads the mode rather than choosing a radio itself.
     const mode = modeName(dashMode.value);
-    if (mode !== 'disc' || c.enabled === false || !tracerouteEnabled()
+    // FIVE REASONS, ONE WORDLESS RETURN — until now. This is the same shape as
+    // the gate that hid passive tracing for 9.5 hours: the loop stops and
+    // nothing anywhere says which of five things stopped it. Each is now named.
+    // Emitted ON CHANGE ONLY (see _sayIdle) because this tick runs every 180 s
+    // and a per-tick log would be noise, not evidence.
+    const idleReason =
+        mode !== 'disc'                              ? `mode is ${mode}, discovery only runs in DISC`
+      : c.enabled === false                          ? 'discovery runner is switched off'
+      : !tracerouteEnabled()                         ? 'automatic traceroute is off (traceroute.enabled)'
+      : this.busy                                    ? null   // normal: a probe is in hand
+      : (!this._queue.length && !this._holding)      ? 'no candidates — the shortlist is empty'
+      : null;
+    if (idleReason || mode !== 'disc' || c.enabled === false || !tracerouteEnabled()
         || this.busy || (!this._queue.length && !this._holding)) {
+      if (idleReason) this._sayIdle(idleReason, 'notice');
       return;   // the finally in _schedule() brings us back
     }
+    this._sayIdle(null);   // running again — clears the latch so a recurrence re-reports
 
     // STICK WITH A TARGET UNTIL ITS BUDGET IS SPENT.
     //
@@ -301,9 +368,13 @@ class MissionRunner extends EventEmitter {
     //
     // The cooldown still governs RE-SELECTION much later. It just no longer
     // governs the burst, which is what it was accidentally doing.
+    const freshTarget = !this._holding;
     if (!this._holding) {
       this._holding = this._queue.shift();
       this._left    = Math.max(1, Number(cfg().attempts_per_target) || 6);
+      // ONE PROBE ID PER TARGET RUN, not per attempt: the six shots at one
+      // candidate are one investigation and read as one trace.
+      this._probeId = newProbeId();
     }
     const m  = this._holding;
     if (!m) return;                    // queue drained between the guard and here
@@ -326,6 +397,18 @@ class MissionRunner extends EventEmitter {
     };
     this._emit();
 
+    // The ranker's `reason` string is computed in reach.mission and, until now,
+    // thrown away after sorting. It is the answer to "why this one" and belongs
+    // in the trace.
+    if (freshTarget) {
+      H.select.emit({
+        probe_id: this._probeId,
+        summary: `chose ${this._current.label} at ${m.km ?? '?'} km — ${m.reason || m.cls || 'no reason given'}`,
+        detail: { target: String(to), km: m.km, cls: m.cls, bearing: m.bearing, step_km: m.step_km,
+                  budget: this._left, queued: this._queue.length },
+      });
+    }
+
     // AIM BEFORE FIRING. The first version did not, and it showed: a 234 km
     // attempt went out on an omni at no particular azimuth, with rotator_az
     // null on the stored row. A directional antenna pointed at nothing is a
@@ -336,6 +419,14 @@ class MissionRunner extends EventEmitter {
     const aim = await this._aim(m.bearing, c);
     this._current.az = aim.az;
     this._current.aim = aim.note;
+    H.aim.emit({
+      probe_id: this._probeId,
+      severity: aim.wait ? 'notice' : 'info',
+      summary: aim.wait
+        ? `could not aim at ${Math.round(m.bearing ?? 0)}° — ${aim.note}`
+        : `aimed at ${Math.round(m.bearing ?? 0)}°${aim.az != null ? `, beam reports ${Math.round(aim.az)}°` : ''}`,
+      detail: { wanted: m.bearing, az: aim.az, note: aim.note, deferred: !!aim.wait },
+    });
     if (aim.wait) {
       // A DEFERRAL MUST LEAVE A TRACE. Without this the runner sat with a full
       // queue and zero attempts and there was nothing anywhere saying why —
@@ -375,6 +466,12 @@ class MissionRunner extends EventEmitter {
     this._sent.push(Date.now());
     this._emit();
 
+    H.dispatch.emit({
+      probe_id: this._probeId,
+      summary: `traceroute → ${this._current.label} via ${device}, waiting up to ${c.timeout_sec}s`,
+      detail: { to: String(to), device, timeout_sec: c.timeout_sec, az: this._current.az },
+    });
+
     let outcome;
     this._dispatching = true;
     try {
@@ -412,6 +509,18 @@ class MissionRunner extends EventEmitter {
       this._left--;
       if (this._left <= 0) this._holding = null;
     }
+
+    // BOTH OUTCOMES SPEAK. A miss is data (§4), and a silent failure is the
+    // exact shape of every bug found on 2026-08-02/03.
+    H.outcome.emit({
+      probe_id: this._probeId,
+      severity: outcome.ok ? 'info' : 'notice',
+      summary: outcome.ok
+        ? `${this._current.label} answered — ${(outcome.found || []).length} relay${(outcome.found || []).length === 1 ? '' : 's'} revealed`
+        : `${this._current.label}: ${outcome.error}`,
+      detail: { target: String(to), ok: !!outcome.ok, error: outcome.error ?? null,
+                found: outcome.found ?? [], attempts_left: this._left },
+    });
 
     const row = { ...this._current, ...outcome, finished: Math.floor(Date.now() / 1000),
                   attempt_of: this._left > 0 ? `${(Number(cfg().attempts_per_target) || 6) - this._left} of ${Number(cfg().attempts_per_target) || 6}` : null };

@@ -1,8 +1,8 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: 46a682feaea386b9f15f2a7c47ebe140f6db70e7efae69bf65342dbda783ca21
-updated: 2026-08-02
+source_hash: ac59522ee2c962a68d325350488ed5417469bea054ee4c9c2551c4535cfb6c29
+updated: 2026-08-03
 ---
 
 # Module: mission-runner
@@ -319,6 +319,75 @@ get busy             // → bool — a mission is in hand (aim/hold/dispatch/wai
 get dispatching      // → bool — a packet is in the air; what passive-tracer yields to
 events: 'activity'   // emitted on every state change
 ```
+
+## The probe narrates itself
+
+Task `hooks-discovery-path`. Peter, 2026-08-03: *"what I expect to see is a log for each
+probe, showing the steps that we are cycling through, instead of hiding what is being done
+in the code."*
+
+Five hooks, declared in `mission-runner.js` in the order they run (registration order is
+execution order — see `docs/modules/hooks.md`):
+
+| hook | scope | says |
+|---|---|---|
+| `discovery-idle` | per-mode `disc` | why the loop is not probing |
+| `select-target` | per-node | which candidate, and the ranker's reason |
+| `aim-antenna` | per-node | the bearing wanted and what the beam reports |
+| `dispatch-trace` | per-node | the send, the radio, the timeout |
+| `record-outcome` | per-node | the reply, or that none came |
+
+A real trace, 2026-08-03:
+
+```
+select-target   chose HEGM at 97.5 km — 6 attempts, no reply yet — 16 km past the nearest node…
+aim-antenna     aimed at 108°, beam reports 107°
+dispatch-trace  traceroute → HEGM via !fa39f7b4, waiting up to 90s
+record-outcome  HEGM: no reply after 90s                             [notice]
+aim-antenna     aimed at 108°, beam reports 108°        ← attempt 2 of 6
+dispatch-trace  traceroute → HEGM …
+```
+
+**One `probe_id` spans a whole target run, not one attempt.** The six shots at a candidate
+are one investigation and read as one trace: `select-target` fires once, then
+aim/dispatch/outcome repeat. That is ~19 rows per target run, ~3,800/day at current
+cadence — inside the retention design.
+
+### The five-reason silent return, now named
+
+The loop stopped on any of five conditions with a bare `return`:
+
+```js
+if (mode !== 'disc' || c.enabled === false || !tracerouteEnabled()
+    || this.busy || (!this._queue.length && !this._holding)) return;
+```
+
+Identical in shape to the gate that hid passive tracing for 9.5 hours. Each now has a
+sentence, and **recovery is reported too** — a fault that never announces its end leaves
+the reader unsure whether it is still live:
+
+```
+10:46:53  not probing — no candidates — the shortlist is empty
+10:58:53  probing resumed (was: no candidates — the shortlist is empty)
+```
+
+`_sayIdle()` latches on the reason so only CHANGES emit. The tick runs every 180 s and a
+per-tick line would bury the one that matters — the same "notification you stop reading"
+failure as a bar of permanently-green badges.
+
+`busy` is deliberately NOT a reason: a probe in hand is normal, not an explanation.
+
+### The ranker's reason is no longer thrown away
+
+`reach.mission` computes a `reason` string per candidate and, until now, discarded it after
+sorting. It is the answer to "why this one" and now rides `select-target`.
+
+### Known cosmetic inconsistency
+
+`dispatch-trace` reports the radio as a node id (`!fa39f7b4`) because that is what
+`transmitterForMode()` returns, while most of the codebase speaks MAC. Not corrected here —
+it is a display nit in one string, and changing the transmitter vocabulary is a separate
+concern.
 
 ## Invariants
 
