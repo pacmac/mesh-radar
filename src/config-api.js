@@ -129,7 +129,12 @@ router.get('/', (req, res) => {
   res.json(result);
 });
 
-const PASV_DEFAULTS = { stale_sec: 1800, stale_fail_sec: 600, timeout_sec: 60 };
+const PASV_DEFAULTS = { stale_sec: 1800, stale_fail_sec: 600, timeout_sec: 60,
+  // Targets with zero lifetime successes drop to the slow lane after this many
+  // attempts — a BACKOFF, not a cap. 26.6% of 30 days of attempts went to nodes
+  // that have never answered; a hard cap would have lost first contact with 16
+  // of the 113 nodes that eventually did.
+  dead_after_attempts: 10, dead_retry_hours: 12 };
 const ACTV_DEFAULTS = { dwell_sec: 90,   retry_sec: 30 };
 const SCAN_DEFAULTS = { step_deg:  5,    dwell_sec: 60 };
 

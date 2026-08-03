@@ -5,7 +5,7 @@ import { dashMode, transmitterForMode, isListenerForMode, passiveTracingAllowed,
          modeName, modesAllowingPassive } from './dash-mode.js';
 import { defineHook } from './hooks.js';
 
-import { stmts, getConfig } from './db.js';
+import db, { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
 import { FF } from './feature-flags.js';
 import { traceroute, tracerouteEnabled } from './traceroute.js';
@@ -39,6 +39,10 @@ function getPasvConfig() {
     stale_ms:      (cfg.stale_sec      ?? 1800) * 1000,
     stale_fail_ms: (cfg.stale_fail_sec ??  600) * 1000,
     timeout_ms:    (cfg.timeout_sec    ??   60) * 1000,
+    // A target with zero lifetime successes gets the slow lane after this many
+    // attempts. Not a cap — see needsTrace().
+    dead_after:    cfg.dead_after_attempts ?? 10,
+    dead_retry_ms: (cfg.dead_retry_hours   ?? 12) * 3600 * 1000,
   };
 }
 
@@ -47,11 +51,52 @@ function getPasvConfig() {
 const _attempted = new Map();
 const _failed    = new Map();
 
+/** Lifetime attempts and successes for a target, FROM THE STORE.
+ *
+ *  Not from _attempted/_failed: those are in-memory and reset on every restart,
+ *  so a redeploy silently returned every dead target to the ten-minute cadence.
+ *  That is the same defect that made the airtime budget meaningless (B75), and
+ *  it was compounding here unseen — node-dash was restarted eight times in one
+ *  evening. */
+function lifetime(from_num) {
+  try {
+    return db.prepare(`SELECT COUNT(*) n, SUM(status='ok') ok
+                         FROM traceroute_history WHERE to_num = ?`).get(from_num)
+        || { n: 0, ok: 0 };
+  } catch (e) {
+    // LOUD, not silent. Returning zeros here means "never backed off", so a
+    // swallowed error would quietly restore the exact waste this fixes — the
+    // failed-permissive pattern that already cost us B74 and B75.
+    console.error(`[passive-tracer] lifetime(${from_num}) failed: ${e.message}`);
+    return { n: 0, ok: 0 };
+  }
+}
+
 function needsTrace(from_num) {
-  const { stale_ms, stale_fail_ms } = getPasvConfig();
+  const { stale_ms, stale_fail_ms, dead_after, dead_retry_ms } = getPasvConfig();
   const now = Date.now();
   const lastFail    = _failed.get(from_num)    ?? 0;
   const lastSuccess = _attempted.get(from_num) ?? 0;
+
+  // BACK OFF, NEVER ABANDON. 26.6% of all attempts over 30 days went to targets
+  // that have never once answered — 3422 of them from this tracer alone, with no
+  // cap of any kind. But a hard cap is the wrong fix: of the 113 nodes that have
+  // ever answered, first contact came at attempt 16 for the 90th percentile, 70
+  // for the 99th, and 94 at worst. Capping at 10 would have saved 3553 attempts
+  // and thrown away first contact with 16 of those 113 nodes.
+  //
+  // So a target with zero lifetime successes moves to the slow lane after
+  // `dead_after` attempts. It still gets tried — every `dead_retry_ms` instead of
+  // every ten minutes — and one success returns it to the fast cadence forever.
+  const life = lifetime(from_num);
+  if ((life.ok || 0) === 0 && (life.n || 0) >= dead_after) {
+    const lastAny = Math.max(lastFail, lastSuccess);
+    if (lastAny && (now - lastAny) <= dead_retry_ms) return false;
+    const node = nodeList._cache.get(from_num);
+    const ts   = node?.last_traceroute?.ts ?? 0;
+    return !ts || (now - ts) > dead_retry_ms;
+  }
+
   if (lastFail    && (now - lastFail)    <= stale_fail_ms) return false;
   if (lastSuccess && (now - lastSuccess) <= stale_ms)      return false;
   const node = nodeList._cache.get(from_num);

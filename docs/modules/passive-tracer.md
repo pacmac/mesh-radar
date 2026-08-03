@@ -1,8 +1,8 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: 053f5757afd806a39c4985f6b97a2eefbc2f2b1f548f46371bb19a5d36b6885f
-updated: 2026-08-03
+source_hash: 84b4eccf565f7c20c866fa26cd8056380da0f3dbab57b9ca339ca7e9a339fdec
+updated: 2026-08-04
 ---
 
 # Module: passive-tracer
@@ -243,3 +243,73 @@ routes would be pushed to the browser. Returning early avoids that.
 
 The two `lifecycle.js` dispatch sites need no equivalent: they use
 `.catch(() => {})` and discard the rejection harmlessly.
+
+## Backing off targets that have never answered (task `back-off-dead-targets`, 2026-08-04)
+
+### The waste
+
+`needsTrace()` gated on **time alone** — `stale_fail_ms` (600 s) since the last
+failure, `stale_ms` (1800 s) since the last success. There was no notion of a
+target that simply never replies, so any node we keep hearing was re-traced every
+ten minutes indefinitely.
+
+Measured over 30 days, split by dispatcher and by whether the target has *ever*
+answered:
+
+```
+mission  has answered     8207 attempts   1429 ok   (17.4%)
+passive  has answered     7301            1088      (14.9%)
+passive  NEVER answered   3422               0
+mission  NEVER answered   2185               0
+```
+
+**5,607 of 21,115 attempts — 26.6% — bought nothing**, and the passive tracer is
+the larger half of it. One node absorbed **415** attempts; `79fc` took 88, of
+which 66 were passive.
+
+### Why a hard cap is the wrong fix
+
+Attempt number at which a node *first* answered, across the 113 that ever have:
+
+```
+p50 1 · p75 6 · p90 16 · p95 24 · p99 70 · max 94
+```
+
+Half answer immediately, but the tail is long. A cap of 10 saves 3553 attempts
+and **loses first contact with 16 of 113 nodes (14.2%)**; even a cap of 30 still
+loses 6. Those are real contacts, and one of them took 94 attempts to arrive.
+
+### Back off instead
+
+After `pasv.dead_after_attempts` (default **10**) attempts with **zero** lifetime
+successes, the retry interval becomes `pasv.dead_retry_hours` (default **12**)
+instead of ten minutes. Nothing is ever abandoned: a node needing 70 attempts
+still gets them, over weeks rather than hours, and the moment it answers once it
+returns to the normal cadence permanently.
+
+### Attempts come from the store
+
+Counted from `traceroute_history`, not from the in-memory `_attempted` / `_failed`
+maps — those reset on every restart, so a redeploy silently returned every dead
+target to the fast cadence. Exactly the failure that made the airtime budget
+meaningless (B75), and it was compounding here unseen.
+
+### Projected effect
+
+Applied to the last 30 days: **2810 passive attempts (13.3% of all traceroute
+traffic)** were aimed at targets that would now be in the slow lane. At a 12-hour
+retry instead of ~10 minutes those become roughly **39** — about **2771 attempts
+of airtime reclaimed, with nothing abandoned**.
+
+Verified discrimination on live data:
+
+```
+79fc   88 attempts,   0 ok  ->  SLOW LANE (12h)
+STV2  137 attempts,   0 ok  ->  SLOW LANE (12h)
+fir    23 attempts,  21 ok  ->  normal cadence
+```
+
+`lifetime()` reads the store and **logs loudly on failure**. Returning zeros means
+"never back off", so a swallowed error would silently restore the entire waste —
+the failed-permissive pattern that already produced B74 and B75. The `db` default
+import was missing on the first pass and the catch would have hidden it.
