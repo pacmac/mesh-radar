@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { getConfig, setConfig } from './db.js';
+import { defineHook } from './hooks.js';
 
 const RECONNECT_DELAY_MS = 5000;
 
@@ -37,6 +38,33 @@ function loadTargets() {
 // firmware clearing its own lock, and losing that race costs another full
 // round trip. Small, fixed, and not a user knob.
 const HOLD_LAPSE_MARGIN_MS = 250;
+
+// EVERY BEAM COMMAND ANNOUNCES ITSELF, AT THE ONE PLACE THEY ALL PASS THROUGH.
+//
+// Peter, 2026-08-03: "shouldn't our commanding of the pointer also be a hook,
+// instead of buried in the core code... in terms of a uniform structure."
+//
+// Four callers move this antenna — mission-runner, scanner, active-tracker and
+// the browser via rotator-api — and until now only ONE of them said so. The
+// user-initiated path (rotator-api) was completely silent: you could swing the
+// beam from the browser and nothing anywhere recorded it.
+//
+// Putting the hook in each caller is what produced that: three of four forgot.
+// So it lives HERE, in `move()`, which every command funnels through — the same
+// principle as `mesh-send.js` being the single recorded transmit path. A future
+// caller cannot move the beam silently because it does not get the choice.
+const BEAM = defineHook({
+  name: 'beam-command', scope: 'actuator',
+  purpose: 'records every command that moves the antenna, and which subsystem asked for it',
+});
+
+// A SWEEP MUST NOT DROWN THE DECISION TRACE. `scanner` steps the beam
+// continuously, and one row per step would bury the handful of lines that
+// explain what discovery is doing. Announce only a MATERIAL change of aim, or a
+// change of who is asking — the same latch rule the idle reporter uses.
+const BEAM_MIN_DEG = 5;
+const BEAM_QUIET_MS = 30_000;
+let _lastBeam = { az: null, by: null, at: 0 };
 
 class RotatorClient extends EventEmitter {
   constructor() {
@@ -142,9 +170,26 @@ class RotatorClient extends EventEmitter {
   // .186); v5 with move2az. NOTE, from the v4's own @help() on 2026-08-02:
   // BOTH commands exist on v4 — @seek2az() and @move2az() are both listed. The
   // split here is which one we chose, not which one the firmware has.
-  move(az) {
+  move(az, { by = 'unattributed' } = {}) {
     const cmd = (this._variant === 'v5') ? 'move2az' : 'seek2az';
-    this._send({ action: cmd, args: [Number(az)] });
+    const target = Number(az);
+
+    // Latched: a material change of aim, or a different subsystem taking the
+    // beam. `by` defaults to 'unattributed' rather than being omitted, so an
+    // un-updated caller shows up AS un-updated instead of vanishing.
+    const now = Date.now();
+    let drift = _lastBeam.az == null ? Infinity : Math.abs(target - _lastBeam.az);
+    if (drift > 180) drift = 360 - drift;
+    if (drift >= BEAM_MIN_DEG || by !== _lastBeam.by || (now - _lastBeam.at) > BEAM_QUIET_MS) {
+      const from = _lastBeam.az == null ? null : Math.round(_lastBeam.az);
+      BEAM.emit({
+        summary: `beam → ${Math.round(target)}° (${by})`
+          + (from == null ? '' : ` — was ${from}°`),
+        detail: { az: target, from, by, variant: this._variant },
+      });
+      _lastBeam = { az: target, by, at: now };
+    }
+    this._send({ action: cmd, args: [target] });
   }
 
   /** Point the beam and RESOLVE WHEN THE ROTATOR SAYS IT IS THERE.
@@ -204,9 +249,9 @@ class RotatorClient extends EventEmitter {
    *  waiting out; a long one means it owns the beam, and queueing behind that
    *  starves the alarm rather than helping us. That is why the default is not to
    *  wait at all, and why callers state a bound rather than a boolean. */
-  async point(az, { timeoutMs = 60_000, hold = 0, patienceMs = 0 } = {}) {
+  async point(az, { timeoutMs = 60_000, hold = 0, patienceMs = 0, by = 'mission' } = {}) {
     const started = this._now();
-    let r = await this._pointOnce(az, timeoutMs);
+    let r = await this._pointOnce(az, timeoutMs, by);
 
     // ARE YOU FREE? — no. How long? Wait it out if the caller's policy allows,
     // then ask exactly once more. One retry, never a loop: if it is still held
@@ -218,7 +263,7 @@ class RotatorClient extends EventEmitter {
       if (holdMs > 0 && holdMs <= ceiling) {
         const waitMs = holdMs + HOLD_LAPSE_MARGIN_MS;
         await new Promise(res => setTimeout(res, waitMs));
-        r = await this._pointOnce(az, timeoutMs);
+        r = await this._pointOnce(az, timeoutMs, by);
       }
     }
 
@@ -240,7 +285,7 @@ class RotatorClient extends EventEmitter {
   /** Monotonic-ish clock, isolated so the negotiation above stays testable. */
   _now() { return Date.now(); }
 
-  _pointOnce(az, timeoutMs) {
+  _pointOnce(az, timeoutMs, by = 'mission') {
     return new Promise((resolve) => {
       let settled = false;
       const finish = (r) => {
@@ -272,7 +317,7 @@ class RotatorClient extends EventEmitter {
       const timer = setTimeout(() => finish({ ok: false, timeout: true, az: this.status?.az ?? null }), timeoutMs);
       this.on('done', onDone);
       this.on('busy', onBusy);
-      this.move(az);
+      this.move(az, { by });
     });
   }
 

@@ -75,7 +75,7 @@ router.post('/move', (req, res) => {
   // is a BACKEND control: the browser does not decide it.
   if (dashMode.value === 1) return res.status(409).json({ refused: true, reason: 'ACTV mode owns the rotator' });
   if (scanner.active)        return res.status(409).json({ refused: true, reason: 'scan in progress' });
-  rotator.move(az);
+  rotator.move(az, { by: 'browser' });
   res.json({ moving: true, az });
 });
 

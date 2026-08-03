@@ -67,7 +67,7 @@ function pointAt(node) {
 
   log.info(`→ ${node.label} (${node.num}) az=${node.az.toFixed(1)}°`);
   try {
-    rotator.move(node.az);
+    rotator.move(node.az, { by: 'active-tracker' });
     recordYagiTargeted(node.num);
     const info = stmts.getNodeinfoByNum.get(node.num) ?? {};
     rotator.emit('point_target', {

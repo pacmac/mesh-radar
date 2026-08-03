@@ -1,7 +1,7 @@
 ---
 module: hooks
 source: src/hooks.js
-source_hash: 3e66d5ce7a4438377ae19ecd66a1d7c2a2d07a0ab2a890c35ba64117997a2b81
+source_hash: 33bf0f1619e392ebfe6d1e3be3fc2bab1ebc89b3809a6085fa613a8822453ae9
 updated: 2026-08-03
 ---
 

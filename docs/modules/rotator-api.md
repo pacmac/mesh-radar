@@ -1,8 +1,8 @@
 ---
 module: rotator-api
 source: src/rotator-api.js
-source_hash: 9078e54e0af933b2e425280ba21f6c0a4c18bb3b0de1918d41a09c7a0290eb50
-updated: 2026-07-07
+source_hash: 8cc0e0c9ddd83819d4ab425dcdacf8b956beafbfe5653876c72ff3ff04d2a565
+updated: 2026-08-03
 ---
 
 # Module: rotator-api

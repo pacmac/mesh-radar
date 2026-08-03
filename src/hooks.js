@@ -18,12 +18,23 @@
 
 import { insertEventLog } from './db.js';
 
-// `store` is really WORKER — it runs on a cadence and mines what we already
-// hold; nothing hooks into it. `transmit` announces an outbound action as it
-// happens, which is a hook in the proper sense. Renaming `store` to `worker`
-// across the codebase is a deliberate follow-up, not something to do while the
-// term is still being decided.
-const SCOPES = ['store', 'per-node', 'per-mode', 'transmit'];
+// ONE UNIFORM STRUCTURE. Peter, 2026-08-03: "shouldn't our commanding of the
+// pointer also be a hook, instead of buried in the core code... in terms of a
+// uniform structure."
+//
+//   store      really WORKER — runs on a cadence, mines what we already hold.
+//              Nothing hooks into it.
+//   per-node   announces a decision taken about ONE node.
+//   per-mode   announces a decision gated by the dashboard mode.
+//   actuator   announces an ACT ON THE WORLD — transmitting, or moving the
+//              antenna — emitted at that actuator's OWN single chokepoint so no
+//              caller can act silently and no future caller has to remember to.
+//
+// `actuator` replaced a narrower `transmit` scope added earlier the same day.
+// Two names for "acts on the world" is precisely the non-uniformity Peter is
+// pointing at, and it cost nothing to fold: event_log held 0 rows of the old
+// kind because the callout engine ships disabled.
+const SCOPES = ['store', 'per-node', 'per-mode', 'actuator'];
 
 // ADDRESSABLE BY SCOPE, THEN BY NAME. Peter, 2026-08-03: "shouldnt hooks be an
 // object: {'per-node':{do this(), do that()}, xxx:{xxx(), yyy()} - effectively
@@ -38,7 +49,7 @@ const SCOPES = ['store', 'per-node', 'per-mode', 'transmit'];
 // Insertion order is preserved for string keys, so REGISTRATION ORDER IS
 // EXECUTION ORDER for a scope's hooks. That is deliberate and load-bearing for
 // `per-node`, whose steps are a sequence — declare them in the order they run.
-export const hooks = { store: {}, 'per-node': {}, 'per-mode': {}, transmit: {} };
+export const hooks = { store: {}, 'per-node': {}, 'per-mode': {}, actuator: {} };
 
 // Names stay globally unique even though the object is nested: `source` in
 // event_log is a bare name, and two hooks sharing one would make the log
@@ -116,7 +127,7 @@ export function defineHook({ name, purpose, scope, modes = null } = {}) {
           // kind 'task' beside "58 nodes have never been traced".
           kind:     scope === 'per-node' ? 'probe'
                   : scope === 'per-mode' ? 'mode'
-                  : scope === 'transmit' ? 'callout'
+                  : scope === 'actuator' ? 'action'
                   : 'task',
           severity,
           summary,

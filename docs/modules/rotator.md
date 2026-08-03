@@ -1,7 +1,7 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: 2885da3037d290a8bb79a10da8bb276c0aec20bf1889403a379cfbb3cf149d0d
+source_hash: 329dac42dda90b82e59161eb9e4050a2886df99397a7987dfb36ef53b167815a
 updated: 2026-08-03
 ---
 
@@ -339,3 +339,48 @@ validator).
 - Rotation completion detection — callers poll `rotator.status.busy`
 - Which azimuth to point at — `active-tracker.js` and `scanner.js` decide that
 - Signal tracking — `active-tracker.js` owns `point_target` / `signal_update` semantics
+
+
+## Every beam command announces itself
+
+Task `hook-beam-commands`. Peter, 2026-08-03: *"shouldn't our commanding of the
+pointer also be a hook, instead of buried in the core code... in terms of a
+uniform structure."*
+
+Four subsystems move this antenna and **only one of them said so**:
+
+| caller | before |
+|---|---|
+| `mission-runner` (via `point`) | announced (`aim-antenna`) |
+| `scanner.js:95` | silent |
+| `active-tracker.js:70` | silent |
+| `rotator-api.js:78` | silent — and that is the **user-initiated** path |
+
+You could swing the beam from the browser and nothing anywhere recorded it.
+
+**Putting the hook in each caller is what produced that — three of four forgot.**
+So it lives in `move()`, which every command funnels through, the same principle
+as `mesh-send.js` being the single recorded transmit path. A future caller cannot
+move the beam silently because it does not get the choice.
+
+`by` is threaded from each caller (`mission`, `scanner`, `active-tracker`,
+`browser`) and defaults to **`unattributed`** rather than being omitted, so an
+un-updated caller shows up *as* un-updated instead of vanishing.
+
+### A sweep must not drown the decision trace
+
+`scanner` steps the beam continuously and one row per step would bury the handful
+of lines that explain what discovery is doing. The hook latches: it announces a
+**material** change of aim (≥5°), a change of *who* is asking, or a 30 s silence
+— the same rule the idle reporter uses.
+
+Verified live: `beam → 34° (mission)` at 16:03:22, one row for a real mission
+aim.
+
+## The uniform scope: `actuator`
+
+`beam-command` shares a scope with the callout hooks, because they are the same
+kind of thing — **an act on the world, announced at that actuator's own single
+chokepoint**. It replaced a narrower `transmit` scope added earlier the same day;
+two names for one idea is exactly the non-uniformity Peter was pointing at, and
+folding them cost nothing because `event_log` held 0 rows of the old kind.

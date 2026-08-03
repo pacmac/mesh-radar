@@ -393,6 +393,56 @@ export const configMixin = {
   discoveryCfgSaved: false,
   discoveryCfgError: '',
 
+  // ── CALLOUT ────────────────────────────────────────────────────────────────
+  // Peter, 2026-08-03: "i dont see anything in the dashboard configs for the
+  // token based ping messages?" There was nothing — the templates lived only in
+  // code, which makes "define custom ping text" untrue.
+  calloutCfg: null,
+  calloutCfgSaving: false,
+  calloutCfgSaved: false,
+  calloutCfgError: '',
+
+  async loadCalloutCfg() {
+    try {
+      this.calloutCfg = await fetchJSON('/config/callout');
+    } catch (e) {
+      console.warn('loadCalloutCfg failed', e);
+    }
+  },
+
+  async saveCalloutCfg() {
+    this.calloutCfgSaving = true;
+    this.calloutCfgSaved  = false;
+    this.calloutCfgError  = '';
+    try {
+      // fetchJSON(url, method, body) — NOT a fetch-options object. Writing it
+      // the fetch way threw "'[object Object]' is not a valid HTTP method",
+      // which is why the round-trip is tested rather than assumed.
+      await fetchJSON('/config/callout', 'PUT', { values: this.calloutCfg });
+      // Re-read rather than trusting the form. The server clamps to the hard
+      // ceilings, so 9999 sends/day comes back as 12 — and the page must show
+      // what will actually happen, not what was asked for.
+      await this.loadCalloutCfg();
+      this.calloutCfgSaved = true;
+      setTimeout(() => { this.calloutCfgSaved = false; }, 3000);
+    } catch (e) {
+      this.calloutCfgError = e.message || 'Save failed';
+      setTimeout(() => { this.calloutCfgError = ''; }, 5000);
+    } finally {
+      this.calloutCfgSaving = false;
+    }
+  },
+
+  addCalloutTemplate() {
+    if (!this.calloutCfg) return;
+    this.calloutCfg.templates.push({ text: '@%short_name% ', ttl_days: 21 });
+  },
+
+  removeCalloutTemplate(i) {
+    if (!this.calloutCfg || this.calloutCfg.templates.length <= 1) return;
+    this.calloutCfg.templates.splice(i, 1);
+  },
+
   async loadDiscoveryCfg() {
     try {
       this.discoveryCfg = await fetchJSON('/config/discovery');

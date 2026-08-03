@@ -28,15 +28,15 @@ import { defineHook } from './hooks.js';
 
 const H = {
   sent: defineHook({
-    name: 'callout-sent', scope: 'transmit',
+    name: 'callout-sent', scope: 'actuator',
     purpose: 'records a public callout going out, to whom, how far, and which wording was used',
   }),
   held: defineHook({
-    name: 'callout-withheld', scope: 'transmit',
+    name: 'callout-withheld', scope: 'actuator',
     purpose: 'records a callout that a guard stopped, and names the guard — silence must be explainable',
   }),
   answered: defineHook({
-    name: 'callout-answered', scope: 'transmit',
+    name: 'callout-answered', scope: 'actuator',
     purpose: 'a human replied to a callout — two-way contact at a known distance, the strongest reach evidence we can get',
   }),
 };

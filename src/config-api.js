@@ -4,6 +4,7 @@ import { getConfig, setConfig } from './db.js';
 import { logEvent } from './hooks.js';
 import { nodeList } from './node-list.js';
 import { modeConfigAll, isValidRole, MODE_KEYS } from './dash-mode.js';
+import { calloutConfig, renderTemplate } from './callout.js';
 
 const router = Router();
 
@@ -126,6 +127,17 @@ const SCAN_DEFAULTS = { step_deg:  5,    dwell_sec: 60 };
 // Server-side clamps for the discovery settings. A BROWSER IS NOT A VALIDATOR:
 // interval_sec 0 would hammer a shared mesh, and window_km 0 would empty the
 // queue. Enforced on the way in so a hand-rolled PUT cannot bypass the form.
+// The ENGINE clamps again on read (calloutConfig), so these are a courtesy to
+// the user rather than the enforcement — MESH_REACH_SPEC §8 requires the real
+// ceiling to live in the transmit path, not in a config validator.
+const CALLOUT_LIMITS = {
+  min_km:         [0, 250],
+  max_per_day:    [0, 12],
+  cooldown_days:  [3, 365],
+  heard_within_h: [1, 168],
+  channel:        [0, 7],
+};
+
 const DISCOVERY_LIMITS = {
   window_km:           [1, 250],
   attempts_per_target: [1, 50],
@@ -269,6 +281,65 @@ router.put('/discovery', (req, res) => {
 // Per-mode radio roles (config-editor form flow). GET returns the effective
 // config (defaults merged with any override); PUT writes allowlisted rx/tx roles
 // per mode. dash-mode owns the role vocabulary and defaults (SSOT).
+// ── CALLOUT ───────────────────────────────────────────────────────────────────
+// Peter, 2026-08-03: "i dont see anything in the dashboard configs for the token
+// based ping messages?" There was nothing — the engine shipped with its
+// templates only in code, which makes "define custom ping text" untrue.
+//
+// GET returns the EFFECTIVE config, already clamped by calloutConfig(), so the
+// page shows what will actually happen rather than what was asked for. A user
+// who types 9999 sends/day must see 12 come back.
+router.get('/callout', (req, res) => {
+  const c = calloutConfig();
+  res.json({
+    ...c,
+    // Rendered with sample values so the page can show what a template becomes
+    // without the user having to imagine token substitution.
+    preview: c.templates.map(t => renderTemplate(t.text, {
+      short_name: 'JRSY', long_name: 'Jersey', km: 219, az: 159, hops: 4,
+    })),
+  });
+});
+
+router.put('/callout', (req, res) => {
+  const body = req.body?.values ?? req.body ?? {};
+  const cur  = { ...getConfig('callout', {}) };
+
+  if (body.enabled !== undefined) cur.enabled = !!body.enabled;
+  if (body.quiet_hours !== undefined) cur.quiet_hours = !!body.quiet_hours;
+
+  for (const [k, range] of Object.entries(CALLOUT_LIMITS)) {
+    if (body[k] === undefined) continue;
+    const n = clamp(body[k], range);
+    if (!Number.isFinite(n)) return res.status(400).json({ error: `invalid ${k}` });
+    cur[k] = n;
+  }
+
+  if (body.templates !== undefined) {
+    if (!Array.isArray(body.templates) || !body.templates.length) {
+      return res.status(400).json({ error: 'templates must be a non-empty array' });
+    }
+    const clean = [];
+    for (const t of body.templates) {
+      const text = String(t?.text ?? '').trim();
+      if (!text) return res.status(400).json({ error: 'a template cannot be empty' });
+      // A BROADCAST IS PUBLIC AND PERMANENT. Length is capped here rather than
+      // trusted from the browser: an over-long message is a bigger imposition on
+      // a shared band, and nothing downstream truncates it.
+      if (text.length > 200) return res.status(400).json({ error: 'a template must be 200 characters or fewer' });
+      clean.push({ text, ttl_days: clamp(t?.ttl_days ?? 14, [1, 365]) });
+    }
+    cur.templates = clean;
+  }
+
+  setConfig('callout', cur);
+  const eff = calloutConfig();
+  logEvent({ kind: 'config', summary: `callout config updated — ${eff.enabled ? 'ENABLED' : 'disabled'}, `
+    + `${eff.templates.length} templates, max ${eff.max_per_day}/day`, detail: eff });
+  broadcastSettings();
+  res.json(eff);
+});
+
 router.get('/modes', (req, res) => {
   res.json(modeConfigAll());
 });

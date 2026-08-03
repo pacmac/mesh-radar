@@ -1,11 +1,12 @@
         <!-- ===================== CONFIG ===================== -->
         <div x-show="tab==='cfg'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
-          <div class="tabs tabs-bordered grid grid-cols-5 w-full sm:w-fit shrink-0">
+          <div class="tabs tabs-bordered grid grid-cols-4 sm:grid-cols-7 w-full sm:w-fit shrink-0">
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='modes'   && 'tab-active font-semibold'" @click="switchCfgTab('modes')">Modes</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='radar'   && 'tab-active font-semibold'" @click="switchCfgTab('radar')">Radar</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='discovery' && 'tab-active font-semibold'" @click="switchCfgTab('discovery')">Discovery</a>
+            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='callout' && 'tab-active font-semibold'" @click="switchCfgTab('callout')">Callout</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='alerts'  && 'tab-active font-semibold'" @click="switchCfgTab('alerts')">Alerts</a>
           </div>
 
@@ -433,6 +434,116 @@
                How the discovery runner chooses and pursues targets. Loaded on
                first view, saved through the discovery_config op; every value is
                clamped server-side (docs/DISCOVERY_STRATEGY.md). -->
+          <!-- CALLOUT. Peter: "i dont see anything in the dashboard configs for
+               the token based ping messages?" The engine shipped with its
+               templates in code only, which makes "define custom ping text"
+               untrue. Every value here is re-read from the server after saving,
+               because the hard ceilings clamp and the page must show what will
+               actually happen. -->
+          <div x-show="cfgTab==='callout'" x-effect="cfgTab==='callout' && !calloutCfg && loadCalloutCfg()"
+               class="h-full overflow-y-auto">
+            <template x-if="calloutCfg">
+              <div class="flex flex-col gap-4 max-w-4xl">
+
+                <div class="alert bg-base-200 border border-base-300 text-xs">
+                  <span>
+                    A callout is a <strong>public broadcast</strong> to a node we have just heard on air.
+                    It is the only thing here that transmits to strangers, so the daily ceiling,
+                    the per-target cooldown and the quiet hours are enforced in code and cannot be
+                    raised from this page — only lowered.
+                  </span>
+                </div>
+
+                <label class="form-control w-full max-w-md">
+                  <div class="label py-1">
+                    <span class="label-text text-sm font-semibold">Send public callouts</span>
+                  </div>
+                  <input type="checkbox" class="toggle toggle-sm" x-model="calloutCfg.enabled">
+                  <div class="label py-0"><span class="label-text-alt text-xs opacity-70">Off by default. Nothing transmits until this is on.</span></div>
+                </label>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Only nodes further than</span><span class="label-text-alt text-xs opacity-50">km</span></div>
+                    <input type="number" min="0" max="250" step="10" class="input input-bordered input-sm w-full font-mono" x-model.number="calloutCfg.min_km">
+                    <div class="label py-0"><span class="label-text-alt text-xs opacity-60">A callout to a neighbour proves nothing about reach.</span></div>
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">At most per day</span><span class="label-text-alt text-xs opacity-50">max 12</span></div>
+                    <input type="number" min="0" max="12" step="1" class="input input-bordered input-sm w-full font-mono" x-model.number="calloutCfg.max_per_day">
+                    <div class="label py-0"><span class="label-text-alt text-xs opacity-60">Hard ceiling of 12 lives in code; this can only lower it.</span></div>
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Same node not again for</span><span class="label-text-alt text-xs opacity-50">days</span></div>
+                    <input type="number" min="3" max="365" step="1" class="input input-bordered input-sm w-full font-mono" x-model.number="calloutCfg.cooldown_days">
+                    <div class="label py-0"><span class="label-text-alt text-xs opacity-60">Minimum 3 days. Days, not hours — this asks a person for attention.</span></div>
+                  </label>
+                  <label class="form-control w-full">
+                    <div class="label py-1"><span class="label-text text-xs">Only if heard within</span><span class="label-text-alt text-xs opacity-50">hours</span></div>
+                    <input type="number" min="1" max="168" step="1" class="input input-bordered input-sm w-full font-mono" x-model.number="calloutCfg.heard_within_h">
+                    <div class="label py-0"><span class="label-text-alt text-xs opacity-60">Strike while the iron is hot — heard on LoRa, not via MQTT.</span></div>
+                  </label>
+                </div>
+
+                <label class="form-control w-full max-w-md">
+                  <div class="label py-1"><span class="label-text text-xs">Stay quiet overnight (22:00&ndash;07:00)</span></div>
+                  <input type="checkbox" class="toggle toggle-sm" x-model="calloutCfg.quiet_hours">
+                </label>
+
+                <div>
+                  <div class="flex items-baseline justify-between mb-2">
+                    <h3 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/75">Message templates</h3>
+                    <button class="btn btn-xs" @click="addCalloutTemplate()">Add</button>
+                  </div>
+                  <div class="text-xs opacity-70 mb-2 font-mono">
+                    Tokens: %short_name% &middot; %long_name% &middot; %km% &middot; %az% &middot; %hops%
+                    &mdash; one is chosen at random, and a node never hears the same wording twice inside its TTL.
+                  </div>
+                  <div class="flex flex-col gap-2">
+                    <template x-for="(t, i) in calloutCfg.templates" :key="i">
+                      <div class="flex flex-col sm:flex-row gap-2 items-start">
+                        <textarea rows="2" maxlength="200"
+                                  class="textarea textarea-bordered textarea-sm flex-1 font-mono text-xs"
+                                  x-model="t.text"></textarea>
+                        <label class="form-control w-full sm:w-28 shrink-0">
+                          <div class="label py-0"><span class="label-text-alt text-xs">TTL days</span></div>
+                          <input type="number" min="1" max="365" class="input input-bordered input-sm w-full font-mono" x-model.number="t.ttl_days">
+                        </label>
+                        <button class="btn btn-xs btn-ghost text-error shrink-0 mt-4"
+                                :disabled="calloutCfg.templates.length <= 1"
+                                @click="removeCalloutTemplate(i)">Remove</button>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <template x-if="calloutCfg.preview && calloutCfg.preview.length">
+                  <div>
+                    <h3 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/75 mb-2">
+                      As the mesh would see it
+                    </h3>
+                    <div class="flex flex-col gap-1">
+                      <template x-for="(p, i) in calloutCfg.preview" :key="i">
+                        <div class="font-mono text-xs bg-base-200 rounded px-2 py-1 opacity-90" x-text="p"></div>
+                      </template>
+                    </div>
+                    <div class="text-xs opacity-60 mt-1">Rendered against a real node: JRSY, 219 km, bearing 159&deg;.</div>
+                  </div>
+                </template>
+
+                <div class="flex items-center gap-3 pt-2">
+                  <button class="btn btn-primary btn-sm" :disabled="calloutCfgSaving" @click="saveCalloutCfg()">
+                    <span x-show="calloutCfgSaving" class="loading loading-spinner loading-xs"></span>
+                    Save
+                  </button>
+                  <span x-show="calloutCfgSaved" class="text-success text-sm" x-transition>Saved &check;</span>
+                  <span x-show="calloutCfgError" x-text="calloutCfgError" class="text-error text-sm"></span>
+                </div>
+
+              </div>
+            </template>
+          </div>
+
           <div x-show="cfgTab==='discovery'" x-effect="cfgTab==='discovery' && !discoveryCfg && loadDiscoveryCfg()"
                class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
             <template x-if="discoveryCfg">

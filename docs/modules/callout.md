@@ -1,7 +1,7 @@
 ---
 module: callout
 source: src/callout.js
-source_hash: 7b86c353c3b7d699e97610543b28a6d26ab8fab14e226eba6c5203b34b1ffc17
+source_hash: 2fd3a3f726da73d19f5085575e50fccd653cf4013ffb682c323dddb17cac3cdd
 updated: 2026-08-03
 ---
 

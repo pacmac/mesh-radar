@@ -92,7 +92,7 @@ class Scanner extends EventEmitter {
     this._dwellAz = null;
     setConfig('scan_state', { active: true, az: this._az, step: this._step, dwell: this._dwell, contacts: this._contacts, preMode: this._preMode });
     this.emit('progress', { az: this._az, dwell_az: null });
-    rotator.move(this._az);
+    rotator.move(this._az, { by: 'scanner' });
     this._pollStart = Date.now();
     this._timer = setTimeout(() => this._pollIdle(), 600);
   }

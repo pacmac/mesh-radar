@@ -1,7 +1,7 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: a53aaca82e119815c2c7acefb70bc8e8c07a393847bead8427845351b32de3f0
+source_hash: 07d6f04c1fa200b51aa0f3a863758c2c4d3071c43e7984443a3045b92d89c87a
 updated: 2026-08-03
 ---
 
