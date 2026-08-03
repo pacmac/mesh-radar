@@ -48,6 +48,7 @@ import { EventEmitter } from 'events';
 import { traceroute, tracerouteEnabled } from './traceroute.js';
 import { transmitterForMode, isTransmitterForMode, dashMode, modeName } from './dash-mode.js';
 import { rotator } from './rotator.js';
+import { doorAim } from './doors.js';
 import { ownDeviceNums } from './node-filter.js';
 import { defineHook, newProbeId } from './hooks.js';
 
@@ -423,15 +424,23 @@ class MissionRunner extends EventEmitter {
     //
     // Only when the mode's transmitter IS the rotator — which in DISC it is by
     // definition, but the config is editable and this must not assume.
-    const aim = await this._aim(m.bearing, c);
+    const aim = await this._aim(m.bearing, c, m.target);
     this._current.az = aim.az;
     this._current.aim = aim.note;
     H.aim.emit({
       probe_id: this._probeId,
       severity: aim.wait ? 'notice' : 'info',
+      // THE SUMMARY MUST SAY WHAT HAPPENED, NOT WHAT WAS WANTED. This printed
+      // `m.bearing` — the TARGET's bearing — whatever the aim actually did. Once
+      // aiming moved to the door, the trace read "aimed at 35°" for a mission
+      // that deliberately did not move the beam at all, while the truth sat
+      // unread in detail.note. A log that reports intent instead of action is
+      // the failure this whole event log exists to prevent.
       summary: aim.wait
-        ? `could not aim at ${Math.round(m.bearing ?? 0)}° — ${aim.note}`
-        : `aimed at ${Math.round(m.bearing ?? 0)}°${aim.az != null ? `, beam reports ${Math.round(aim.az)}°` : ''}`,
+        ? `could not aim — ${aim.note}`
+        : aim.az == null
+          ? aim.note
+          : `${aim.note}, beam reports ${Math.round(aim.az)}°`,
       detail: { wanted: m.bearing, az: aim.az, note: aim.note, deferred: !!aim.wait },
     });
     if (aim.wait) {
@@ -555,7 +564,32 @@ class MissionRunner extends EventEmitter {
    *
    *  A mission with no bearing does not aim and says so — it still goes out,
    *  because a route to an unplaced node is exactly how we learn where it is. */
-  async _aim(bearing, c) {
+  async _aim(bearing, c, targetNum = null) {
+    // WE DO NOT AIM AT THE TARGET. Peter, 2026-08-03: "whatever happens I dont
+    // think we should be targeting remote nodes directly. that is pointless
+    // (pun intended)."
+    //
+    // He is right, and the beam proves it: aiming at the target's own bearing
+    // puts the actual first hop OUTSIDE the 35 degree lobe ~87% of the time,
+    // in every distance band. The mesh transmits to a DOOR, so the door is the
+    // only thing worth pointing at.
+    //
+    // Measured on the live shortlist the moment this shipped: four targets at
+    // bearings 34, 226, 227 and 35 degrees — every one of them routes through
+    // the same door at 274 degrees. Aiming at the target was not merely
+    // imprecise, it was pointing the opposite way.
+    const door = targetNum == null ? null : doorAim(targetNum);
+
+    // AND IF THE DOOR IS CLOSE, THE BEAM IS THEATRE. The dominant door is
+    // 5.3 km away; a 9 dBi yagi buys nothing at 5.3 km that the omni does not
+    // already have. Rotating anyway would spend up to aim_timeout_sec pointing
+    // at something we could already hear. Peter: "or, if all doors are
+    // comfortably in sight of OMNI using OMNI?"
+    if (door && !door.needsBeam) {
+      return { az: null, wait: false,
+               note: `not aiming — door ${door.name} is ${door.km} km away, well inside omni reach` };
+    }
+    if (door) bearing = door.az;
     // Asked of dash-mode rather than compared by hand: the tx role is editable
     // config, and it already owns the "is this MAC the transmitter" question.
     const rotMac = getRotatorAddress();
