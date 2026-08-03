@@ -1,8 +1,8 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: c29e40192ef5200b6603b908b997de84990e3cb50938dae0eca1d5aa98333562
-updated: 2026-08-02
+source_hash: f27e6ed8cac01b13e6147342760a557c388894f74b282560664c415346692d0c
+updated: 2026-08-03
 ---
 
 # Module: app-observatory
@@ -210,6 +210,28 @@ the dependency rather than pinning it.
 
 Formatting a timestamp the server supplied is expressly allowed; computing an age
 on a timer is not, and this does not.
+
+## `obsChartBands()` and `setObsWindow()`
+
+Task `bands-chart`. Domain 2 half of `rate-by-band-by-day` and `observatory-window`.
+
+**Four LINES, one per distance band — not stacked bars.** These are rates that must be
+compared against each other; stacking would imply they sum to something.
+
+**A `rate` of `null` breaks the line rather than dropping it to zero.** The server
+suppresses any band-day with fewer than 15 attempts, and a gap reads as "not known"
+while a zero reads as "nothing answered" — different claims. The path is emitted in
+segments, reopening with `M` after each break.
+
+**End labels anchor inward.** The last date sits at `X = W - 10`, and a centred label
+overflowed the 520-unit viewBox — it rendered as `03-0` instead of `03-08`. First label
+`start`, last `end`, the rest `middle`.
+
+`setObsWindow(days)` PUTs `observatory.window_days` and does nothing else. The window is
+SERVER state: the server re-broadcasts `charts` and every viewer re-renders from that.
+No optimistic local state, no per-viewer window — Peter, 2026-08-03: *"the browser is a
+presentation layer ONLY, this filtering must be done backend so anyone using the browser
+sees the same thing."*
 
 ## Invariants
 

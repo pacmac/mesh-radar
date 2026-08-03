@@ -534,7 +534,40 @@
       </div>
     </template>
     <template x-if="charts">
+      <div class="flex-1 min-h-0 flex flex-col gap-2">
+
+      <!-- ANALYSIS WINDOW. Server state: this only PUTs, then every viewer
+           re-renders from the re-broadcast. No local state. -->
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <span class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Window</span>
+        <div class="join">
+          <template x-for="w in [0,1,7,30,60]" :key="w">
+            <button class="join-item btn btn-xs"
+                    :class="charts.window_days === w ? 'btn-primary' : 'btn-ghost'"
+                    @click="setObsWindow(w)"
+                    x-text="w === 0 ? 'all time' : w + 'd'"></button>
+          </template>
+        </div>
+        <span class="text-xs text-base-content/45 ml-auto">
+          record <span class="font-mono text-base-content/70" x-text="charts.record_km ? charts.record_km + ' km' : '—'"></span>
+          <span class="mx-1 text-base-content/25">·</span>
+          best in window <span class="font-mono text-base-content/70" x-text="charts.window_best_km != null ? charts.window_best_km + ' km' : '—'"></span>
+          <span class="text-base-content/35" x-text="'(' + (charts.window_answered || 0) + ' answered)'"></span>
+        </span>
+      </div>
+
       <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 flex-1 min-h-0 overflow-y-auto">
+
+        <div class="card bg-base-100 shadow xl:col-span-2">
+          <div class="card-body p-3 gap-1">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Answer rate by band, by day</h2>
+            <svg viewBox="0 0 520 190" class="w-full" x-html="obsChartBands()"></svg>
+            <p class="text-xs text-base-content/40">
+              Mix versus performance. The aggregate line below cannot tell them apart — this can.
+              A break in a line means too few attempts that day to state a rate, not a zero.
+            </p>
+          </div>
+        </div>
 
         <div class="card bg-base-100 shadow">
           <div class="card-body p-3 gap-1">
@@ -579,6 +612,7 @@
           </div>
         </div>
 
+      </div>
       </div>
     </template>
   </div>

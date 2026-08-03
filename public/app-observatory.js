@@ -257,6 +257,97 @@ export const observatoryMixin = {
       (x, v) => v >= 15 ? 'oklch(var(--su))' : v >= 5 ? 'oklch(var(--wa))' : 'oklch(var(--er))');
   },
 
+  /** RATE BY BAND, BY DAY — four lines, one per distance band.
+   *
+   *  The chart that would have caught the collapse. The aggregate daily chart
+   *  above cannot separate a change in TARGET MIX from a change in PERFORMANCE,
+   *  and that ambiguity hid a fall from ~58% to ~7% at under 25 km across three
+   *  weeks while the 100+ km band never moved off 0-4%.
+   *
+   *  A LINE per band, not stacked bars: these are rates that must be COMPARED
+   *  against each other, and stacking would imply they sum to something.
+   *
+   *  `rate === null` means the server suppressed it as too few attempts. The
+   *  line BREAKS there rather than dropping to zero — a gap reads as "not known",
+   *  a zero reads as "nothing answered", and they are different claims. */
+  obsChartBands() {
+    const rows = this.charts?.bands || [];
+    if (!rows.length) return '';
+    const BANDS = [
+      { key: '<25',    label: '<25 km',    colour: 'oklch(var(--su))' },
+      { key: '25-100', label: '25-100 km', colour: 'oklch(var(--in))' },
+      { key: '100+',   label: '100+ km',   colour: 'oklch(var(--wa))' },
+      { key: 'no-pos', label: 'no pos',    colour: 'oklch(var(--bc)/0.45)' },
+    ];
+    const days = [...new Set(rows.map(r => r.day))].sort();
+    const W = 520, H = 190, L = 42, B = 34;
+    const max = Math.max(20, ...rows.map(r => r.rate ?? 0));
+    const X = i => L + (days.length === 1 ? (W - L - 10) / 2 : i * ((W - L - 10) / (days.length - 1)));
+    const Y = v => (H - B) - (v / max) * (H - B - 14);
+    const p = [];
+    for (let i = 0; i <= 3; i++) {
+      const v = (max / 3) * i, y = Y(v);
+      p.push(`<line x1="${L}" y1="${y.toFixed(1)}" x2="${W - 10}" y2="${y.toFixed(1)}" stroke="oklch(var(--bc)/0.10)"/>`);
+      p.push(`<text x="${L - 6}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${v.toFixed(0)}%</text>`);
+    }
+    const byDay = new Map(days.map((d, i) => [d, i]));
+    BANDS.forEach((b) => {
+      // Break the path wherever the server suppressed the rate.
+      let open = false;
+      const seg = [];
+      days.forEach((d) => {
+        const r = rows.find(x => x.day === d && x.band === b.key);
+        if (!r || r.rate === null) { open = false; return; }
+        const x = X(byDay.get(d)).toFixed(1), y = Y(r.rate).toFixed(1);
+        seg.push(`${open ? 'L' : 'M'}${x} ${y}`);
+        open = true;
+      });
+      if (seg.length) {
+        p.push(`<path d="${seg.join(' ')}" fill="none" stroke="${b.colour}" stroke-width="1.8"/>`);
+      }
+      days.forEach((d) => {
+        const r = rows.find(x => x.day === d && x.band === b.key);
+        if (!r || r.rate === null) return;
+        p.push(`<circle cx="${X(byDay.get(d)).toFixed(1)}" cy="${Y(r.rate).toFixed(1)}" r="1.9" fill="${b.colour}"><title>${d} ${b.label}: ${r.rate}% of ${r.attempts}</title></circle>`);
+      });
+    });
+    p.push(`<line x1="${L}" y1="${H - B}" x2="${W - 10}" y2="${H - B}" stroke="oklch(var(--bc)/0.25)"/>`);
+    const every = Math.max(1, Math.ceil(days.length / 5));
+    days.forEach((d, i) => {
+      if (i % every && i !== days.length - 1) return;
+      // Anchor the ends inward: the last label sits at X = W-10 and a centred
+      // one overflows the viewBox, which clipped "03-08" to "03-0".
+      const anchor = i === 0 ? 'start' : i === days.length - 1 ? 'end' : 'middle';
+      p.push(`<text x="${X(i).toFixed(1)}" y="${H - 18}" text-anchor="${anchor}" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${this.obsShortDate(Date.parse(d + 'T00:00:00Z') / 1000)}</text>`);
+    });
+    BANDS.forEach((b, i) => {
+      const lx = L + i * 118;
+      p.push(`<rect x="${lx}" y="${H - 11}" width="8" height="3" fill="${b.colour}"/>`);
+      p.push(`<text x="${lx + 12}" y="${H - 6}" fill="oklch(var(--bc)/0.55)" font-size="9" font-family="JetBrains Mono">${b.label}</text>`);
+    });
+    return p.join('');
+  },
+
+  /** Set the ANALYSIS WINDOW. Server state, not a browser preference — Peter,
+   *  2026-08-03: "the browser is a presentation layer ONLY, this filtering must
+   *  be done backend so anyone using the browser sees the same thing."
+   *
+   *  So this PUTs and does nothing else. The server re-broadcasts `charts` and
+   *  every viewer re-renders from that — no optimistic local state, the same
+   *  rule that governs the target crosshair above. The allowed values are the
+   *  server's enum; a value outside it is rejected with 400 rather than clamped. */
+  async setObsWindow(days) {
+    try {
+      await fetch('/config/observatory.window_days', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: Number(days) }),
+      });
+    } catch (e) {
+      console.error('window set failed', e);
+    }
+  },
+
   /** Pin a mission to the top of the queue, or unpin it.
    *
    *  Writes the `discovery` config key, which is where `pinned` lives — one

@@ -31,8 +31,8 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 049ed9a0290403c7627cf9e96096bfd28dd373e7e038a61cf39a74ce72503f88
-updated: 2026-07-31
+source_hash: 8226fa5103e3d390d4653759f0ab54d84f2ba45c1ed4ecae9bb538dacbce6f89
+updated: 2026-08-03
 ---
 
 # Module: browser-playwright-audit
@@ -182,6 +182,26 @@ _N/A._ The runner observes `/events`; it does not add application events.
 
 For the live channel case it observes the existing `config_op` lifecycle and
 requires terminal `success` for both write and restoration.
+
+## Asset versioning covers app.js ONLY
+
+`public/index.html` cache-busts a single URL:
+
+```
+<script type="module" src="/app.js?v=20260803bands">
+```
+
+`app.js` statically imports every mixin (`app-observatory.js`, `app-nodes.js`, …) with no
+version query, so bumping `v=` does not change those URLs. On 2026-08-03 an edited
+`app-observatory.js` was confirmed present on disk AND served by express, while the page
+kept executing the previous version of the function — the fix looked broken when it was
+correct. Express does send `Cache-Control: public, max-age=0` with an ETag, and
+unregistering the service worker did not help, so the precise mechanism is **not**
+established.
+
+Recorded as ledger **B62**. Bump `v=` when changing any browser file, and treat "I see no
+difference" as possibly this rather than a missing deploy. For validation, import the
+module with a cache-busting query and call it directly rather than trusting the page.
 
 ## Invariants
 

@@ -1,8 +1,8 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 316c70be1c04258e012cfcffc0bef2a8a7d0342f26549ddc6221d929f740b67b
-updated: 2026-08-02
+source_hash: 8474b197874f4332509d2f4945cf8658457080f1f2fbaad08c601b660e6a6ccb
+updated: 2026-08-03
 ---
 
 # Module: tab-observatory
@@ -218,6 +218,18 @@ that is the selection rule. Full rationale in `docs/OBSERVATORY_CHARTS.md`.
 The record chart **steps** rather than slopes: the record is a ratchet that holds
 until beaten, and interpolating between rungs would draw a climb that never
 happened.
+
+## Charts sub-tab — window selector and the bands chart
+
+Task `bands-chart`.
+
+A window strip sits above the grid: `all time / 1d / 7d / 30d / 60d` as a `join` of
+buttons, the active one driven by `charts.window_days` from the server rather than by
+local state. Beside it, two numbers that answer different questions and are labelled as
+such — `record` (all-time, the thing to beat) and `best in window`.
+
+The bands chart spans both columns (`xl:col-span-2`) and leads the grid, because it is
+the only chart that separates a change in target mix from a change in performance.
 
 ## Invariants
 
