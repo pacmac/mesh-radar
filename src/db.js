@@ -193,6 +193,33 @@ db.exec(`
   -- resolves to a candidate SET, not a node (~1 in 256 collide). Stored raw; never
   -- resolved here. 0 means NOT RELAYED — proto3 omits zero, so absent is 0, never
   -- unknown. Same rule for hop_limit, and for transport ('TRANSPORT_INTERNAL' = 0).
+  -- Every public callout we transmitted, and to whom. This is what enforces
+  -- both the per-target cooldown and the per-wording TTL, so it must record the
+  -- TEMPLATE HASH rather than an index: editing or reordering the template list
+  -- must not make the engine think a node never heard a sentence it heard
+  -- yesterday. MESH_REACH_SPEC §8.
+  CREATE TABLE IF NOT EXISTS callout_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts            INTEGER NOT NULL,
+    num           INTEGER NOT NULL,
+    template_hash TEXT    NOT NULL,
+    text          TEXT    NOT NULL,
+    packet_id     INTEGER,
+    -- THE REPLY IS THE POINT. Peter, 2026-08-03: "we then see if we get anything
+    -- back from that node in a text message that indicates we heard each other.
+    -- that will also be used as data, and a guaranteed 2 way hit."
+    --
+    -- A callout on its own proves we transmitted. A TEXT REPLY from that node
+    -- proves the packet arrived, a human read it, and their answer came back —
+    -- two-way contact at a known distance, which is stronger evidence than any
+    -- traceroute (MESH_REACH_SPEC §7).
+    replied_ts    INTEGER,
+    reply_text    TEXT,
+    reply_km      REAL
+  );
+  CREATE INDEX IF NOT EXISTS idx_callout_num_ts ON callout_log (num, ts);
+  CREATE INDEX IF NOT EXISTS idx_callout_ts     ON callout_log (ts);
+
   CREATE TABLE IF NOT EXISTS relay_observation (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     ts         INTEGER NOT NULL,
@@ -305,6 +332,15 @@ db.exec(`
 
 // Migrations for columns added after initial schema
 {
+  // callout_log gained its reply columns after the table shipped, so an existing
+  // database needs the ALTER — CREATE TABLE IF NOT EXISTS silently does nothing
+  // for a table that already exists, which is how the columns appeared to be
+  // "added" while PRAGMA still showed six.
+  const clCols = db.prepare(`PRAGMA table_xinfo(callout_log)`).all().map(r => r.name);
+  if (!clCols.includes('replied_ts')) db.exec(`ALTER TABLE callout_log ADD COLUMN replied_ts INTEGER`);
+  if (!clCols.includes('reply_text')) db.exec(`ALTER TABLE callout_log ADD COLUMN reply_text TEXT`);
+  if (!clCols.includes('reply_km'))   db.exec(`ALTER TABLE callout_log ADD COLUMN reply_km REAL`);
+
   const thCols = db.prepare(`PRAGMA table_info(traceroute_history)`).all().map(r => r.name);
   if (!thCols.includes('tx_device'))  db.exec(`ALTER TABLE traceroute_history ADD COLUMN tx_device TEXT`);
   if (!thCols.includes('rotator_az')) db.exec(`ALTER TABLE traceroute_history ADD COLUMN rotator_az REAL`);

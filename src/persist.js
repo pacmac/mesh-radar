@@ -5,6 +5,17 @@ import {
 } from './db.js';
 import db from './db.js';
 import { captureRelayObservation } from './relay-observation.js';
+import { noteInboundText } from './callout.js';
+
+// Where we are, for measuring a two-way contact at reply time. Same
+// `home.lat`/`home.lon` pair the inferences and the hooks read, so no two parts
+// of the system can disagree about our own position.
+function homeLatLon() {
+  const r = db.prepare(`
+    SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') lon`).get();
+  return (r && Number.isFinite(r.lat) && r.lat !== 0) ? r : null;
+}
 
 function _validCoord(lat, lon) {
   return lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
@@ -378,6 +389,26 @@ function handlePacket(packet, device, ts, replay) {
       message_key: pktId ? 'r-' + pktId : null,
     });
     syncAlertedAt(packet.id ?? null);
+
+    // DID THIS ANSWER A CALLOUT? Peter, 2026-08-03: "we then see if we get
+    // anything back from that node in a text message that indicates we heard
+    // each other. that will also be used as data, and a guaranteed 2 way hit."
+    //
+    // Wired HERE, on the persisted inbound text, because this is the one path
+    // every received message passes through — hanging it off a live WS handler
+    // instead would miss replays and anything that arrives while a browser is
+    // not connected. It is a no-op unless that sender has an unanswered callout
+    // inside the reply window, so calling it on every message is safe.
+    //
+    // Never allowed to break ingestion: a fault in reach bookkeeping must not
+    // cost us the message itself.
+    try {
+      noteInboundText(
+        { from_num: packet.from || 0, text, ts: packet.rx_time || ts },
+        { home: homeLatLon() });
+    } catch (e) {
+      console.error(`[persist] callout reply check failed: ${e.message}`);
+    }
     return;
   }
 
