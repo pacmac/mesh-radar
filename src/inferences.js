@@ -609,7 +609,16 @@ registerInference({
            (SELECT value ->> '$.pinned'                       FROM config WHERE key = 'discovery')        AS s_pinned,
            -- The Observatory's OWN target flag. Not nodeinfo.favourite, which
            -- means "pin to my sidebar" and is set on our own local units.
-           COALESCE(ni.obs_target, 0)                                 AS obs_target
+           COALESCE(ni.obs_target, 0)                                 AS obs_target,
+           -- THE EXCLUSION THE LOOP CANNOT SEE. The WHERE clause below removes
+           -- unpositioned nodes before any counter exists, so the only honest
+           -- place to count them is here, in the evidence itself. 331 nodes on
+           -- 2026-08-03 (174 heard within max_silence_days) -- the largest
+           -- exclusion of all, and it appeared in no funnel segment.
+           -- Declared as evidence rather than queried inside run(), so the
+           -- inference stays pure.
+           (SELECT COUNT(*) FROM nodes u
+             WHERE u.lat IS NULL OR u.lon IS NULL OR u.lat = 0)         AS unpositioned
     FROM nodes n
     LEFT JOIN nodeinfo ni ON ni.num = n.num
     LEFT JOIN traceroute_history th ON th.to_num = n.num
@@ -662,7 +671,7 @@ registerInference({
     const CEILING_KM = 250;
 
     const scored = [];
-    const skipped = { cooling: 0, suspect: 0, exhausted: 0, beyond_window: 0, silent: 0 };
+    const skipped = { cooling: 0, suspect: 0, exhausted: 0, beyond_window: 0, silent: 0, unclassified: 0 };
 
     // The record is computed from the same rows, not passed in: an inference
     // that took the record as a dependency would rank against a stale one on
@@ -862,6 +871,19 @@ registerInference({
         skipped.exhausted++;
         continue;
       } else {
+        // NO CLASS CLAIMS IT — and that is an exclusion like any other.
+        //
+        // A node that has been attempted, has not answered, and sits NEARER
+        // than the period bar matches none of the branches above. It used to
+        // leave through a bare `continue`, uncounted, while the comment below
+        // promised every exclusion was published.
+        //
+        // It is not a rounding error. Reconciled 2026-08-03: 607 rows in, 532
+        // skipped with a counter, 0 scored — 75 nodes left through here in
+        // silence. With `bar` at 176.4 km that is nearly everything still
+        // alive, which is why the shortlist was empty and the runner idle with
+        // no explanation anywhere on the page.
+        skipped.unclassified++;
         continue;
       }
 
@@ -945,6 +967,20 @@ registerInference({
         shown: top.length,
         skipped_cooling: skipped.cooling,
         skipped_suspect: skipped.suspect,
+        // What `skipped_suspect` actually means, published so the browser
+        // states the rule instead of inventing one. It was rendered as "no
+        // position" for nodes that every one of them HAS a position for.
+        ceiling_km: CEILING_KM,
+        // Attempted, unanswered, nearer than the bar — no class claims it.
+        skipped_unclassified: skipped.unclassified,
+        // NEVER REACHED THE LOOP AT ALL. The evidence query filters these out
+        // before any counter exists, so they can only be counted separately.
+        // This is the LARGEST exclusion and it was entirely absent from the
+        // funnel — the one failure the funnel was built to prevent.
+        unpositioned: Number(rows[0]?.unpositioned ?? 0),
+        // Every node entering the loop, so the arithmetic can be checked:
+        //   rows_in === candidates + every skipped_* counter
+        rows_in: rows.length,
         skipped_exhausted: skipped.exhausted,
         skipped_beyond_window: skipped.beyond_window,
         skipped_silent: skipped.silent,

@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: e1209a798f3374f25565dc3368edc121261f3f88807f0565f5e9bbcb0709ba05
+source_hash: 3006c340d449c662b153396723090ed19017f0735a8f3c28caf182e3929d5739
 updated: 2026-08-03
 ---
 
@@ -464,3 +464,77 @@ planting a violation and confirming the failure, then restoring:
   confident wrong answer. It needs the antenna to sweep first.
 - Anything that transmits. `MESH_REACH_SPEC` §9 is unanswered, and none of the
   four inferences here sends anything.
+
+
+## The funnel must account for every node
+
+Task `funnel-accounts-for-every-node`.
+
+This module carried the comment *"THE EXCLUSIONS ARE PUBLISHED, not silent. A
+shortlist that quietly drops most of the pool reads as 'these are the only
+options'."* It was not true. Reconciled against the live store on 2026-08-03:
+
+```
+rows entering the loop : 607
+skipped WITH a counter : 532
+scored (candidates)    :   0
+DROPPED WITH NO COUNTER:  75
+```
+
+### The unnamed exit
+
+The classification chain ended in a bare `} else { continue; }`. A node that has
+been **attempted**, has **not answered**, and sits **nearer than the period bar**
+matches no branch, and left through it uncounted.
+
+Not a rounding error: with `bar_km` at 176.4 that was nearly every node still
+alive. It is why the shortlist was empty and the runner idle — *"not probing — no
+candidates"* — with no explanation anywhere on the page. It is now
+`skipped_unclassified`.
+
+### The exclusion the loop cannot see
+
+The evidence query's own `WHERE n.lat IS NOT NULL AND n.lon IS NOT NULL AND
+n.lat <> 0` removes unpositioned nodes **before any counter exists**. All
+**331** of them (174 heard within `max_silence_days`) appeared in no segment at
+all — the largest exclusion, and invisible.
+
+It cannot be counted in the loop, so it is counted in the **evidence**:
+
+```sql
+(SELECT COUNT(*) FROM nodes u
+  WHERE u.lat IS NULL OR u.lon IS NULL OR u.lat = 0) AS unpositioned
+```
+
+Declared evidence rather than a query inside `run()` — the inference stays pure.
+
+### `skipped_suspect` is not "no position"
+
+It counts `km > CEILING_KM` (**250**) — implausible *computed* distances. **Every
+one of those 127 nodes has a position.** The browser rendered it as "no position"
+(`public/app-observatory.js:512`), which is how the figure was reported to Peter
+as a position problem twice.
+
+The key is unchanged — the datum was always correct, only its label was wrong —
+and the summary now publishes `ceiling_km` so the browser states the rule rather
+than inventing a meaning.
+
+### The acceptance test is arithmetic, not appearance
+
+```
+rows_in === candidates + every skipped_* counter
+```
+
+Verified after the change: `607 === 0 + (127+189+152+14+50+75)` — **closes
+exactly**. If it ever fails to balance, a path has gone unnamed again, and that
+is a defect regardless of how the page looks.
+
+`rows_in` is published for exactly this reason.
+
+### What this deliberately does NOT do
+
+No targeting behaviour changed. Not one node was added to or removed from the
+shortlist. Whether discovery should keep probing once the bar rises past
+everything alive is a design decision — see `chase-the-window-best` — and this
+task only makes the current behaviour legible enough for that decision to be made
+from the page instead of a hand-run query.
