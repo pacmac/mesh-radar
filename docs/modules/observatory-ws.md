@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: c006bb3434e6e83af34f42e0d415da90287342a28404541e7f960d59502aac17
+source_hash: f134c8de26e779882e0e8c1fa7d1172994fb344f318c9c747646b97fa3cba276
 updated: 2026-08-03
 ---
 
@@ -212,6 +212,30 @@ than passed in, because the listener fires outside wiring.
 
 Published so a later Domain 2 task can mark the censoring boundary on screen. Rates before
 it are already suppressed in `db.js` — this field is for the label, not the filtering.
+
+## `event_log` and the enumerable pipeline
+
+Task `logs-feed`.
+
+On connect: `{type:'event_log', events, hooks}` — the last 300 rows **and the declared
+pipeline**. `hooks` is the answer to *"what does this system execute, in order, and what
+does each step claim to do?"* served rather than inferred, so the page never guesses and
+nobody reads code to find out.
+
+Live: `{type:'event', event}` pushed per emission via `onEvent()` in `hooks.js`, announced
+**after** the row is written so a listener never sees an event the database lacks. That is
+what makes the page a feed rather than a report — the 15-minute recompute is far too slow
+to feel alive.
+
+`charts.interventions` carries `config`/`deploy`/`mode` events inside the window, so the
+board can mark them on the traces: *"yield fell after we changed X"* becomes visible rather
+than remembered.
+
+Core announces and the plugin subscribes — `hooks.js` names no consumer, the same boundary
+rule as `registerSettingsListener`.
+
+Verified 2026-08-03: 33 events and 9 hooks replayed on connect, 13 interventions in window,
+and a live `unknown-nodes` finding arriving mid-session.
 
 ## Invariants
 

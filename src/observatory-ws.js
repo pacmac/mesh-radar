@@ -14,12 +14,13 @@
 // See docs/WS_PLUGIN_HOOKS_SPEC.md and docs/PLUGIN_BOUNDARY_SPEC.md.
 import { events, recentObservations, facts, runInference } from './observatory.js';
 import { registerWsWiring, registerConnectReplay, registerSettingsListener } from './ws-relay.js';
+import { onEvent, listHooks } from './hooks.js';
 import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
 import { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
          attemptsByDay, answerRateBySilence, answerRateByDistance,
-         rateByBandByDay, windowBestKm, boardVerdicts } from './db.js';
+         rateByBandByDay, windowBestKm, boardVerdicts, recentEventLog, interventions } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
 // every distance from it. A page load must not re-read config.
@@ -50,6 +51,12 @@ function toMessage(row) {
 let _broadcast = null;
 registerWsWiring(({ broadcast }) => {
   _broadcast = broadcast;
+  // Live, one row at a time, as it is emitted — not on the 15-minute recompute.
+  // This is what makes the page a feed rather than a report.
+  onEvent(row => {
+    try { broadcast({ type: 'event', event: row }); }
+    catch (e) { console.error(`[observatory-ws] event push failed: ${e.message}`); }
+  });
   events.on('observation', (row) => {
     // WRAPPED. This runs inside observe(), which runs inside handlePacket, which
     // is the hot path for every packet. A throw here — a dead socket, a JSON
@@ -93,6 +100,10 @@ registerConnectReplay(() => {
       { type: 'missions', missions: missions() },
       { type: 'mission_activity', activity: missionRunner.state() },
       { type: 'charts', charts: charts() },
+      // THE LOG, and the pipeline that writes it. `hooks` is the enumerable
+      // answer to "what does this system execute and what does each claim to
+      // do" — served so the page never has to infer it. Task `logs-feed`.
+      { type: 'event_log', events: recentEventLog(300), hooks: listHooks() },
     ];
   } catch (e) {
     console.error(`[observatory-ws] replay failed: ${e.message}`);
@@ -342,6 +353,10 @@ function charts() {
   // record would read ~92 km and imply we had gone backwards.
   // The three verdicts. Server-computed with a stated basis — the browser makes
   // no decisions and neither should the operator's eyes. Task `board-verdicts`.
+  // Interventions inside the window, so the page can mark them on the traces:
+  // "yield fell after we changed X" becomes visible rather than remembered.
+  try { out.interventions = interventions(windowDays); }
+  catch (e) { console.error(`[observatory-ws] interventions failed: ${e.message}`); }
   try { out.board = boardVerdicts(windowDays); }
   catch (e) { console.error(`[observatory-ws] board verdicts failed: ${e.message}`); }
   try {

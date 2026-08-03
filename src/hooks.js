@@ -40,6 +40,22 @@ export const hooks = { store: {}, 'per-node': {}, 'per-mode': {} };
 // ambiguous exactly where it is read.
 const _names = new Set();
 
+// LIVE PUSH. Peter wants the board to feel alive; an event that only lands in a
+// table is not alive until something carries it. Subscribers are notified after
+// the row is written, so a listener never sees an event the database does not
+// have. Core announces; the plugin subscribes — same shape as
+// registerSettingsListener, and this file names no consumer.
+const _listeners = [];
+export function onEvent(fn) { _listeners.push(fn); }
+
+function _announce(row) {
+  for (const fn of _listeners) {
+    // Isolated: a dead socket must not break the next listener, nor the work
+    // that emitted.
+    try { fn(row); } catch (e) { console.error(`[hooks] listener failed: ${e.message}`); }
+  }
+}
+
 /** Register a hook. Throws unless it declares what it is.
  *
  *  The throw is the point. "Add a step that says nothing" must be IMPOSSIBLE,
@@ -84,7 +100,7 @@ export function defineHook({ name, purpose, scope, modes = null } = {}) {
     emit({ summary, detail = null, severity = 'info', probe_id = null } = {}) {
       if (!summary) return;                       // nothing to say is a caller bug, not a crash
       try {
-        insertEventLog({
+        const row = {
           ts:       Math.floor(Date.now() / 1000),
           kind:     scope === 'per-node' ? 'probe' : scope === 'per-mode' ? 'mode' : 'task',
           severity,
@@ -92,7 +108,9 @@ export function defineHook({ name, purpose, scope, modes = null } = {}) {
           detail:   detail == null ? null : JSON.stringify(detail),
           source:   name,
           probe_id,
-        });
+        };
+        insertEventLog(row);
+        _announce(row);
       } catch (e) {
         // A BROKEN LOG MUST NOT STOP THE WORK IT DESCRIBES. Emitting runs inside
         // the discovery loop; a full disk or a locked database must cost us a
@@ -125,12 +143,14 @@ export function getHook(name) {
 export function logEvent({ kind, severity = 'info', summary, detail = null, source = null, probe_id = null } = {}) {
   if (!kind || !summary) return;
   try {
-    insertEventLog({
+    const row = {
       ts: Math.floor(Date.now() / 1000),
       kind, severity, summary,
       detail: detail == null ? null : JSON.stringify(detail),
       source, probe_id,
-    });
+    };
+    insertEventLog(row);
+    _announce(row);
   } catch (e) {
     console.error(`[hooks] logEvent(${kind}) failed: ${e.message}`);
   }
