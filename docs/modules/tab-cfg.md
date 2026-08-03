@@ -1,8 +1,8 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: 6826fdeeeec0ff80290c6e7a7a0fc5dacd905650546ce5b7fc2ab86b9049cf38
-updated: 2026-07-16
+source_hash: a53aaca82e119815c2c7acefb70bc8e8c07a393847bead8427845351b32de3f0
+updated: 2026-08-03
 ---
 
 # Module: tab-cfg
@@ -165,6 +165,23 @@ have genuinely different latencies and a silent delay reads as a broken form.
 `manual`); `strategy` decides how it picks when it does. Orthogonal, and the
 helper text says so — two selects that look alike need to explain how they
 differ.
+
+## The two beam timings sit together
+
+`hold_sec` ("Hold the beam after aiming") and `aim_patience_sec` ("Wait for a
+held beam") are adjacent, because they are two halves of the same conversation
+with a shared antenna: how long we keep the beam, and how long we wait for it
+when someone else has it. Reading either alone gives the wrong picture of how
+courteous the runner is.
+
+`aim_patience_sec` bounds `0–60`, mirroring the server (`DISCOVERY_LIMITS`). The
+helper text carries the trade rather than just the units — the number is
+meaningless without knowing that waiting longer starves the garage alarm, and
+that `0` gives up the whole 180 s tick on any hold at all.
+
+The label is deliberately short ("Wait for a held beam", not "Wait for a beam
+someone else holds"): the longer version wrapped to two lines and made its grid
+row taller than the field beside it. Caught in the screenshot, not in the markup.
 
 ## The silence cutoff is on the Discovery section
 

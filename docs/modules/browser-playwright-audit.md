@@ -31,7 +31,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 779826ad0ee3e4d3f143df5faa09726f801b008c068d29912b87a4bda4fa18ac
+source_hash: bf2f04d83e736fd983605dba3a45958e0ce3c309119ae87e40b77cca2f3021a5
 updated: 2026-08-03
 ---
 
@@ -55,6 +55,10 @@ congestion explanation that motivated them was disproved (`MESH_REACH_SPEC` §3b
 `hold_sec` and `max_silence_days` joined it — how long to hold the shared yagi
 still after aiming, and how long a node may be silent before discovery stops
 attempting it.
+
+`aim_patience_sec` joined it — the other half of `hold_sec`: how long to wait for
+a beam the garage alarm is holding before giving the tick up. Placed directly
+beside `hold_sec` because the two only make sense read together.
 
 `max_silence_days` joined it — how long a node may be silent before discovery
 stops attempting it. Its helper text carries the measured rates (16–26% for a
