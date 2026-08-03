@@ -600,6 +600,7 @@ registerInference({
            COALESCE((SELECT value ->> '$.attempts_per_target' FROM config WHERE key = 'discovery'), 6)    AS s_attempts,
            COALESCE((SELECT value ->> '$.cooldown_min'        FROM config WHERE key = 'discovery'), 30)   AS s_cooldown_min,
            COALESCE((SELECT value ->> '$.max_silence_days'    FROM config WHERE key = 'discovery'), 14)   AS s_max_silence,
+           COALESCE((SELECT CAST(value AS INTEGER) FROM config WHERE key = 'observatory.window_days'), 30) AS s_window_days,
            COALESCE((SELECT value ->> '$.proven_min_hits'     FROM config WHERE key = 'discovery'), 3)    AS s_proven_hits,
            COALESCE((SELECT value ->> '$.proven_min_rate'     FROM config WHERE key = 'discovery'), 10)   AS s_proven_rate,
            COALESCE((SELECT value ->> '$.new_node_hours'      FROM config WHERE key = 'discovery'), 48)   AS s_new_hours,
@@ -686,16 +687,35 @@ registerInference({
     // still reports 189.1 km, because "furthest we have reached" and "furthest we
     // can rely on" are different claims and both are true.
     let record = 0;
+    // THE BAR THE SEARCH ACTUALLY AIMS AT. Peter, 2026-08-03: "the ultimate
+    // target is 189.1km, but in our current window, the best is 92km, that is
+    // what we should be looking to beat and not 189.1km."
+    //
+    // The all-time record was set on 2026-07-04 with antennas that have since
+    // MOVED, and nothing since has come close. Ranking against it sent DISC into
+    // the 187-234 km band, which answers 0.0-1.3% across 2,088 measured attempts.
+    // Just past the window's best sits in 75-100 km, which answers 20.9% (n=549).
+    const WINDOW_DAYS = Number(rows[0].s_window_days) || 0;
+    const winCut = WINDOW_DAYS > 0 ? now - WINDOW_DAYS * 86400 : 0;
+    let windowBest = 0;
     const proven = [{ lat: HOME.lat, lon: HOME.lon }];   // we are, trivially, reachable
     for (const r of rows) {
       if (!r.hits) continue;
       const km = greatCircleKm(HOME.lat, HOME.lon, r.lat, r.lon);
       if (km > 200) continue;                            // §12 — a claim, not evidence
       if (km > record) record = km;                      // the record counts every hit
+      // Reached INSIDE the window — last_ok is already in the evidence.
+      if (r.last_ok && Number(r.last_ok) >= winCut && km > windowBest) windowBest = km;
       if (r.hits < PROVEN_HITS) continue;
       if (r.attempts && (r.hits / r.attempts) < PROVEN_RATE) continue;
       proven.push({ lat: r.lat, lon: r.lon });
     }
+
+    // FLOORED AT PROVEN GROUND. A self-referential bar can ratchet DOWNWARDS: a
+    // poor window lowers the bar, which selects easier targets, which keeps the
+    // window low. The bar may never fall below what we already reach reliably.
+    const reliableKm = Math.max(0, ...proven.map(q => greatCircleKm(HOME.lat, HOME.lon, q.lat, q.lon)));
+    const bar = Math.max(windowBest, reliableKm);
 
     /** How far past the nearest node we have ACTUALLY REACHED.
      *
@@ -815,17 +835,17 @@ registerInference({
         cls = 'new';
         reason = `discovered ${fmtSilence(now - Number(r.first_heard))} — never had a proper look`;
         rank = 600 + liveScore;
-      } else if (attempts === 0 && km > record) {
+      } else if (attempts === 0 && km > bar) {
         cls = 'unknown-record';
-        reason = `never attempted — ${Math.round(step)} km past the nearest node we have reached, heard ${fmtSilence(silentFor)}, and would beat the ${Math.round(record)} km record`;
+        reason = `never attempted — ${Math.round(step)} km past the nearest node we have reached, heard ${fmtSilence(silentFor)}, and would beat the ${Math.round(bar)} km best for this period`;
         rank = 1000 + stepScore + liveScore;
       } else if (attempts === 0) {
         cls = 'unknown';
         reason = 'never attempted — one try tells us more than a repeat anywhere';
         rank = 700 + stepScore + liveScore;
-      } else if (hits === 0 && km > record) {
+      } else if (hits === 0 && km > bar) {
         cls = 'record';
-        reason = `${attempts} attempt${attempts === 1 ? '' : 's'}, no reply yet — ${Math.round(step)} km past the nearest node we have reached, heard ${fmtSilence(silentFor)}, would beat the ${Math.round(record)} km record`;
+        reason = `${attempts} attempt${attempts === 1 ? '' : 's'}, no reply yet — ${Math.round(step)} km past the nearest node we have reached, heard ${fmtSilence(silentFor)}, would beat the ${Math.round(bar)} km best for this period`;
         // Diminishing: the twentieth silent attempt is worth less than the
         // second. §4 says silence proves nothing, not that it is free.
         rank = 1000 + stepScore + liveScore - Math.min(120, attempts * 6);
@@ -934,7 +954,14 @@ registerInference({
         new_node_hours: Math.round(NEW_WINDOW / 3600),
         // The window's real anchor, published so the panel can say what the
         // search is measuring from rather than implying it is the record.
-        reliable_km: Math.round(Math.max(0, ...proven.map(q => greatCircleKm(HOME.lat, HOME.lon, q.lat, q.lon))) * 10) / 10,
+        reliable_km: Math.round(reliableKm * 10) / 10,
+        // TWO BARS, both stated. record_km is the ultimate goal and stays
+        // all-time; `bar_km` is what the ranker actually aims past this period.
+        // Publishing only the first is how the search came to chase a month-old
+        // number set with antennas that have since moved.
+        window_best_km: Math.round(windowBest * 10) / 10,
+        bar_km:         Math.round(bar * 10) / 10,
+        window_days:    WINDOW_DAYS,
       },
       confidence: null,
       evidence_count: rows.length,

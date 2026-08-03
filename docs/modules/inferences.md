@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: e5639023388b1814f569870bd86e703cc2677cc3b4d11e22d243932872c3f6be
+source_hash: e1209a798f3374f25565dc3368edc121261f3f88807f0565f5e9bbcb0709ba05
 updated: 2026-08-03
 ---
 
@@ -396,6 +396,46 @@ relayed 1029.8 km. That is a separate task.
 
 The guard, its threshold and its rejection count are all published so a reader can argue
 with them instead of finding them applied silently.
+
+## The ranker aims past the WINDOW's best, not the all-time record
+
+Task `chase-the-window-best`. Peter, 2026-08-03: *"the ultimate target is 189.1km, but in
+our current window, the best is 92km, that is what we should be looking to beat and not
+189.1km."*
+
+`record` was a running maximum over every row ever, and both record-chasing classes gated
+on `km > record` — so the search aimed beyond 189.1 km, a figure set on 2026-07-04 with
+antennas that have since moved. That band answers **0.0–1.3% across 2,088 measured
+attempts**; just past the window's best sits in 75–100 km, which answers **20.9% (n=549)**.
+
+`windowBest` is the furthest target answered inside the window, from rows whose `last_ok`
+falls in it — `last_ok` is already in the evidence, so no new query. The classes now gate
+on `bar`, and the summary publishes `record_km`, `window_best_km` and `bar_km` so the panel
+can state which is which.
+
+**`bar` is floored at `reliable_km`.** A self-referential target can ratchet DOWNWARDS: a
+poor window lowers the bar, which selects easier targets, which keeps the window low. The
+bar may never fall below ground we already hold. Currently that floor binds — window best
+92.0 km, reliable 95.2 km, so `bar_km` is 95.2.
+
+### OPEN: `step` does not reconcile with `reliable_km`
+
+Verified after the change, at a 7-day window with `reliable_km: 95.2`:
+
+```
+192.9 km  record   "10 km past the nearest node we have reached"
+191.5 km  record   "21 km past ..."
+208.0 km  record   "21 km past ..."
+```
+
+`stepKm()` measures target-to-nearest-proven-point. With the furthest proven node 95.2 km
+from home, a 192.9 km target is at least 97.7 km from it by the triangle inequality — so a
+10 km step is impossible unless `proven` contains points that `reliable_km` does not see.
+
+This is **pre-existing**, not introduced here: the same targets appeared with the same step
+values before the change, and it is why the ladder's 25 km `window_km` failed to keep the
+search near home. Filed as **B65**. Until it is resolved, lowering the bar admits nearer
+targets but does not stop the far ones ranking.
 
 ## Invariants
 
