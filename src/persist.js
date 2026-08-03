@@ -4,6 +4,7 @@ import {
   insertSignalHistory,
 } from './db.js';
 import db from './db.js';
+import { captureRelayObservation } from './relay-observation.js';
 
 function _validCoord(lat, lon) {
   return lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
@@ -316,6 +317,19 @@ function _notifyPacketObservers(packet, device, ts, replay) {
 }
 
 function handlePacket(packet, device, ts, replay) {
+  // ABOVE THE DECODED GATE ON PURPOSE. 15% of live packets are encrypted-only
+  // (12 of 80 sampled 2026-08-03) and the early return below discards them —
+  // but `from`, `relay_node`, `hop_start` and the receiving radio are all in the
+  // UNENCRYPTED header. We do not need to read a packet to learn that one node
+  // relayed another, and those relayed paths are exactly what the reach work
+  // needs. This is also why it is not a registerPacketObserver: that hook fires
+  // after the gate and would inherit the same blind spot.
+  //
+  // Isolated like _notifyPacketObservers: this runs for EVERY packet on the hot
+  // path, and a throw here must never stop ingestion.
+  try { captureRelayObservation(packet, device, ts); }
+  catch (e) { console.error(`[relay-obs] capture failed: ${e.message}`); }
+
   if (!packet?.decoded) return;
 
   _notifyPacketObservers(packet, device, ts, replay);

@@ -1,8 +1,8 @@
 ---
 module: db
 source: src/db.js
-source_hash: 4f16a76876a239b84ca56addafd00873549ee5bc3208d219395e0c1a2ae7ee0a
-updated: 2026-07-29
+source_hash: cbf14fee2f7eac88ef4fa487eb86d59f3c16df3b2d0c6c5809f0b1d31a9bcf76
+updated: 2026-08-03
 ---
 
 # Module: db
@@ -382,6 +382,36 @@ The busiest channel utilisation our own radios currently report. Read from
 such field. Used by the discovery brake; the busiest radio wins, because if
 either of ours sees a loaded channel then adding to it is the thing the brake
 exists to avoid.
+
+## `relay_observation` — who relayed each packet
+
+Task `packet-provenance-capture`. Full rationale: `docs/modules/relay-observation.md`.
+
+Append-only record of `(ts, from_num, relay_byte, rx_device, hop_start, hop_limit,
+transport, decoded)`, written for **every** received packet including encrypted ones.
+
+**Deliberately not part of `signal_history`.** That table is direct-only by design — its
+own comment makes the rule auditable ("any row with hops != 0 is a bug") — because relayed
+RSSI describes the last hop, not the origin. Relay edges are exactly the relayed packets it
+excludes, so storing them there would destroy the one dataset whose meaning is unambiguous.
+
+`relay_byte` is the LOW BYTE of the relaying node, so it resolves to a candidate set rather
+than a node (~1 in 256 collide). Stored raw and never resolved here.
+
+Zero-omission defaults are enforced by the writer, not by SQL nullability: `relay_byte`,
+`hop_limit` and `transport` are `NOT NULL` with defaults `0`, `0` and `'TRANSPORT_INTERNAL'`,
+because proto3 omits zero values and absent must mean zero rather than unknown.
+
+No dedup: two radios hearing one packet is two observations of two different links.
+
+`insertRelayObservation(entry)` / `pruneRelayObservations(days)` — the latter returns the
+delete count so callers can log honestly. Retention is driven inline from
+`relay-observation.js`, not from `auto-purge` (which purges the radio's NodeDB, not local
+tables).
+
+New table via `CREATE TABLE IF NOT EXISTS`, so no migration guard is involved — and in
+particular nothing here uses `PRAGMA table_info`, which omits generated columns and
+re-`ALTER`s on every boot.
 
 ## Invariants
 

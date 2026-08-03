@@ -1,8 +1,8 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: 1ed62e2405f82bc5172863006163c90ca3961b2ebf1f937c9a6bfdb461e91b7d
-updated: 2026-08-02
+source_hash: c3dd89902241c45867c428e3ac5a6379b19b2e21f79b64f370b844803f15461f
+updated: 2026-08-03
 ---
 
 # Module: persist
@@ -96,6 +96,27 @@ one detection node must not break ingestion for every other node.
 | `NODEINFO_APP` | `stmts.upsertNode` + `_upsertCache` |
 | `POSITION_APP` | `stmts.upsertNode` |
 | all others | silently ignored |
+
+## Relay capture runs ABOVE the decoded gate
+
+Task `packet-provenance-capture`.
+
+`handlePacket()` opens with `captureRelayObservation(packet, device, ts)` in a try/catch,
+**before** `if (!packet?.decoded) return;`.
+
+That ordering is the entire point. The decoded gate discards ~15-21% of live packets
+(measured 12 of 80, then 14 of 66 after deploy) because we hold no key for their channel —
+but `from`, `relay_node`, `hop_start` and the receiving radio all live in the
+**unencrypted header**. Learning that one node relayed another requires no decryption.
+
+It is not a `registerPacketObserver` for the same reason: that hook fires after the gate
+and would inherit the identical blind spot.
+
+Isolated in try/catch on the `_notifyPacketObservers` principle — this runs for every
+packet on the hot path, and a throw must never stop ingestion.
+
+Verification that the ordering actually holds: rows with `decoded = 0` can only be written
+by code running above the gate. If the call were moved below, that count would be zero.
 
 ## Invariants
 

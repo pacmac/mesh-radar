@@ -1,8 +1,8 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 123989a894c81467410ddb0770665e7bdd5dbe7e8fe85b05efc45e5657b6c3af
-updated: 2026-07-27
+source_hash: 79ed83c46debb8d7553aefc4d3e3b5cea35ffd92f715b29c019deba375c89084
+updated: 2026-08-03
 ---
 
 # Module: config-api
@@ -191,6 +191,16 @@ latency).
 
 **A conclusion drawn from an unenforced timing is not a conclusion.**
 `MESH_REACH_SPEC` §3c.
+
+## `relay_observation.retain_days`
+
+Task `packet-provenance-capture`. Default **30**.
+
+`relay_observation` grows at roughly 29,000 rows/day at the observed ~20 packets/min, so
+it cannot be left unbounded. Clamping to 1-365 happens at the **read** site in
+`src/relay-observation.js` rather than in a PUT validator, because nothing writes this key
+over the API yet — a validator with no writer would be untested code asserting a guarantee
+nothing exercises. When a writer is added, the clamp moves here and joins `RADAR_LIMITS`.
 
 ## Invariants
 

@@ -149,6 +149,36 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_det_dedup  ON detection_events(num, packet_id) WHERE packet_id IS NOT NULL;
   CREATE INDEX        IF NOT EXISTS idx_det_num_ts ON detection_events(num, ts DESC);
 
+  -- Who relayed each packet, and how it travelled. Task packet-provenance-capture.
+  --
+  -- Deliberately NOT signal_history: that table is direct-only by design (see its
+  -- comment below), because relayed RSSI describes the last hop rather than the
+  -- origin. Relay edges are precisely the relayed packets it exists to exclude.
+  --
+  -- Written for EVERY packet including encrypted ones — from, relay_node, hop_start
+  -- and the receiving radio are all in the UNENCRYPTED header, so we learn "X was
+  -- relayed by Y" without holding any key.
+  --
+  -- relay_byte is the LOW BYTE of the relaying node (MeshPacket field 19), so it
+  -- resolves to a candidate SET, not a node (~1 in 256 collide). Stored raw; never
+  -- resolved here. 0 means NOT RELAYED — proto3 omits zero, so absent is 0, never
+  -- unknown. Same rule for hop_limit, and for transport ('TRANSPORT_INTERNAL' = 0).
+  CREATE TABLE IF NOT EXISTS relay_observation (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts         INTEGER NOT NULL,
+    from_num   INTEGER NOT NULL,
+    relay_byte INTEGER NOT NULL DEFAULT 0,
+    rx_device  TEXT,
+    hop_start  INTEGER,
+    hop_limit  INTEGER NOT NULL DEFAULT 0,
+    transport  TEXT    NOT NULL DEFAULT 'TRANSPORT_INTERNAL',
+    decoded    INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_relay_obs_from  ON relay_observation(from_num, ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_relay_obs_byte  ON relay_observation(relay_byte, ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_relay_obs_ts    ON relay_observation(ts);
+
   -- Signal history from the packet ENVELOPE (iron rule 4 — never a payload).
   -- One row per (node, packet); the partial unique index collapses the same
   -- broadcast heard by several gateway radios.
@@ -1040,6 +1070,27 @@ export function listFavourites() {
 
 export function listFavouriteNodes() {
   return stmts.queryFavouriteNodes.all();
+}
+
+// Task `packet-provenance-capture`. No dedup on purpose: two radios hearing one
+// packet is two observations of two different links, and both are wanted — the
+// same reasoning that made signal_history key on (num, packet_id, rx_device).
+const _insertRelayObservation = db.prepare(`
+  INSERT INTO relay_observation
+    (ts, from_num, relay_byte, rx_device, hop_start, hop_limit, transport, decoded)
+  VALUES
+    (@ts, @from_num, @relay_byte, @rx_device, @hop_start, @hop_limit, @transport, @decoded)
+`);
+const _pruneRelayObservations = db.prepare(`DELETE FROM relay_observation WHERE ts < ?`);
+
+export function insertRelayObservation(entry) {
+  _insertRelayObservation.run(entry);
+}
+
+// Age off by RETAIN_DAYS. Returns rows deleted so the caller can log honestly.
+export function pruneRelayObservations(days) {
+  const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+  return _pruneRelayObservations.run(cutoff).changes;
 }
 
 export function insertSignalHistory(entry) {

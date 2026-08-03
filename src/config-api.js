@@ -19,6 +19,10 @@ export const DEFAULTS = {
   'node_sort.field':          'last_heard',
   'node_sort.dir':            -1,
   'radar.max_range_km':       50,
+  // Retention for relay_observation (task `packet-provenance-capture`). ~29k
+  // rows/day at the observed ~20 packets/min, so this cannot be left unbounded.
+  // Enforced inline every 5,000 inserts by src/relay-observation.js.
+  'relay_observation.retain_days': 30,
   'radar.log_scale':          true,   // adaptive quantile scale (linear = opt-out)
   'radar.crosshair':          false,
   'message_filter.channels':  [],
