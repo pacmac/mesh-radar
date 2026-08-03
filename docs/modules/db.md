@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 43cd55275e0aca125986ab0fa417fb9e5efbf2557b5c4683b2265c20d137fd67
+source_hash: 5004cbce7aa5b51d2e7d824411aaebdfddf1974ea645b9c1aa0634edd3c7853d
 updated: 2026-08-03
 ---
 
@@ -437,6 +437,25 @@ The `days` filter is `ts > now - days*86400`, a rolling cut, so the OLDEST day i
 window is always partial — the same convention the other chart queries use.
 
 Measured 35 ms for 108 rows against ~22k `traceroute_history` rows.
+
+## The analysis window — `_windowSql(days, col)`
+
+Task `observatory-window`. Every chart query now takes `days` and applies the same
+predicate through one helper.
+
+**`days = 0` means ALL TIME and omits the predicate entirely.** A naive
+`ts > now - 0` matches nothing and would render an empty page as though no data existed.
+
+Before this, `attemptsByDay` and `rateByBandByDay` were 30 days while `answerRateBySilence`
+and `answerRateByDistance` took no window parameter at all — four series served side by
+side, two of them not comparable with the other two, and nothing saying so. Any figure
+previously derived from the latter two is an ALL-TIME figure and must be re-derived rather
+than carried forward.
+
+`windowBestKm(days)` returns the furthest target ANSWERED inside the window, plus the
+count. It is **not** the record: `reach.ladder`'s `record_km` stays all-time because it is
+the thing to beat, and a 7-day window would show ~92 km and imply we had gone backwards.
+Returns `null` rather than `0` when nothing answered — 0 km would draw as a data point.
 
 ## Invariants
 

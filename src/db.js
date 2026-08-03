@@ -915,21 +915,30 @@ export function lastHeardMap() {
 /** Attempts and answers per day. The 27 July cliff — ~1,000/day to 1, because
  *  traceroute.enabled was false — took a database query to find and should have
  *  taken one glance. */
+// ANALYSIS WINDOW. `days = 0` means ALL TIME and must omit the predicate entirely:
+// a naive `ts > now - 0` matches nothing and would render an empty page as though
+// there were no data. Task `observatory-window`.
+function _windowSql(days, col = 'ts') {
+  return Number(days) > 0
+    ? `AND ${col} > strftime('%s','now') - (${Number(days)} * 86400)`
+    : '';
+}
+
 export function attemptsByDay(days = 30) {
   return db.prepare(`
     SELECT date(ts, 'unixepoch')                            AS day,
            COUNT(*)                                         AS attempts,
            SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END)   AS answers
     FROM traceroute_history
-    WHERE ts > strftime('%s','now') - (? * 86400)
+    WHERE 1=1 ${_windowSql(days, 'ts')}
     GROUP BY day ORDER BY day
-  `).all(days);
+  `).all();
 }
 
 /** Answer rate against how long the target had been silent. The strongest
  *  predictor measured (26.1 / 16.0 / 7.0 / 1.8 %) and the justification for
  *  max_silence_days — on screen so the setting can be argued with. */
-export function answerRateBySilence() {
+export function answerRateBySilence(days = 0) {
   return db.prepare(`
     WITH heard AS (SELECT DISTINCT num FROM signal_history)
     SELECT CASE
@@ -943,6 +952,7 @@ export function answerRateBySilence() {
     FROM traceroute_history th
     LEFT JOIN nodes n ON n.num = th.to_num
     LEFT JOIN heard h ON h.num = th.to_num
+    WHERE 1=1 ${_windowSql(days, 'th.ts')}
     GROUP BY bucket
   `).all();
 }
@@ -950,7 +960,7 @@ export function answerRateBySilence() {
 /** Answer rate by 25 km band. The chart that settles whether a run of silence is
  *  the targets or the setup. Distance is computed in SQL from the stored
  *  positions and the configured home. */
-export function answerRateByDistance() {
+export function answerRateByDistance(days = 0) {
   return db.prepare(`
     WITH home AS (
       SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') AS lat,
@@ -967,6 +977,7 @@ export function answerRateByDistance() {
       JOIN nodes n ON n.num = th.to_num
       CROSS JOIN home
       WHERE n.lat IS NOT NULL AND n.lat <> 0 AND home.lat IS NOT NULL
+        ${_windowSql(days, 'th.ts')}
     )
     SELECT CAST(km / 25 AS INTEGER) * 25                    AS band,
            COUNT(*)                                         AS attempts,
@@ -1018,7 +1029,7 @@ export function rateByBandByDay(days = 30) {
       FROM traceroute_history th
       LEFT JOIN nodes n ON n.num = th.to_num
       CROSS JOIN home
-      WHERE th.ts > strftime('%s','now') - (? * 86400)
+      WHERE 1=1 ${_windowSql(days, 'th.ts')}
     )
     SELECT day,
            CASE WHEN km IS NULL  THEN 'no-pos'
@@ -1031,13 +1042,53 @@ export function rateByBandByDay(days = 30) {
     FROM d
     GROUP BY day, band
     ORDER BY day, band
-  `).all(days);
+  `).all();
   return rows.map(r => ({
     ...r,
     rate: r.attempts >= BAND_MIN_ATTEMPTS
       ? Math.round((100 * r.answers) / r.attempts)
       : null,
   }));
+}
+
+/** Furthest target ANSWERED inside the window. Task `observatory-window`.
+ *
+ *  NOT the record. `reach.ladder`'s record_km is all-time and stays that way —
+ *  it is the thing to beat (189.1 km, 2026-07-04), and windowed to 7 days it
+ *  would read ~92 km and imply we had gone backwards. This is the other
+ *  question, and Peter asked for it directly: "we have a farthest target in for
+ *  example the last 7 days". Both belong on screen, labelled; serving only the
+ *  all-time figure is how the ladder came to imply we were still reaching
+ *  189.1 km while the last twelve hours topped out at 92.
+ *
+ *  Returns null when nothing was answered in the window — an honest empty, not a
+ *  zero, because 0 km would draw as a data point.
+ */
+export function windowBestKm(days = 0) {
+  const row = db.prepare(`
+    WITH home AS (
+      SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') AS lat,
+             (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') AS lon
+    )
+    SELECT MAX(
+             6371.0 * 2 * asin(min(1.0, sqrt(
+               power(sin((n.lat - home.lat) * 0.0174532925 / 2), 2) +
+               cos(home.lat * 0.0174532925) * cos(n.lat * 0.0174532925) *
+               power(sin((n.lon - home.lon) * 0.0174532925 / 2), 2)
+             )))
+           ) AS km,
+           COUNT(*) AS answered
+    FROM traceroute_history th
+    JOIN nodes n ON n.num = th.to_num
+    CROSS JOIN home
+    WHERE th.status = 'ok'
+      AND n.lat IS NOT NULL AND n.lat <> 0 AND home.lat IS NOT NULL
+      ${_windowSql(days, 'th.ts')}
+  `).get();
+  return {
+    km:       row?.km != null ? Math.round(row.km * 10) / 10 : null,
+    answered: row?.answered ?? 0,
+  };
 }
 
 export function recentAimedTraceroutes(limit = 25) {

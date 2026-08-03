@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: 5cb7f73254a8cef9c87f194c359828350b9d284a46dd7498a91919f6d48f3057
+source_hash: 1d490d06bcba5a3e2350015c27e1e0aa4d7dbe9f4ea4d893808fe30c623c6ace
 updated: 2026-08-03
 ---
 
@@ -183,6 +183,30 @@ and never moved — a rig regression that looked like a targeting question.
 Data comes from `db.rateByBandByDay(30)`; this module only assembles and broadcasts, per
 the rule that display aggregation belongs in the display feed rather than the inference
 catalogue.
+
+## One window for every series
+
+Task `observatory-window`. `charts()` reads `observatory.window_days` once and passes it
+to all four series, then publishes `window_days`, `window_best_km` and `window_answered`
+alongside them.
+
+The window is SERVER state. Peter, 2026-08-03: *"the browser is a presentation layer ONLY,
+this filtering must be done backend so anyone using the browser sees the same thing."* The
+browser PUTs the config key and re-renders from the broadcast; it holds no window of its
+own, so two viewers can never see different figures.
+
+`record_km` stays all-time and `window_best_km` is windowed. They answer different
+questions and both are published.
+
+### Why it subscribes to `registerSettingsListener`
+
+The recompute timer is `discovery.recompute_min`, default **15 minutes**. A control whose
+effect appears a quarter of an hour later is not a control, so this module refreshes its
+own `charts` message when core announces a settings write.
+
+Core announces generically and names no plugin — `config-api.js` must not import this
+file. The broadcast function is captured from the first `registerWsWiring` hook rather
+than passed in, because the listener fires outside wiring.
 
 ## Invariants
 

@@ -1,6 +1,6 @@
 ---
 module: OBSERVATORY_CHARTS
-source_hash: 0a117a1222a9054b49a9b65a2d2e0d1c2cc2bb010cfa87300ae613411fcdb3e2
+source_hash: 4d54f1514b0098df82363e435dbc0a3c5691fab096a474ee8e301840b3ddbcbf
 updated: 2026-08-03
 ---
 
@@ -187,6 +187,70 @@ than one whose oldest column is honestly short.
 Served output matched the by-hand numbers exactly on every full day checked — 07-08, 07-17,
 07-23, 07-27 and 08-02 agreed to the individual attempt. Query 35 ms for 108 rows over
 ~22k history rows.
+
+## The analysis window is SERVER state
+
+Task: `observatory-window`. **Domain 1**; the selector is a separate Domain 2 task.
+
+Peter, 2026-08-03: *"we def need a window filter, all time being one option, 1 day, 7
+days, 30 days, 60 days? … we have a farthest target in for example the last 7 days."*
+And, decisively: *"the browser is a presentation layer ONLY, this filtering must be done
+backend so anyone using the browser sees the same thing."*
+
+One stored value, `observatory.window_days`. Every viewer sees the same figures. The
+browser PUTs and re-renders from the broadcast, holding no state of its own — the rule
+that already governs `favourite` and `obs_target`.
+
+### What this fixes is worse than a missing control
+
+Before this task the page mixed windows **silently**:
+
+```
+attemptsByDay(30)        30 days
+rateByBandByDay(30)      30 days
+answerRateBySilence()    ALL TIME   — took no window parameter at all
+answerRateByDistance()   ALL TIME   — took no window parameter at all
+reach.ladder             ALL TIME
+```
+
+Four series side by side, two windowed and two not, with nothing on screen saying so. Any
+comparison a reader drew between them was invalid — including the "wall at 100 km", an
+all-time figure repeatedly read against a 30-day chart during this session's analysis.
+
+**Every figure previously derived from `answerRateByDistance` or `answerRateBySilence`
+must be re-derived, not carried forward.** They now mean something different.
+
+### `0` means all time
+
+`days = 0` is the "all time" option and is handled by omitting the predicate entirely.
+A naive `ts > now - 0` returns nothing, which would render an empty page as though there
+were no data.
+
+Allowed values are `0, 1, 7, 30, 60` — validated as an enum on write, not clamped to a
+range, because the intermediate values are meaningless and a free-form number invites the
+unclamped-config defect raised with mt-radar earlier.
+
+### The record and the window are different facts
+
+`record_km` stays **all time**. It is the thing to beat — 189.1 km, set 2026-07-04 — and
+windowed to 7 days it would read 92 km and imply we had gone backwards.
+
+`window_best_km` is the furthest reached **inside** the window, which is the number Peter
+actually asked for. Both are served, both labelled. Serving only the first is how the
+ladder came to imply we were still at 189.1 km while the last twelve hours topped out at
+92.
+
+### Refresh — why a core hook was unavoidable
+
+`observatory-ws.js` recomputes on `recomputeMin` minutes, **default 15**. A control whose
+effect appears a quarter of an hour later is not a control.
+
+`config-api.js` is CORE and may not import or name `observatory-ws`, which is a plugin —
+`ws-relay.js` carries an explicit comment about pac-host having been named in it seven
+times and why that was wrong. So `ws-relay.js` gains a **generic**
+`registerSettingsListener(fn)`, fired by `broadcastSettings()`, alongside the existing
+`registerWsWiring` and `registerConnectReplay`. It names no plugin; the observatory
+subscribes to it and rebroadcasts its own charts.
 
 ## Axes
 

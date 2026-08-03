@@ -23,6 +23,11 @@ export const DEFAULTS = {
   // rows/day at the observed ~20 packets/min, so this cannot be left unbounded.
   // Enforced inline every 5,000 inserts by src/relay-observation.js.
   'relay_observation.retain_days': 30,
+  // The analysis window for every Observatory series. SERVER state, not a browser
+  // control: Peter, 2026-08-03 — "the browser is a presentation layer ONLY, this
+  // filtering must be done backend so anyone using the browser sees the same
+  // thing." 0 means ALL TIME. Task `observatory-window`.
+  'observatory.window_days':  30,
   'radar.log_scale':          true,   // adaptive quantile scale (linear = opt-out)
   'radar.crosshair':          false,
   'message_filter.channels':  [],
@@ -134,6 +139,9 @@ const RADAR_LIMITS = {
   scan: { step_deg:  [1, 180],    dwell_sec: [5, 3600] },
 };
 
+// An ENUM, not a clamped range: the intermediate values are meaningless and a
+// free-form number is exactly the unclamped-config defect raised with mt-radar.
+const WINDOW_DAYS = [0, 1, 7, 30, 60];
 const DISCOVERY_STRATEGIES = ['ladder', 'portfolio'];
 const DISCOVERY_MODES = ['auto', 'targets', 'manual'];
 const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, Number(v)));
@@ -285,6 +293,9 @@ router.put('/:key', (req, res) => {
   if (!(key in DEFAULTS)) return res.status(404).json({ error: 'Unknown config key' });
   const { value } = req.body;
   if (value === undefined) return res.status(400).json({ error: 'value required' });
+  if (key === 'observatory.window_days' && !WINDOW_DAYS.includes(Number(value))) {
+    return res.status(400).json({ error: `window_days must be one of ${WINDOW_DAYS.join(', ')}` });
+  }
   setConfig(key, value);
   if (NODE_FILTER_KEYS.has(key)) nodeList.refilter();
   res.json({ key, value });
@@ -298,6 +309,10 @@ router.put('/', (req, res) => {
   }
   const unknown = Object.keys(updates).filter(k => !(k in DEFAULTS));
   if (unknown.length) return res.status(400).json({ error: `Unknown keys: ${unknown.join(', ')}` });
+  if ('observatory.window_days' in updates &&
+      !WINDOW_DAYS.includes(Number(updates['observatory.window_days']))) {
+    return res.status(400).json({ error: `window_days must be one of ${WINDOW_DAYS.join(', ')}` });
+  }
   for (const [key, value] of Object.entries(updates)) setConfig(key, value);
   if (Object.keys(updates).some(k => NODE_FILTER_KEYS.has(k))) nodeList.refilter();
   res.json(updates);

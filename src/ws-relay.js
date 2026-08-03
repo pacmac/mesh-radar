@@ -69,7 +69,22 @@ export function pruneDevice(mac, nodeId = null) {
 // Settings live on the WS (settings-via-ws): replayed on connect, re-broadcast
 // after every config write so all tabs see filter/radar changes immediately.
 let _broadcastSettings = () => {};
-export function broadcastSettings() { _broadcastSettings(); }
+// GENERIC settings-changed hook. A plugin whose feed depends on a config value
+// cannot wait for its own recompute timer — the observatory's is 15 minutes, and a
+// control whose effect appears a quarter of an hour later is not a control. Core
+// must not import or name the plugin (this file once named pac-host seven times),
+// so the plugin subscribes and core merely announces. Task `observatory-window`.
+const _settingsListeners = [];
+export function registerSettingsListener(fn) { _settingsListeners.push(fn); }
+
+export function broadcastSettings() {
+  _broadcastSettings();
+  for (const fn of _settingsListeners) {
+    // Isolated: one plugin throwing must not stop the others being told, nor
+    // fail the config write that triggered this.
+    try { fn(); } catch (e) { console.error(`[ws-relay] settings listener failed: ${e.message}`); }
+  }
+}
 
 // ─── Plugin hooks ────────────────────────────────────────────────────────────
 //

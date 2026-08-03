@@ -13,13 +13,13 @@
 //
 // See docs/WS_PLUGIN_HOOKS_SPEC.md and docs/PLUGIN_BOUNDARY_SPEC.md.
 import { events, recentObservations, facts, runInference } from './observatory.js';
-import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
+import { registerWsWiring, registerConnectReplay, registerSettingsListener } from './ws-relay.js';
 import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
 import { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
          attemptsByDay, answerRateBySilence, answerRateByDistance,
-         rateByBandByDay } from './db.js';
+         rateByBandByDay, windowBestKm } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
 // every distance from it. A page load must not re-read config.
@@ -47,7 +47,9 @@ function toMessage(row) {
 
 // Live pushes. Core hands us `broadcast`; we know the observatory, core does not
 // know us.
+let _broadcast = null;
 registerWsWiring(({ broadcast }) => {
+  _broadcast = broadcast;
   events.on('observation', (row) => {
     // WRAPPED. This runs inside observe(), which runs inside handlePacket, which
     // is the hot path for every packet. A throw here — a dead socket, a JSON
@@ -60,6 +62,14 @@ registerWsWiring(({ broadcast }) => {
 // Replayed to every new connection, newest first. An empty array is the same
 // code path as "plugin not installed", so a page with no observations yet and a
 // node-dash without the observatory behave identically.
+// The window is a config value, and the recompute timer is 15 minutes. Without
+// this a viewer changing the window would wait a quarter of an hour to see it.
+// ws-relay announces generically; it names no plugin. Task `observatory-window`.
+registerSettingsListener(() => {
+  try { _broadcast?.({ type: 'charts', charts: charts() }); }
+  catch (e) { console.error(`[observatory-ws] window refresh failed: ${e.message}`); }
+});
+
 registerConnectReplay(() => {
   try {
     return [
@@ -269,7 +279,15 @@ function missions() {
  *  Wrapped: a chart failing must degrade to an empty panel, not take the feed
  *  down with it. */
 function charts() {
-  const out = { ladder: [], record_km: null, daily: [], silence: [], distance: [], bands: [] };
+  // ONE window for every series. Before this, `daily` and `bands` were 30 days
+  // while `silence` and `distance` were all-time, with nothing on screen saying
+  // so — four series read side by side, two of which were not comparable with
+  // the other two. Task `observatory-window`.
+  const windowDays = Number(getConfig('observatory.window_days', 30)) || 0;
+  const out = {
+    ladder: [], record_km: null, daily: [], silence: [], distance: [], bands: [],
+    window_days: windowDays, window_best_km: null, window_answered: 0,
+  };
   try {
     const l = facts('reach.ladder')[0]?.value ?? null;
     out.ladder = (l?.rungs ?? []).map(r => ({
@@ -278,22 +296,30 @@ function charts() {
     }));
     out.record_km = l?.record_km ?? null;
   } catch (e) { console.error(`[observatory-ws] ladder series failed: ${e.message}`); }
-  try { out.daily = attemptsByDay(30); }
+  try { out.daily = attemptsByDay(windowDays); }
   catch (e) { console.error(`[observatory-ws] daily series failed: ${e.message}`); }
   try {
     // Ordered here, not in SQL: the buckets are a scale (best to worst) and the
     // page must not have to know their order to draw them correctly.
     const order = ['direct RF', '< 24h', '< 7d', 'silent 7d+'];
-    const by = new Map(answerRateBySilence().map(r => [r.bucket, r]));
+    const by = new Map(answerRateBySilence(windowDays).map(r => [r.bucket, r]));
     out.silence = order.filter(k => by.has(k)).map(k => by.get(k));
   } catch (e) { console.error(`[observatory-ws] silence series failed: ${e.message}`); }
-  try { out.distance = answerRateByDistance(); }
+  try { out.distance = answerRateByDistance(windowDays); }
   catch (e) { console.error(`[observatory-ws] distance series failed: ${e.message}`); }
   // Rate per day SPLIT BY BAND — the aggregate `daily` series above cannot tell a
   // change in target mix from a change in performance, and that hid a fall from
   // ~58% to ~7% at under 25 km across three weeks. Task `rate-by-band-by-day`.
-  try { out.bands = rateByBandByDay(30); }
+  try { out.bands = rateByBandByDay(windowDays); }
   catch (e) { console.error(`[observatory-ws] bands series failed: ${e.message}`); }
+  // The furthest reached INSIDE the window — a different fact from record_km,
+  // which stays all-time because it is the thing to beat. Windowed to 7 days the
+  // record would read ~92 km and imply we had gone backwards.
+  try {
+    const w = windowBestKm(windowDays);
+    out.window_best_km  = w.km;
+    out.window_answered = w.answered;
+  } catch (e) { console.error(`[observatory-ws] window best failed: ${e.message}`); }
   return out;
 }
 

@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 4f62e08b9e7992cf3e8e82e7722ca37bd24aeb5ce0017b6e248139caf8a556db
-updated: 2026-07-29
+source_hash: c2072282c0608f013f117b9f9e794869ab821b061b58a6711fe08840186b6a55
+updated: 2026-08-03
 ---
 
 # Module: ws-relay
@@ -370,6 +370,18 @@ Exactly one WSS handles each upgrade request.
 Object keyed by BLE MAC address. Each entry is the flattened device shape from `device_snapshot` or the merged result of `device_state`/`device_data` updates. Always contains `ble_state` (lowercase). Replayed to new connections — no HTTP round-trips after startup.
 
 ---
+
+## `registerSettingsListener(fn)` — the fourth generic hook
+
+Task `observatory-window`. Fired by `broadcastSettings()` after any config write.
+
+A plugin whose feed depends on a config value cannot wait for its own recompute timer.
+Core cannot call the plugin — this file once named pac-host seven times and that was the
+defect `ws-relay-plugin-boundary` exists to fix — so **core announces and the plugin
+subscribes**. The hook names nothing.
+
+Each listener is isolated in try/catch: one plugin throwing must neither stop the others
+being told nor fail the config write that triggered it.
 
 ## Invariants
 
