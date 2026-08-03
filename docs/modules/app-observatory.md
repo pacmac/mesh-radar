@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 1bb601d963a20109c1fb6791dc75089def71e7c78b24f0d9dc74559148137d59
+source_hash: dee91f5815e86e3bb6febe23ed4c62eb0f193cb75e3dbad739337bea20fbde5f
 updated: 2026-08-03
 ---
 
@@ -249,6 +249,41 @@ SERVER state: the server re-broadcasts `charts` and every viewer re-renders from
 No optimistic local state, no per-viewer window — Peter, 2026-08-03: *"the browser is a
 presentation layer ONLY, this filtering must be done backend so anyone using the browser
 sees the same thing."*
+
+## The board leads with three verdicts
+
+Task `board-panel`. Peter: *"at first glance it has been identical since it was first
+built, I see no progress and no evidence that anything is even happening."*
+
+`obsVerdictClass()` colours; `obsSpark()` draws; `obsFrontierRuler()` draws the gap.
+**None of the three decides anything** — state and basis are computed by
+`db.boardVerdicts()` and this file colours what it is told, per BROWSER_CONTRACT.
+
+Layout is trace → value → context, in that order, matching the sketch Peter drew.
+
+### Referenced, not copied
+
+Peter pointed at the node page as informative and then said: *"dont copy that page, use it
+as a ref, i use that page very often because i can see things happening."*
+
+The transferable property is **not** the card layout — it is that every number there is
+anchored to NOW: "8m ago", "in 6m 23s", "direct 9m ago". Period aggregates are inherently
+less alive, so the loop card leads with a ticking time-since rather than an average. That
+is the part worth borrowing.
+
+The stat grammar itself (`stat-title` / `stat-value` / `stat-desc`) is house style already,
+and `stat-desc` carrying provenance is exactly where the server's basis string belongs.
+
+### Sparklines break, never zero
+
+A null day breaks the trace rather than dropping to the floor — a gap reads as "not
+known", a zero reads as "nothing happened". Same rule as the bands chart. The yield trace
+is mostly gaps because of the 5-day blackout, which is correct and not a rendering fault.
+
+### The ruler is a GAP, not a trend
+
+The only glance-graphic here that is not a sparkline, because no sparkline can say "92 of
+189, and the notch is over there". That distance is the product.
 
 ## Invariants
 

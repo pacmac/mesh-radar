@@ -37,6 +37,67 @@
   <!-- ══════════════════════ BOARD ══════════════════════════════════════════ -->
   <div x-show="obsTab==='board'" class="flex-1 min-h-0 flex flex-col gap-3">
 
+    <!-- THE VERDICTS. Peter, 2026-08-03: "at first glance it has been identical
+         since it was first built, I see no progress and no evidence that anything
+         is even happening."
+
+         Three answers, not three totals: is it alive, is it producing, is it
+         getting further. Every state and every basis string is computed by the
+         server (BROWSER_CONTRACT) — this markup colours what it is told and
+         assembles no explanation of its own.
+
+         Liveness is deliberate. Peter uses the node page "because I can see things
+         happening", and what makes that page feel alive is that every number is
+         anchored to NOW — "8m ago", "in 6m 23s". So the loop card leads with a
+         ticking time-since, not an average. -->
+    <template x-if="charts?.board">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 shrink-0">
+
+        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+          <div class="stat-title text-xs">Loop</div>
+          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.loop.series, charts.board.loop.state)"></svg>
+          <div class="stat-value text-2xl font-mono tabular-nums"
+               :class="obsVerdictClass(charts.board.loop.state)"
+               x-text="charts.board.loop.since_sec == null ? '—'
+                       : charts.board.loop.since_sec < 90 ? charts.board.loop.since_sec + 's ago'
+                       : charts.board.loop.since_sec < 5400 ? Math.round(charts.board.loop.since_sec/60) + 'm ago'
+                       : Math.round(charts.board.loop.since_sec/3600) + 'h ago'"></div>
+          <div class="stat-desc text-xs" x-text="charts.board.loop.basis"></div>
+        </div>
+
+        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+          <div class="stat-title text-xs">Yield</div>
+          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.yield.series, charts.board.yield.state)"></svg>
+          <div class="stat-value text-2xl font-mono tabular-nums"
+               :class="obsVerdictClass(charts.board.yield.state)"
+               x-text="charts.board.yield.rate == null ? '—' : charts.board.yield.rate + '%'"></div>
+          <div class="stat-desc text-xs" x-text="charts.board.yield.basis"></div>
+        </div>
+
+        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+          <div class="stat-title text-xs">Frontier</div>
+          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.frontier.series, charts.board.frontier.state)"></svg>
+          <div class="stat-value text-2xl font-mono tabular-nums"
+               :class="obsVerdictClass(charts.board.frontier.state)"
+               x-text="charts.board.frontier.window_km == null ? '—' : charts.board.frontier.window_km + ' km'"></div>
+          <div class="stat-desc text-xs" x-text="charts.board.frontier.basis"></div>
+        </div>
+
+      </div>
+    </template>
+
+    <!-- THE FRONTIER RULER. The only glance-graphic here that is a GAP rather
+         than a trend, and the gap is the whole product: a sparkline cannot say
+         "92 of 189, and the notch is over there". -->
+    <template x-if="charts?.board?.frontier?.record_km">
+      <div class="card bg-base-100 shadow shrink-0">
+        <div class="card-body p-3 gap-1">
+          <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Frontier</h2>
+          <svg viewBox="0 0 520 40" class="w-full" x-html="obsFrontierRuler()"></svg>
+        </div>
+      </div>
+    </template>
+
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 shrink-0">
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
         <div class="stat-title text-xs">Furthest verified reach</div>

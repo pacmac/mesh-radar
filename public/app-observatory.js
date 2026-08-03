@@ -345,6 +345,83 @@ export const observatoryMixin = {
     return p.join('');
   },
 
+  /** THE THREE VERDICTS. Task `board-panel`.
+   *
+   *  Grammar borrowed wholesale from the NODE PAGE, which Peter pointed at as
+   *  informative: stat-title / big mono stat-value / stat-desc carrying the
+   *  provenance. That page already states how it knows a thing — "assumed",
+   *  "device-reported", "inferred from silence" — and the board needs exactly the
+   *  same discipline. No new visual language was invented; there was no need.
+   *
+   *  The desc is the SERVER's basis string. The browser assembles no explanation
+   *  (BROWSER_CONTRACT) and this method picks no thresholds — it colours what it
+   *  is told. */
+  obsVerdictClass(state) {
+    return state === 'ok'    ? 'text-success'
+         : state === 'warn'  ? 'text-warning'
+         : state === 'fault' ? 'text-error'
+         : 'text-base-content/60';
+  },
+
+  /** A sparkline: shape only. No axes, no gridlines, no legend — those live on
+   *  Charts, which is where you go once the shape makes you suspicious. Peter:
+   *  "one glance is better with graphical rather than text, but thats not to say
+   *  we should litter it with graphs as we have chart page to drill down."
+   *
+   *  A null value BREAKS the line rather than plotting zero: a gap reads as "not
+   *  known", a zero reads as "nothing happened". Same rule as the bands chart. */
+  obsSpark(series, state) {
+    const pts = (series || []);
+    if (!pts.length) return '';
+    const vals = pts.map(p => p.v).filter(v => v != null);
+    if (!vals.length) return '';
+    const W = 200, H = 34;
+    const max = Math.max(...vals), min = Math.min(...vals);
+    const span = (max - min) || 1;
+    const X = i => pts.length === 1 ? W / 2 : (i * W) / (pts.length - 1);
+    const Y = v => H - 3 - ((v - min) / span) * (H - 8);
+    const colour = state === 'ok' ? 'oklch(var(--su))'
+                 : state === 'warn' ? 'oklch(var(--wa))'
+                 : state === 'fault' ? 'oklch(var(--er))'
+                 : 'oklch(var(--bc)/0.4)';
+    const seg = [];
+    let open = false;
+    pts.forEach((p, i) => {
+      if (p.v == null) { open = false; return; }
+      seg.push(`${open ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(p.v).toFixed(1)}`);
+      open = true;
+    });
+    const last = [...pts].reverse().find(p => p.v != null);
+    const li = pts.indexOf(last);
+    return `<path d="${seg.join(' ')}" fill="none" stroke="${colour}" stroke-width="1.6"/>`
+         + (li >= 0 ? `<circle cx="${X(li).toFixed(1)}" cy="${Y(last.v).toFixed(1)}" r="2.2" fill="${colour}"/>` : '');
+  },
+
+  /** THE FRONTIER RULER — the one glance-graphic that is a GAP, not a trend.
+   *  A sparkline cannot say "92 of 189, and the notch is over there", and that
+   *  gap is the entire product. Also honest in a way the bare record never was:
+   *  189.1 km alone implied success for a month. */
+  obsFrontierRuler() {
+    const f = this.charts?.board?.frontier;
+    if (!f || f.record_km == null) return '';
+    const W = 520, H = 40, L = 8, R = 8;
+    const span = Math.max(f.record_km, f.window_km ?? 0) * 1.08 || 1;
+    const X = km => L + (km / span) * (W - L - R);
+    const p = [];
+    p.push(`<line x1="${L}" y1="24" x2="${W - R}" y2="24" stroke="oklch(var(--bc)/0.2)" stroke-width="2"/>`);
+    if (f.window_km != null) {
+      p.push(`<line x1="${L}" y1="24" x2="${X(f.window_km).toFixed(1)}" y2="24" stroke="oklch(var(--p))" stroke-width="3"/>`);
+      p.push(`<circle cx="${X(f.window_km).toFixed(1)}" cy="24" r="4" fill="oklch(var(--p))"/>`);
+      p.push(`<text x="${X(f.window_km).toFixed(1)}" y="14" text-anchor="middle" fill="oklch(var(--bc)/0.7)" font-size="11" font-family="JetBrains Mono">${f.window_km} km</text>`);
+    }
+    const rx = X(f.record_km).toFixed(1);
+    p.push(`<line x1="${rx}" y1="16" x2="${rx}" y2="32" stroke="oklch(var(--bc)/0.55)" stroke-width="2"/>`);
+    p.push(`<text x="${rx}" y="14" text-anchor="end" fill="oklch(var(--bc)/0.5)" font-size="11" font-family="JetBrains Mono">${f.record_km} km</text>`);
+    p.push(`<text x="${L}" y="38" fill="oklch(var(--bc)/0.4)" font-size="9" font-family="JetBrains Mono">this period</text>`);
+    p.push(`<text x="${W - R}" y="38" text-anchor="end" fill="oklch(var(--bc)/0.4)" font-size="9" font-family="JetBrains Mono">all-time</text>`);
+    return p.join('');
+  },
+
   /** Set the ANALYSIS WINDOW. Server state, not a browser preference — Peter,
    *  2026-08-03: "the browser is a presentation layer ONLY, this filtering must
    *  be done backend so anyone using the browser sees the same thing."
