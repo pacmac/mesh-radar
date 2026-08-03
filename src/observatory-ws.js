@@ -287,6 +287,9 @@ function charts() {
   const out = {
     ladder: [], record_km: null, daily: [], silence: [], distance: [], bands: [],
     window_days: windowDays, window_best_km: null, window_answered: 0,
+    // Published so a later Domain 2 task can MARK the boundary on screen. Rates
+    // before it are already suppressed server-side; this is for the label.
+    failure_epoch: Number(getConfig('perf.failure_epoch', null)) || null,
   };
   try {
     const l = facts('reach.ladder')[0]?.value ?? null;

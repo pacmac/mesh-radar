@@ -924,6 +924,24 @@ function _windowSql(days, col = 'ts') {
     : '';
 }
 
+// CENSORED DATA. `perf.failure_epoch` records when traceroute FAILURES began being
+// stored; before it only successes were written (617 rows, all 'ok'). Any rate
+// computed across that boundary reads 100% and is a lie. Task
+// `rate-series-honest-epoch`.
+//
+// A MISSING epoch means "nothing known to be censored" and must change nothing —
+// `ts >= null` would drop every row and render an empty page.
+function _failureEpoch() {
+  const v = getConfig('perf.failure_epoch', null);
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function _epochSql(col = 'ts') {
+  const e = _failureEpoch();
+  return e ? `AND ${col} >= ${e}` : '';
+}
+
 export function attemptsByDay(days = 30) {
   return db.prepare(`
     SELECT date(ts, 'unixepoch')                            AS day,
@@ -952,7 +970,7 @@ export function answerRateBySilence(days = 0) {
     FROM traceroute_history th
     LEFT JOIN nodes n ON n.num = th.to_num
     LEFT JOIN heard h ON h.num = th.to_num
-    WHERE 1=1 ${_windowSql(days, 'th.ts')}
+    WHERE 1=1 ${_windowSql(days, 'th.ts')} ${_epochSql('th.ts')}
     GROUP BY bucket
   `).all();
 }
@@ -977,7 +995,7 @@ export function answerRateByDistance(days = 0) {
       JOIN nodes n ON n.num = th.to_num
       CROSS JOIN home
       WHERE n.lat IS NOT NULL AND n.lat <> 0 AND home.lat IS NOT NULL
-        ${_windowSql(days, 'th.ts')}
+        ${_windowSql(days, 'th.ts')} ${_epochSql('th.ts')}
     )
     SELECT CAST(km / 25 AS INTEGER) * 25                    AS band,
            COUNT(*)                                         AS attempts,
@@ -1043,11 +1061,24 @@ export function rateByBandByDay(days = 30) {
     GROUP BY day, band
     ORDER BY day, band
   `).all();
+  // A day is CENSORED if any part of it precedes perf.failure_epoch: before that
+  // moment only successes were stored, so the day computes as 100%. 2026-07-03
+  // straddles the boundary and is treated as censored — a partly-censored day
+  // cannot honestly be presented as a rate.
+  //
+  // The rate is NULLED rather than the row dropped, so `attempts` and `answers`
+  // stay visible and a reader can see WHY the rate is absent instead of finding a
+  // silent hole. The chart already breaks its line on a null rate.
+  const epoch = _failureEpoch();
+  const censoredBefore = epoch
+    ? new Date(epoch * 1000).toISOString().slice(0, 10)
+    : null;
   return rows.map(r => ({
     ...r,
-    rate: r.attempts >= BAND_MIN_ATTEMPTS
-      ? Math.round((100 * r.answers) / r.attempts)
-      : null,
+    censored: censoredBefore ? r.day <= censoredBefore : false,
+    rate: (censoredBefore && r.day <= censoredBefore) || r.attempts < BAND_MIN_ATTEMPTS
+      ? null
+      : Math.round((100 * r.answers) / r.attempts),
   }));
 }
 

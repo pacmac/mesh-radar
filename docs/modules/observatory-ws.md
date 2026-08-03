@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: 1d490d06bcba5a3e2350015c27e1e0aa4d7dbe9f4ea4d893808fe30c623c6ace
+source_hash: 4015044085b5bcb340da0a144b3e6e6798b847b9d1c8d7b57d43ee748a63576a
 updated: 2026-08-03
 ---
 
@@ -207,6 +207,11 @@ own `charts` message when core announces a settings write.
 Core announces generically and names no plugin — `config-api.js` must not import this
 file. The broadcast function is captured from the first `registerWsWiring` hook rather
 than passed in, because the listener fires outside wiring.
+
+## `charts.failure_epoch`
+
+Published so a later Domain 2 task can mark the censoring boundary on screen. Rates before
+it are already suppressed in `db.js` — this field is for the label, not the filtering.
 
 ## Invariants
 

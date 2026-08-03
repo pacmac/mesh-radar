@@ -1,6 +1,6 @@
 ---
 module: OBSERVATORY_CHARTS
-source_hash: 4d54f1514b0098df82363e435dbc0a3c5691fab096a474ee8e301840b3ddbcbf
+source_hash: b28edeaf63811d3383f504fb16faa1b62aea270b6c2a56a68005005dedc6d1ff
 updated: 2026-08-03
 ---
 
@@ -251,6 +251,59 @@ times and why that was wrong. So `ws-relay.js` gains a **generic**
 `registerSettingsListener(fn)`, fired by `broadcastSettings()`, alongside the existing
 `registerWsWiring` and `registerConnectReplay`. It names no plugin; the observatory
 subscribes to it and rebroadcasts its own charts.
+
+## Censored data is never drawn as a rate
+
+Task: `rate-series-honest-epoch`. **Domain 1.**
+
+`perf.failure_epoch` (= 2026-07-03 07:31 UTC) records when traceroute FAILURES began
+being stored. Before it, only successes were written:
+
+```
+before the epoch:  617 rows, ALL status='ok'     ← zero failures recorded
+after  the epoch:  2,772 ok | 187 send_failed | 18,983 timeout
+```
+
+So every pre-epoch day computed as exactly **100%**, and the bands chart drew the `<25 km`
+line pinned at the top through late June before appearing to collapse. That step is the
+arrival of failure recording, not a change in performance — a chart lying on the page the
+operator makes decisions from.
+
+### Each series gets the treatment its shape allows
+
+| series | treatment | why |
+|---|---|---|
+| `rateByBandByDay` | `rate: null` for censored days, counts kept | per-day, and the chart already breaks a line on null |
+| `answerRateBySilence` | censored rows excluded | rate-only aggregate; a censored row is a guaranteed success in some bucket |
+| `answerRateByDistance` | censored rows excluded | same |
+| `attemptsByDay` | **unchanged** | plots counts, not a rate |
+| `reach.ladder` | **unchanged** | a running maximum over successes cannot be distorted by missing failures |
+
+Nulling rather than deleting is deliberate for the per-day series: `attempts` and
+`answers` stay visible, so a reader can see *why* the rate is absent instead of finding a
+silent hole.
+
+The aggregates were inflating by **2.4 points** — 15.0% all-time against 12.6%
+epoch-clean.
+
+### `2026-07-03` straddles the boundary
+
+46 of that day's rows are censored and the rest are honest, so it is treated as censored.
+A partly-censored day cannot be presented as a rate.
+
+### A missing epoch means no censoring, not no data
+
+`perf.failure_epoch` defaults to `null`. The guard must treat an unset epoch as "nothing
+known to be censored" and change nothing — a naive `ts >= null` would drop every row and
+render an empty page.
+
+### What this does not touch
+
+The real decline — 57.2% (3–8 Jul) falling to 6.0% (23–27 Jul) — sits entirely after the
+epoch. This makes the chart honest; it does not change the finding.
+
+`charts.failure_epoch` is published so a later Domain 2 task can mark the boundary on
+screen. Drawing that marker is not part of this task.
 
 ## Axes
 

@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 5004cbce7aa5b51d2e7d824411aaebdfddf1974ea645b9c1aa0634edd3c7853d
+source_hash: bff33de29654d63887a002a2073ba15d0e81b63dfbacd99337c7920570bddcfa
 updated: 2026-08-03
 ---
 
@@ -456,6 +456,28 @@ than carried forward.
 count. It is **not** the record: `reach.ladder`'s `record_km` stays all-time because it is
 the thing to beat, and a 7-day window would show ~92 km and imply we had gone backwards.
 Returns `null` rather than `0` when nothing answered — 0 km would draw as a data point.
+
+## Censored data is never returned as a rate
+
+Task `rate-series-honest-epoch`. `_failureEpoch()` / `_epochSql(col)`.
+
+`perf.failure_epoch` (2026-07-03 07:31 UTC) marks when traceroute FAILURES began being
+stored. Before it only successes were written — 617 rows, all `ok` — so any rate spanning
+that boundary reads 100%.
+
+- `answerRateBySilence` / `answerRateByDistance` exclude censored rows outright: they are
+  rate-only aggregates, so a censored row is simply a guaranteed success in some bucket.
+  This moved the all-time figure from 15.0% to 12.6% across all rows.
+- `rateByBandByDay` sets `rate: null` and `censored: true` for affected days but KEEPS
+  `attempts`/`answers`, so a reader sees why the rate is absent rather than a silent hole.
+  A day is censored if `day <= ` the epoch's date — 2026-07-03 straddles the boundary and
+  is treated as censored, because a partly-censored day cannot honestly be a rate.
+- `attemptsByDay` is NOT filtered: it plots counts, and the rows we hold are the rows we
+  hold. Inventing attempts never recorded would be worse than showing few.
+
+**A missing epoch means "nothing known to be censored" and changes nothing.**
+`perf.failure_epoch` defaults to `null`, and a naive `ts >= null` would drop every row and
+render an empty page.
 
 ## Invariants
 
