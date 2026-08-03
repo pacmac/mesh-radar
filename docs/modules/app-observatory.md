@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: f27e6ed8cac01b13e6147342760a557c388894f74b282560664c415346692d0c
+source_hash: 1bb601d963a20109c1fb6791dc75089def71e7c78b24f0d9dc74559148137d59
 updated: 2026-08-03
 ---
 
@@ -222,6 +222,23 @@ compared against each other; stacking would imply they sum to something.
 suppresses any band-day with fewer than 15 attempts, and a gap reads as "not known"
 while a zero reads as "nothing answered" — different claims. The path is emitted in
 segments, reopening with `M` after each break.
+
+**It sits in ONE column with the same `viewBox="0 0 520 190"` as every other chart.**
+The first version spanned two columns while keeping that viewBox, and SVG scales
+uniformly — so every label, stroke and legend entry drew about twice the size of the
+charts beside it. Peter: *"why are the fonts so huge, that new chart bears no resemblance
+in design, layout, spacing to anything else on the page."* Width is not worth a second
+type scale on the same page.
+
+**Colour encodes DISTANCE, and distance is ordered — so it is a sequential ramp in one
+hue,** `--p` at 1 / 0.62 / 0.34, with `no pos` outside the ramp in neutral because it is
+not a distance at all. Four arbitrary hues would not say "ordered".
+
+It deliberately avoids `--su`/`--wa`/`--er`: `_obsRateBars` already maps those to GOOD and
+BAD RATE for the two charts below, and green meaning "good" in one chart and "under 25 km"
+in the next is a broken vocabulary on a single page. It also avoids `--s`, which in the
+corporate theme is chroma 0.055 — near enough to grey to be indistinguishable from the
+`no pos` line beside it.
 
 **End labels anchor inward.** The last date sits at `X = W - 10`, and a centred label
 overflowed the 520-unit viewBox — it rendered as `03-0` instead of `03-08`. First label

@@ -273,11 +273,25 @@ export const observatoryMixin = {
   obsChartBands() {
     const rows = this.charts?.bands || [];
     if (!rows.length) return '';
+    // A SEQUENTIAL RAMP IN ONE HUE, because distance is an ordered variable and
+    // four arbitrary hues would not say so. Strongest for the nearest band: it
+    // carries the story, and it is the one the far bands are read against.
+    //
+    // Not success/warning/error — the other two rate charts already map those to
+    // GOOD and BAD RATE, and green meaning "good" in one chart and "under 25 km"
+    // in the next is a broken vocabulary on a single page.
+    //
+    // Not --s either: in the corporate theme it is chroma 0.055, near enough to
+    // grey that it was indistinguishable from the no-pos line beside it.
+    //
+    // Opacity steps rather than hardcoded oklch values, so the ramp follows the
+    // theme instead of fighting it. `no pos` sits deliberately OUTSIDE the ramp,
+    // in neutral, because it is not a distance at all.
     const BANDS = [
-      { key: '<25',    label: '<25 km',    colour: 'oklch(var(--su))' },
-      { key: '25-100', label: '25-100 km', colour: 'oklch(var(--in))' },
-      { key: '100+',   label: '100+ km',   colour: 'oklch(var(--wa))' },
-      { key: 'no-pos', label: 'no pos',    colour: 'oklch(var(--bc)/0.45)' },
+      { key: '<25',    label: '<25 km',    colour: 'oklch(var(--p))' },
+      { key: '25-100', label: '25-100 km', colour: 'oklch(var(--p)/0.62)' },
+      { key: '100+',   label: '100+ km',   colour: 'oklch(var(--p)/0.34)' },
+      { key: 'no-pos', label: 'no pos',    colour: 'oklch(var(--bc)/0.35)' },
     ];
     const days = [...new Set(rows.map(r => r.day))].sort();
     const W = 520, H = 190, L = 42, B = 34;
@@ -308,7 +322,7 @@ export const observatoryMixin = {
       days.forEach((d) => {
         const r = rows.find(x => x.day === d && x.band === b.key);
         if (!r || r.rate === null) return;
-        p.push(`<circle cx="${X(byDay.get(d)).toFixed(1)}" cy="${Y(r.rate).toFixed(1)}" r="1.9" fill="${b.colour}"><title>${d} ${b.label}: ${r.rate}% of ${r.attempts}</title></circle>`);
+        p.push(`<circle cx="${X(byDay.get(d)).toFixed(1)}" cy="${Y(r.rate).toFixed(1)}" r="1.6" fill="${b.colour}"><title>${d} ${b.label}: ${r.rate}% of ${r.attempts}</title></circle>`);
       });
     });
     p.push(`<line x1="${L}" y1="${H - B}" x2="${W - 10}" y2="${H - B}" stroke="oklch(var(--bc)/0.25)"/>`);
@@ -320,10 +334,13 @@ export const observatoryMixin = {
       const anchor = i === 0 ? 'start' : i === days.length - 1 ? 'end' : 'middle';
       p.push(`<text x="${X(i).toFixed(1)}" y="${H - 18}" text-anchor="${anchor}" fill="oklch(var(--bc)/0.45)" font-size="10" font-family="JetBrains Mono">${this.obsShortDate(Date.parse(d + 'T00:00:00Z') / 1000)}</text>`);
     });
+    // The only chart here that needs a key, because it is the only one with more
+    // than one series. Same type scale as the axis labels so it reads as part of
+    // the chart rather than as a caption bolted underneath.
     BANDS.forEach((b, i) => {
-      const lx = L + i * 118;
-      p.push(`<rect x="${lx}" y="${H - 11}" width="8" height="3" fill="${b.colour}"/>`);
-      p.push(`<text x="${lx + 12}" y="${H - 6}" fill="oklch(var(--bc)/0.55)" font-size="9" font-family="JetBrains Mono">${b.label}</text>`);
+      const lx = L + i * 120;
+      p.push(`<rect x="${lx}" y="${H - 10}" width="7" height="2.5" fill="${b.colour}"/>`);
+      p.push(`<text x="${lx + 11}" y="${H - 6}" fill="oklch(var(--bc)/0.45)" font-size="9" font-family="JetBrains Mono">${b.label}</text>`);
     });
     return p.join('');
   },
