@@ -464,22 +464,22 @@
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Only nodes further than</span><span class="label-text-alt text-xs opacity-50">km</span></div>
+                    <div class="label py-1 min-h-[1.75rem] items-start"><span class="label-text text-xs">Minimum distance</span><span class="label-text-alt text-xs opacity-50">km</span></div>
                     <input type="number" min="0" max="250" step="10" class="input input-bordered input-sm w-full font-mono" x-model.number="calloutCfg.min_km">
                     <div class="label py-0"><span class="label-text-alt text-xs opacity-60">A callout to a neighbour proves nothing about reach.</span></div>
                   </label>
                   <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">At most per day</span><span class="label-text-alt text-xs opacity-50">max 12</span></div>
+                    <div class="label py-1 min-h-[1.75rem] items-start"><span class="label-text text-xs">Max per day</span><span class="label-text-alt text-xs opacity-50">max 12</span></div>
                     <input type="number" min="0" max="12" step="1" class="input input-bordered input-sm w-full font-mono" x-model.number="calloutCfg.max_per_day">
                     <div class="label py-0"><span class="label-text-alt text-xs opacity-60">Hard ceiling of 12 lives in code; this can only lower it.</span></div>
                   </label>
                   <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Same node not again for</span><span class="label-text-alt text-xs opacity-50">days</span></div>
+                    <div class="label py-1 min-h-[1.75rem] items-start"><span class="label-text text-xs">Repeat after</span><span class="label-text-alt text-xs opacity-50">days</span></div>
                     <input type="number" min="3" max="365" step="1" class="input input-bordered input-sm w-full font-mono" x-model.number="calloutCfg.cooldown_days">
                     <div class="label py-0"><span class="label-text-alt text-xs opacity-60">Minimum 3 days. Days, not hours — this asks a person for attention.</span></div>
                   </label>
                   <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Only if heard within</span><span class="label-text-alt text-xs opacity-50">hours</span></div>
+                    <div class="label py-1 min-h-[1.75rem] items-start"><span class="label-text text-xs">Heard within</span><span class="label-text-alt text-xs opacity-50">hours</span></div>
                     <input type="number" min="1" max="168" step="1" class="input input-bordered input-sm w-full font-mono" x-model.number="calloutCfg.heard_within_h">
                     <div class="label py-0"><span class="label-text-alt text-xs opacity-60">Strike while the iron is hot — heard on LoRa, not via MQTT.</span></div>
                   </label>

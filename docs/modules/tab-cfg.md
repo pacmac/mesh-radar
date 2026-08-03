@@ -1,7 +1,7 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: 07d6f04c1fa200b51aa0f3a863758c2c4d3071c43e7984443a3045b92d89c87a
+source_hash: 25e4af8ac7dbd030faeee0636f73a8516873c76f6bfb6e2371b13213df748efc
 updated: 2026-08-03
 ---
 
@@ -222,3 +222,44 @@ sanitizes the persisted `cfgTab` (`'radio'` → `'bridge'`, new default
 `'bridge'`) so users who last visited the removed tab don't land on a blank
 page; `app-config.js` `switchCfgTab` drops its dead `'radio'` branch
 (`resetRadioCfg` and the loaders stay — the Devices page calls them now).
+
+
+## Callout tab — and the label wrap that misaligned the row
+
+Task `broadcast-callout-instrument` (Domain 2 half). Peter: *"i dont see anything
+in the dashboard configs for the token based ping messages?"*
+
+Enable switch, four knobs, quiet hours, the templates with per-template TTL and
+add/remove, and a **live preview** rendered against a real node (JRSY, 219 km,
+159°) so the tokens do not have to be imagined.
+
+The page shows the **effective** config — `GET /config/callout` returns it already
+clamped — so the hard ceilings are visible rather than implied. Asking for 9999
+sends/day displays 12 on return.
+
+### Labels too long for a 228 px column
+
+Peter: *"there are alignment settings (labels too long) causing field alignment
+offsets."* Measured, four-across grid at 1600×1000:
+
+| label | wrapped | input top |
+|---|---|---|
+| Only nodes further than | yes | 318 |
+| At most per day | no | **301** |
+| Same node not again for | yes | 318 |
+| Only if heard within | no | **301** |
+
+A **17 px** step across a single row, because a two-line label pushes its own
+input down.
+
+**Both causes fixed, not just the visible one.** The labels were shortened —
+`Minimum distance` / `Max per day` / `Repeat after` / `Heard within`, since the
+unit chip already carries km/days/hours — *and* the label div gained
+`min-h-[1.75rem] items-start`, so a future label, a translation, or a narrower
+viewport cannot reintroduce the offset. Shortening alone would have fixed today
+and broken again later.
+
+Verified after: all four inputs at top **305**, spread **0**.
+
+The Discovery tab was checked for the same fault and is clean — 12 number inputs,
+zero wrapped labels — so this was specific to the new four-across grid.
