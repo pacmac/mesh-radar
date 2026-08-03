@@ -18,7 +18,12 @@
 
 import { insertEventLog } from './db.js';
 
-const SCOPES = ['store', 'per-node', 'per-mode'];
+// `store` is really WORKER — it runs on a cadence and mines what we already
+// hold; nothing hooks into it. `transmit` announces an outbound action as it
+// happens, which is a hook in the proper sense. Renaming `store` to `worker`
+// across the codebase is a deliberate follow-up, not something to do while the
+// term is still being decided.
+const SCOPES = ['store', 'per-node', 'per-mode', 'transmit'];
 
 // ADDRESSABLE BY SCOPE, THEN BY NAME. Peter, 2026-08-03: "shouldnt hooks be an
 // object: {'per-node':{do this(), do that()}, xxx:{xxx(), yyy()} - effectively
@@ -33,7 +38,7 @@ const SCOPES = ['store', 'per-node', 'per-mode'];
 // Insertion order is preserved for string keys, so REGISTRATION ORDER IS
 // EXECUTION ORDER for a scope's hooks. That is deliberate and load-bearing for
 // `per-node`, whose steps are a sequence — declare them in the order they run.
-export const hooks = { store: {}, 'per-node': {}, 'per-mode': {} };
+export const hooks = { store: {}, 'per-node': {}, 'per-mode': {}, transmit: {} };
 
 // Names stay globally unique even though the object is nested: `source` in
 // event_log is a bare name, and two hooks sharing one would make the log
@@ -102,7 +107,17 @@ export function defineHook({ name, purpose, scope, modes = null } = {}) {
       try {
         const row = {
           ts:       Math.floor(Date.now() / 1000),
-          kind:     scope === 'per-node' ? 'probe' : scope === 'per-mode' ? 'mode' : 'task',
+          // SCOPE IS NOT KIND, and conflating them mis-filed real events.
+          // Peter, 2026-08-03: "should it be a hook? — not sure and maybe hook
+          // is the wrong term, should be 'workers'?" He is right, and this line
+          // is the evidence: `store` was doing double duty, meaning both
+          // "operates on the whole store" AND "runs on a cadence". A public
+          // transmission is neither, so `callout-sent` was being filed as
+          // kind 'task' beside "58 nodes have never been traced".
+          kind:     scope === 'per-node' ? 'probe'
+                  : scope === 'per-mode' ? 'mode'
+                  : scope === 'transmit' ? 'callout'
+                  : 'task',
           severity,
           summary,
           detail:   detail == null ? null : JSON.stringify(detail),

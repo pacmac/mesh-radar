@@ -1,7 +1,7 @@
 ---
 module: hooks
 source: src/hooks.js
-source_hash: fd3b39824bb50d8e6974909f6b1e6d2ef14f99a383417a5761c5aeee77d11229
+source_hash: 3e66d5ce7a4438377ae19ecd66a1d7c2a2d07a0ab2a890c35ba64117997a2b81
 updated: 2026-08-03
 ---
 
@@ -196,3 +196,32 @@ window_days entries: 0                        (excluded on purpose — a view ch
 - A hook that finds nothing still emits.
 - Emitting never throws into the caller — a broken log must not stop the work it describes.
 - The raw packet/attempt feed never enters `event_log`.
+
+
+## `store` is really WORKER, and scope is not kind
+
+Peter, 2026-08-03: *"that should be an event in the logs, should it be a hook? —
+not sure and maybe hook is the wrong term, should be 'workers'?"*
+
+He is right, and the mapping at `defineHook` was the evidence. `kind` was derived
+as `per-node → probe`, `per-mode → mode`, **everything else → task**. So
+`callout-sent` — a *public transmission* — was filed as kind `task`, beside
+"58 nodes have never been traced".
+
+The cause is that `store` was doing double duty: it meant both *"operates on the
+whole store"* **and** *"runs on a cadence"*. Those are not the same claim, and
+the callout hooks are neither.
+
+The honest split across the 15 declared:
+
+| | count | what it is |
+|---|---|---|
+| **worker** (`store`) | 6 | runs itself on a cadence and mines what we already hold — nothing *hooks into* it |
+| **hook** (`per-node`, `per-mode`, `transmit`) | 9 | sits in a code path and announces what that path is doing |
+
+`transmit` was added with its own kind (`callout`), which fixes the mis-filing.
+
+**Renaming `store` to `worker` is deliberately NOT done here.** Peter said "not
+sure", the term is still being decided, and the rename touches every existing
+`event_log` row's `kind`, the specs, and the Logs page filter. It is a follow-up
+he approves, not something to sweep through while he is away.
