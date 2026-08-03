@@ -66,6 +66,16 @@ registerWsWiring(({ broadcast }) => {
 // this a viewer changing the window would wait a quarter of an hour to see it.
 // ws-relay announces generically; it names no plugin. Task `observatory-window`.
 registerSettingsListener(() => {
+  // RE-RUN, then rebroadcast. charts() reads STORED FACTS, and the window is
+  // baked into a fact when its inference last ran — on a 15-minute cycle. Simply
+  // rebroadcasting served the previous window's numbers and the frontier appeared
+  // frozen no matter which window was selected. Only the two window-dependent
+  // reach inferences are re-run; the rest are untouched and keep their cadence.
+  try {
+    for (const key of ['reach.ladder', 'reach.heard']) runInference(key);
+  } catch (e) {
+    console.error(`[observatory-ws] window recompute failed: ${e.message}`);
+  }
   try { _broadcast?.({ type: 'charts', charts: charts() }); }
   catch (e) { console.error(`[observatory-ws] window refresh failed: ${e.message}`); }
 });
@@ -293,6 +303,18 @@ function charts() {
   };
   try {
     const l = facts('reach.ladder')[0]?.value ?? null;
+    // BOTH frontiers, labelled. record_km is the all-time historical best;
+    // window_km is what we can do NOW and is the number worth chasing. Peter,
+    // 2026-08-03: "if the farthest node heard in the last 7 days was 50km, then
+    // our goal is to beat that."
+    out.window_frontier_km   = l?.window_km ?? null;
+    out.window_frontier_at   = l?.window_at ?? null;
+    const hd = facts('reach.heard')[0]?.value ?? null;
+    out.heard_km             = hd?.heard_km ?? null;
+    out.window_heard_km      = hd?.window_heard_km ?? null;
+    out.heard_nodes_window   = hd?.nodes_window ?? 0;
+    out.heard_max_km_per_hop = hd?.max_km_per_hop ?? null;
+    out.heard_rejected       = hd?.rejected_implausible ?? 0;
     out.ladder = (l?.rungs ?? []).map(r => ({
       ts: r.ts, km: r.km,
       label: resolveNodeLabel(Number(r.target)) || String(r.target),
@@ -475,7 +497,7 @@ function haversine(lat1, lon1, lat2, lon2) {
 // wrapped so a failure degrades the doors panel rather than the process.
 function recompute(broadcast) {
   try {
-    for (const key of ['relay.usage', 'reach.target', 'reach.ladder', 'link.observed', 'reach.mission']) {
+    for (const key of ['relay.usage', 'reach.target', 'reach.ladder', 'reach.heard', 'link.observed', 'reach.mission']) {
       const r = runInference(key);
       console.log(`[observatory] ${r.key}: ${r.facts} facts from ${r.rows} evidence rows`);
     }

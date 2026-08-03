@@ -1,8 +1,8 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: 58adcb03c8f9724080cf4089d6c4c3221c0786cb2f4d7f83f4c9f44ac111a3bc
-updated: 2026-08-02
+source_hash: e5639023388b1814f569870bd86e703cc2677cc3b4d11e22d243932872c3f6be
+updated: 2026-08-03
 ---
 
 # Module: inferences
@@ -346,6 +346,56 @@ The first attempt used `n.device IS NULL`, which is a different thing entirely:
 nodes and the filter cut the pool from 601 to 3 — with a `0 km` record to match.
 `from_num` is the addressee of a traceroute reply and is only ever one of ours
 (measured: TA2o, TA2y, GARG, nothing else).
+
+## `reach.ladder` windowed, and `reach.heard`
+
+Task `windowed-reach-model`. Peter, 2026-08-03: *"the board is stagnant and looks to me to
+be identical to how it looked 3 days ago… might be that 189.1 will never change and our
+sights are too high."*
+
+Measuring today against an all-time maximum admits two outcomes — unchanged, or once a
+month a new record — and the antennas have MOVED since 189.1 km was set on 2026-07-04. A
+month-old number taken with a different physical setup is history, not a target.
+
+`reach.ladder` now publishes both. `record_km` stays all-time and is never lowered;
+`window_km` is a **plain maximum inside the window, not a running one** — inside a period
+we want that period's best, not a ratchet inherited from before it.
+
+`reach.heard` is the one-way frontier: a packet on any port that originated at a node and
+reached us. Hearing a node proves a path TO us exists, which is the strongest prior we hold
+for whether a traceroute might return.
+
+```
+window   ANSWERED all-time  ANSWERED window   HEARD all-time  HEARD window  nodes
+   1d            189.1 km          92.0 km        1050.9 km      932.4 km    210
+   7d            189.1 km          92.0 km        1050.9 km      932.4 km    299
+  30d            189.1 km         189.1 km        1050.9 km     1029.8 km    547
+  all            189.1 km         189.1 km        1050.9 km     1050.9 km    591
+```
+
+### The window must trigger a RECOMPUTE, not just a rebroadcast
+
+`charts()` reads STORED FACTS, and the window is baked into a fact when its inference last
+ran — a 15-minute cycle. The first implementation only rebroadcast, so every window served
+the previous window's numbers and the frontier appeared frozen regardless of selection.
+The settings listener now re-runs `reach.ladder` and `reach.heard` before broadcasting.
+Nothing else is re-run; the other inferences keep their cadence.
+
+### The per-hop guard is weak, and that is recorded rather than tuned
+
+`MAX_KM_PER_HOP = 200` rejected only **19 of 610** nodes, leaving a headline heard figure
+of 1050.9 km. 932 km over 7 hops is 133 km/hop and passes. The threshold is calibrated so
+the real 189.1 km record survives — its single longest leg was ~176 km — which leaves it
+too lax to catch MQTT-laundered origins.
+
+**It was NOT tuned downward to make the number look plausible.** Choosing a threshold by
+whether the output pleases is fitting the guard to the desired answer. The principled fix
+is to separate DIRECT receptions (`hops = 0`, nothing can be laundered) from relayed ones
+and report them as two different facts — direct-heard was 143.2 km over 30 days against a
+relayed 1029.8 km. That is a separate task.
+
+The guard, its threshold and its rejection count are all published so a reader can argue
+with them instead of finding them applied silently.
 
 ## Invariants
 

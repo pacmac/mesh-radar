@@ -281,13 +281,31 @@ registerInference({
            n.lat                                                      AS lat,
            n.lon                                                      AS lon,
            (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat') AS home_lat,
-           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon,
+           COALESCE((SELECT CAST(value AS INTEGER) FROM config WHERE key = 'observatory.window_days'), 30) AS s_window_days,
+           (SELECT MAX(strftime('%s','now')))                         AS now_ts
     FROM obs_v_traceroute o
     JOIN nodes n ON n.num = CAST(o.entity AS INTEGER)
     WHERE o.data ->> '$.status' = 'ok' AND n.lat IS NOT NULL AND n.lon IS NOT NULL
     ORDER BY o.ts
   `,
-  /** Pure. A running maximum over hits in time order. */
+  /** Pure. A running maximum over hits in time order, PLUS the frontier inside
+   *  the current window.
+   *
+   *  THE RECORD ALONE MADE THE BOARD UNFALSIFIABLE. Peter, 2026-08-03: "the board
+   *  is stagnant and looks to me to be identical to how it looked 3 days ago. it
+   *  is just a historical record… might be that 189.1 will never change and our
+   *  sights are too high."
+   *
+   *  He is right. Measuring today against an all-time maximum admits exactly two
+   *  outcomes — unchanged, or once a month a new record — and the antennas have
+   *  MOVED since 189.1 km was set on 2026-07-04. A month-old number taken with a
+   *  different physical setup is history, not a target.
+   *
+   *  So both are published. `record_km` stays all-time, because it is the honest
+   *  historical best and must not be quietly lowered. `window_km` is what we can
+   *  actually do NOW, and is the number worth chasing: beat the last 7 days.
+   */
   run(rows) {
     let best = 0;
     const rungs = [];
@@ -300,9 +318,125 @@ registerInference({
       rungs.push({ ts: r.ts, target: String(r.target), km });
     }
     if (!rungs.length) return null;           // null is a real answer
+
+    // Windowed frontier — a plain maximum, NOT a running one. Inside a window we
+    // want the best reached in that period, not a ratchet inherited from before it.
+    // days = 0 means all time, and then the two figures coincide by definition.
+    const days = Number(rows[0].s_window_days) || 0;
+    const now  = Number(rows[0].now_ts) || 0;
+    const cut  = days > 0 ? now - days * 86400 : 0;
+    let winKm = null, winAt = null, winTarget = null, winCount = 0;
+    for (const r of rows) {
+      if (r.ts < cut) continue;
+      if (r.home_lat == null || r.home_lon == null) continue;
+      const km = Math.round(greatCircleKm(r.home_lat, r.home_lon, r.lat, r.lon) * 10) / 10;
+      if (km > 200) continue;
+      winCount++;
+      if (winKm == null || km > winKm) { winKm = km; winAt = r.ts; winTarget = String(r.target); }
+    }
     return [{
       entity: 'global',
-      value: { rungs, record_km: best, record_at: rungs[rungs.length - 1].ts },
+      value: {
+        rungs,
+        record_km: best,
+        record_at: rungs[rungs.length - 1].ts,
+        window_days:      days,
+        window_km:        winKm,
+        window_at:        winAt,
+        window_target:    winTarget,
+        window_answered:  winCount,
+      },
+      confidence: null,
+      evidence_count: rows.length,
+    }];
+  },
+});
+
+// ─── reach.heard ────────────────────────────────────────────────────────────
+//
+// THE OTHER HALF OF REACH. Peter, 2026-08-03: "last heard and last reply to a
+// traceroute are different things, we should have both of them and both are
+// equally as valuable and should be considered in our logic."
+//
+// `reach.ladder` measures a ROUND TRIP we initiated. This measures ONE-WAY: a
+// packet — any port, text, position, telemetry, nodeinfo — that originated at
+// that node and reached us. Hearing a node proves a path TO us exists, which is
+// the strongest prior we hold for whether a traceroute might come back.
+//
+// WHY THE DISTANCE NEEDS A GUARD, and the answer is not "trust it". Measured
+// 2026-08-03: furthest heard in 7 days was 932.4 km over 7 hops = 133 km/hop,
+// with a cluster of nodes at 428.0 / 427.9 / 444.2 km that looks like one distant
+// mesh reaching us through somebody's MQTT bridge. Our radios set
+// `ignore_mqtt: true`, so nothing arrives at US over MQTT — but other nodes
+// bridge it IN and then relay it to us over LoRa, and `transport_mechanism`
+// describes only the last leg. The reception is real; the distance is not
+// radio-earned.
+//
+// MAX_KM_PER_HOP is therefore a HEURISTIC and is published so it can be argued
+// with rather than hidden. Calibration: the 189.1 km record went via a relay
+// 13.1 km away, so a single leg covered ~176 km — real, and it must survive.
+// 456 km/hop must not.
+const MAX_KM_PER_HOP = 200;
+
+registerInference({
+  key:  'reach.heard',
+  deps: [],
+  mode: 'batch',
+  evidence: `
+    SELECT n.num                                                      AS num,
+           n.lat                                                      AS lat,
+           n.lon                                                      AS lon,
+           n.last_heard                                               AS last_heard,
+           n.hops                                                     AS hops,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat') AS home_lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon,
+           COALESCE((SELECT CAST(value AS INTEGER) FROM config WHERE key = 'observatory.window_days'), 30) AS s_window_days,
+           (SELECT MAX(strftime('%s','now')))                         AS now_ts
+    FROM nodes n
+    WHERE n.lat IS NOT NULL AND n.lon IS NOT NULL AND n.lat <> 0
+      AND n.last_heard IS NOT NULL
+  `,
+  /** Pure. Furthest node heard, all time and inside the window. */
+  run(rows) {
+    if (!rows.length) return null;
+    const days = Number(rows[0].s_window_days) || 0;
+    const now  = Number(rows[0].now_ts) || 0;
+    const cut  = days > 0 ? now - days * 86400 : 0;
+
+    let allKm = null, allNum = null, winKm = null, winNum = null, winAt = null;
+    let heardAll = 0, heardWin = 0, rejected = 0;
+
+    for (const r of rows) {
+      if (r.home_lat == null || r.home_lon == null) continue;
+      const km = Math.round(greatCircleKm(r.home_lat, r.home_lon, r.lat, r.lon) * 10) / 10;
+      if (!Number.isFinite(km)) continue;
+      // A hop count of 0 or null is a DIRECT reception — nothing to launder, so
+      // no guard applies. Otherwise the distance must be achievable per hop.
+      const hops = Number(r.hops) || 0;
+      if (hops > 0 && km / hops > MAX_KM_PER_HOP) { rejected++; continue; }
+      heardAll++;
+      if (allKm == null || km > allKm) { allKm = km; allNum = r.num; }
+      if (r.last_heard >= cut) {
+        heardWin++;
+        if (winKm == null || km > winKm) { winKm = km; winNum = r.num; winAt = r.last_heard; }
+      }
+    }
+    return [{
+      entity: 'global',
+      value: {
+        heard_km:        allKm,
+        heard_num:       allNum,
+        window_days:     days,
+        window_heard_km: winKm,
+        window_heard_num: winNum,
+        window_heard_at: winAt,
+        nodes_all:       heardAll,
+        nodes_window:    heardWin,
+        // Published, not hidden: the guard changes the headline number and a
+        // reader is entitled to know how many nodes it removed and on what rule.
+        max_km_per_hop:  MAX_KM_PER_HOP,
+        rejected_implausible: rejected,
+      },
       confidence: null,
       evidence_count: rows.length,
     }];
