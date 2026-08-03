@@ -87,10 +87,14 @@
                     :style="`bottom:${l.bottom}%`" x-text="l.text"></span>
             </template>
 
+            <!-- BARS, not plotted points. Peter: "i said bars not plotted
+                 points". Each bar stands at WHEN it happened and rises to HOW FAR
+                 it reached, so the silhouette is the reach over the window and
+                 the record line is the ceiling above it. -->
             <template x-for="(p, pi) in obsReachPoints()" :key="'p'+pi">
-              <div class="absolute w-1.5 h-1.5 -translate-x-1/2 translate-y-1/2 rounded-full"
+              <div class="absolute bottom-0 w-[3px] -translate-x-1/2 rounded-t-sm"
                    :class="p.direct ? 'bg-success' : 'bg-primary'"
-                   :style="`left:${p.left}%;bottom:${p.bottom}%` + (p.opacity != null ? `;opacity:${p.opacity}` : '')"
+                   :style="`left:${p.left}%;height:${p.bottom}%` + (p.opacity != null ? `;opacity:${p.opacity}` : '')"
                    :title="p.title"></div>
             </template>
           </div>
@@ -107,10 +111,10 @@
               <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-full bg-success"></i>heard direct — opacity is signal</span>
               <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-full bg-primary"></i>answered via relay</span>
             </span>
-            <!-- The legend named the ruler's encodings (bar height = hit rate,
+            <!-- The legend named the ruler encodings (hit rate,
                  tried / never tried). This plot has neither: one dot per ANSWERED
                  traceroute, y is how far it reached. -->
-            <span class="text-base-content/30">each dot = one answered traceroute</span>
+            <span class="text-base-content/30">each bar = one answered traceroute</span>
           </div>
         </div>
       </div>

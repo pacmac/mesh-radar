@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 6ce552c46e3b988f4e11fb005cf9aded58e30dfc900ab1a4e3ea2695fdeeb76c
+source_hash: 5d602e68c1b8c5355f8f4b7f7a70d8296d84294ef9bb91164cf8bf256ac37022
 updated: 2026-08-03
 ---
 
@@ -500,7 +500,7 @@ axis, relabelling `0` as `us`, and moving the labels onto their notches were all
 fixes to the wrong chart. Every one of them left 189.1 "at the end", because the
 axis was the wrong **dimension**.
 
-Now: one dot per answered traceroute at `(when, how far)`, the all-time record as
+Now: one **bar** per answered traceroute — standing at *when*, rising to *how far*, the all-time record as
 a horizontal **ceiling**, the window's best as a second line, day gridlines on x
 and a km scale on y.
 
