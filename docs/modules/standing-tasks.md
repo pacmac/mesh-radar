@@ -102,9 +102,23 @@ to find out. Fixing the ingest path is a separate task.
 
 ## `anchorable-nodes` — a bound is not a position
 
-**127 nodes are excluded from the discovery shortlist for having no position** —
-the second-largest exclusion in the funnel after distance, and invisible except
-as a grey bar. Most are genuinely unknowable: the prompting case, Pokey Hollow,
+**331 nodes have no position, and they never enter the candidate pool at all.**
+
+Correcting a claim made earlier in this task and in its first commit: the
+funnel's "127 no position" segment does **not** mean what its label says. It is
+`skipped_suspect`, which counts `km > CEILING_KM` (250) — nodes whose *computed*
+distance is implausible and therefore unverifiable. **Every one of those 127 has
+a position.** The label in `public/app-observatory.js:512` is simply wrong.
+
+The genuinely unpositioned are excluded one level higher, by the evidence query
+itself (`WHERE n.lat IS NOT NULL AND n.lon IS NOT NULL AND n.lat <> 0`), so they
+appear in **no funnel segment whatsoever**. They are not a grey bar; they are
+absent. 174 of them were heard within `max_silence_days`.
+
+That makes this the exclusion the funnel was built to prevent: invisible, and
+larger than anything it does show.
+
+Most are genuinely unknowable: the prompting case, Pokey Hollow,
 is a **HELTEC_V3 with no GPS** that has never sent a position since first being
 heard on 9 June.
 
