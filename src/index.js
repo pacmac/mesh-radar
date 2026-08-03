@@ -7,6 +7,7 @@ import { bridge } from './bridge.js';
 import * as pacHost from './pac-host.js';
 import configRouter from './config-api.js';
 import { logEvent } from './hooks.js';
+import { startStandingTasks } from './standing-tasks.js';
 import { execSync } from 'child_process';
 import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId, getAllDeviceCfgs } from './device-config.js';
 import deviceRemoveRouter from './device-remove.js';
@@ -400,6 +401,9 @@ server.listen(PORT, () => {
   pacHost.start();
   rotator.start();
   startAlertPoller(nodeList);
+  // Standing analysis tasks — mine the stored data for findings, no airtime.
+  // Task `hooks-standing-tasks`.
+  startStandingTasks();
   startImapReceiver();
   // Resume scan if it was active before restart
   const savedScan = getConfig('scan_state', {});

@@ -32,6 +32,9 @@ export const DEFAULTS = {
   // Retention for event_log (task `event-log`). ~6k rows/day at ~50 probes/hour
   // with ~5 events each — far less than relay_observation, but still bounded.
   'event_log.retain_days':    30,
+  // How often the standing analysis tasks run. They read history rather than the
+  // wire, so they gain nothing from running often. Task `hooks-standing-tasks`.
+  'standing_tasks.every_min': 60,
   'radar.log_scale':          true,   // adaptive quantile scale (linear = opt-out)
   'radar.crosshair':          false,
   'message_filter.channels':  [],
