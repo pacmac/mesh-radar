@@ -475,9 +475,25 @@ export const observatoryMixin = {
   // (tone, hit_rate, direct, snr_db) arrives decided from boardVerdicts(); this
   // turns those into pixels and nothing else. It must not classify, bin or
   // threshold — if that is ever needed it belongs server-side.
+  // SCALE TO THE DATA, NOT THE RECORD. This used to be
+  // max(record_km, best_km) * 1.08, which pinned the record near the right edge
+  // BY CONSTRUCTION — 189.1 landed at 92.6% of a 204 km axis and read as "the
+  // end of the line". Worse, 27 nodes lie BEYOND the record (furthest 245.2 km)
+  // and the clamp stacked all 27 into one pile on the right edge, and the 250
+  // tick never rendered because 250 > 204.
+  //
+  // Peter, 2026-08-03: "it is not against time, 189km is still at the end".
+  // Correct, and it was my scaling, not the labelling.
+  //
+  // The axis is now the 250 km plausibility ceiling that boardVerdicts() already
+  // filters on, so the axis and the payload agree by construction and nothing
+  // clamps. Beyond 250 km positions are MQTT-sourced and not RF evidence.
   obsStripSpan() {
     const f = this.charts?.board?.frontier;
-    return Math.max(f?.record_km ?? 0, f?.best_km ?? f?.window_km ?? 0) * 1.08 || 1;
+    const furthest = Array.isArray(f?.strip) && f.strip.length
+      ? f.strip[f.strip.length - 1].km   // server sorts ascending by km
+      : 0;
+    return Math.max(250, furthest, f?.record_km ?? 0) || 1;
   },
 
   obsStripBars() {
@@ -523,13 +539,15 @@ export const observatoryMixin = {
   obsFrontierPct() {
     const f = this.charts?.board?.frontier;
     if (!f || f.record_km == null) return { window: 0, record: 0 };
-    // Headroom past the record so the notch never sits on the very edge, where
-    // it reads as "we are at the end" rather than "there is further to go".
+    // ONE SPAN, SHARED. This previously carried a comment saying it used the
+    // same span as the bars while the line beneath it computed a second one —
+    // so after the bars moved to the 250 km axis the notches stayed on the old
+    // 204 km scale and pointed at the wrong nodes. The comment was right and the
+    // code was wrong; now it calls the helper instead of restating it.
     // best_km is window_km's correct name; the alias is read only until the
-    // payload drops it. Same span as obsStripBars so the notches land on the
-    // same axis as the bars — two spans would put the record in the wrong place.
+    // payload drops it.
     const best = f.best_km ?? f.window_km;
-    const span = Math.max(f.record_km, best ?? 0) * 1.08 || 1;
+    const span = this.obsStripSpan();
     const pct  = km => Math.max(0, Math.min(100, (km / span) * 100));
     return {
       window: best == null ? 0 : +pct(best).toFixed(2),

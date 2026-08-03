@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: 464cf8490ead7b321f65652ae520e89a7b5be0e40a3e2171e35e250abd8a0d79
+source_hash: 2a93f45b0975dc0b6e2f0cee78846ee335f3ff07fbfe847dba46e671e2c77276
 updated: 2026-08-03
 ---
 
@@ -401,3 +401,30 @@ primary notch on the axis; the all-time record carries the warning-coloured one.
 Peter, 2026-08-03: *"why does the last window best 176km even appear in that
 card, and if it does it is invisible to me?"* — a figure stated in the header but
 not locatable on the axis is worse than one omitted.
+
+### The axis scales to the DATA, not the record
+
+Peter, 2026-08-03: *"it is not against time, 189km is still at the end."* He was
+right, and it was the scaling, not the labelling.
+
+`obsStripSpan()` was `max(record_km, best_km) * 1.08`, which pinned the record
+near the right edge **by construction** — 189.1 landed at 92.6% of a 204 km
+axis. Three consequences, all measured before the fix:
+
+- 27 nodes lie **beyond** the record (furthest **245.2 km**), and the
+  `Math.min(100, …)` clamp stacked all 27 into one pile on the right edge
+- the `250` tick never rendered, because `250 > 204.228`
+- the card implied 189.1 was the end of the world; it is not even the furthest
+  node we hold
+
+The span is now the **250 km plausibility ceiling** that `boardVerdicts()`
+already filters on, so axis and payload agree by construction. After: record
+75.64%, best 70.56%, both exactly `km / 250`, **0 bars clamped**, ticks
+`0 50 100 150 200 250`.
+
+**One span, shared.** `obsFrontierPct()` carried a comment claiming it used the
+same span as the bars while the line beneath computed a second one. When the
+bars moved to the 250 km axis the notches stayed on the old 204 km scale and
+pointed at the wrong nodes. It now calls `obsStripSpan()` rather than restating
+it. Verified by landing the record notch on the bar it names: 75.64% resolves to
+`!da6392a0 · 189.1 km`.
