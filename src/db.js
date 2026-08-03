@@ -1086,6 +1086,52 @@ export function radioAirtime(num) {
 // signal we hold describes the last RELAY hop, not the node, so colouring a
 // 180 km bar with it would claim reach we do not have. direct:false carries
 // snr_db:null and the renderer must use a flat tone.
+// TIME on x, DISTANCE on y. Peter, 2026-08-03, after I built it the other way
+// round twice: "i already told you the x axis is time not istance. the y axis is
+// distance."
+//
+// That is the chart that answers the only question the card exists for — is the
+// frontier RISING? A distance ruler cannot answer it: it puts the all-time
+// record near the right edge purely because the record is a big number, which
+// reads as "recent" and is why 189.1 kept looking like "the end" however the
+// axis was scaled. Plotted against time, a record set on 4 July sits on the LEFT
+// at height 189.1, and the gap between the cloud and that line is the work left.
+//
+// One point per ANSWERED traceroute in the window: when it happened, and how far
+// it reached. snr_db only where the node was heard DIRECTLY — same honesty rule
+// as everywhere else on this card.
+function frontierSeries(fromTs) {
+  const home = db.prepare(`
+    SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') lon`).get();
+  if (!home || !Number.isFinite(home.lat) || home.lat === 0) return [];
+
+  const rows = db.prepare(`
+    SELECT t.ts, n.num, n.lat, n.lon, n.short_name, n.long_name,
+           (SELECT ROUND(AVG(s.snr),2) FROM signal_history s WHERE s.num = n.num) snr_db,
+           (SELECT COUNT(*)            FROM signal_history s WHERE s.num = n.num) direct_rx
+      FROM traceroute_history t
+      JOIN nodes n ON n.num = t.to_num
+     WHERE t.status = 'ok' AND t.ts >= ?
+       AND n.lat IS NOT NULL AND n.lat <> 0
+     ORDER BY t.ts`).all(fromTs);
+
+  const out = [];
+  for (const r of rows) {
+    const km = haversine(home.lat, home.lon, r.lat, r.lon);
+    if (!(km <= 250)) continue;                 // MQTT-sourced beyond here, not RF evidence
+    const direct = r.direct_rx > 0;
+    out.push({
+      ts: r.ts,
+      km: Math.round(km * 10) / 10,
+      direct,
+      snr_db: direct ? r.snr_db : null,
+      label: r.short_name || r.long_name || `!${(r.num >>> 0).toString(16)}`,
+    });
+  }
+  return out;
+}
+
 function frontierStrip() {
   const home = db.prepare(`
     SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') lat,
@@ -1364,6 +1410,18 @@ export function boardVerdicts(days = 7) {
                 best_km: curKm == null ? null : Math.round(curKm * 10) / 10,
                 // The card said "this period" without naming it. 0 = all time.
                 window_days: Number(days) > 0 ? Number(days) : 0,
+                // x-axis bounds, so the browser scales time without deciding
+                // what the window is.
+                from_ts: from, to_ts: now,
+                // NAMED `reach`, NOT `series`: frontier already carries a
+                // `series` (the daily sparkline, {day,v}) further down this same
+                // object literal, and a duplicate key silently takes the LAST
+                // value — so the first version of this shipped as the sparkline
+                // and I measured NaN km before spotting it.
+                // The chart: when we reached, and how far. See frontierSeries().
+                reach: frontierSeries(from),
+                // strip[] is the earlier distance-ruler payload, kept only until
+                // the card stops reading it. It answered the wrong question.
                 strip: frontierStrip(),
                 record_km: recordKm, flat_days: flatDays,
                 // `where` is the location line; `basis` stays the verdict. The

@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 2c9859e096e24a8975df163e426275044895ab880f1bec251ba04a43595394a0
+source_hash: 7b294d630e751ecfbc52d0183337585db09be1fd76cd7b2c7600d69c3a035fe6
 updated: 2026-08-03
 ---
 
@@ -857,3 +857,35 @@ missing, every board figure would silently switch to a 30-day basis with nothing
 on screen saying so — the same silent-default class as B74. Both defaults are now
 **7**, matching what is actually configured, and `window_days` is published so a
 disagreement is visible rather than silent.
+
+### `frontier.reach` — TIME on x, DISTANCE on y
+
+Peter, 2026-08-03, after I built the axes the wrong way round twice: *"i already
+told you the x axis is time not istance. the y axis is distance."*
+
+He had said so in his first message on this card and I argued with it. The
+distance-ruler (`strip[]`) cannot answer the question the card exists for — **is
+the frontier rising?** — and it puts the all-time record near the right edge
+purely because the record is a large *number*, which reads as *recent*. That is
+why 189.1 kept looking like "the end" however the axis was rescaled: the axis was
+the wrong dimension, not the wrong scale.
+
+Plotted against time, a record set on 4 July sits on the **left** at height
+189.1, and the gap between the point cloud and that line is the work remaining.
+
+```js
+frontier.reach = [ { ts, km, direct, snr_db, label } ]   // one per ANSWERED traceroute
+frontier.from_ts, frontier.to_ts                          // x bounds, server-decided
+```
+
+`snr_db` non-null only where `direct` — the same honesty rule as the rest of the
+card. Live at time of writing: 63 points over a 7-day window, km 0.4 → 176.4,
+13 carrying a direct signal, 0 violations.
+
+**A duplicate key that silently won.** `frontier` already carries a `series`
+(the daily sparkline, `{day, v}`) later in the same object literal, so the first
+version of this — named `series` — was overwritten by it, and the field measured
+`NaN` km before the collision was spotted. In a JS object literal the **last**
+duplicate key wins, silently. Hence `reach`.
+
+`strip[]` remains only until the card stops reading it.
