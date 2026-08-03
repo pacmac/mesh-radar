@@ -471,15 +471,68 @@ export const observatoryMixin = {
    *
    *  Returns percentages, because the bar is a responsive HTML element now and
    *  has no fixed coordinate space to map into. */
+  // DISPLAY ARITHMETIC ONLY — the same licence the radar has. Every judgement
+  // (tone, hit_rate, direct, snr_db) arrives decided from boardVerdicts(); this
+  // turns those into pixels and nothing else. It must not classify, bin or
+  // threshold — if that is ever needed it belongs server-side.
+  obsStripSpan() {
+    const f = this.charts?.board?.frontier;
+    return Math.max(f?.record_km ?? 0, f?.best_km ?? f?.window_km ?? 0) * 1.08 || 1;
+  },
+
+  obsStripBars() {
+    const f = this.charts?.board?.frontier;
+    const strip = f?.strip;
+    if (!Array.isArray(strip) || !strip.length) return [];
+    const span = this.obsStripSpan();
+    return strip.map(e => {
+      // A 0% bar must still be VISIBLE — it marks a node we placed and tried,
+      // which is different from empty axis. Never-tried (null) sits at the floor
+      // too, distinguished by tone, not by height.
+      const h = e.hit_rate == null ? 8 : Math.max(8, Math.min(100, e.hit_rate));
+      // Signal opacity ramps across the LoRa demod range: -20 dB floor to +12 dB.
+      // Normalising a server-supplied number, not deciding what counts as strong.
+      const op = e.snr_db == null ? null
+               : Math.max(0.35, Math.min(1, (e.snr_db + 20) / 32));
+      return {
+        left: +Math.max(0, Math.min(100, (e.km / span) * 100)).toFixed(3),
+        height: +h.toFixed(1),
+        tone: e.tone,
+        opacity: op,
+        title: `${e.label} · ${e.km} km`
+             + (e.hit_rate == null ? ' · never tried' : ` · ${e.hit_rate}% of ${e.attempts}`)
+             + (e.snr_db == null ? ' · no direct signal' : ` · ${e.snr_db} dB direct`),
+      };
+    });
+  },
+
+  // Axis ticks at round distances, only as far as the span reaches.
+  obsStripTicks() {
+    const span = this.obsStripSpan();
+    return [0, 50, 100, 150, 200, 250]
+      .filter(km => km <= span)
+      .map(km => ({ km, left: +((km / span) * 100).toFixed(3) }));
+  },
+
+  obsWindowLabel() {
+    const d = this.charts?.board?.frontier?.window_days;
+    if (d == null) return '';
+    return d === 0 ? 'all time' : `last ${d} day${d === 1 ? '' : 's'}`;
+  },
+
   obsFrontierPct() {
     const f = this.charts?.board?.frontier;
     if (!f || f.record_km == null) return { window: 0, record: 0 };
     // Headroom past the record so the notch never sits on the very edge, where
     // it reads as "we are at the end" rather than "there is further to go".
-    const span = Math.max(f.record_km, f.window_km ?? 0) * 1.08 || 1;
+    // best_km is window_km's correct name; the alias is read only until the
+    // payload drops it. Same span as obsStripBars so the notches land on the
+    // same axis as the bars — two spans would put the record in the wrong place.
+    const best = f.best_km ?? f.window_km;
+    const span = Math.max(f.record_km, best ?? 0) * 1.08 || 1;
     const pct  = km => Math.max(0, Math.min(100, (km / span) * 100));
     return {
-      window: f.window_km == null ? 0 : +pct(f.window_km).toFixed(2),
+      window: best == null ? 0 : +pct(best).toFixed(2),
       record: +pct(f.record_km).toFixed(2),
     };
   },

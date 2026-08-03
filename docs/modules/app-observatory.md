@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: f3b03606947de38321615502fff74e5efaafb78dc18671bf0c4f9411ff19d250
+source_hash: 464cf8490ead7b321f65652ae520e89a7b5be0e40a3e2171e35e250abd8a0d79
 updated: 2026-08-03
 ---
 
@@ -376,3 +376,28 @@ because those nodes never reach the selector to be counted.
 
 Verified live: the legend reads `14 cooling · 50 tried out · 189 too far ·
 152 silent · 127 beyond 250km · 75 no rule matched · 331 no position at all`.
+
+## Frontier strip geometry (task `frontier-strip-card`, 2026-08-03)
+
+`obsStripBars()`, `obsStripTicks()`, `obsStripSpan()`, `obsWindowLabel()` turn
+`board.frontier.strip` into pixels. **Display arithmetic only** — every
+judgement (`tone`, `hit_rate`, `direct`, `snr_db`) arrives decided from
+`boardVerdicts()`. These helpers must not classify, bin or threshold.
+
+- `left` = `km / span * 100`, span shared with `obsFrontierPct()` so the notches
+  land on the same axis as the bars. Two spans would put the record in the
+  wrong place.
+- bar height = `hit_rate`, floored at 8% so a 0% node still reads as *placed*
+  rather than vanishing. The floor is honest: 275 of 367 tried nodes sit at
+  exactly 0%, so most bars belong on the floor.
+- `opacity` ramps `snr_db` across the LoRa demod range (−20 → +12 dB).
+  Normalising a server-supplied number, not deciding what counts as strong.
+  Null for every non-direct node.
+
+`obsFrontierPct()` prefers `best_km`, falling back to the `window_km` alias.
+
+**Both reference marks are drawn.** The header prints `best_km`, so it carries a
+primary notch on the axis; the all-time record carries the warning-coloured one.
+Peter, 2026-08-03: *"why does the last window best 176km even appear in that
+card, and if it does it is invisible to me?"* — a figure stated in the header but
+not locatable on the axis is worse than one omitted.

@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 2f6f55b917688b8bfd3a58018c04acffd57064a03cacdc187d11eb47bde3237c
+source_hash: 5ffea677a4698ef26c7f6648164fcf4858da36e96a493033f896d42f0b5d39f4
 updated: 2026-08-03
 ---
 
@@ -397,3 +397,53 @@ Note on method: two attempts to compute WCAG contrast ratios in-page returned
 garbage, because these themes use `oklch()` and neither a regex nor a canvas
 `fillStyle` round-trip normalised it. Effective alpha is the figure above because
 it is the one actually measured; the ratios were discarded rather than reported.
+
+## Frontier card — the distribution, not the maximum (task `frontier-strip-card`, 2026-08-03)
+
+Peter, 2026-08-03: *"I want the top frontier card to be formatted to show the
+current window, and the nodes heard and their distance and maybe signal strength
+in each bar as a colour"*, in the grammar of the mission-control mockup's top
+strip.
+
+The card was one progress bar carrying two scalars across the full page width.
+It now draws `board.frontier.strip` — one bar per positioned node on a distance
+axis, 503 of them.
+
+### What the browser does, and what it must not
+
+Everything meaningful arrives pre-computed from `boardVerdicts()`: `km`,
+`hit_rate`, `direct`, `snr_db`, `tone`, `label`. The browser performs **display
+arithmetic only** — the same licence the radar has:
+
+- `left: km / span * 100%` — position on the axis
+- bar height from `hit_rate`, with a floor so a 0% bar is still visible as a
+  *placed* node rather than vanishing
+- `tone` → CSS class, a lookup, not a judgement
+- for `signal` bars only, opacity ramped across the LoRa demodulation range
+  (−20 dB floor to +12 dB) — normalising a server-supplied dB number, not
+  deciding what counts as strong
+
+**It classifies nothing.** No thresholds, no binning, no deciding which nodes are
+interesting. If a future change needs the browser to decide, the decision belongs
+in `boardVerdicts()` — see the parked `park-strip-browser-logic`.
+
+### Colour is only honest for 27 of 503
+
+`snr_db` is non-null only where `direct` is true, because `signal_history`
+records direct receptions. Non-direct bars take a flat neutral tone and **must
+never** be coloured by signal — the RSSI we hold for them describes the relay
+that carried them, not the node. A 180 km bar tinted "strong" would claim reach
+we do not have.
+
+The legend states the split explicitly, so the card shows how thin our direct
+reach actually is rather than hiding it behind a full-width gradient.
+
+### The window is named
+
+The footer said "this period" without ever saying what the period was.
+`window_days` now comes down on `frontier` and the card reads "last 7 days"
+(`0` → "all time"). The selector on the Charts tab writes the same server-side
+`observatory.window_days`, so both pages agree by construction.
+
+`best_km` replaces the misleading `window_km` in the header — that value is the
+best distance reached *within the window*, never a distance window.

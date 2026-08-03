@@ -59,23 +59,68 @@
                construction rather than by a clamp that has to be got right. -->
           <div class="flex justify-between items-baseline font-mono text-xs">
             <span class="text-primary font-semibold"
-                  x-text="(charts.board.frontier.window_km ?? '—') + ' km'"></span>
+                  x-text="((charts.board.frontier.best_km ?? charts.board.frontier.window_km) ?? '—') + ' km'"></span>
             <span class="text-base-content/50"
                   x-text="charts.board.frontier.record_km + ' km record'"></span>
           </div>
 
-          <div class="relative h-2 my-1 rounded-full bg-base-content/10">
-            <div class="absolute inset-y-0 left-0 rounded-full bg-primary"
-                 :style="`width:${obsFrontierPct().window}%`"></div>
-            <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-base-100"
-                 :style="`left:${obsFrontierPct().window}%`"></div>
-            <div class="absolute -inset-y-1 w-0.5 -translate-x-1/2 bg-base-content/55"
-                 :style="`left:${obsFrontierPct().record}%`"></div>
+          <!-- THE DISTRIBUTION, not the maximum. One bar per positioned node on
+               a distance axis: height is hit rate, colour is tone. The bar chart
+               replaced a single progress bar that used full page width to carry
+               two numbers.
+               Colour is honest ONLY where we measured it: snr_db is non-null just
+               for nodes heard DIRECTLY (27 of 503). Everything else is flat and
+               neutral, because the signal we hold for a relayed node describes
+               the relay, not the node. -->
+          <div class="relative h-10 my-1">
+            <template x-for="(t, ti) in obsStripTicks()" :key="'t'+ti">
+              <div class="absolute inset-y-0 w-px bg-base-content/10" :style="`left:${t.left}%`"></div>
+            </template>
+
+            <template x-for="(b, bi) in obsStripBars()" :key="'b'+bi">
+              <div class="absolute bottom-0 w-[2px] -translate-x-1/2 rounded-sm"
+                   :class="{ 'bg-success': b.tone === 'signal',
+                             'bg-primary': b.tone === 'answered',
+                             'bg-base-content/35': b.tone === 'tried',
+                             'bg-base-content/15': b.tone === 'untried' }"
+                   :style="`left:${b.left}%;height:${b.height}%` + (b.opacity != null ? `;opacity:${b.opacity}` : '')"
+                   :title="b.title"></div>
+            </template>
+
+            <!-- BEST IN WINDOW. The header prints this number, so it must be
+                 locatable on the axis — a figure stated but not placed is worse
+                 than one omitted. Primary, to match the header value it belongs
+                 to, and distinguished from the all-time notch beside it. -->
+            <template x-if="obsFrontierPct().window > 0">
+              <div class="absolute -inset-y-1 w-0.5 -translate-x-1/2 bg-primary"
+                   :style="`left:${obsFrontierPct().window}%`"
+                   :title="((charts.board.frontier.best_km ?? charts.board.frontier.window_km)) + ' km — best in window'"></div>
+            </template>
+
+            <!-- the record notch, full height so it reads as a threshold -->
+            <div class="absolute -inset-y-1 w-0.5 -translate-x-1/2 bg-warning"
+                 :style="`left:${obsFrontierPct().record}%`"
+                 :title="charts.board.frontier.record_km + ' km record'"></div>
           </div>
 
-          <div class="flex justify-between font-mono text-xs text-base-content/40">
-            <span>this period</span>
-            <span>all-time</span>
+          <div class="relative h-3 font-mono text-[10px] text-base-content/35">
+            <template x-for="(t, ti) in obsStripTicks()" :key="'l'+ti">
+              <span class="absolute -translate-x-1/2" :style="`left:${t.left}%`" x-text="t.km"></span>
+            </template>
+          </div>
+
+          <div class="flex justify-between items-center font-mono text-xs text-base-content/40">
+            <span x-text="obsWindowLabel()"></span>
+            <span class="flex items-center gap-2 text-[10px]">
+              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-sm bg-success"></i>heard direct — colour is signal</span>
+              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-sm bg-primary"></i>answered</span>
+              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-sm bg-base-content/35"></i>tried</span>
+              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-sm bg-base-content/15"></i>never tried</span>
+            </span>
+            <!-- "all-time" used to sit here, from when this was a time-progress
+                 bar. The axis is DISTANCE now, so that label named the wrong
+                 dimension. The record notch carries the all-time reference. -->
+            <span class="text-base-content/30">bar height = hit rate</span>
           </div>
         </div>
       </div>
