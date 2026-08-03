@@ -1,7 +1,7 @@
 ---
 module: standing-tasks
 source: src/standing-tasks.js
-source_hash: b1279c521c74f04a573a229a2854f787ed3f63decc2e0bbc0511d85491f00885
+source_hash: 0f0a0b4022dc2d630d6e6c3c85720e88a1b31c7e0c9e8915af94be7dad58540f
 updated: 2026-08-03
 ---
 
@@ -189,3 +189,77 @@ reports its doors **without distances** rather than inventing them.
 Both hooks report the zero case explicitly. "0 anchorable" is evidence; silence
 is indistinguishable from a broken hook, which is the failure that started the
 hooks effort in the first place.
+
+
+## `blocked-corridors` — the corridor we are choosing not to walk
+
+Peter, 2026-08-03: *"is that another case for new hooks?"* It is, and the rule
+generalises:
+
+> **Anything found with a hand-run query is a hook that does not exist yet.**
+
+Third such find in one day, after `stranded-positions` and `anchorable-nodes`.
+
+### What it found
+
+Five nodes **beyond the 189.1 km record**, three heard that day, all on bearing
+~160° — every one excluded because its step from proven ground was 37–47 km
+against a `window_km` of **25**:
+
+```
+JERSEY            218.6 km   step 46.6   159°   heard 1h    widen_to 47
+!7a6c4384         215.6 km   step 43.8   160°   heard 0h    widen_to 44
+GJ7DTA Anthony 3  212.9 km   step 39.3   161°   heard 9h    widen_to 40
+!45403276         210.3 km   step 38.9   160°   heard 330h  widen_to 39
+```
+
+They were never a leap into the dark. **Guernsey at ~181 km is proven ground** —
+six Channel Islands nodes have answered, two on that same day — so Jersey is one
+hop past a *working* corridor.
+
+The selector was behaving exactly as designed and said nothing, because
+`skipped_beyond_window` is one number that lumps a genuine next step in with
+180-odd hopeless leaps. **"Too far" and "further than we currently allow" are
+different claims, and only one of them is a decision.**
+
+### The hook beat the hand query
+
+Run against the same store, it also returned **Stafford-Butterhill2, 205.7 km,
+bearing 19° — due north, heard 6h earlier, step 37.4 km**, the *nearest* blocked
+corridor of all. The hand query missed it because I had pre-filtered to a Channel
+Islands bounding box and was blind to everything outside it.
+
+That is the argument for hooks in one line: a standing task has no hunch to
+confirm.
+
+### Definition
+
+All four must hold:
+
+1. positioned, and within the 250 km plausibility ceiling
+2. alive — heard within `max_silence_days`
+3. further than the furthest target we have actually **answered**
+4. step from proven ground **>** `window_km`
+
+Condition 4 is what makes it a corridor rather than a wish. Proven ground uses
+the selector's own definition — answered at least once, positioned — so the hook
+cannot disagree with the thing it describes.
+
+`widen_to` is the payload that matters: it converts an exclusion into a number
+someone can act on. Sorted by **step ascending** — the nearest blocked corridor
+is the cheapest next move, and ranking by raw distance is the mistake that had
+discovery firing at 234 km while a 20 km extension went untried.
+
+### Home comes from `home.lat` / `home.lon`
+
+The same pair `inferences.js` reads, so hooks and selector cannot disagree about
+where we are. The first version read only `home_pos` (absent on this host) before
+falling back to our own radios, and a reconciliation run reported *"cannot place
+ourselves"* while the config held `51.0263296,-3.1588352` the whole time.
+
+### Verified live
+
+Reconciled against the hand figures at `window_km: 25` — 14 blocked, nearest
+needs 38 km. After raising the window to 50 the live hook reports **9 blocked,
+nearest needs 55 km**: the Jersey and Stafford corridors have been admitted and
+the hook now names the next one out, which is exactly what it is for.

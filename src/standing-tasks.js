@@ -45,6 +45,10 @@ const T = {
     name: 'anchorable-nodes', scope: 'store',
     purpose: 'finds unpositioned nodes whose distance is BOUNDED by a positioned door adjacent to them',
   }),
+  corridors: defineHook({
+    name: 'blocked-corridors', scope: 'store',
+    purpose: 'finds record-beating nodes excluded ONLY by the ladder window, and says how far it would have to widen',
+  }),
 };
 
 /** WHERE WE ARE. Read once per run — it cannot change mid-sweep.
@@ -62,6 +66,16 @@ const T = {
  *  Returning null is the honest answer when we cannot place ourselves; the
  *  caller then reports doors without distances rather than inventing them. */
 function homeLatLon() {
+  // `home.lat` / `home.lon` FIRST — this is the same pair `inferences.js` reads
+  // for every distance it publishes, so the hooks and the selector cannot
+  // disagree about where we are. Missing it and falling straight to the radios
+  // is why a reconciliation run reported "cannot place ourselves" while the
+  // config held 51.0263296,-3.1588352 all along.
+  const row = db.prepare(`
+    SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') lon`).get();
+  if (row && Number.isFinite(row.lat) && Number.isFinite(row.lon) && row.lat !== 0) return row;
+
   const h = getConfig('home_pos', null);
   if (h && Number.isFinite(h.lat) && Number.isFinite(h.lon)) return h;
   const own = [...ownDeviceNums()];
@@ -72,6 +86,14 @@ function homeLatLon() {
         AND lat IS NOT NULL AND lat <> 0
       ORDER BY last_heard DESC LIMIT 1`).get(...own);
   return r && r.lat ? { lat: r.lat, lon: r.lon } : null;
+}
+
+function bearingOf(a, b, c, d) {
+  const rad = (x) => (x * Math.PI) / 180;
+  const dLon = rad(d - b);
+  const y = Math.sin(dLon) * Math.cos(rad(c));
+  const x = Math.cos(rad(a)) * Math.sin(rad(c)) - Math.sin(rad(a)) * Math.cos(rad(c)) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
 function haversineKm(a, b, c, d) {
@@ -276,8 +298,107 @@ function runAnchorableNodes() {
   });
 }
 
+/** The corridor we are choosing not to walk.
+ *
+ *  Peter, 2026-08-03: "is that another case for new hooks?" It is, and the rule
+ *  generalises: ANYTHING FOUND WITH A HAND-RUN QUERY IS A HOOK THAT DOES NOT
+ *  EXIST YET. This was the third such find in one day.
+ *
+ *  What the hand query turned up, and nothing on the board would ever have said:
+ *  five nodes BEYOND the 189.1 km record, three of them heard that day, all on
+ *  the same bearing (~160°) — every one excluded because its step from proven
+ *  ground was 37-47 km against a `window_km` of 25.
+ *
+ *  They were not a leap into the dark. Guernsey at ~181 km is proven ground: six
+ *  Channel Islands nodes have answered, two of them that same day. Jersey is one
+ *  hop past a WORKING corridor.
+ *
+ *  The selector was behaving exactly as designed and said nothing, because
+ *  `skipped_beyond_window` is a single number that lumps a genuine next step in
+ *  with 180-odd hopeless leaps. "Too far" and "further than we currently allow"
+ *  are different claims and only one of them is a decision.
+ *
+ *  `widen_to` is the point of the whole hook: it turns an exclusion into a
+ *  number someone can act on.
+ */
+function runBlockedCorridors() {
+  const d       = getConfig('discovery', {}) || {};
+  const days    = Number(d.max_silence_days) || 14;
+  const windowKm = Number(d.window_km) || 25;
+  const CEILING = 250;   // matches inferences.js — beyond this a position is not evidence
+  const home    = homeLatLon();
+  if (!home) {
+    T.corridors.emit({ summary: 'cannot place ourselves, so no corridor can be measured', detail: {} });
+    return;
+  }
+
+  // PROVEN GROUND, by the selector's own definition — answered at least once and
+  // positioned. Using a different definition here would let the hook disagree
+  // with the very thing it is describing.
+  const proven = db.prepare(`
+    SELECT DISTINCT n.num, n.lat, n.lon
+      FROM nodes n JOIN traceroute_history t ON t.to_num = n.num AND t.status = 'ok'
+     WHERE n.lat IS NOT NULL AND n.lat <> 0`).all();
+  if (!proven.length) {
+    T.corridors.emit({ summary: 'nothing has answered yet, so there is no proven ground to step from', detail: {} });
+    return;
+  }
+  // The bar: the furthest we have actually reached. Only nodes past it could
+  // move the record, and only those are worth calling a corridor.
+  let bestKm = 0;
+  for (const p of proven) {
+    const km = haversineKm(home.lat, home.lon, p.lat, p.lon);
+    if (km > bestKm && km <= CEILING) bestKm = km;
+  }
+
+  const alive = db.prepare(`
+    SELECT num, long_name, lat, lon, last_heard FROM nodes
+     WHERE lat IS NOT NULL AND lat <> 0
+       AND last_heard > strftime('%s','now') - ? * 86400`).all(days);
+
+  const now = Math.floor(Date.now() / 1000);
+  const found = [];
+  for (const n of alive) {
+    const km = haversineKm(home.lat, home.lon, n.lat, n.lon);
+    if (km > CEILING || km <= bestKm) continue;          // not a record, or not evidence
+    let step = Infinity;
+    for (const p of proven) {
+      const s = haversineKm(n.lat, n.lon, p.lat, p.lon);
+      if (s < step) step = s;
+    }
+    if (step <= windowKm) continue;                       // already eligible; not blocked
+    found.push({
+      num: n.num, name: n.long_name || `!${n.num.toString(16)}`,
+      km: +km.toFixed(1), step: +step.toFixed(1),
+      bearing: Math.round(bearingOf(home.lat, home.lon, n.lat, n.lon)),
+      silent_h: Math.round((now - Number(n.last_heard)) / 3600),
+      widen_to: Math.ceil(step),
+    });
+  }
+  // NEAREST STEP FIRST. The cheapest next move, not the biggest headline number
+  // — ranking these by raw distance is the mistake that had discovery firing at
+  // 234 km while a 20 km extension went untried.
+  found.sort((a, b) => a.step - b.step);
+
+  T.corridors.emit({
+    severity: found.length ? 'notice' : 'info',
+    summary: found.length
+      ? `${found.length} alive nodes past our ${bestKm.toFixed(1)} km best are blocked only by the ${windowKm} km window`
+        + ` — the nearest needs ${found[0].widen_to} km (${found[0].name} at ${found[0].km} km)`
+      : `no node past our ${bestKm.toFixed(1)} km best is blocked by the ${windowKm} km window`,
+    detail: {
+      best_reached_km: +bestKm.toFixed(1),
+      window_km: windowKm,
+      max_silence_days: days,
+      blocked: found.length,
+      note: 'step is measured from PROVEN ground (answered at least once), not from home',
+      top: found.slice(0, 12),
+    },
+  });
+}
+
 const TASKS = [runUnknownNodes, runGhostRelays, runAsymmetricPaths,
-               runStrandedPositions, runAnchorableNodes];
+               runStrandedPositions, runAnchorableNodes, runBlockedCorridors];
 
 /** Run every standing task once, isolated. One throwing must not stop the rest —
  *  a broken analysis should cost its own finding, never the others'. */
