@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 791aac7eaa6e6551f927619d6ca70d998c9596c3f01444fdbb439bab779c7b4d
+source_hash: 42f739c03c57f4117adb5541de5c5ed1fcf2d01152e327a4c897340874b3248b
 updated: 2026-08-03
 ---
 
@@ -277,3 +277,17 @@ header button will use.
 
 Consumed by `traceroute.js` `tracerouteEnabled()`; see `docs/modules/traceroute.md`
 for why the gate sits at `dispatch()` and why manual requests are exempt.
+
+## `alerts.rare_sender_max` (task `hook-rare-sender`, 2026-08-03)
+
+Default **5**. A text sender is "rare" when their message count within
+`observatory.window_days`, the triggering message included, is at or below this.
+
+Peter set the value and required the knob in the same breath: *"my got feeling is
+less than 5 times in the window. that will discard spurioos hits, but it needs to
+ve a knob."* The threshold is a judgement about noise, so it must be tunable
+without a deploy.
+
+Read and clamped at the use site (`persist.js`, minimum 1) rather than trusted
+from config — MESH_REACH_SPEC §8: enforcement lives in the path that acts, not in
+a validator.

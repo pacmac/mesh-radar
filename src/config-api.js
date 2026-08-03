@@ -30,6 +30,10 @@ export const DEFAULTS = {
   // filtering must be done backend so anyone using the browser sees the same
   // thing." 0 means ALL TIME. Task `observatory-window`.
   'observatory.window_days':  30,
+  // Peter, 2026-08-03: "my got feeling is less than 5 times in the window. that
+  // will discard spurioos hits, but it needs to ve a knob." Threshold for the
+  // rare-sender hook; counted over observatory.window_days.
+  'alerts.rare_sender_max':   5,
   // Retention for event_log (task `event-log`). ~6k rows/day at ~50 probes/hour
   // with ~5 events each — far less than relay_observation, but still bounded.
   'event_log.retain_days':    30,

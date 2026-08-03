@@ -1,7 +1,7 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: fe24fd86d75e15c82ca3b8e79516c411dbc3930aa4cefd887ea000b804496e22
+source_hash: debb5f1b8b217a99332234ef9cbd5ce732c731666062befaf6d766fb3ba0f394
 updated: 2026-08-03
 ---
 
@@ -344,3 +344,60 @@ the reasoning behind it was wrong until measured.
 **Null island is a separate, still-open gap** — neither table rejects `0,0`, the
 classic "GPS has no fix yet" value. Filed as its own finding rather than folded
 in here.
+
+## `rare-sender` — a text from someone we never or rarely hear
+
+Peter, 2026-08-03: *"a text message from a node we have never heard before or
+rarely hear?"* — and on the threshold: *"my got feeling is less than 5 times in
+the window. that will discard spurioos hits, but it needs to ve a knob."*
+
+### Why a hook and not a worker
+
+A stranger speaking to us is worth knowing **while they are still awake and
+repliable** — the same argument that motivates callouts. A cadence worker would
+find it hours later, by which point the opportunity is gone. So it fires at the
+text-ingest chokepoint in `persist.js`, beside `noteInboundText`, which is the
+one path every received message passes through — including replays and messages
+arriving with no browser connected.
+
+### What "rare" means, pinned
+
+A sender is rare when their message count **in the analysis window**, this one
+included, is at or below `alerts.rare_sender_max` (default **5**). Vague terms
+have cost this project three wrong readings, so it is stated rather than implied:
+
+- window = `observatory.window_days`, the same server-side window the board uses,
+  so the hook and the board cannot disagree about what "recently" means
+- the triggering message **counts toward** the total
+- `first_ever` is reported separately and is the stronger signal — a sender with
+  no message in all of history
+
+### Measured before building
+
+Of 156 senders who have ever texted us, 54 spoke in the last 7 days and **96 have
+sent ≤2 messages ever**. First-ever senders in the last 7 days: **0** — so the
+`first_ever` flag will be silent for weeks at a time, which is expected for an
+alarm and not evidence it is broken.
+
+### Ingestion is never at risk
+
+Wrapped so a fault in this hook cannot cost us the message itself — the same rule
+already applied to the callout reply check beside it.
+
+### Verified
+
+Driven through the real `handleEvent` path, not a helper:
+
+```
+rare sender   VIXR   (1 msg in window)     -> EMITTED  "VIXR rarely speaks — 2 messages in 7d"
+common sender !2687afb1 (1741 in window)   -> SILENT
+```
+
+One emission from two messages — the threshold discriminates. The two synthetic
+messages the test inserted were deleted afterwards so they cannot pollute later
+analysis.
+
+`haversine` was referenced before it was imported. The module still loaded, because
+the reference sits inside a function body — it would have thrown only when a rare
+sender actually spoke, which is worse than a load-time failure. Import tests prove
+a module loads, not that its code paths resolve.

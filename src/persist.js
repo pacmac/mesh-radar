@@ -6,6 +6,53 @@ import {
 import db from './db.js';
 import { captureRelayObservation } from './relay-observation.js';
 import { noteInboundText } from './callout.js';
+import { defineHook } from './hooks.js';
+import { haversine } from './utils.js';
+
+// A TEXT FROM SOMEONE WE NEVER OR RARELY HEAR. Peter, 2026-08-03: "a text
+// message from a node we have never heard before or rarely hear?"
+//
+// A HOOK, not a worker, because the value is in the timing: a stranger is worth
+// knowing about while they are still awake and repliable. A cadence worker would
+// find it hours later, by which point the opportunity has gone.
+const RARE_SENDER = defineHook({
+  name: 'rare-sender', scope: 'per-node',
+  purpose: 'announces a text from a node we never or rarely hear, while it is still awake enough to answer',
+});
+
+/** Rare = at most `alerts.rare_sender_max` messages in the analysis window,
+ *  THIS ONE INCLUDED. The window is observatory.window_days, so the hook and the
+ *  board cannot disagree about what "recently" means. */
+function noteRareSender({ from_num, text, ts }) {
+  if (!from_num) return;
+  const max  = Math.max(1, Number(getConfig('alerts.rare_sender_max', 5)) || 5);
+  const days = Number(getConfig('observatory.window_days', 7)) || 7;
+  const from = ts - days * 86400;
+
+  const inWindow = db.prepare(
+    `SELECT COUNT(*) n FROM messages WHERE from_num = ? AND ts >= ?`).get(from_num, from)?.n ?? 0;
+  if (inWindow > max) return;                       // a regular — say nothing
+
+  const everBefore = db.prepare(
+    `SELECT COUNT(*) n FROM messages WHERE from_num = ? AND ts < ?`).get(from_num, ts)?.n ?? 0;
+  const node = db.prepare(
+    `SELECT short_name, long_name, lat, lon, last_heard FROM nodes WHERE num = ?`).get(from_num);
+  const home = homeLatLon();
+  const km = (home && node?.lat && node.lat !== 0)
+    ? Math.round(haversine(home.lat, home.lon, node.lat, node.lon) * 10) / 10 : null;
+
+  const who = node?.short_name || node?.long_name || `!${(from_num >>> 0).toString(16)}`;
+  RARE_SENDER.emit({
+    // A first-ever sender is the stronger signal and is called out as such.
+    severity: everBefore === 0 ? 'notice' : 'info',
+    summary: everBefore === 0
+      ? `FIRST EVER message from ${who}${km != null ? ` — ${km} km` : ''}`
+      : `${who} rarely speaks — ${inWindow} message${inWindow === 1 ? '' : 's'} in ${days}d${km != null ? `, ${km} km` : ''}`,
+    detail: { num: from_num, name: who, km, in_window: inWindow, window_days: days,
+              threshold: max, first_ever: everBefore === 0, ever_before: everBefore,
+              text: String(text ?? '').slice(0, 200) },
+  });
+}
 
 // Where we are, for measuring a two-way contact at reply time. Same
 // `home.lat`/`home.lon` pair the inferences and the hooks read, so no two parts
@@ -408,6 +455,13 @@ function handlePacket(packet, device, ts, replay) {
         { home: homeLatLon() });
     } catch (e) {
       console.error(`[persist] callout reply check failed: ${e.message}`);
+    }
+
+    // Same rule as above: a fault in bookkeeping must never cost us the message.
+    try {
+      noteRareSender({ from_num: packet.from || 0, text, ts: packet.rx_time || ts });
+    } catch (e) {
+      console.error(`[persist] rare-sender check failed: ${e.message}`);
     }
     return;
   }
