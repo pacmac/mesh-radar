@@ -75,32 +75,56 @@ export function dominantDoor() {
   return { num: best, carried: bestN, share: total ? bestN / total : 0 };
 }
 
-/** The set of nodes that have ever been a first hop, keyed by their LOW BYTE.
+/** Candidate doors keyed by their LOW BYTE, so relay_node can name one.
  *
- *  This is what makes relay_node usable. The byte alone names ~4.64 candidate
- *  nodes across the 946 we know; restricted to nodes that have actually served
- *  as a door it is 17 doors over 16 bytes, with one collision (byte 4) that the
- *  route count settles 2039 to 10.
+ *  Candidacy is AUDIBILITY, not past service. An earlier version of this
+ *  admitted only nodes that had already been route[0], which was a bootstrap
+ *  circularity — a relay had to be a door to qualify as a door, so one we had
+ *  never routed through could never become one. That is the same trap the
+ *  module exists to escape. S2 (!10596db0, byte 176) carries 213 packets from
+ *  71 nodes and was permanently excluded by it.
+ *
+ *  Being audible is what makes a node usable as a first hop, so the candidates
+ *  are everything we have heard directly, plus everything that has served.
+ *  Widening costs almost nothing: 55 candidates over 47 bytes, and of the seven
+ *  bytes we actually observe only byte 4 is ambiguous — as it already was.
  */
 function doorsByByte() {
-  const byByte = new Map();
+  const cand = new Map();   // num -> { routed, direct, heard }
+  const bump = (num, field, by = 1) => {
+    if (num == null) return;
+    const c = cand.get(num) || { routed: 0, direct: 0, heard: 0 };
+    c[field] += by;
+    cand.set(num, c);
+  };
+
   for (const r of db.prepare(`SELECT route FROM traceroute_history
                                WHERE status='ok' AND route <> '[]'`).all()) {
     const chain = J(r.route).filter(n => n !== BROADCAST);
-    if (!chain.length) continue;
-    const num = chain[0], b = num & 0xff;
-    const seen = byByte.get(b) || new Map();
-    seen.set(num, (seen.get(num) || 0) + 1);
-    byByte.set(b, seen);
+    if (chain.length) bump(chain[0], 'routed');
   }
-  // collapse each byte to its most-used door
+  for (const r of db.prepare(`SELECT num, COUNT(*) c, MAX(ts) t
+                                FROM signal_history GROUP BY num`).all()) {
+    bump(r.num, 'direct', r.c); bump(r.num, 'heard', r.t);
+  }
+  for (const r of db.prepare(`SELECT from_num num, COUNT(*) c, MAX(ts) t
+                                FROM relay_observation WHERE relay_byte = 0
+                               GROUP BY from_num`).all()) {
+    bump(r.num, 'direct', r.c); bump(r.num, 'heard', r.t);
+  }
+
+  // Strongest evidence wins the byte: a proven door beats a merely audible
+  // node (this is what keeps byte 4 on !2d4cd04, 2039 routes against 10),
+  // then more direct receptions, then more recently heard.
+  const better = (a, b) => a.routed !== b.routed ? a.routed > b.routed
+                         : a.direct !== b.direct ? a.direct > b.direct
+                         : a.heard  >  b.heard;
   const out = new Map();
-  for (const [b, seen] of byByte) {
-    let best = null, bestN = 0;
-    for (const [num, c] of seen) if (c > bestN) { bestN = c; best = num; }
-    out.set(b, best);
+  for (const [num, c] of cand) {
+    const b = num & 0xff, cur = out.get(b);
+    if (!cur || better(c, cur.c)) out.set(b, { num, c });
   }
-  return out;
+  return new Map([...out].map(([b, v]) => [b, v.num]));
 }
 
 /** The door this target's packets REACH US through.

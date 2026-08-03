@@ -1,7 +1,7 @@
 ---
 module: doors
 source: src/doors.js
-source_hash: f8391fa27a811b991412deae6e3c001c4240127847eb8fdff231bb55c5124557
+source_hash: f574c8808fe6dfdbefd92afc5952916d6ff744f874d514ef73bbad6b514409fc
 updated: 2026-08-03
 ---
 
@@ -54,16 +54,49 @@ identically on the same rows:
 Not comparable to the 63% above — that is exact-node scoring on a different set.
 Within this test, like for like, the byte wins by ~30 points.
 
-### Resolving the byte to a node
+### Resolving the byte to a node — candidates are AUDIBLE nodes, not past doors
 
-`relay_node` is a **low byte**, so it names 4.64 candidate nodes on average
-across all 946 known nodes. Constraining candidates to nodes that have **ever
-been `route[0]`** collapses that: 17 doors over 16 distinct bytes, with exactly
-one collision (byte `4`: 2039 routes vs 10) broken by usage count.
+`relay_node` is a **low byte**, so across all 946 known nodes it names 4.64
+candidates on average. The candidate set must be narrowed, but narrowing it to
+*nodes that have already been `route[0]`* was a **bootstrap circularity**: a
+relay had to already be a door to qualify as a door, so a relay we had never
+routed through could never become one. That is the same trap this module was
+built to escape, reintroduced one level down. Peter caught it.
 
-A door is therefore resolved as: modal non-zero `relay_byte` for this target →
-the known door sharing that byte → most-used on a tie. No match, no `relay`
-source; fall through to `dominant`.
+The correct test is **audibility**, because being audible is what makes a node
+usable as a first hop. Candidates are therefore the union of:
+
+| source | meaning | n |
+|---|---|---|
+| `signal_history` | heard directly | 36 |
+| `relay_observation` with `relay_byte = 0` | arrived unrelayed | 24 |
+| ever `route[0]` | already served as a door | 17 |
+| **union** | | **55** |
+
+**Widening costs almost nothing.** 55 candidates over 47 distinct bytes, 7 of
+which collide. Of the **7 bytes we actually observe as relays** (`2 4 20 80 176
+177 180`) only byte `4` is ambiguous — and it already was. Byte `176` resolves
+uniquely to **S2** (`!10596db0`, 30.1 km, az 227°), which carries 213 packets
+from 71 nodes and was permanently excluded under the old rule.
+
+Tie-break order, strongest evidence first:
+
+1. most times used as `route[0]` — a proven door beats a merely audible node,
+   which keeps byte `4` resolving to `!2d4cd04` (2039 routes vs 10)
+2. most direct receptions — better evidence we can actually reach it
+3. most recently heard
+
+No candidate for the byte → no `relay` source; fall through to `dominant`.
+
+**Measured**: observed bytes resolvable went **6 of 7 → 7 of 7**; byte `176`
+newly maps to `!10596db0` (S2) and the other six are byte-identical, so nothing
+regressed.
+
+**And it still changes no aim today.** No node has `176` as its *modal* relay
+byte — all 71 that reach us via S2 reach us more often via bytes `2` or `4`
+(3065 and 1814 packets against 213). S2 is now selectable and is never
+selected. Modal choice buries a minority relay even when it is the more useful
+door, which is a second, separate limiter recorded as **B73** — not fixed here.
 
 ### Measured effect on aiming: NONE, today
 
