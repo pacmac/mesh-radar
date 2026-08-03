@@ -27,6 +27,34 @@ import db from './db.js';
 import { haversine, bearing as bearingOf } from './utils.js';
 
 const BROADCAST = 4294967295;
+
+// Roles that carry other nodes' traffic — a declared relay is a better door
+// candidate than an audible client. CLIENT_MUTE is the explicit opposite: it
+// never rebroadcasts, so it can never be a door however loud or close.
+//
+// Peter, 2026-08-04: "we should not waste time tring to get replies from
+// touters, but we need to use them for what they are and not treat them as just
+// another endpoint which they are not." Role belongs HERE, in door selection —
+// not in the target ranking, where the first design wrongly put it.
+const RELAY_ROLES = new Set(['ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'REPEATER']);
+
+// A RELAY AND A ROUTER ARE NOT THE SAME THING, and conflating them loses the
+// distinction that matters. Peter, 2026-08-04: "we have relays which can be any
+// node, but we also have routers, their role is different and we should classify
+// and treat them as such."
+//
+//   relay  — OBSERVED behaviour. Any node can end up carrying a packet; it says
+//            nothing about intent and may never happen again.
+//   router — DECLARED role. The operator configured it to carry other people's
+//            traffic. It is infrastructure, and it will keep doing that.
+//
+// Both can be a door. Only one is dependable, and only one is worth siting a
+// corridor on. `kind` carries the difference to every caller.
+function doorKind(role) {
+  if (RELAY_ROLES.has(role)) return 'router';
+  if (role === 'CLIENT_MUTE') return 'never';      // cannot relay, by configuration
+  return 'relay';                                  // observed only, or role unknown
+}
 const J = (s) => { try { const a = JSON.parse(s); return Array.isArray(a) ? a : []; } catch { return []; } };
 
 // Beyond this a door is far enough that pointing gain plausibly matters. Inside
@@ -90,10 +118,10 @@ export function dominantDoor() {
  *  bytes we actually observe only byte 4 is ambiguous — as it already was.
  */
 function doorsByByte() {
-  const cand = new Map();   // num -> { routed, direct, heard }
+  const cand = new Map();   // num -> { routed, direct, heard, relay }
   const bump = (num, field, by = 1) => {
     if (num == null) return;
-    const c = cand.get(num) || { routed: 0, direct: 0, heard: 0 };
+    const c = cand.get(num) || { routed: 0, direct: 0, heard: 0, relay: 0 };
     c[field] += by;
     cand.set(num, c);
   };
@@ -113,10 +141,25 @@ function doorsByByte() {
     bump(r.num, 'direct', r.c); bump(r.num, 'heard', r.t);
   }
 
-  // Strongest evidence wins the byte: a proven door beats a merely audible
-  // node (this is what keeps byte 4 on !2d4cd04, 2039 routes against 10),
-  // then more direct receptions, then more recently heard.
+  // ROLE, read once for every candidate. A CLIENT_MUTE is struck out entirely —
+  // it cannot relay by configuration, so admitting it would guarantee aiming at
+  // a node that can never carry us.
+  for (const num of [...cand.keys()]) {
+    const role = db.prepare('SELECT role FROM nodes WHERE num = ?').get(num)?.role || null;
+    if (role === 'CLIENT_MUTE') { cand.delete(num); continue; }
+    if (RELAY_ROLES.has(role)) cand.get(num).relay = 1;
+  }
+
+  // Strongest evidence wins the byte, OBSERVATION BEFORE DECLARATION:
+  //   1. times used as route[0] — it has actually carried us (keeps byte 4 on
+  //      !2d4cd04, 2039 routes against 10)
+  //   2. relay-capable role     — its declared function is to carry traffic
+  //   3. direct receptions      — we can definitely hear it
+  //   4. most recently heard
+  // A node that has carried our traffic outranks one whose role field merely
+  // says it would.
   const better = (a, b) => a.routed !== b.routed ? a.routed > b.routed
+                         : a.relay  !== b.relay  ? a.relay  > b.relay
                          : a.direct !== b.direct ? a.direct > b.direct
                          : a.heard  >  b.heard;
   const out = new Map();
@@ -175,19 +218,24 @@ export function doorAim(targetNum) {
   const p = pos(door);
   if (!p?.lat || p.lat === 0) return null;
 
+  const role = db.prepare('SELECT role FROM nodes WHERE num = ?').get(door)?.role || null;
+  const kind = doorKind(role);
   const km = haversine(h.lat, h.lon, p.lat, p.lon);
   return {
     az: Math.round(bearingOf(h.lat, h.lon, p.lat, p.lon)),
     door,
     name: p.short_name || p.long_name || `!${door.toString(16)}`,
     source,
+    // Declared infrastructure vs merely observed. See doorKind().
+    role, kind, is_router: kind === 'router',
     km: +km.toFixed(1),
     // The honest part. A door inside the omni's proven reach does not need a
     // 9 dBi beam, and saying so is more useful than rotating for appearances.
     needsBeam: km >= BEAM_WORTH_IT_KM,
-    why: source === 'known'  ? 'this target answered through it before'
-       : source === 'relay'  ? 'this target reaches us through it (inbound relay, unproven outbound)'
-       :                       'carries most of our completed routes',
+    why: (source === 'known'  ? 'this target answered through it before'
+        : source === 'relay'  ? 'this target reaches us through it (inbound relay, unproven outbound)'
+        :                       'carries most of our completed routes')
+       + (kind === 'router' ? ' — and it is a declared ROUTER, not just a node that happened to relay' : ''),
   };
 }
 

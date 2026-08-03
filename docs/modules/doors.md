@@ -1,7 +1,7 @@
 ---
 module: doors
 source: src/doors.js
-source_hash: f574c8808fe6dfdbefd92afc5952916d6ff744f874d514ef73bbad6b514409fc
+source_hash: b4f091601b9cff9d23a8650523f31f5ab78950913580a095633a511dd34cdb84
 updated: 2026-08-03
 ---
 
@@ -156,3 +156,72 @@ replaced.
 
 - Which radio transmits — `dash-mode` owns that (`transmitterForMode`)
 - Changing the shortlist — this only changes where the beam points
+
+## Role: a router is infrastructure, not a destination (2026-08-04)
+
+Peter, 2026-08-04: *"repeaters are gold dust to us"*, then, when the first design
+proposed targeting them harder:
+
+> *"we should not waste time tring to get replies from touters, but we need to
+> use them for what they are and not treat them as just another endpoint which
+> they are not"*
+
+A `ROUTER` / `ROUTER_LATE` / `ROUTER_CLIENT` / `REPEATER` exists to carry other
+people's traffic. Whether it personally answers a traceroute is close to
+irrelevant — and 31 such nodes sit within 250 km having **never once** been our
+`route[0]`, while the attempt budget went to ordinary clients (`79fc`, a CLIENT,
+tried 88 times; `JRSY`, a live ROUTER 29 km past the record, tried 4).
+
+So role enters **here**, in door selection, and explicitly **not** in the target
+ranking (`docs/modules/inferences.md` records that rejected design).
+
+### Where role applies
+
+- **Candidacy.** `doorsByByte()` admits any audible node. A relay-capable node is
+  a *better* door candidate than an audible client, because relaying is its
+  declared function rather than an accident.
+- **Disambiguation.** When a low byte matches several candidates, a relay-capable
+  node now outranks a non-relay one before the direct/heard tie-breaks.
+- **`CLIENT_MUTE` is excluded outright.** It never rebroadcasts, by
+  configuration, so it can never be a door however loud or close it is. Admitting
+  one would guarantee aiming at a node that cannot carry us.
+
+### Order of evidence, revised
+
+1. times used as `route[0]` — measured fact beats declared intent
+2. **relay-capable role** — declared function
+3. direct receptions
+4. most recently heard
+
+Observation beats declaration deliberately: a node that has actually carried our
+traffic is better evidence than a role field claiming it would. This keeps byte
+`4` on `!2d4cd04` (2039 routes) regardless of anyone's role.
+
+### Measured: routers carry 95% of everything
+
+Every door that has ever carried one of our completed routes, 2026-08-04:
+
+```
+T4     2044 routes  ROUTER          TE 5   26  ROUTER
+fir     764 routes  ROUTER          E1     12  ROUTER
+TA2o     82 routes  CLIENT_BASE     RDEw   10  ROUTER
+TA2m     35 routes  unset           TivN    9  ROUTER
+
+6 declared routers  ->  2865 routes  (95.1%)
+11 observed relays  ->   148 routes  ( 4.9%)   — 4 of the 11 are our own radios
+```
+
+The distinction Peter drew is the dominant fact about our routing, not a
+taxonomy exercise: **declared routers carry 95.1% of our traffic**, and the
+"relays" that make up the remainder are mostly our own units talking to each
+other. Preferring a router when resolving a door is therefore backed by where the
+traffic actually goes, not by the role field's promise.
+
+`doorAim()` returns `role`, `kind` (`router` | `relay` | `never`) and
+`is_router`, so a caller can treat infrastructure differently from a node that
+happened to carry one packet.
+
+**Beware `role` as a data source**: three nodes carry `role = "200.0"`, a float
+in an enum column, including one of our own bench units (B77). Junk falls through
+to `kind: 'relay'`, which is the safe direction — it can never promote a mute
+node to usable — but that is luck rather than design.

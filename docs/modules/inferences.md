@@ -589,3 +589,28 @@ silent, cooling or exhausted).
 The remaining 58 are the long tail: nodes with 300–865 attempts and past hits
 that fall through `reconfirm` for being nearer than 100 km or attempted within
 7 days. A different defect, deliberately not swept in here.
+
+
+## Relay capability is NOT a targeting boost (task `rank-by-relay-capability`, 2026-08-04)
+
+The first design for this task added a rank bonus so relay-capable nodes were
+*targeted* more often. Peter stopped it before it shipped:
+
+> *"we should not waste time tring to get replies from touters, but we need to
+> use them for what they are and not treat them as just another endpoint which
+> they are not"*
+
+He is right, and the bonus would have made the original defect worse in a new
+direction. A `ROUTER` is **infrastructure, not a destination**. Its job is to
+carry other people's traffic; whether it personally replies to a traceroute is
+close to irrelevant, and spending the airtime budget trying to make it answer is
+the same error as spending 88 attempts on `79fc`, only more expensive because
+routers are further away.
+
+**No change is made to the class ladder.** `nodes.role` deliberately does not
+enter the ranking here.
+
+The finding that prompted it — 31 relay-capable nodes within 250 km, none ever
+our `route[0]` — is real, but the answer belongs in `doors.js`: prefer
+relay-capable nodes when choosing and disambiguating a **door**. See
+`docs/modules/doors.md`.
