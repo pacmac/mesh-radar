@@ -1,8 +1,8 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: 8cb83c5633e338cbcd0c6abd6e9d762f40468a0a5c4ee69a8af8a34988bb3158
-updated: 2026-07-09
+source_hash: a934f0166bc235c0d651489912f4e3ab8fa430b2753881cd7136874bedcd760f
+updated: 2026-08-03
 ---
 
 # Module: app-radar
@@ -122,3 +122,15 @@ optional visualization mode:
 The plotted node dot radius was doubled — `r = isSelected ? 6 : 4` (was `3 : 2`).
 The colored proximity halo (`r + 2`) scales with it; the selection ring (`r: 8`)
 and label offset are unchanged.
+
+## Per-hop SNR labels (B72, 2026-08-03)
+
+`_drawRadarTraceroute` labels each adjacent hop with its SNR. Those values arrive
+**already in dB with `null` for unmeasured hops**, decoded once at the `app-ws.js`
+ingest boundary — this mixin does no arithmetic on them.
+
+It previously divided by 4 here but had **no sentinel guard**, so a hop the
+firmware could not measure was drawn as a confident `-32.0`. The existing
+`!= null` test now filters those correctly because the sentinel becomes `null`
+at ingest. The local is named `snrHopDb`, not `snrRaw` — it is not raw, and the
+old name was part of how the bug survived.

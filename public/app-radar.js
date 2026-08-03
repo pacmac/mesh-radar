@@ -168,14 +168,17 @@ export const radarMixin = {
           style: `stroke:${col};stroke-width:${sw};stroke-linecap:round;stroke-dasharray:${adjacent ? '0,4' : '0,7'}`,
         }));
         if (adjacent) {
-          const snrRaw = snrs[ai] ?? null;
-          if (snrRaw != null) {
+          const snrHopDb = snrs[ai] ?? null;   // null == unmeasured hop, already filtered at ingest
+          if (snrHopDb != null) {
             const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
             const lbl = svgElem('text', {
               x: mx.toFixed(1), y: (my - 4).toFixed(1),
               style: `fill:${col};font-size:8px;font-family:'Oxanium',monospace;text-anchor:middle`,
             });
-            lbl.textContent = `${snrRaw / 4 >= 0 ? '+' : ''}${(snrRaw / 4).toFixed(1)}`;
+            // Already dB (decoded once at WS ingest, B72). Previously this
+            // divided by 4 here but had no sentinel guard, so an unmeasured
+            // hop was drawn as a confident "-32.0".
+            lbl.textContent = `${snrHopDb >= 0 ? '+' : ''}${snrHopDb.toFixed(1)}`;
             rg.appendChild(lbl);
           }
         }

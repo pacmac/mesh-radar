@@ -104,11 +104,10 @@ export const perfMixin = {
     return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
   },
 
-  _perfSnr(raw) {
-    // Meshtastic uses signed quarter-dB units. -128 is a sentinel in some route rows.
-    if (raw == null || raw <= -127) return null;
-    return raw / 4;
-  },
+  // B72: _perfSnr lived here and was the only CORRECT decoder of the three.
+  // It is gone rather than shared: decoding now happens once, at the app-ws.js
+  // ingest boundary, so every row reaching this mixin already holds dB with
+  // null for unmeasured hops. Re-introducing a /4 here would double-decode.
 
   // ── Traceroute history ────────────────────────────────────────────────────
 
@@ -282,11 +281,11 @@ export const perfMixin = {
     const firstHopPoint = direct ? targetPoint : this._perfNodePoint(row, firstHopNum);
     const firstHopDistKm = this._perfDistFromHomeToPoint(firstHopPoint);
     const metricDistKm = direct ? targetDistKm : firstHopDistKm;
-    // snr_towards / snr_back are stored in units of 0.25 dB (Meshtastic proto)
-    const snrTx   = this._perfSnr(row.snr_towards?.[0]);
+    // Already dB, already null-for-unmeasured — decoded once at WS ingest (B72).
+    const snrTx   = row.snr_towards?.[0] ?? null;
     const snrRx   = direct
-      ? this._perfSnr(row.snr_back?.[0])
-      : this._perfSnr(row.snr_back?.[row.snr_back.length - 1]);
+      ? (row.snr_back?.[0] ?? null)
+      : (row.snr_back?.[row.snr_back.length - 1] ?? null);
     const gapTx = this.perfSnrGap(snrTx, metricDistKm);
     const marginTx = this.perfMargin(snrTx);
     const validTx = snrTx != null && metricDistKm != null && metricDistKm > 0.1;

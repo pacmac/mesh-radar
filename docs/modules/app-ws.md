@@ -1,8 +1,8 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 1bbf536b911f2924c805870ab5748f7e81a64664ba93b04b49d773b849159991
-updated: 2026-08-02
+source_hash: 4c6a98ea2221b137c0d96e0aa602f32bc73e1552a7152066dfc71b99911b949a
+updated: 2026-08-03
 ---
 
 # Module: app-ws
@@ -93,6 +93,22 @@ map. This spec exists to hash-guard the file and record fixed contracts.
 - `route_discovered`: entry now carries `id` (DB row id) and `status:'ok'`,
   is pushed to `_trHistAll` for all devices, and prepends to the visible
   slice only on scope match. `ev.ts` in ms is normalized to seconds.
+
+### The traceroute SNR ingest boundary (B72)
+
+This module is the **sole entry point** for traceroute data into the browser —
+"History arrives EXCLUSIVELY over WS" (`app-perf.js`). It is therefore where
+quarter-dB decoding happens, **once**, via `snrDbList()` from `app-helpers.js`.
+`decodeRowSnr()` applies it to whole rows (and arrays of rows).
+
+Every `snr_towards` / `snr_back` is decoded at all five ingest points: the
+`traceroute_history` replay, `traceroute_failed`, the live `tracerouteResult`,
+the node's `last_traceroute`, and the `perfHistory` entry.
+
+**Everything downstream of this module holds dB and `null` — never raw wire
+units.** No consumer may divide by 4 or test for `-128`; if one needs to, this
+boundary has been bypassed and that is the bug. This module applies the shared
+decoder and never does the arithmetic itself.
 
 ## Phase C2 — device_list ingestion
 

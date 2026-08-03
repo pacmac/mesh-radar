@@ -1,8 +1,8 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: 354cb865fcabeebdbc9a2eeb98b636d20d225d01c05948102ae58d2431612a4c
-updated: 2026-07-09
+source_hash: 9f2300323b3597629c004b0a22e398dc61d06eef9be249f570165a82c699141e
+updated: 2026-08-03
 ---
 
 # Module: app-perf
@@ -27,6 +27,12 @@ must attribute to exactly one device.
   chain; `snrRx` (= `snr_back[last]`) its RX chain. The device key for all
   performance math is therefore **`tx_device` — the dispatching radio**,
   stamped by `traceroute.js` from the pending dispatch at result time.
+- Those SNR values arrive here **already in dB, with `null` for hops the
+  firmware could not measure**. This mixin does not decode them. It used to —
+  `_perfSnr()` was the only correct quarter-dB decoder of the three consumers
+  (B72) — but decoding now happens once at the `app-ws.js` ingest boundary, so
+  `_perfSnr` is gone. Re-introducing a `/4` here would double-decode. See
+  `docs/modules/app-helpers.md`.
 - `rx_device` (whichever radio's BLE event delivered the reply — can differ
   with colocated radios) is retained as a diagnostic only. Grouping by it
   would be physically wrong.

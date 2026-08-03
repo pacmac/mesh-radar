@@ -36,6 +36,35 @@ export function rssiPercent(rssi) {
   return Math.max(0, Math.min(100, Math.round((rssi + 120) / 70 * 100)));
 }
 
+// ── Traceroute SNR: the browser's ONLY quarter-dB decoder ────────────────────
+//
+// RouteDiscovery on the wire (meshtastic/protobufs, mesh.proto):
+//   repeated int32 snr_towards = 2;  // The list of SNRs (in dB, scaled by 4)
+//   repeated int32 snr_back    = 4;  // ditto
+//
+// So the wire is QUARTER-dB. Dividing by 4 is a protocol fact, not a display
+// choice. -128 is INT8_MIN, written when the firmware could not measure that
+// hop; decoded it would read -32 dB, below LoRa's demodulation floor, so it
+// cannot be a reading and must become null.
+//
+// B72: three consumers each decoded this differently — perf correctly, radar
+// scaled but rendered the sentinel as "-32.0", and the traceroute panel showed
+// raw quarter-dB suffixed "dB" (so +24.0dB for a 6 dB hop). The fix is not
+// three fixes. Decoding happens ONCE, at the app-ws.js ingest boundary; every
+// consumer downstream receives dB and nulls. Nothing below ingest may divide
+// by 4 or test for -128 — if it needs to, the boundary was bypassed.
+export const SNR_UNKNOWN = -128;
+
+export function snrDb(raw) {
+  if (raw == null) return null;
+  if (raw <= -127) return null;   // range test, not === -128: nothing this low is real
+  return raw / 4;
+}
+
+export function snrDbList(arr) {
+  return Array.isArray(arr) ? arr.map(snrDb) : [];
+}
+
 export function ageColor(lastHeard, maxAge = 3600) {
   if (!lastHeard) return 'rgba(255,255,255,0.25)';
   const ageSec = Math.max(0, Date.now() / 1000 - lastHeard);
