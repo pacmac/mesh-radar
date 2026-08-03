@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 9b83cde206506a7fa354ece4eb7dfdd28a01338f3485859f2478d29dbd9ab0c1
+source_hash: 6c0dccfe78ccc909ffddbf71aae5cb79dd8954ea665ea6f4f7e7c2c4ba5e3d9a
 updated: 2026-08-03
 ---
 
@@ -478,6 +478,53 @@ that boundary reads 100%.
 **A missing epoch means "nothing known to be censored" and changes nothing.**
 `perf.failure_epoch` defaults to `null`, and a naive `ts >= null` would drop every row and
 render an empty page.
+
+## `boardVerdicts(days)` — alive / productive / progressing
+
+Task `board-verdicts`. Peter, 2026-08-03: *"at first glance it has been identical since it
+was first built, I see no progress and no evidence that anything is even happening."*
+
+Three verdicts, each `ok` | `warn` | `fault`, each with a **server-written basis string** —
+BROWSER_CONTRACT gives the browser no decisions, and a coloured light with no stated reason
+is a magic number wearing a colour.
+
+Its specification is the five failures invisible on 2026-08-02/03: passive tracing off 9.5 h;
+`traceroute.enabled` false 5 days; answer rate 58% → 7%; the beam 148° off; the record flat
+30 days.
+
+| verdict | judged against | thresholds |
+|---|---|---|
+| LOOP | `discovery.interval_sec`, not a fixed number | ok ≤ 3×, warn ≤ 20×, else fault |
+| YIELD | the PREVIOUS window of equal length | ok ≥ 80% of prior, warn ≥ 50%, else fault |
+| FRONTIER | previous window, plus days since the record moved | ok if higher, fault if flat > 7 days |
+
+First live output at a 7-day window:
+
+```
+LOOP      OK      last attempt 82s ago, 48/hour
+YIELD     OK      6% of 1299, previous period 7%
+FRONTIER  FAULT   92.0 km — record 189.1 km unbeaten 29 days
+```
+
+### KNOWN FLAW: YIELD normalises to whatever came before
+
+It reads OK at 6% because 6% against a prior 7% is a ratio of 0.86. **A sustained bad rate
+becomes the new baseline and goes green.** It would have caught 58% → 7% while it was
+falling, and reports nothing once it has settled.
+
+That is recorded, not fixed. Two candidate remedies, neither chosen: an absolute floor
+alongside the ratio, or comparison against a longer baseline than the window. The second
+interacts with the global window and should be decided with it.
+
+FRONTIER does not share the flaw — `flat_days` is measured against the all-time record, so
+it cannot be normalised away by a poor recent period.
+
+### Sparklines
+
+Per-day buckets. A day under 15 attempts yields `null` and BREAKS the line, reusing the rule
+proven in `rateByBandByDay`: a gap reads as "not known", a zero reads as "nothing
+happened", and those are different claims. The loop series shows the 5-day blackout plainly
+— `468 1 4 1 8 306 511`.
 
 ## Invariants
 

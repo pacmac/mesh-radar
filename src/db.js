@@ -925,6 +925,131 @@ export function radioAirtime(num) {
   };
 }
 
+/** THE BOARD'S THREE VERDICTS. Task `board-verdicts`.
+ *
+ *  Peter, 2026-08-03: "at first glance it has been identical since it was first
+ *  built, I see no progress and no evidence that anything is even happening."
+ *
+ *  The board's job is to say whether the hunt is WORKING, not to list state. Its
+ *  specification is the five failures that were invisible on 2026-08-02/03:
+ *  passive tracing off for 9.5 h; traceroute.enabled false for 5 days; close-range
+ *  answer rate 58% -> 7%; the beam 148 deg off; the record flat 30 days. A board
+ *  that would not surface those is not finished.
+ *
+ *  Every verdict carries a SERVER-WRITTEN basis string. BROWSER_CONTRACT gives the
+ *  browser no decisions, and a coloured light with no stated reason is a magic
+ *  number wearing a colour.
+ */
+export function boardVerdicts(days = 30) {
+  const now  = Math.floor(Date.now() / 1000);
+  const win  = Number(days) > 0 ? Number(days) : 3650;   // "all time" still needs a span
+  const from = now - win * 86400;
+  const prevFrom = from - win * 86400;
+  const home = db.prepare(`
+    SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') lon`).get();
+  const KM = `6371.0*2*asin(min(1.0,sqrt(
+      power(sin((n.lat-@hlat)*0.0174532925/2),2) +
+      cos(@hlat*0.0174532925)*cos(n.lat*0.0174532925)*
+      power(sin((n.lon-@hlon)*0.0174532925/2),2))))`;
+
+  // ── LOOP ──────────────────────────────────────────────────────────────────
+  // Judged against the CONFIGURED cadence, not a fixed number, so the verdict
+  // follows discovery.interval_sec instead of contradicting it.
+  const interval = Number((getConfig('discovery', {}) || {}).interval_sec) || 180;
+  const lastTs = db.prepare('SELECT MAX(ts) t FROM traceroute_history').get()?.t ?? null;
+  const since  = lastTs ? now - lastTs : null;
+  const perHour = db.prepare(
+    `SELECT COUNT(*) n FROM traceroute_history WHERE ts > ?`).get(now - 3600).n;
+  let loopState = 'fault', loopBasis;
+  if (since == null) {
+    loopBasis = 'no attempt has ever been recorded';
+  } else if (since <= interval * 3) {
+    loopState = 'ok';   loopBasis = `last attempt ${since}s ago, ${perHour}/hour`;
+  } else if (since <= interval * 20) {
+    loopState = 'warn'; loopBasis = `last attempt ${Math.round(since / 60)} min ago, expected every ${interval}s`;
+  } else {
+    loopBasis = `nothing sent for ${Math.round(since / 3600)}h — expected every ${interval}s`;
+  }
+
+  // ── YIELD ─────────────────────────────────────────────────────────────────
+  // Against the PREVIOUS window of equal length. A rate alone cannot show
+  // degradation; only a comparison can, and degradation is what went unseen for
+  // three weeks.
+  const rate = (a, b) => {
+    const r = db.prepare(
+      `SELECT COUNT(*) att, SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) ok
+         FROM traceroute_history WHERE ts > ? AND ts <= ?`).get(a, b);
+    return { att: r.att, ok: r.ok || 0, pct: r.att ? (100 * (r.ok || 0)) / r.att : null };
+  };
+  const cur = rate(from, now), prev = rate(prevFrom, from);
+  let yState = 'ok', yBasis;
+  if (!cur.att) {
+    yState = 'fault'; yBasis = 'no attempts in this window';
+  } else if (cur.ok === 0 && cur.att >= 20) {
+    yState = 'fault'; yBasis = `0 of ${cur.att} answered`;
+  } else if (prev.pct != null && prev.pct > 0) {
+    const ratio = cur.pct / prev.pct;
+    yState = ratio >= 0.8 ? 'ok' : ratio >= 0.5 ? 'warn' : 'fault';
+    yBasis = `${cur.pct.toFixed(0)}% of ${cur.att}, previous period ${prev.pct.toFixed(0)}%`;
+  } else {
+    yBasis = `${cur.pct.toFixed(0)}% of ${cur.att} answered`;
+  }
+
+  // ── FRONTIER ──────────────────────────────────────────────────────────────
+  const best = (a, b) => db.prepare(`
+    SELECT MAX(${KM}) km FROM traceroute_history t JOIN nodes n ON n.num = t.to_num
+     WHERE t.status='ok' AND n.lat IS NOT NULL AND n.lat <> 0 AND t.ts > @a AND t.ts <= @b`)
+    .get({ a, b, hlat: home?.lat ?? 0, hlon: home?.lon ?? 0 })?.km ?? null;
+  const curKm = best(from, now), prevKm = best(prevFrom, from);
+  const rec = db.prepare(`
+    SELECT MAX(${KM}) km, MAX(t.ts) ts FROM traceroute_history t JOIN nodes n ON n.num = t.to_num
+     WHERE t.status='ok' AND n.lat IS NOT NULL AND n.lat <> 0`)
+    .get({ hlat: home?.lat ?? 0, hlon: home?.lon ?? 0 });
+  const recordKm = rec?.km != null ? Math.round(rec.km * 10) / 10 : null;
+  // Days since the ALL-TIME record was last improved — the honest "are we
+  // progressing" number, and the one the board has been hiding behind.
+  const recAt = recordKm == null ? null : db.prepare(`
+    SELECT MIN(t.ts) ts FROM traceroute_history t JOIN nodes n ON n.num = t.to_num
+     WHERE t.status='ok' AND n.lat IS NOT NULL AND ${KM} >= @rk`)
+    .get({ hlat: home?.lat ?? 0, hlon: home?.lon ?? 0, rk: recordKm - 0.05 })?.ts ?? null;
+  const flatDays = recAt ? Math.floor((now - recAt) / 86400) : null;
+  let fState = 'warn', fBasis;
+  if (curKm == null) {
+    fState = 'fault'; fBasis = 'nothing answered in this window';
+  } else if (prevKm != null && curKm > prevKm) {
+    fState = 'ok';    fBasis = `${curKm.toFixed(1)} km, up from ${prevKm.toFixed(1)} km`;
+  } else if (flatDays != null && flatDays > 7) {
+    fState = 'fault'; fBasis = `${curKm.toFixed(1)} km — record ${recordKm} km unbeaten ${flatDays} days`;
+  } else {
+    fBasis = `${curKm.toFixed(1)} km, previous period ${prevKm != null ? prevKm.toFixed(1) + ' km' : 'nothing'}`;
+  }
+
+  // ── SPARKLINES ────────────────────────────────────────────────────────────
+  // Per day over the window. A day with too few attempts returns null and BREAKS
+  // the line — the rule already proven in rateByBandByDay. A gap reads as "not
+  // known"; a zero reads as "nothing happened", and they are different claims.
+  const daily = db.prepare(`
+    SELECT date(t.ts,'unixepoch') day, COUNT(*) att,
+           SUM(CASE WHEN t.status='ok' THEN 1 ELSE 0 END) ok,
+           MAX(CASE WHEN t.status='ok' THEN ${KM} END) km
+      FROM traceroute_history t LEFT JOIN nodes n ON n.num = t.to_num
+     WHERE t.ts > @from GROUP BY day ORDER BY day`)
+    .all({ from, hlat: home?.lat ?? 0, hlon: home?.lon ?? 0 });
+  const MIN_ATT = 15;
+  return {
+    window_days: Number(days) || 0,
+    loop:     { state: loopState, since_sec: since, per_hour: perHour, basis: loopBasis,
+                series: daily.map(d => ({ day: d.day, v: d.att })) },
+    yield:    { state: yState, rate: cur.pct == null ? null : Math.round(cur.pct),
+                prev_rate: prev.pct == null ? null : Math.round(prev.pct), basis: yBasis,
+                series: daily.map(d => ({ day: d.day, v: d.att >= MIN_ATT ? Math.round(100 * d.ok / d.att) : null })) },
+    frontier: { state: fState, window_km: curKm == null ? null : Math.round(curKm * 10) / 10,
+                record_km: recordKm, flat_days: flatDays, basis: fBasis,
+                series: daily.map(d => ({ day: d.day, v: d.km == null ? null : Math.round(d.km * 10) / 10 })) },
+  };
+}
+
 export function lastHeardMap() {
   const m = new Map();
   for (const r of db.prepare(`SELECT num, last_heard FROM nodes WHERE last_heard IS NOT NULL`).all()) {

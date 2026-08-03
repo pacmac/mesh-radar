@@ -19,7 +19,7 @@ import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
 import { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
          attemptsByDay, answerRateBySilence, answerRateByDistance,
-         rateByBandByDay, windowBestKm } from './db.js';
+         rateByBandByDay, windowBestKm, boardVerdicts } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
 // every distance from it. A page load must not re-read config.
@@ -340,6 +340,10 @@ function charts() {
   // The furthest reached INSIDE the window — a different fact from record_km,
   // which stays all-time because it is the thing to beat. Windowed to 7 days the
   // record would read ~92 km and imply we had gone backwards.
+  // The three verdicts. Server-computed with a stated basis — the browser makes
+  // no decisions and neither should the operator's eyes. Task `board-verdicts`.
+  try { out.board = boardVerdicts(windowDays); }
+  catch (e) { console.error(`[observatory-ws] board verdicts failed: ${e.message}`); }
   try {
     const w = windowBestKm(windowDays);
     out.window_best_km  = w.km;
