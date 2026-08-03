@@ -5,6 +5,26 @@ import path from 'path';
 // and page agree by construction rather than by luck.
 import { haversine, bearing as bearingDeg } from './utils.js';
 
+// THE DIRECT-GATE EPOCH. Before commit 4340f56 (2026-07-27 20:01:25 +0100,
+// unix 1785178885) isDirectPacket tested hop arithmetic ALONE, so a RELAYED
+// packet could satisfy it and be written to signal_history as a direct
+// reception. Split on that timestamp, 2026-08-04:
+//
+//   before: 26 positioned nodes, furthest 143.2 km (JBS)
+//   after :  3 positioned nodes, furthest   2.5 km (GARG)
+//
+// Our verified direct reach is GARG at 2.5 km and the bench unit. The 143 km
+// "direct" contacts are artefacts of the old test.
+//
+// Rows are NOT deleted — the old test could not tell direct from relayed, which
+// is why it was replaced; it does not follow that every old row is false. They
+// are UNVERIFIED, so anything CLAIMING direct-ness filters on this epoch while
+// displays of raw history may still show them.
+//
+// Caveat: this is the COMMIT time. Deployment may have lagged it, so rows in the
+// minutes after are marginally less certain than the rest.
+export const DIRECT_GATE_TS = 1785178885;
+
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data/node-dash.db');
 
 const db = new Database(DB_PATH);
@@ -1116,8 +1136,10 @@ function frontierSeries(fromTs) {
 
   const rows = db.prepare(`
     SELECT t.ts, n.num, n.lat, n.lon, n.short_name, n.long_name,
-           (SELECT ROUND(AVG(s.snr),2) FROM signal_history s WHERE s.num = n.num) snr_db,
-           (SELECT COUNT(*)            FROM signal_history s WHERE s.num = n.num) direct_rx
+           (SELECT ROUND(AVG(s.snr),2) FROM signal_history s
+             WHERE s.num = n.num AND s.ts >= ${DIRECT_GATE_TS}) snr_db,
+           (SELECT COUNT(*)            FROM signal_history s
+             WHERE s.num = n.num AND s.ts >= ${DIRECT_GATE_TS}) direct_rx
       FROM traceroute_history t
       JOIN nodes n ON n.num = t.to_num
      WHERE t.status = 'ok' AND t.ts >= ?
@@ -1157,8 +1179,10 @@ function frontierStrip() {
     SELECT n.num, n.short_name, n.long_name, n.lat, n.lon,
            (SELECT COUNT(*) FROM traceroute_history t WHERE t.to_num = n.num) attempts,
            (SELECT COUNT(*) FROM traceroute_history t WHERE t.to_num = n.num AND t.status='ok') hits,
-           (SELECT ROUND(AVG(s.snr),2) FROM signal_history s WHERE s.num = n.num) snr_db,
-           (SELECT COUNT(*) FROM signal_history s WHERE s.num = n.num) direct_rx
+           (SELECT ROUND(AVG(s.snr),2) FROM signal_history s
+             WHERE s.num = n.num AND s.ts >= ${DIRECT_GATE_TS}) snr_db,
+           (SELECT COUNT(*) FROM signal_history s
+             WHERE s.num = n.num AND s.ts >= ${DIRECT_GATE_TS}) direct_rx
       FROM nodes n
      WHERE n.lat IS NOT NULL AND n.lat <> 0`).all();
 

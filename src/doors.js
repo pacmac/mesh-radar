@@ -23,7 +23,7 @@
 // irrelevant wherever it points. `doorNeedsBeam()` is what lets the runner say
 // so instead of solemnly rotating to no purpose.
 
-import db from './db.js';
+import db, { DIRECT_GATE_TS } from './db.js';
 import { haversine, bearing as bearingOf } from './utils.js';
 
 const BROADCAST = 4294967295;
@@ -121,7 +121,7 @@ function doorsByByte() {
   const cand = new Map();   // num -> { routed, direct, heard, relay }
   const bump = (num, field, by = 1) => {
     if (num == null) return;
-    const c = cand.get(num) || { routed: 0, direct: 0, heard: 0, relay: 0 };
+    const c = cand.get(num) || { routed: 0, direct: 0, legacy: 0, heard: 0, relay: 0 };
     c[field] += by;
     cand.set(num, c);
   };
@@ -131,9 +131,23 @@ function doorsByByte() {
     const chain = J(r.route).filter(n => n !== BROADCAST);
     if (chain.length) bump(chain[0], 'routed');
   }
-  for (const r of db.prepare(`SELECT num, COUNT(*) c, MAX(ts) t
+  // CLAIMING vs CANDIDACY. Rows before DIRECT_GATE_TS come from a test that
+  // could not tell direct from relayed (B76), so they may NEVER be used to claim
+  // "we heard this node directly" — the frontier card filters them out entirely.
+  //
+  // For CANDIDACY they still count, weakly. Dropping them would remove 16 of 36
+  // candidates and cost byte 176 its only resolution — S2 has four pre-gate rows
+  // and has never once arrived unrelayed — undoing the bootstrap fix for no gain.
+  // So they are kept as `legacy` and rank BELOW verified receptions rather than
+  // beside them.
+  for (const r of db.prepare(`SELECT num,
+                                     SUM(ts >= ${DIRECT_GATE_TS}) verified,
+                                     SUM(ts <  ${DIRECT_GATE_TS}) legacy,
+                                     MAX(ts) t
                                 FROM signal_history GROUP BY num`).all()) {
-    bump(r.num, 'direct', r.c); bump(r.num, 'heard', r.t);
+    if (r.verified) bump(r.num, 'direct', r.verified);
+    if (r.legacy)   bump(r.num, 'legacy', r.legacy);
+    bump(r.num, 'heard', r.t);
   }
   for (const r of db.prepare(`SELECT from_num num, COUNT(*) c, MAX(ts) t
                                 FROM relay_observation WHERE relay_byte = 0
@@ -154,13 +168,15 @@ function doorsByByte() {
   //   1. times used as route[0] — it has actually carried us (keeps byte 4 on
   //      !2d4cd04, 2039 routes against 10)
   //   2. relay-capable role     — its declared function is to carry traffic
-  //   3. direct receptions      — we can definitely hear it
-  //   4. most recently heard
+  //   3. VERIFIED direct receptions — post-gate, we can definitely hear it
+  //   4. legacy direct receptions   — pre-gate, may have been relayed (B76)
+  //   5. most recently heard
   // A node that has carried our traffic outranks one whose role field merely
   // says it would.
   const better = (a, b) => a.routed !== b.routed ? a.routed > b.routed
                          : a.relay  !== b.relay  ? a.relay  > b.relay
                          : a.direct !== b.direct ? a.direct > b.direct
+                         : a.legacy !== b.legacy ? a.legacy > b.legacy
                          : a.heard  >  b.heard;
   const out = new Map();
   for (const [num, c] of cand) {

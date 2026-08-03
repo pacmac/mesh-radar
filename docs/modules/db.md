@@ -1,8 +1,8 @@
 ---
 module: db
 source: src/db.js
-source_hash: 176f071ee59f15733354241cb7156ed94f04b63046fd92ad459252f40b08ec91
-updated: 2026-08-03
+source_hash: dfb88b93f1759ef5fb650a379139fd0778237cdd5b173ac07a6b4b9110493174
+updated: 2026-08-04
 ---
 
 # Module: db
@@ -914,3 +914,40 @@ ground, not because we re-traced known nodes.
 1140 per day across this window — the dense right-hand side is OUR attempt volume
 resuming, not the mesh waking up. Successes without their denominator will always
 tell that story; the `new` colour is what separates genuine discovery from it.
+
+## `DIRECT_GATE_TS` — direct-ness before 27 Jul is unverified (B76, 2026-08-04)
+
+Before commit `4340f56` (**1785178885**, 2026-07-27 20:01:25 +0100)
+`isDirectPacket` tested hop arithmetic **alone**, so a relayed packet could
+satisfy it and be written to `signal_history` as a direct reception. Split on
+that timestamp:
+
+```
+before   26 positioned nodes, furthest 143.2 km (JBS)
+after     3 positioned nodes, furthest   2.5 km (GARG)
+```
+
+Our verified direct reach is **GARG at 2.5 km and the bench unit**. The 143 km
+"direct" contacts are artefacts of the old test.
+
+**Rows are not deleted.** The old test could not distinguish direct from relayed —
+that is why it was replaced — but it does not follow that every old row is false.
+They are *unverified*, not *wrong*.
+
+### Claiming versus candidacy
+
+The distinction that makes this workable:
+
+- **Claiming** — anything that tells a human "we heard this node directly" filters
+  on the epoch. `frontierSeries()` and `frontierStrip()` both do, which drops the
+  card's green "heard direct" bars from **27 to 3**. That is the honest number and
+  it is deliberately unflattering.
+- **Candidacy** — `doors.js` may still use pre-gate rows as weak evidence that a
+  node is audible, ranked strictly **below** verified receptions. Excluding them
+  would remove 16 of 36 candidates and cost byte `176` its only resolution (`S2`
+  has four pre-gate rows and has never once arrived unrelayed), undoing the
+  bootstrap fix for no gain. Verified after the split: **297 of 297** targets
+  still resolve, byte 4 still `!2d4cd04`.
+
+Caveat: the epoch is the **commit** time. Deployment may have lagged it, so rows
+in the minutes immediately after are marginally less certain.
