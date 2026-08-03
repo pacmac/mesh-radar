@@ -1,8 +1,8 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: ec8c91d249094ec09adb1a27602eb13265c02c214f8b15672950b495b8912920
-updated: 2026-08-02
+source_hash: 053f5757afd806a39c4985f6b97a2eefbc2f2b1f548f46371bb19a5d36b6885f
+updated: 2026-08-03
 ---
 
 # Module: passive-tracer
@@ -163,6 +163,43 @@ above (guard 1) — `busy` never got the chance to block anything, because DISC 
 already switched the module off wholesale. Recorded plainly because the wrong
 cause was believed first, and the metrics in this spec were nearly attributed to
 it.
+
+## It declares the modes it runs in
+
+Task `hooks-per-mode-scope`. This module is why the `per-mode` scope exists: its rule was a
+bare `dashMode.value !== 0` buried in the consumer, and selecting DISC switched passive
+tracing off wholesale for 9.5 hours with no log line and no consequence on screen.
+
+```js
+defineHook({
+  name: 'passive-trace', scope: 'per-mode',
+  modes: () => modesAllowingPassive(),      // lazy — see below
+  purpose: 'traces a node on hearing it, in the modes that permit passive tracing',
+})
+```
+
+The list comes from `modesAllowingPassive()` rather than being restated here. **Two lists
+that can disagree is the same bug one level up.**
+
+**It speaks when it skips**, latched on the mode so a quiet mode reports once rather than
+once per packet (~20/min). Verified 2026-08-03 by switching DISC → PASV → DISC:
+
+```
+11:14:36  passive-trace    tracing in PASV
+11:16:12  discovery-idle   not probing — mode is pasv, discovery only runs in DISC
+11:19:12  discovery-idle   probing resumed (was: mode is pasv, discovery only runs in DISC)
+11:19:13  passive-trace    tracing in DISC
+```
+
+### The modes list is LAZY, and that is not decoration
+
+`modes` is a thunk. Passing `modesAllowingPassive()` directly evaluated it during module
+load — this file imports `dash-mode`, which was still initialising — and threw
+`Cannot access 'MODE_KEYS' before initialization`, **taking the whole service down on
+2026-08-03**. `defineHook` now accepts a function and resolves it on first read, and
+`modesAllowingPassive()` derives from `MODE_DEFAULTS` (top of file) rather than `MODE_KEYS`
+(further down). Either fix alone would have worked; both are in place because the failure
+mode is a hard outage rather than a wrong value.
 
 ## Invariants
 

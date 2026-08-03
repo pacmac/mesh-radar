@@ -126,6 +126,20 @@ export function passiveTracingAllowed(mode) {
   return modeCfg(mode).passive === true;
 }
 
+/** Which modes permit passive tracing, as a list. Task `hooks-per-mode-scope`.
+ *
+ *  A per-mode hook must DECLARE its modes, and that declaration has to come from
+ *  here rather than being written out again at the hook — two lists that can
+ *  disagree is how the original bug happened, just one level up. */
+export function modesAllowingPassive() {
+  // Derived from MODE_DEFAULTS, NOT MODE_KEYS. MODE_KEYS is declared further down
+  // this file, and passive-tracer.js imports us and evaluates during our own
+  // module init — reading MODE_KEYS from there threw
+  // "Cannot access 'MODE_KEYS' before initialization" and took the service down
+  // on 2026-08-03. MODE_DEFAULTS is declared at the top and is the actual source.
+  return Object.keys(MODE_DEFAULTS).filter(k => MODE_DEFAULTS[k]?.passive === true);
+}
+
 // The full effective per-mode config (defaults merged with any stored override).
 export function modeConfigAll() {
   return Object.fromEntries(MODE_KEYS.map((k) => [k, modeCfg(k)]));

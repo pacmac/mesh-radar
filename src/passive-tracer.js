@@ -1,12 +1,32 @@
 import { EventEmitter } from 'events';
 import { bridge } from './bridge.js';
 import { nodeList } from './node-list.js';
-import { dashMode, transmitterForMode, isListenerForMode, passiveTracingAllowed } from './dash-mode.js';
+import { dashMode, transmitterForMode, isListenerForMode, passiveTracingAllowed,
+         modeName, modesAllowingPassive } from './dash-mode.js';
+import { defineHook } from './hooks.js';
+
 import { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
 import { FF } from './feature-flags.js';
 import { traceroute, tracerouteEnabled } from './traceroute.js';
 import { missionRunner } from './mission-runner.js';
+
+// A PER-MODE HOOK DECLARES ITS MODES. Task `hooks-per-mode-scope`.
+//
+// This module is the reason the scope exists. Its rule was a bare
+// `dashMode.value !== 0` buried here in the consumer, and selecting DISC
+// switched passive tracing off wholesale for 9.5 hours with no log line, no
+// counter and no consequence anywhere on screen.
+//
+// The list comes from `modesAllowingPassive()` rather than being written out
+// again here — two lists that can disagree is the same bug one level up.
+const PASSIVE = defineHook({
+  name: 'passive-trace',
+  scope: 'per-mode',
+  modes: () => modesAllowingPassive(),   // lazy: see defineHook
+  purpose: 'traces a node on hearing it, in the modes that permit passive tracing',
+});
+let _lastModeSaid = null;
 
 const log = {
   info: (...a) => console.log('[passive-tracer]', ...a),
@@ -94,7 +114,24 @@ class PassiveTracer extends EventEmitter {
     // whenever DISC was selected — 17.0 traces/h at 3.8% became 1 trace in 9.5 h
     // on 2026-08-02, with no log line, because this return is silent and sits
     // upstream of every counter in this function.
-    if (!passiveTracingAllowed(dashMode.value)) return;
+    // SPEAKS WHEN IT SKIPS. Latched on the mode so a quiet mode reports once,
+    // not once per packet (~20/min) — the same rule the discovery loop uses.
+    const modeNow = modeName(dashMode.value);
+    if (!passiveTracingAllowed(dashMode.value)) {
+      if (_lastModeSaid !== modeNow) {
+        PASSIVE.emit({
+          severity: 'notice',
+          summary: `not tracing — ${modeNow.toUpperCase()} does not permit passive tracing (permitted: ${modesAllowingPassive().join(', ')})`,
+          detail: { mode: modeNow, permitted: modesAllowingPassive() },
+        });
+        _lastModeSaid = modeNow;
+      }
+      return;
+    }
+    if (_lastModeSaid !== null && _lastModeSaid !== modeNow) {
+      PASSIVE.emit({ summary: `tracing in ${modeNow.toUpperCase()}`, detail: { mode: modeNow } });
+    }
+    _lastModeSaid = modeNow;
     // Master switch. Checked HERE as well as inside dispatch() — not redundant:
     // the .catch below records _failed and emits an empty `traced` result, so a
     // gated dispatch arriving as a rejection would mark every skipped node as

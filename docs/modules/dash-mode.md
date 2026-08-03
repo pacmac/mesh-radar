@@ -1,8 +1,8 @@
 ---
 module: dash-mode
 source: src/dash-mode.js
-source_hash: 563f0e84cb54179f9f4ad7dc9e6ac83cb88421808efb8426a6c4115abeeca2d9
-updated: 2026-08-02
+source_hash: 01c5815efba7ed7b1a4b45408985126dd5495d11a9b39cd811b18d2182956187
+updated: 2026-08-03
 ---
 
 # Module: dash-mode

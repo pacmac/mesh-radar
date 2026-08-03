@@ -61,13 +61,19 @@ export function defineHook({ name, purpose, scope, modes = null } = {}) {
   if (!name || typeof name !== 'string')       throw new Error('defineHook: name is required');
   if (!purpose || typeof purpose !== 'string') throw new Error(`defineHook(${name}): purpose is required — a hook that cannot say what it is for is a function`);
   if (!SCOPES.includes(scope))                 throw new Error(`defineHook(${name}): scope must be one of ${SCOPES.join(', ')}`);
-  if (scope === 'per-mode' && (!Array.isArray(modes) || !modes.length)) {
-    throw new Error(`defineHook(${name}): scope 'per-mode' must declare which modes it runs in`);
+  // `modes` may be a FUNCTION, resolved on first read. A per-mode hook usually
+  // derives its list from dash-mode, and calling that during module evaluation
+  // hit a circular-import TDZ error that took the service down on 2026-08-03.
+  // A thunk defers the read to after every module has initialised.
+  if (scope === 'per-mode') {
+    const ok = typeof modes === 'function' || (Array.isArray(modes) && modes.length);
+    if (!ok) throw new Error(`defineHook(${name}): scope 'per-mode' must declare which modes it runs in`);
   }
   if (_names.has(name)) throw new Error(`defineHook: ${name} is already registered`);
 
   const hook = {
-    name, purpose, scope, modes,
+    name, purpose, scope,
+    get modes() { return typeof modes === 'function' ? modes() : modes; },
     /** Report what happened. `summary` is written HERE, at the decision site —
      *  never composed downstream, because a trace assembled elsewhere
      *  reintroduces the hiding this exists to end.
