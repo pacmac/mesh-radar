@@ -69,6 +69,10 @@ const T = {
     name: 'relay-corridors', scope: 'store',
     purpose: 'learns which relay carries our traffic toward each bearing, so a node we have never reached can still be aimed at through a door',
   }),
+  outboundRelay: defineHook({
+    name: 'outbound-relay-identity', scope: 'store',
+    purpose: 'names the nodes that ACKed packets WE sent — the only outbound-direction relay evidence we get, against a mesh that routes 62% asymmetrically',
+  }),
 };
 
 /** WHERE WE ARE. Read once per run — it cannot change mid-sweep.
@@ -681,10 +685,89 @@ function runCalloutYield() {
   });
 }
 
+// Every other relay signal we hold is INBOUND — relay_byte says who relayed TO
+// us, and this mesh routes 62% asymmetrically, so every door claim in doors.js
+// is an inference from the wrong direction. message_status_event is the
+// exception: mesh-gw's `relayed` status names a node that handled a packet WE
+// sent, by full node number, with none of the low-byte ambiguity.
+//
+// THE TRAP: on a BROADCAST that node is OUR OWN RADIO. FloodingRouter.cpp
+// generates the implicit ack locally when the sender hears its own packet
+// rebroadcast (measured: relayed from_num 646426545 = !2687afb1 = our OMNI).
+// Counting those would manufacture discoveries out of our own transmissions, so
+// they are excluded — and reported separately, so the exclusion is visible.
+function runOutboundRelayIdentity() {
+  const rows = db.prepare(`
+    SELECT from_num, COUNT(*) n, MAX(ts) last_ts
+      FROM message_status_event
+     WHERE from_num IS NOT NULL
+     GROUP BY from_num`).all();
+
+  // ownDeviceNums() returns an EMPTY SET until index.js registers the mac->num
+  // resolver at startup, so on its own it is not safe to hang a correctness
+  // guard on: unregistered, every self-ack is promoted to a discovery. Caught in
+  // testing, where this worker reported our own OMNI as a third-party relay.
+  // Union it with a durable source that needs no registration — packets our own
+  // radios originated are marked TRANSPORT_INTERNAL on arrival.
+  const ours = new Set([
+    ...ownDeviceNums(),
+    ...db.prepare(`SELECT DISTINCT from_num n FROM relay_observation
+                    WHERE transport = 'TRANSPORT_INTERNAL'`).all().map(r => r.n),
+  ]);
+  const selfAcks = rows.filter(r => ours.has(r.from_num));
+  const third    = rows.filter(r => !ours.has(r.from_num));
+
+  if (!third.length) {
+    // Silence is indistinguishable from a broken worker — say it plainly.
+    T.outboundRelay.emit({
+      severity: 'info',
+      summary: selfAcks.length
+        ? `no third-party outbound relays yet — all ${selfAcks.length} identities are our own radios self-acking broadcasts`
+        : 'no outbound relay identities captured yet',
+      detail: { third_party: 0, self_acks: selfAcks.length, rows_scanned: rows.length },
+    });
+    return;
+  }
+
+  const home = homeLatLon();
+  const doors = new Set();
+  for (const r of db.prepare(`SELECT route FROM traceroute_history
+                               WHERE status='ok' AND route <> '[]'`).all()) {
+    const chain = J(r.route).filter(n => n !== BROADCAST);
+    if (chain.length) doors.add(chain[0]);
+  }
+
+  const found = third.map(r => {
+    const node = db.prepare('SELECT short_name, long_name, lat, lon FROM nodes WHERE num = ?').get(r.from_num);
+    const positioned = node && node.lat != null && node.lat !== 0;
+    const km = (positioned && home) ? +haversineKm(home.lat, home.lon, node.lat, node.lon).toFixed(1) : null;
+    return {
+      num: r.from_num,
+      name: node?.short_name || node?.long_name || null,
+      known: !!node,
+      already_a_door: doors.has(r.from_num),
+      km,
+      // 40 km is doors.js BEAM_WORTH_IT_KM — below it the omni already reaches
+      // and turning the yagi buys nothing.
+      worth_the_beam: km != null ? km >= 40 : null,
+      acks: r.n,
+    };
+  });
+
+  const fresh = found.filter(f => !f.already_a_door);
+  T.outboundRelay.emit({
+    severity: fresh.length ? 'notice' : 'info',
+    summary: fresh.length
+      ? `${fresh.length} of ${found.length} nodes that ACKed our sends are NOT known doors — outbound evidence for a relay we have never routed through`
+      : `${found.length} outbound relay identities, all already known doors`,
+    detail: { third_party: found.length, self_acks: selfAcks.length, nodes: found },
+  });
+}
+
 const TASKS = [runUnknownNodes, runGhostRelays, runAsymmetricPaths,
                runStrandedPositions, runAnchorableNodes, runBlockedCorridors,
                runRelayCorridors, runProbingStalled, runRateChangepoint,
-               runDispatcherYield, runCalloutYield];
+               runDispatcherYield, runCalloutYield, runOutboundRelayIdentity];
 
 /** Run every standing task once, isolated. One throwing must not stop the rest —
  *  a broken analysis should cost its own finding, never the others'. */

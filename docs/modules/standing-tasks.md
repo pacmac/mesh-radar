@@ -1,7 +1,7 @@
 ---
 module: standing-tasks
 source: src/standing-tasks.js
-source_hash: a7c712f526f37673106ba265fa9ed718becf5ea93484d648848198fe7f44a3cf
+source_hash: 19ed4003b06cd6f804de9c05f47dff38f2faae40dd168b08f204239897bdfa24
 updated: 2026-08-03
 ---
 
@@ -384,3 +384,65 @@ the cost is invisible too. `calloutStats()` existed and nothing emitted it.
 
 It says **"too few to read anything into"** below 30 sends, because 0 of 6 is not
 a verdict — at a 6/day ceiling this needs weeks.
+
+## `outbound-relay-identity` — the only outbound evidence we get
+
+Every other relay signal we hold is **inbound**. `relay_observation.relay_byte`
+records who relayed *to* us, and routing on this mesh is 62% asymmetric, which is
+why every door claim in `docs/modules/doors.md` carries the same caveat: we infer
+the outbound door from inbound traffic and hope.
+
+`message_status_event` is different. mesh-gw's `relayed` status means
+*"Intermediate mesh node ACKed — routing continues"* and carries `from_num` — a
+node that handled a packet **we sent**. That is outbound-direction evidence, by
+full node number, with none of the low-byte ambiguity that forces
+`doors.js` to disambiguate 4.64 candidates per byte.
+
+### What it reports
+
+For each distinct `from_num`, excluding our own radios:
+
+- **known or ghost** — is it in `nodes` at all, named, positioned
+- **already a door** — has it ever been `route[0]` of a completed traceroute, or
+  is it a relay we have never routed through
+- **distance and bearing** from home, and whether it clears the 40 km
+  `BEAM_WORTH_IT_KM` threshold that decides if the yagi is worth turning
+
+### The self-ack trap, which this worker must not fall into
+
+On a **broadcast**, `from_num` is **our own sending radio**. `FloodingRouter.cpp`
+generates the implicit ack locally when the sender hears its own packet
+rebroadcast and delivers it to itself — measured 2026-08-03, a broadcast with
+`want_ack` produced `relayed from_num 646426545` = `!2687afb1` = our own OMNI.
+
+Counting those as discoveries would manufacture a finding out of our own
+transmissions. Self-acks are excluded via `ownDeviceNums()` and reported
+**separately** so the exclusion is visible rather than silent.
+
+### Finding nothing is a result
+
+At the time of writing the table holds 8 rows and **every identity is a
+self-ack** — zero third parties. The worker says so explicitly rather than
+staying quiet, because silence is indistinguishable from a broken worker. That
+is the failure mode that hid the starved passive tracer for 9.5 hours.
+
+This worker exists precisely to notice the *first* third-party identity. Without
+it the column accumulates unread, exactly as `relay_byte` did for 18,670 rows
+before anything looked at it.
+
+### The guard that failed open
+
+`ownDeviceNums()` returns an **empty Set** until `index.js` registers the
+mac→num resolver (`node-filter.js:12`). An empty exclusion set is
+indistinguishable from "nothing to exclude", so a guard built on it alone fails
+**open**.
+
+Caught by running this worker outside the service: it reported our own OMNI
+(`!2687afb1` / TA2o) as a third-party outbound relay — a discovery manufactured
+from our own transmission, which is precisely the trap documented above.
+
+The set is therefore unioned with a durable source needing no registration:
+packets our own radios originated carry `transport = 'TRANSPORT_INTERNAL'` in
+`relay_observation`. Correct regardless of startup ordering. The general
+exposure — other callers of `ownDeviceNums()` sharing the same failure mode — is
+filed as **B74**, not fixed here.
