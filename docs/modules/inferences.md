@@ -1,7 +1,7 @@
 ---
 module: inferences
 source: src/inferences.js
-source_hash: 3006c340d449c662b153396723090ed19017f0735a8f3c28caf182e3929d5739
+source_hash: e68f7ff0874f75cb70f7b2668f604fa2136f42942f876e5ef25c099525be45a8
 updated: 2026-08-03
 ---
 
@@ -538,3 +538,54 @@ shortlist. Whether discovery should keep probing once the bar rises past
 everything alive is a design decision — see `chase-the-window-best` — and this
 task only makes the current behaviour legible enough for that decision to be made
 from the page instead of a hand-run query.
+
+
+## The bar decides priority, not eligibility — the `retry` class
+
+Peter, 2026-08-03: *"the ratchet keeps starving the queue - you have glossed over
+that."* He was right; it had been flagged three times without being fixed.
+
+The classification chain only gave an attempted-but-unanswered node a class when
+`km > bar`. Everything alive and **nearer** than the bar matched nothing and was
+dropped — so reaching 176.4 km once made every target under 176.4 km ineligible,
+and the queue emptied while the mesh was busy.
+
+### What was actually being thrown away
+
+Reconstructed against the live store with the selector's own thresholds:
+
+- **138 nodes**, **93 heard within 24 h**, **82 with fewer than 6 attempts**
+- **59 had answered us before**
+- the furthest sat at **176.4 km, heard 4 hours earlier, tried exactly once**
+
+A node at the frontier, alive, barely probed, and invisible — purely because it
+was not *past* the bar.
+
+### The fix
+
+`retry` — `hits === 0 && attempts < MAX_TRIES`, ranked **300 + liveScore −
+attempts×25**, deliberately below every record class (1000+). It can never
+displace a record attempt; it fills slots only when nothing better exists, which
+is exactly when the queue used to empty.
+
+The bar still decides **what goes first**. It no longer decides **what is
+allowed**. Ranking and the per-class quotas already did the first job.
+
+### Measured, immediately after deploy
+
+| | before | after |
+|---|---|---|
+| `candidates` | **0** | **48** |
+| `shown` | 0 | 6 |
+| `skipped_unclassified` | 109 | 58 |
+| funnel balance | closes | closes (624) |
+
+The shortlist came back entirely `retry` at rank 675 — correct, because no
+record-class candidate is currently eligible (all are beyond the step window,
+silent, cooling or exhausted).
+
+### What is left in `unclassified`
+
+The remaining 58 are the long tail: nodes with 300–865 attempts and past hits
+that fall through `reconfirm` for being nearer than 100 km or attempted within
+7 days. A different defect, deliberately not swept in here.

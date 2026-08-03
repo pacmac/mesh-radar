@@ -870,6 +870,29 @@ registerInference({
         // whole exercise a survey of breadth rather than a search.
         skipped.exhausted++;
         continue;
+      } else if (hits === 0 && attempts < MAX_TRIES) {
+        // STILL WORTH ASKING. Peter, 2026-08-03: "the ratchet keeps starving the
+        // queue - you have glossed over that." He was right, and I had flagged
+        // it three times without fixing it.
+        //
+        // An attempted, unanswered, still-alive node nearer than the bar matched
+        // NO class, so it was dropped entirely — the bar was deciding whether we
+        // try at all, when ranking and the per-class quotas already decide what
+        // goes FIRST. Two different jobs.
+        //
+        // Measured when this was written: 138 such nodes, 93 heard within 24 h,
+        // 82 with fewer than 6 attempts — and the furthest sat at 176.4 km,
+        // heard 4 hours earlier, tried EXACTLY ONCE. A node at the frontier,
+        // alive, and invisible, purely because it was not PAST the bar.
+        //
+        // Ranked deliberately BELOW every record class (300 vs 1000) so it can
+        // never displace a record attempt — it fills the queue only when nothing
+        // better is available, which is precisely when the queue used to empty.
+        cls = 'retry';
+        reason = `${attempts} attempt${attempts === 1 ? '' : 's'}, no reply yet — `
+          + `${Math.round(km)} km is inside the ${Math.round(bar)} km bar, so it cannot move the`
+          + ` frontier, but it is alive (heard ${fmtSilence(silentFor)}) and barely asked`;
+        rank = 300 + liveScore - Math.min(150, attempts * 25);
       } else {
         // NO CLASS CLAIMS IT — and that is an exclusion like any other.
         //
@@ -935,10 +958,12 @@ registerInference({
     // "MANUAL · nothing pinned" rather than idling with no explanation, which
     // is the failure this whole afternoon was spent chasing.
     const QUOTA = MODE === 'manual'
-      ? { pinned: 1, target: 20, new: 0, 'unknown-record': 0, record: 0, reconfirm: 0, unknown: 0 }
+      ? { pinned: 1, target: 20, new: 0, 'unknown-record': 0, record: 0, reconfirm: 0, unknown: 0, retry: 0 }
       : MODE === 'targets'
-        ? { pinned: 1, target: 12, new: 2, 'unknown-record': 3, record: 3, reconfirm: 2, unknown: 1 }
-        : { pinned: 1, target: 4,  new: 3, 'unknown-record': 6, record: 6, reconfirm: 4, unknown: 4 };
+        ? { pinned: 1, target: 12, new: 2, 'unknown-record': 3, record: 3, reconfirm: 2, unknown: 1, retry: 2 }
+        // `retry` last and generous: it is the class that stops the queue
+        // emptying, and it can only ever fill slots the record classes did not.
+        : { pinned: 1, target: 4,  new: 3, 'unknown-record': 6, record: 6, reconfirm: 4, unknown: 4, retry: 6 };
     const used = {};
     const top = [];
     for (const m of scored) {
