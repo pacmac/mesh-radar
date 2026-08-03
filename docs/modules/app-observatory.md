@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: dee91f5815e86e3bb6febe23ed4c62eb0f193cb75e3dbad739337bea20fbde5f
+source_hash: f5869ce3d1bb78172b21057c184b06701dd2581379fc0574364e702875d0dde5
 updated: 2026-08-03
 ---
 
@@ -284,6 +284,34 @@ is mostly gaps because of the 5-day blackout, which is correct and not a renderi
 
 The only glance-graphic here that is not a sparkline, because no sparkline can say "92 of
 189, and the notch is over there". That distance is the product.
+
+## `obsFunnel()` — where the candidate pool actually goes
+
+Peter, 2026-08-03: *"I need to be able to see what you see in raw data, but I want to see
+it at a glance."*
+
+This was the single most informative thing read from the database during that session that
+was not on screen. It explains why a pool of 531 nodes produces a shortlist of 3:
+
+```
+3 working now │ 13 cooling·30m │ 46 tried out·6 │ 191 too far·25km step │ 151 silent·14d │ 127 no position
+```
+
+**Every segment names the knob that caused it.** "Why is it only trying three things" is
+answerable from the page instead of from a query, and each answer points at the setting to
+change.
+
+The previous line showed `shown / candidates / cooling / exhausted` — three of the five
+exclusions, omitting the two LARGEST. That is how a 25 km step window silently dropping 191
+candidates stayed invisible.
+
+Counts are server-computed in `reach.mission`'s summary fact and already rode the existing
+`missions` message; this method only lays them out. Segments with a zero count are dropped
+so the bar never shows an empty category.
+
+The header line beside it states the three distances together — `aiming past 95.2 km · best
+this period 92 km · record 189.1 km` — so the bar being aimed at, the period's achievement
+and the ultimate goal are never confused for one another.
 
 ## Invariants
 

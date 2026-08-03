@@ -348,9 +348,31 @@
                 Missions — next, and the reason</h2>
               <!-- The exclusions are published. A shortlist that quietly drops
                    most of the pool reads as "these are the only options". -->
-              <span class="text-xs text-base-content/35 ml-auto" x-show="missions?.summary"
-                    x-text="missions?.summary ? missions.summary.shown + ' of ' + missions.summary.candidates + ' candidates · ' + missions.summary.skipped_cooling + ' cooling · ' + missions.summary.skipped_exhausted + ' exhausted' : ''"></span>
+              <span class="text-xs text-base-content/35 ml-auto font-mono" x-show="missions?.summary"
+                    x-text="missions?.summary ? 'aiming past ' + missions.summary.bar_km + ' km · best this period ' + missions.summary.window_best_km + ' km · record ' + missions.summary.record_km + ' km' : ''"></span>
             </div>
+
+            <!-- THE FUNNEL. Why a pool of hundreds produces a shortlist of three,
+                 with the governing knob named on every segment. The previous line
+                 showed three exclusions and omitted the two largest. -->
+            <template x-if="obsFunnel().length">
+              <div class="shrink-0">
+                <div class="flex h-2 w-full overflow-hidden rounded">
+                  <template x-for="s in obsFunnel()" :key="s.k">
+                    <div :class="s.tone" :style="`width:${s.pct}%`" :title="`${s.n} ${s.label}`"></div>
+                  </template>
+                </div>
+                <div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                  <template x-for="s in obsFunnel()" :key="s.k">
+                    <span class="text-xs text-base-content/50">
+                      <span class="inline-block h-2 w-2 rounded-sm align-middle" :class="s.tone"></span>
+                      <span class="font-mono tabular-nums" x-text="s.n"></span>
+                      <span x-text="s.label"></span>
+                    </span>
+                  </template>
+                </div>
+              </div>
+            </template>
 
             <template x-if="!missions?.missions?.length">
               <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center">

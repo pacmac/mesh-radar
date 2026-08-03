@@ -422,6 +422,37 @@ export const observatoryMixin = {
     return p.join('');
   },
 
+  /** THE SELECTION FUNNEL — where the candidate pool actually goes.
+   *
+   *  Peter, 2026-08-03: "I need to be able to see what you see in raw data, but
+   *  I want to see it at a glance."
+   *
+   *  This is the single most informative thing read from the database all day
+   *  that was not on screen. It explains why a pool of 531 nodes produces a
+   *  shortlist of 3, and EVERY SEGMENT NAMES THE KNOB THAT CAUSED IT — so the
+   *  answer to "why is it only trying three things" is on the page rather than
+   *  in a query.
+   *
+   *  The old line showed 3 of the 5 exclusions and omitted the two LARGEST
+   *  (beyond-window 191, silent 151), which is how the biggest filters stayed
+   *  invisible.
+   *
+   *  Server-computed counts; this only lays them out. */
+  obsFunnel() {
+    const s = this.missions?.summary;
+    if (!s) return [];
+    const segs = [
+      { k: 'shown',      n: s.shown ?? 0,                 label: 'working now', tone: 'bg-primary' },
+      { k: 'cooling',    n: s.skipped_cooling ?? 0,       label: `cooling · ${s.cooldown_min}m`,        tone: 'bg-info/60' },
+      { k: 'exhausted',  n: s.skipped_exhausted ?? 0,     label: `tried out · ${s.attempts_per_target}`, tone: 'bg-base-content/25' },
+      { k: 'window',     n: s.skipped_beyond_window ?? 0, label: `too far · ${s.window_km}km step`,      tone: 'bg-warning/70' },
+      { k: 'silent',     n: s.skipped_silent ?? 0,        label: `silent · ${s.max_silence_days}d`,      tone: 'bg-base-content/40' },
+      { k: 'suspect',    n: s.skipped_suspect ?? 0,       label: 'no position',                          tone: 'bg-base-content/15' },
+    ].filter(x => x.n > 0);
+    const total = segs.reduce((a, b) => a + b.n, 0) || 1;
+    return segs.map(x => ({ ...x, pct: (100 * x.n) / total, total }));
+  },
+
   /** Set the ANALYSIS WINDOW. Server state, not a browser preference — Peter,
    *  2026-08-03: "the browser is a presentation layer ONLY, this filtering must
    *  be done backend so anyone using the browser sees the same thing."
