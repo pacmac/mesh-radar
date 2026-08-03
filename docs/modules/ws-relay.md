@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: c2072282c0608f013f117b9f9e794869ab821b061b58a6711fe08840186b6a55
+source_hash: ac3f2455970dabe5eaa716a3a037285a834b504c8b600e15dc2aaddcb06e3117
 updated: 2026-08-03
 ---
 
@@ -735,3 +735,73 @@ Both `alarm-*` imports commented out: **0** `pac_host_*` messages, no load
 errors, full core set intact (`packet`, `node_list`, `device_list`, `rotator`,
 `tilt_cal`, `message_history`, `env_history`, `range_test_log`,
 `node_status_update`).
+
+## `message_status` — capture `from_num`, keep every event (task `capture-message-status-from-num`, 2026-08-03)
+
+The handler at `ws-relay.js` did two lossy things with every outbound status
+event:
+
+1. **Discarded `from_num`.** It ran `updateMessageStatus.run({ packet_id, status })`
+   and nothing else, so the identity travelling on the event was dropped.
+2. **Overwrote the previous status.** `UPDATE messages SET status = @status` is
+   last-writer-wins, and `relayed` is explicitly **non-terminal** — mesh-gw's own
+   table says it "may arrive zero or more times before the terminal state". So a
+   `relayed` was reliably destroyed by the `no_ack` or `delivered` that followed
+   seconds later.
+
+Between them we kept only the last word of a conversation whose interesting part
+was in the middle.
+
+### What the events actually carry
+
+Measured live on this mesh, 2026-08-03, one broadcast with `want_ack: true`:
+
+```
++ 0.1s  sent
++ 0.5s  queued
++ 5.8s  relayed    from_num 646426545
++30.1s  no_ack
+```
+
+Per mesh-gw's `docs/gw/API_SSE.md`, `relayed` means *"Intermediate mesh node
+ACKed — routing continues"* and `delivered` means *"Recipient confirmed
+delivery"*; both carry `from_num`, as does `failed`.
+
+**A caveat that must not be lost.** On a **broadcast** the observed `from_num`
+was `!2687afb1` — *our own sending radio*, not a third party. That matches the
+protobuf: for broadcasts `FloodingRouter.cpp` **generates** an implicit ack
+locally when the sender hears its own packet rebroadcast, and delivers it to
+itself. So on a broadcast `relayed.from_num` identifies **us** and is NOT door
+evidence. Whether it names a real intermediate on a **unicast DM** is
+**untested** — that is the open question this capture exists to answer, and it
+will be answered from traceroute traffic we already dispatch rather than by
+sending anything new.
+
+### The table
+
+Append-only, because the sequence is the data:
+
+```sql
+CREATE TABLE IF NOT EXISTS message_status_event (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts        INTEGER NOT NULL,
+  packet_id INTEGER NOT NULL,
+  status    TEXT    NOT NULL,
+  from_num  INTEGER,          -- NULL when the event carried none
+  device    TEXT              -- __ble_addr: which radio reported it
+);
+```
+
+Plain `CREATE TABLE IF NOT EXISTS` on a new table, so the `table_xinfo`
+migration hazard does not apply — there is no `ALTER` to re-run.
+
+`from_num` is nullable **and null means "the event carried no identity"**, which
+is different from zero. `sent`, `queued` and `no_ack` legitimately carry none.
+
+### What is unchanged
+
+`updateMessageStatus` still runs, so `messages.status` keeps its
+last-writer-wins summary and the browser's existing rendering is untouched. This
+is additive capture, not a change to how status is displayed. No new
+transmissions: the rows accumulate from the traceroutes and messages we already
+send.

@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 8f0844f63e9b91bddc5b8c85c003d257dade76a35389f07f6a5dd54d69648a7a
+source_hash: cf72e25b84051dc1ff759768f12c15ad9a4f6b2ac2aaeb5b8572cc4cc02911f4
 updated: 2026-08-03
 ---
 
@@ -752,3 +752,47 @@ into this one.
 | live after deploy | stranded **0**, positions **625** |
 | worker afterwards | *"nodeinfo and nodes agree on every recently-heard position"*, severity `info` |
 | selector | `rows_in` 607 → **622**, `unpositioned` 331 → **316**, balance still closes |
+
+## `message_status_event` — outbound status, append-only (task `capture-message-status-from-num`, 2026-08-03)
+
+```sql
+CREATE TABLE IF NOT EXISTS message_status_event (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts        INTEGER NOT NULL,
+  packet_id INTEGER NOT NULL,
+  status    TEXT    NOT NULL,
+  from_num  INTEGER,          -- NULL = the event carried no identity; NOT zero
+  device    TEXT              -- __ble_addr of the radio that reported it
+);
+CREATE INDEX idx_msg_status_pkt  ON message_status_event(packet_id, ts);
+CREATE INDEX idx_msg_status_from ON message_status_event(from_num, ts DESC);
+```
+
+**Why a table and not a column.** `stmts.updateMessageStatus` writes
+`messages.status` last-writer-wins, and mesh-gw's `relayed` status is explicitly
+non-terminal — it "may arrive zero or more times before the terminal state". The
+terminal `no_ack` / `delivered` therefore always destroyed the `relayed` that
+preceded it, along with the `from_num` it carried. The sequence is the data, so
+it is appended rather than overwritten.
+
+`updateMessageStatus` is unchanged and still maintains the summary column; this
+is additive capture only.
+
+Measured on insertion day, one broadcast with `want_ack: true`:
+
+| +s | status | from_num |
+|---|---|---|
+| 0.1 | `sent` | — |
+| 0.5 | `queued` | — |
+| 5.8 | `relayed` | 646426545 |
+| 30.1 | `no_ack` | — |
+
+**Do not read `from_num` as "the door" without checking the packet was a
+unicast.** On a broadcast the value observed was our own sending radio, because
+`FloodingRouter.cpp` generates the implicit ack locally and delivers it to the
+sender. Whether a unicast DM yields a genuine intermediate node is the open
+question this table exists to answer, from traceroute traffic already dispatched.
+
+New table via plain `CREATE TABLE IF NOT EXISTS`, so the `table_xinfo` /
+`table_info` migration hazard documented above does not apply — there is no
+repeated `ALTER` to guard.

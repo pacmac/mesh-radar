@@ -236,6 +236,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_relay_obs_byte  ON relay_observation(relay_byte, ts DESC);
   CREATE INDEX IF NOT EXISTS idx_relay_obs_ts    ON relay_observation(ts);
 
+  -- Outbound status events, APPEND-ONLY. messages.status is last-writer-wins and
+  -- the relayed status is non-terminal, so a relayed was always destroyed by the
+  -- no_ack or delivered that followed it seconds later. The sequence is the data.
+  -- from_num NULL means the event carried no identity (sent/queued/no_ack do not);
+  -- null is not zero.
+  CREATE TABLE IF NOT EXISTS message_status_event (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        INTEGER NOT NULL,
+    packet_id INTEGER NOT NULL,
+    status    TEXT    NOT NULL,
+    from_num  INTEGER,
+    device    TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_msg_status_pkt  ON message_status_event(packet_id, ts);
+  CREATE INDEX IF NOT EXISTS idx_msg_status_from ON message_status_event(from_num, ts DESC);
+
   -- Signal history from the packet ENVELOPE (iron rule 4 — never a payload).
   -- One row per (node, packet); the partial unique index collapses the same
   -- broadcast heard by several gateway radios.
@@ -572,6 +589,14 @@ export const stmts = {
     UPDATE messages SET status = @status
     WHERE packet_id = @packet_id
       AND (message_key LIKE 't-%' OR message_key IS NULL)
+  `),
+
+  // Additive: keeps every event AND its from_num, which updateMessageStatus
+  // above cannot — it overwrites, and the interesting event (relayed) is the
+  // one that gets overwritten.
+  insertMessageStatusEvent: db.prepare(`
+    INSERT INTO message_status_event (ts, packet_id, status, from_num, device)
+    VALUES (@ts, @packet_id, @status, @from_num, @device)
   `),
 
   upsertNodeinfo: db.prepare(`

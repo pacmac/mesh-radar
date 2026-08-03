@@ -607,6 +607,19 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       if (ev.status === 'queued' || ev.status === 'sent') _seenLivePktIds.add(ev.packet_id);
       try { stmts.updateMessageStatus.run({ packet_id: ev.packet_id, status: ev.status }); }
       catch (e) { console.error('[message_status] db update failed:', e.message); }
+      // Append the event WITH its identity. `relayed` carries from_num — the node
+      // that ACKed our outbound packet — and is non-terminal, so the UPDATE above
+      // throws it away moments later. Kept separately in its own right; this is
+      // the only outbound-direction relay evidence we receive.
+      try {
+        stmts.insertMessageStatusEvent.run({
+          ts:        Math.floor(Date.now() / 1000),
+          packet_id: ev.packet_id,
+          status:    ev.status,
+          from_num:  ev.from_num ?? null,   // null = event carried no identity, NOT zero
+          device:    ev.__ble_addr ?? ev.addr ?? null,
+        });
+      } catch (e) { console.error('[message_status] event insert failed:', e.message); }
       broadcast(ev);
       return;
     }
