@@ -279,6 +279,13 @@ db.exec(`
   if (!thCols.includes('tx_device'))  db.exec(`ALTER TABLE traceroute_history ADD COLUMN tx_device TEXT`);
   if (!thCols.includes('rotator_az')) db.exec(`ALTER TABLE traceroute_history ADD COLUMN rotator_az REAL`);
   if (!thCols.includes('status'))     db.exec(`ALTER TABLE traceroute_history ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'`);
+  // Task `timeout-diagnosis`: a duty-cycle drop, a CSMA defer, a collision and a
+  // genuine silence were all recorded identically as 'timeout'. These three make
+  // a miss diagnosable. Historic rows stay NULL — not backfilled, because the
+  // values were never observed.
+  if (!thCols.includes('rtt_ms'))       db.exec(`ALTER TABLE traceroute_history ADD COLUMN rtt_ms INTEGER`);
+  if (!thCols.includes('channel_util')) db.exec(`ALTER TABLE traceroute_history ADD COLUMN channel_util REAL`);
+  if (!thCols.includes('air_util_tx'))  db.exec(`ALTER TABLE traceroute_history ADD COLUMN air_util_tx REAL`);
 }
 // environment_history predates the (num, packet_id) dedup rule. The index is
 // PARTIAL, so the ~86k existing rows (packet_id NULL) are untouched and the
@@ -560,16 +567,16 @@ export const stmts = {
 
   insertTracerouteHistory: db.prepare(`
     INSERT INTO traceroute_history
-      (ts, from_num, to_num, rx_device, route, route_back, snr_towards, snr_back, relay_positions, tx_device, rotator_az, status)
+      (ts, from_num, to_num, rx_device, route, route_back, snr_towards, snr_back, relay_positions, tx_device, rotator_az, status, rtt_ms, channel_util, air_util_tx)
     VALUES
-      (@ts, @from_num, @to_num, @rx_device, @route, @route_back, @snr_towards, @snr_back, @relay_positions, @tx_device, @rotator_az, @status)
+      (@ts, @from_num, @to_num, @rx_device, @route, @route_back, @snr_towards, @snr_back, @relay_positions, @tx_device, @rotator_az, @status, @rtt_ms, @channel_util, @air_util_tx)
   `),
 
   // Failed dispatch attempts (timeout / send error) — payload columns stay NULL.
   // Without these rows every stat is survivorship-biased.
   insertTracerouteFailure: db.prepare(`
-    INSERT INTO traceroute_history (ts, from_num, to_num, tx_device, rotator_az, status)
-    VALUES (@ts, @from_num, @to_num, @tx_device, @rotator_az, @status)
+    INSERT INTO traceroute_history (ts, from_num, to_num, tx_device, rotator_az, status, rtt_ms, channel_util, air_util_tx)
+    VALUES (@ts, @from_num, @to_num, @tx_device, @rotator_az, @status, @rtt_ms, @channel_util, @air_util_tx)
   `),
 
   queryTracerouteHistory: db.prepare(`
@@ -896,6 +903,26 @@ export function ourChannelUtil(nums) {
   ).all(...list);
   if (!rows.length) return null;
   return Math.max(...rows.map(r => r.channel_util));
+}
+
+/** ONE radio's last-reported airtime state. Task `timeout-diagnosis`.
+ *
+ *  Deliberately not `ourChannelUtil()`, which takes the MAX across our radios —
+ *  right for a global brake, wrong here. The question a stored row has to answer
+ *  is whether THIS radio was throttled when THIS packet went out, and a busy
+ *  OMNI says nothing about a YAGI dispatch.
+ *
+ *  LAST-REPORTED, NOT INSTANTANEOUS. Device telemetry is periodic, so these are
+ *  whatever the radio last told us and may be minutes old. They must never be
+ *  described as readings taken at the moment of transmission.
+ */
+export function radioAirtime(num) {
+  if (!num) return { channel_util: null, air_util_tx: null };
+  const r = db.prepare('SELECT channel_util, air_util_tx FROM nodes WHERE num = ?').get(num);
+  return {
+    channel_util: r?.channel_util ?? null,
+    air_util_tx:  r?.air_util_tx  ?? null,
+  };
 }
 
 export function lastHeardMap() {

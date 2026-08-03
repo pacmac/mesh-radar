@@ -18,7 +18,7 @@
 import { EventEmitter } from 'events';
 import { bridge }       from './bridge.js';
 import { nodeList }     from './node-list.js';
-import { stmts, getConfig } from './db.js';
+import { stmts, getConfig, radioAirtime } from './db.js';
 import { getRotatorAddress } from './device-config.js';
 import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 import { rotator } from './rotator.js';
@@ -105,7 +105,9 @@ class TracerouteManager extends EventEmitter {
         return;
       }
 
-      const entry = { callbacks: [{ resolve, reject }], timer: null, device };
+      // startedAt is what makes a miss diagnosable: without it a timeout row
+      // cannot say whether we waited 5 s or 90 s. Task `timeout-diagnosis`.
+      const entry = { callbacks: [{ resolve, reject }], timer: null, device, startedAt: Date.now() };
 
       entry.timer = setTimeout(() => {
         if (this._pending.get(to) === entry) {
@@ -113,7 +115,7 @@ class TracerouteManager extends EventEmitter {
           const err = new Error(`timeout !${to.toString(16)}`);
           log.warn(err.message);
           for (const cb of entry.callbacks) cb.reject(err);
-          this._recordFailure(to, device, 'timeout');
+          this._recordFailure(to, device, 'timeout', entry.startedAt);
         }
       }, effectiveMs);
 
@@ -131,7 +133,7 @@ class TracerouteManager extends EventEmitter {
           this._pending.delete(to);
           log.warn(`send failed !${to.toString(16)}: ${err.message}`);
           for (const cb of entry.callbacks) cb.reject(err);
-          this._recordFailure(to, device, 'send_failed');
+          this._recordFailure(to, device, 'send_failed', entry.startedAt);
         }
       });
     });
@@ -141,7 +143,7 @@ class TracerouteManager extends EventEmitter {
   // Failed attempts get a traceroute_history row (status='timeout'|'send_failed',
   // payload columns NULL) — without them every stat is survivorship-biased.
   // One pending entry = one row, regardless of joined callers.
-  _recordFailure(to, device, reason) {
+  _recordFailure(to, device, reason, startedAt = null) {
     let rotatorAz = null;
     const rotMac = getRotatorAddress();
     // Compare in MAC space (IDENTITY.md): a node_id-side compare can never
@@ -159,6 +161,15 @@ class TracerouteManager extends EventEmitter {
       tx_device:  devMac ?? device,   // Phase B: MAC vocabulary
       rotator_az: rotatorAz,
       status:     reason,
+      // How long we actually waited, and what the TRANSMITTING radio last said
+      // about its own airtime. Together these separate "never went out" from
+      // "went out, nobody answered" — which 639 timeouts against 1 send_failed
+      // could not. Task `timeout-diagnosis`.
+      rtt_ms:     startedAt ? Date.now() - startedAt : null,
+      ...(() => {
+        const n = devId ? (parseInt(String(devId).replace('!', ''), 16) >>> 0) : 0;
+        return radioAirtime(n);
+      })(),
     };
     try {
       row.id = stmts.insertTracerouteFailure.run(row).lastInsertRowid;
@@ -209,6 +220,14 @@ class TracerouteManager extends EventEmitter {
       ts:              Date.now(),
       tx_device:       txDevice,
       rotator_az:      rotatorAz,
+      // Same three as the failure path, so a success and a miss are directly
+      // comparable. An OVERHEARD reply has no pending dispatch of ours: no start
+      // time, no transmitting radio, all three stay null. Correct — we did not
+      // send it, so there is nothing to diagnose.
+      rtt_ms:          pendingEntry?.startedAt ? Date.now() - pendingEntry.startedAt : null,
+      ...(txDevice
+        ? radioAirtime(parseInt(String(getLiveNodeIdByMac(txDevice) ?? '').replace('!', ''), 16) >>> 0)
+        : { channel_util: null, air_util_tx: null }),
     };
 
     log.info(`result from !${pkt.from.toString(16)} route=${JSON.stringify(result.route)}`);

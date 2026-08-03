@@ -1,8 +1,8 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: c6006a2c89e587e8ce1293f7ae33fed6586fb634ffe273bf51bc8c222f68d5d3
-updated: 2026-07-27
+source_hash: 1dbe4fbb781a5ade6725786c8d8eda28742747a838458f415a7f3c1265967b8e
+updated: 2026-08-03
 ---
 
 # Module: traceroute
@@ -88,6 +88,72 @@ traceroute.handlePacket(pkt, rxDevice)
 | `'start'` | `{ to, device }` | A new dispatch begins (not fired when joining an existing pending entry) |
 | `'result'` | result object | Every completed traceroute — fired for all subscribers regardless of which mode triggered it |
 | `'cancel'` | `{ to, device, reason }` | Dispatch times out (`reason: 'timeout'`) or `bridge.post` rejects (`reason: 'send_failed'`) |
+
+## Diagnosing a timeout
+
+Task `timeout-diagnosis`.
+
+In the 24 h to 2026-08-03 this module wrote **639 `timeout` rows and 1 `send_failed`**. A
+duty-cycle drop, a CSMA defer, a collision and a genuine silence all landed identically,
+so the leading explanation for the measured collapse in answer rate — 57.2% (3-8 Jul)
+falling to 6.0% (23-27 Jul) at under 25 km — could not be tested at all.
+
+Three columns are stamped on every row, success and failure alike:
+
+| column | source | meaning |
+|---|---|---|
+| `rtt_ms` | `Date.now() - entry.startedAt` | dispatch to reply, or dispatch to timeout |
+| `channel_util` | the TRANSMITTING radio's last telemetry | how busy that radio saw the channel |
+| `air_util_tx` | same | how much of its own airtime budget it had spent |
+
+### The transmitting radio's own figures, not the maximum
+
+`ourChannelUtil()` already existed but takes the MAX across our radios. That is the right
+number for a global brake and the wrong one here: the question is whether **this** radio
+was throttled when **this** packet went out. A busy OMNI tells us nothing about a YAGI
+dispatch.
+
+### These are last-REPORTED values, not instantaneous readings
+
+Device telemetry is periodic. `channel_util` and `air_util_tx` are whatever that radio
+last told us, which may be minutes old. They must never be described as measurements taken
+at the moment of transmission. `air_util_tx` is a rolling percentage whose exact window
+the firmware does not publish, and this spec does not assert one.
+
+### Where each path gets them
+
+- **Success** — `handlePacket()` already holds `pendingEntry` before it calls
+  `nodeList.setTraceroute()`, so RTT is available at the existing single persistence call
+  site. The fields ride `result`, which `setTraceroute` already spreads into the insert.
+- **Failure** — `_recordFailure()` is called from the timeout and send-error handlers,
+  both of which have `entry` in scope. It gains a `startedAt` parameter.
+
+An **overheard** result — a traceroute reply with no pending dispatch of ours — has no
+start time and no transmitting radio. All three columns stay NULL. That is correct: we did
+not send it, so there is nothing to diagnose.
+
+### First measurements, 2026-08-03
+
+```
+ok       to 1127986616   rtt 26202ms  chan 12.1  airtx 3.35  3 hops  OMNI
+timeout                  rtt 60001ms  chan 12.8  airtx 1.98          YAGI
+timeout                  rtt 60002ms  chan 22.8  airtx 3.31          OMNI
+```
+
+Coverage since the change: **10 of 10 rows on both paths**.
+
+Two things visible from the first ten rows:
+
+- **Timeouts wait the full 60 s** (60001–60002 ms), so they are genuine silences rather
+  than fast failures. That already rules out one class of explanation.
+- **A 3-hop success took 26.2 s.** The passive timeout is 60 s (`pasv_config.timeout_sec`)
+  and missions allow 90 s (`discovery.mission_timeout_sec`). If round-trip time scales
+  anywhere near linearly with hops, a 6-hop path plausibly exceeds 60 s and would be
+  recorded as a timeout while the reply was still in flight. **One sample is not a trend**
+  and no conclusion is drawn here — but it is now measurable, which it was not before.
+
+The two radios also report different `channel_util` at the same moment (12.8 vs 22.8),
+which is why this is stamped per transmitting radio rather than taken as a global maximum.
 
 ## Invariants
 

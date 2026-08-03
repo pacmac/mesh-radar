@@ -251,6 +251,11 @@ class NodeList extends EventEmitter {
       tx_device:       data.tx_device ?? null,
       rotator_az:      data.rotator_az ?? null,
       status:          'ok',
+      // Passed straight through from traceroute.js, exactly as tx_device and
+      // rotator_az are. Null on an overheard reply. Task `timeout-diagnosis`.
+      rtt_ms:          data.rtt_ms ?? null,
+      channel_util:    data.channel_util ?? null,
+      air_util_tx:     data.air_util_tx ?? null,
     });
     const historyId = info.lastInsertRowid;
     const existing = this._cache.get(num) ?? this._pending.get(num);
