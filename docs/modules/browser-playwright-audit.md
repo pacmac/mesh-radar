@@ -31,7 +31,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: bf2f04d83e736fd983605dba3a45958e0ce3c309119ae87e40b77cca2f3021a5
+source_hash: 279b5334a3c941883ea7c0e72b090b85c274a32cb6b147cbbb5f298826f55641
 updated: 2026-08-03
 ---
 
@@ -506,3 +506,19 @@ as a *removed* tab, but Control was rebuilt (task `control-section-ia`,
 rewriting it to `overview`. Confirmed unrelated to the 2026-07-29 changes —
 `audit_invalid_persisted_tab` is untouched by them and fails in isolation.
 **The test is wrong, not the app.**
+
+
+## Observatory board — 2026-08-03 pass
+
+- **LAST HIT** card added beside LOOP / YIELD / FRONTIER; the frontier card gained
+  its location line. A hit whose target has no position renders an em dash with
+  an explanatory basis, never `0 km` — verified live in production.
+- **The frontier ruler moved to the top** and became HTML: it was an SVG whose
+  2.52× scale painted 11 px type at 27.7 px and collided its own labels.
+- **Card text legibility.** DaisyUI multiplies a 0.6-alpha colour by its own
+  element opacity, so `stat-title` rendered at 0.30 effective and `stat-desc` at
+  0.27. Now 0.75 / 0.80 / 0.60 via `opacity-100` plus an explicit
+  `text-base-content/{75,80,60}`.
+- **Funnel legend** now names every exclusion, including the two it hid: the
+  mislabelled "no position" (really `km > 250`), the previously uncounted
+  "no rule matched", and the 331 nodes that never reach the selector at all.
