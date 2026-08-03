@@ -36,7 +36,33 @@ const T = {
     name: 'asymmetric-paths', scope: 'store',
     purpose: 'measures how often a reply returns by a different path than the send',
   }),
+  stranded: defineHook({
+    name: 'stranded-positions', scope: 'store',
+    purpose: 'finds nodes whose position we already hold in nodeinfo but never copied into nodes',
+  }),
+  anchorable: defineHook({
+    name: 'anchorable-nodes', scope: 'store',
+    purpose: 'finds unpositioned nodes whose distance is BOUNDED by a positioned door adjacent to them',
+  }),
 };
+
+// Our own antenna, for bounding a door's distance. Read once per run rather than
+// per row — it cannot change mid-sweep.
+function homeLatLon() {
+  const h = getConfig('home_pos', null);
+  if (h && Number.isFinite(h.lat) && Number.isFinite(h.lon)) return h;
+  const r = db.prepare(`SELECT lat, lon FROM nodes
+                         WHERE num IN (SELECT num FROM nodes WHERE lat IS NOT NULL AND lat <> 0)
+                         ORDER BY last_heard DESC LIMIT 1`).get();
+  return r && r.lat ? { lat: r.lat, lon: r.lon } : null;
+}
+
+function haversineKm(a, b, c, d) {
+  const R = 6371, rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(c - a), dLon = rad(d - b);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a)) * Math.cos(rad(c)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
 
 /** Nodes we could probe but never have.
  *
@@ -115,7 +141,126 @@ function runAsymmetricPaths() {
   });
 }
 
-const TASKS = [runUnknownNodes, runGhostRelays, runAsymmetricPaths];
+/** Positions we already hold and never used.
+ *
+ *  `nodeinfo` and `nodes` are two tables in the same database, and they disagree:
+ *  11 recently-heard nodes on 2026-08-03 had a lat/lon in one and nothing in the
+ *  other. Nothing discovers that on its own — it took a hand-run query, which is
+ *  exactly the work a standing task exists to stop being manual.
+ *
+ *  This is a PLUMBING DIVERGENCE, not a discovery, and the hook says so rather
+ *  than quietly copying the rows across. Why the two tables diverge is not yet
+ *  known, and a hook that papered over it would destroy the evidence needed to
+ *  find out.
+ */
+function runStrandedPositions() {
+  const days = Number((getConfig('discovery', {}) || {}).max_silence_days) || 14;
+  const rows = db.prepare(`
+    SELECT n.num, i.lat, i.lon
+      FROM nodes n
+      JOIN nodeinfo i ON i.num = n.num
+     WHERE (n.lat IS NULL OR n.lat = 0)
+       AND i.lat IS NOT NULL AND i.lat <> 0
+       AND n.last_heard > strftime('%s','now') - ? * 86400`).all(days);
+  T.stranded.emit({
+    severity: rows.length ? 'notice' : 'info',
+    summary: rows.length
+      ? `${rows.length} nodes have a position in nodeinfo that the nodes table never received`
+      : 'nodeinfo and nodes agree on every recently-heard position',
+    detail: { count: rows.length, max_silence_days: days, sample: rows.slice(0, 20).map(r => r.num) },
+  });
+}
+
+/** Unpositioned nodes whose distance is BOUNDED by a door.
+ *
+ *  127 nodes are dropped from the discovery shortlist for having no position —
+ *  the second-largest exclusion in the funnel after distance. Most are simply
+ *  invisible. But some have a DOOR we can see: a relay adjacent to them in an
+ *  answered traceroute, and that relay's own position bounds theirs to within
+ *  one LoRa hop.
+ *
+ *  ADJACENCY IS NOT MEMBERSHIP. Only two positions in a route touch the target:
+ *
+ *    route_back[0]   the first hop of the reply — the target handed it to this node
+ *    route[last]     the last outbound relay — this node handed it to the target
+ *
+ *  Everything else is adjacent to US or to another relay. Getting this wrong is
+ *  not theoretical: a hand query on 2026-08-03 treated the whole chain as
+ *  neighbours and reported Preston~Bowyer — 5.3 km away, on our own doorstep —
+ *  as a neighbour of a node in Guernsey.
+ *
+ *  IT REPORTS A BOUND, NEVER A POSITION. The door's distance is what is known;
+ *  the node's is not. Writing an estimate into the same column as a GPS fix
+ *  would make every reach figure downstream a guess wearing a measurement's
+ *  clothes, which is the one thing the board exists to prevent.
+ */
+function runAnchorableNodes() {
+  const days = Number((getConfig('discovery', {}) || {}).max_silence_days) || 14;
+  const home = homeLatLon();
+
+  const unpos = db.prepare(`
+    SELECT num FROM nodes
+     WHERE (lat IS NULL OR lat = 0)
+       AND last_heard > strftime('%s','now') - ? * 86400`).all(days);
+  if (!unpos.length) {
+    T.anchorable.emit({ summary: 'every recently-heard node has a position', detail: { count: 0 } });
+    return;
+  }
+  const wanted = new Set(unpos.map(r => r.num));
+
+  const positioned = new Map(
+    db.prepare('SELECT num, lat, lon FROM nodes WHERE lat IS NOT NULL AND lat <> 0')
+      .all().map(r => [r.num, r]));
+
+  // Only answered traceroutes carry a route at all; a timeout reveals no doors.
+  const doors = new Map();   // target num -> Set(door num)
+  for (const r of db.prepare(`SELECT to_num, route, route_back FROM traceroute_history
+                               WHERE status = 'ok'`).all()) {
+    if (!wanted.has(r.to_num)) continue;
+    const out  = J(r.route).filter(n => n !== BROADCAST);
+    const back = J(r.route_back).filter(n => n !== BROADCAST);
+    const adj  = [];
+    if (out.length)  adj.push(out[out.length - 1]);
+    if (back.length) adj.push(back[0]);
+    for (const d of adj) {
+      if (d === r.to_num) continue;
+      if (!doors.has(r.to_num)) doors.set(r.to_num, new Set());
+      doors.get(r.to_num).add(d);
+    }
+  }
+
+  const found = [];
+  for (const [num, ds] of doors) {
+    const anchors = [...ds].filter(d => positioned.has(d));
+    if (!anchors.length) continue;
+    let best = null;
+    for (const a of anchors) {
+      const p = positioned.get(a);
+      const km = home ? haversineKm(home.lat, home.lon, p.lat, p.lon) : null;
+      if (km != null && (best == null || km > best.door_km)) best = { door: a, door_km: +km.toFixed(1) };
+    }
+    found.push({ num, doors: anchors.length, furthest_door: best?.door ?? null, door_km: best?.door_km ?? null });
+  }
+  found.sort((a, b) => (b.door_km ?? 0) - (a.door_km ?? 0));
+
+  const far = found.filter(f => f.door_km != null);
+  T.anchorable.emit({
+    severity: found.length ? 'notice' : 'info',
+    summary: found.length
+      ? `${found.length} of ${unpos.length} unpositioned nodes sit one hop from a door we have placed`
+        + (far.length ? ` — the furthest door is ${far[0].door_km} km out` : '')
+      : `none of the ${unpos.length} unpositioned nodes has a positioned door`,
+    detail: {
+      unpositioned: unpos.length,
+      anchorable: found.length,
+      note: 'door distance BOUNDS the node, it does not place it — never usable as a reach figure',
+      top: found.slice(0, 15),
+    },
+  });
+}
+
+const TASKS = [runUnknownNodes, runGhostRelays, runAsymmetricPaths,
+               runStrandedPositions, runAnchorableNodes];
 
 /** Run every standing task once, isolated. One throwing must not stop the rest —
  *  a broken analysis should cost its own finding, never the others'. */
