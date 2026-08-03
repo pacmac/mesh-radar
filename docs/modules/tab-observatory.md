@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: e5e71a7e5dedc7cbf0cd2c454fc920e3ad103208afa385beb2d50034eed216f1
+source_hash: 948e7dcbf42ab506f9db0e04f124ac6cc9bef589e279c1dd71f4464a5ae1be98
 updated: 2026-08-03
 ---
 
@@ -230,6 +230,38 @@ such — `record` (all-time, the thing to beat) and `best in window`.
 
 The bands chart spans both columns (`xl:col-span-2`) and leads the grid, because it is
 the only chart that separates a change in target mix from a change in performance.
+
+## Logs sub-tab
+
+Task `logs-page`. Peter, 2026-08-03: *"we need a logs sub page, it is a log of real time
+events as well as changes in logic etc… from that table a timeline could also be
+generated."*
+
+Three panels from one table:
+
+- **Event log** — filterable by `all` / `changes` / `probes` / `tasks`. Severity colours
+  the summary; `notice` and `fault` stand out against `info`.
+- **Probe traces** — grouped by `probe_id` and **reversed to read forwards**. The log reads
+  newest-first, but a trace is a sequence and reversing it would make the narrative
+  nonsense.
+- **The pipeline** — every declared hook with its scope, name, purpose and modes. Served by
+  the server, not inferred here. This is the direct answer to "the logic is hidden": the
+  system states what it executes without anyone reading code.
+
+**Every string is written by the hook that made the decision.** The page filters, groups
+and lays out; it composes nothing.
+
+### What it surfaced immediately
+
+```
+12:13:12  aim-antenna  could not aim at 106° — beam held by another user
+```
+
+A mission deferred because the garage alarm held the rotator. That left no trace anywhere
+before this page existed, which is exactly the class of thing it is for.
+
+Verified 2026-08-03 at 1600×1000 in both themes; 36 events, 9 hooks, 2 probe traces, and
+the grid genuinely scrollable (1258 px of content in 812 px).
 
 ## Invariants
 

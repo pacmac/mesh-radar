@@ -124,6 +124,8 @@ export const wsMixin = {
     if (ev.type === 'missions')            { this.applyMissions(ev); return; }
     if (ev.type === 'mission_activity')    { this.applyMissionActivity(ev); return; }
     if (ev.type === 'charts')              { this.applyCharts(ev); return; }
+    if (ev.type === 'event_log')           { this.applyEventLog(ev); return; }
+    if (ev.type === 'event')               { this.applyEvent(ev); return; }
     if (ev.type === 'node_status')        { this.applyNodeStatus(ev); return; }
     if (ev.type === 'node_status_update') { this.onNodeStatusUpdate(ev.num); return; }
     if (ev.type === 'node_status_age')    { this.applyNodeStatusAge(ev); return; }

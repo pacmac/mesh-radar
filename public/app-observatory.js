@@ -63,6 +63,56 @@ export const observatoryMixin = {
    *  just done, and what those routes revealed. Entirely server-computed; the
    *  `found` strings are written by the runner, not assembled here. */
   missionActivity: null,
+
+  // THE LOG. Replayed on connect, then appended live as each event is emitted.
+  // Peter, 2026-08-03: "this board needs to be a live feed, rather than one that
+  // appears to be stale, I want to see that things are actually happening."
+  eventLog: [],
+  hookList: [],
+  logFilter: 'all',
+  applyEventLog(ev) { this.eventLog = ev.events || []; this.hookList = ev.hooks || []; },
+  applyEvent(ev) {
+    // Newest first, matching the replay order. Capped so a long session cannot
+    // grow the page without bound — the database keeps the history, this is a view.
+    this.eventLog = [ev.event, ...this.eventLog].slice(0, 400);
+  },
+
+  /** Filtered view. The server decides what an event IS; this only chooses which
+   *  kinds to show. */
+  obsLogRows() {
+    const f = this.logFilter;
+    return (this.eventLog || []).filter(e =>
+      f === 'all'     ? true
+    : f === 'changes' ? ['config', 'deploy', 'mode'].includes(e.kind)
+    : f === 'probes'  ? e.kind === 'probe'
+    : f === 'tasks'   ? e.kind === 'task'
+    : true);
+  },
+
+  /** One probe's steps, grouped. A trace reads FORWARDS in time even though the
+   *  log reads backwards — the steps are a sequence and reversing them would
+   *  make the narrative nonsense. */
+  obsProbeTraces() {
+    const byProbe = new Map();
+    for (const e of this.eventLog || []) {
+      if (!e.probe_id) continue;
+      if (!byProbe.has(e.probe_id)) byProbe.set(e.probe_id, []);
+      byProbe.get(e.probe_id).push(e);
+    }
+    return [...byProbe.entries()].slice(0, 12)
+      .map(([id, steps]) => ({ id, steps: [...steps].reverse() }));
+  },
+
+  obsSeverityClass(sev) {
+    return sev === 'fault' ? 'text-error' : sev === 'notice' ? 'text-warning' : 'text-base-content/60';
+  },
+
+  obsLogTime(ts) {
+    const d = new Date(ts * 1000);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+         + ':' + String(d.getSeconds()).padStart(2, '0');
+  },
+
   applyMissionActivity(ev) { this.missionActivity = ev.activity || null; },
 
   /** How old the newest traceroute attempt is, as a sentence.

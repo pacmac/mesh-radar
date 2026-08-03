@@ -30,6 +30,8 @@
        @click="switchObsTab('map')">Map</a>
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='charts' && 'tab-active font-semibold'"
        @click="switchObsTab('charts')">Charts</a>
+    <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='logs' && 'tab-active font-semibold'"
+       @click="switchObsTab('logs')">Logs</a>
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='receptions' && 'tab-active font-semibold'"
        @click="switchObsTab('receptions')">Receptions</a>
   </div>
@@ -765,4 +767,100 @@
     </p>
   </div>
 
+
+  <!-- LOGS — the decision trace and the change timeline, from one table.
+       Peter, 2026-08-03: "it is a log of real time events as well as changes in
+       logic etc… from that table a timeline could also be generated."
+
+       Every string here is written by the hook that made the decision. The page
+       filters and lays out; it composes nothing. -->
+  <div x-show="obsTab==='logs'" class="flex-1 min-h-0 flex flex-col gap-2">
+
+    <div class="flex flex-wrap items-center gap-2 shrink-0">
+      <span class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Show</span>
+      <div class="join">
+        <template x-for="f in ['all','changes','probes','tasks']" :key="f">
+          <button class="join-item btn btn-xs" :class="logFilter===f ? 'btn-primary' : 'btn-ghost'"
+                  @click="logFilter=f" x-text="f"></button>
+        </template>
+      </div>
+      <span class="text-xs text-base-content/45 ml-auto font-mono"
+            x-text="obsLogRows().length + ' of ' + (eventLog?.length||0) + ' events · ' + (hookList?.length||0) + ' hooks'"></span>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 flex-1 min-h-0 overflow-y-auto">
+
+      <div class="card bg-base-100 shadow">
+        <div class="card-body p-3 gap-1">
+          <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Event log</h2>
+          <template x-if="!obsLogRows().length">
+            <p class="text-xs text-base-content/40 py-6 text-center">Nothing yet for this filter.</p>
+          </template>
+          <div class="overflow-x-auto">
+            <table class="table table-xs">
+              <tbody>
+                <template x-for="e in obsLogRows().slice(0,120)" :key="e.id ?? (e.ts + e.summary)">
+                  <tr>
+                    <td class="font-mono text-base-content/45 whitespace-nowrap" x-text="obsLogTime(e.ts)"></td>
+                    <td class="font-mono text-base-content/50 whitespace-nowrap" x-text="e.kind"></td>
+                    <td class="font-mono text-base-content/70 whitespace-nowrap" x-text="e.source || ''"></td>
+                    <td :class="obsSeverityClass(e.severity)" x-text="e.summary"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-3 min-h-0">
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-1">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Probe traces</h2>
+            <p class="text-xs text-base-content/40">One probe, in the order it happened. A trace reads forwards.</p>
+            <template x-if="!obsProbeTraces().length">
+              <p class="text-xs text-base-content/40 py-4 text-center">No probes in the log yet.</p>
+            </template>
+            <template x-for="p in obsProbeTraces()" :key="p.id">
+              <div class="mt-1 border-l-2 border-base-300 pl-2">
+                <div class="text-xs font-mono text-base-content/35" x-text="p.id"></div>
+                <template x-for="s in p.steps" :key="s.id ?? (s.ts + s.summary)">
+                  <div class="text-xs">
+                    <span class="font-mono text-base-content/45" x-text="obsLogTime(s.ts)"></span>
+                    <span class="font-mono text-base-content/60" x-text="s.source"></span>
+                    <span :class="obsSeverityClass(s.severity)" x-text="s.summary"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- THE PIPELINE, ENUMERATED. What the system executes and what each step
+             claims to do — served by the server, not inferred here. This is the
+             direct answer to "the logic is hidden". -->
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-3 gap-1">
+            <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">The pipeline</h2>
+            <div class="overflow-x-auto">
+              <table class="table table-xs">
+                <tbody>
+                  <template x-for="h in hookList" :key="h.name">
+                    <tr>
+                      <td class="font-mono text-base-content/45 whitespace-nowrap" x-text="h.scope"></td>
+                      <td class="font-mono text-base-content/75 whitespace-nowrap" x-text="h.name"></td>
+                      <td class="text-base-content/55" x-text="h.purpose"></td>
+                      <td class="font-mono text-base-content/40 whitespace-nowrap"
+                          x-text="h.modes ? h.modes.join(', ') : ''"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
 </div>
