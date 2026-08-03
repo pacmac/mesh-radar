@@ -144,6 +144,12 @@ export function hashTemplate(text) {
   return h.toString(36);
 }
 
+/** Meshtastic's own default short name: the last four hex digits of the node ID.
+ *  What the operator of an unnamed node sees on their own device. */
+export function shortId(num) {
+  return (Number(num) >>> 0).toString(16).padStart(8, '0').slice(-4);
+}
+
 let _inFlight = false;
 
 /** Decide whether this node gets a callout, and say WHY NOT when it does not.
@@ -158,6 +164,27 @@ export function evaluate(node, { now = Math.floor(Date.now() / 1000), home } = {
   if (_inFlight)         return { ok: false, reason: 'a callout is already in flight' };
   if (!home)             return { ok: false, reason: 'we cannot place ourselves' };
   if (!node?.lat || node.lat === 0) return { ok: false, reason: 'target has no position' };
+
+  // A NAMELESS NODE STILL HAS AN ADDRESS.
+  //
+  // The token fallback was `short_name || long_name || '?'`, and on 2026-08-03
+  // that broadcast this to the public channel, verbatim:
+  //
+  //   "@? long way for a few bytes — 216km, bearing 160°. Any chance that landed?"
+  //
+  // Node 2053915524 has BOTH names null. Addressing a stranger as "@?" is
+  // published nonsense aimed at nobody.
+  //
+  // Peter's fix, and it is the right one: use the last four hex digits of the
+  // node ID. That is Meshtastic's OWN default short name for a node that has
+  // not set one, so it is what its operator sees on their own screen —
+  // 2053915524 is 0x7A6C4384, so "@4384". Our node table is already full of
+  // them: 38d8, 89ec, b3f6, 24b0.
+  //
+  // Skipping unnamed nodes was my first fix and it was worse: it would have
+  // silently excluded a whole class of target, including 4384 itself at
+  // 215.6 km — one of the Jersey group that could beat the record.
+  if (!node.num) return { ok: false, reason: 'target has no id' };
 
   if (c.quiet_hours) {
     const h = new Date(now * 1000).getHours();
@@ -206,8 +233,8 @@ export function evaluate(node, { now = Math.floor(Date.now() / 1000), home } = {
   // listener can notice.
   const template = pool[Math.floor(Math.random() * pool.length)];
   const text = renderTemplate(template.text, {
-    short_name: node.short_name || node.long_name || '?',
-    long_name:  node.long_name || node.short_name || '?',
+    short_name: node.short_name || node.long_name || shortId(node.num),
+    long_name:  node.long_name || node.short_name || shortId(node.num),
     km:         Math.round(km),
     az:         Math.round(bearingOf(home.lat, home.lon, node.lat, node.lon)),
     hops:       node.hops_away ?? '',

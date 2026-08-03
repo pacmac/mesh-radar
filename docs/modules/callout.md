@@ -1,7 +1,7 @@
 ---
 module: callout
 source: src/callout.js
-source_hash: 2fd3a3f726da73d19f5085575e50fccd653cf4013ffb682c323dddb17cac3cdd
+source_hash: 4d30e68b0b332393739310bf2efdfa6eef1ecf5f9e1234526e3be9e3ab385262
 updated: 2026-08-03
 ---
 
@@ -84,6 +84,27 @@ rotation is still a pattern a listener notices.
 Tokens: `%short_name%` `%long_name%` `%km%` `%az%` `%hops%`. An **unknown token
 renders empty**, never as the literal `%token%` — a broadcast containing raw
 template syntax tells the whole channel the sender is not paying attention.
+
+### A nameless node still has an address
+
+The name fallback was `short_name || long_name || '?'`, and on 2026-08-03 that
+put this on the public channel, verbatim:
+
+```
+@? long way for a few bytes — 216km, bearing 160°. Any chance that landed?
+```
+
+Node `2053915524` has **both** names null. Addressing a stranger as `@?` is
+published nonsense aimed at nobody.
+
+Peter's fix, and it is the right one: **the last four hex digits of the node ID**
+— Meshtastic's own default short name for a node that has not set one, so it is
+what that operator sees on their own device. `0x7A6C4384` → **`@4384`**. Our node
+table is already full of them: `38d8`, `89ec`, `b3f6`, `24b0`.
+
+My first fix was to **skip** unnamed nodes, and it was worse: it would have
+silently excluded a whole class of target — including `4384` itself at 215.6 km,
+one of the Jersey group that could beat the record.
 
 The defaults are deliberately self-deprecating and end in a question, so a reply
 is natural and nothing reads as boasting:
