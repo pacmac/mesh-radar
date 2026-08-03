@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { broadcastSettings, pokeDeviceList } from './ws-relay.js';
 import { getConfig, setConfig } from './db.js';
+import { logEvent } from './hooks.js';
 import { nodeList } from './node-list.js';
 import { modeConfigAll, isValidRole, MODE_KEYS } from './dash-mode.js';
 
@@ -28,6 +29,9 @@ export const DEFAULTS = {
   // filtering must be done backend so anyone using the browser sees the same
   // thing." 0 means ALL TIME. Task `observatory-window`.
   'observatory.window_days':  30,
+  // Retention for event_log (task `event-log`). ~6k rows/day at ~50 probes/hour
+  // with ~5 events each — far less than relay_observation, but still bounded.
+  'event_log.retain_days':    30,
   'radar.log_scale':          true,   // adaptive quantile scale (linear = opt-out)
   'radar.crosshair':          false,
   'message_filter.channels':  [],
@@ -296,7 +300,20 @@ router.put('/:key', (req, res) => {
   if (key === 'observatory.window_days' && !WINDOW_DAYS.includes(Number(value))) {
     return res.status(400).json({ error: `window_days must be one of ${WINDOW_DAYS.join(', ')}` });
   }
+  // WHAT CHANGED, WHEN. Without this every "did that help?" is answered from
+  // memory — which is how 2026-08-03 went, and it cost hours. The window
+  // selector is excluded: it changes the VIEW, not the system, and is written
+  // constantly. Task `event-log`.
+  const before = getConfig(key, DEFAULTS[key]);
   setConfig(key, value);
+  if (key !== 'observatory.window_days') {
+    logEvent({
+      kind: 'config', source: 'config-api',
+      severity: key === 'traceroute.enabled' && value === false ? 'notice' : 'info',
+      summary: `${key}: ${JSON.stringify(before)} → ${JSON.stringify(value)}`,
+      detail: { key, from: before, to: value },
+    });
+  }
   if (NODE_FILTER_KEYS.has(key)) nodeList.refilter();
   res.json({ key, value });
   broadcastSettings();
@@ -313,7 +330,17 @@ router.put('/', (req, res) => {
       !WINDOW_DAYS.includes(Number(updates['observatory.window_days']))) {
     return res.status(400).json({ error: `window_days must be one of ${WINDOW_DAYS.join(', ')}` });
   }
-  for (const [key, value] of Object.entries(updates)) setConfig(key, value);
+  for (const [key, value] of Object.entries(updates)) {
+    const before = getConfig(key, DEFAULTS[key]);
+    setConfig(key, value);
+    if (key !== 'observatory.window_days') {
+      logEvent({
+        kind: 'config', source: 'config-api',
+        summary: `${key}: ${JSON.stringify(before)} → ${JSON.stringify(value)}`,
+        detail: { key, from: before, to: value },
+      });
+    }
+  }
   if (Object.keys(updates).some(k => NODE_FILTER_KEYS.has(k))) nodeList.refilter();
   res.json(updates);
   broadcastSettings();

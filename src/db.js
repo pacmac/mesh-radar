@@ -149,6 +149,32 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_det_dedup  ON detection_events(num, packet_id) WHERE packet_id IS NOT NULL;
   CREATE INDEX        IF NOT EXISTS idx_det_num_ts ON detection_events(num, ts DESC);
 
+  -- THE EVENT LOG. Task event-log. Hooks report here; config writes and boots
+  -- report here; one probe's steps share a probe_id so a decision trace can be
+  -- grouped out of it.
+  --
+  -- summary is written AT THE SOURCE and never composed downstream. A trace whose
+  -- strings are assembled elsewhere reintroduces exactly the hiding it exists to
+  -- end.
+  --
+  -- The RAW FEED STAYS OUT: ~50 attempts/hour and 216-468 receptions per 15 min
+  -- belong in traceroute_history / relay_observation. A probe trace is 5 rows per
+  -- probe, not 500 — this log's value is inversely proportional to its volume.
+  CREATE TABLE IF NOT EXISTS event_log (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts       INTEGER NOT NULL,
+    kind     TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'info',
+    summary  TEXT NOT NULL,
+    detail   TEXT,
+    source   TEXT,
+    probe_id TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_event_log_ts    ON event_log(ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_event_log_probe ON event_log(probe_id) WHERE probe_id IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_event_log_kind  ON event_log(kind, ts DESC);
+
   -- Who relayed each packet, and how it travelled. Task packet-provenance-capture.
   --
   -- Deliberately NOT signal_history: that table is direct-only by design (see its
@@ -1380,6 +1406,39 @@ const _insertRelayObservation = db.prepare(`
     (@ts, @from_num, @relay_byte, @rx_device, @hop_start, @hop_limit, @transport, @decoded)
 `);
 const _pruneRelayObservations = db.prepare(`DELETE FROM relay_observation WHERE ts < ?`);
+
+const _insertEventLog = db.prepare(`
+  INSERT INTO event_log (ts, kind, severity, summary, detail, source, probe_id)
+  VALUES (@ts, @kind, @severity, @summary, @detail, @source, @probe_id)
+`);
+const _pruneEventLog = db.prepare(`DELETE FROM event_log WHERE ts < ?`);
+
+export function insertEventLog(entry) {
+  _insertEventLog.run({ severity: 'info', detail: null, source: null, probe_id: null, ...entry });
+}
+
+/** Newest first. The log page and the probe traces both read this. */
+export function recentEventLog(limit = 200) {
+  return db.prepare('SELECT * FROM event_log ORDER BY ts DESC, id DESC LIMIT ?').all(limit);
+}
+
+/** One probe's steps, oldest first — a trace reads forwards. */
+export function probeTrace(probeId) {
+  return db.prepare('SELECT * FROM event_log WHERE probe_id = ? ORDER BY id').all(probeId);
+}
+
+/** Interventions only, for marking the board's sparklines. */
+export function interventions(days = 30) {
+  return db.prepare(`
+    SELECT ts, kind, summary FROM event_log
+     WHERE kind IN ('config','deploy','mode') ${_windowSql(days, 'ts')}
+     ORDER BY ts`).all();
+}
+
+export function pruneEventLog(days) {
+  const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+  return _pruneEventLog.run(cutoff).changes;
+}
 
 export function insertRelayObservation(entry) {
   _insertRelayObservation.run(entry);

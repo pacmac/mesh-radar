@@ -31,7 +31,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: aeac01b91f8b7e5d91068d3166433c072a2c51627c5d56237a71535bc32100fc
+source_hash: db14ac40612d8ea29969d51341f5aa83796b628a535bbff00711e94bc708a827
 updated: 2026-08-03
 ---
 
@@ -182,6 +182,13 @@ _N/A._ The runner observes `/events`; it does not add application events.
 
 For the live channel case it observes the existing `config_op` lifecycle and
 requires terminal `success` for both write and restoration.
+
+## Boot records a deploy
+
+`src/index.js` writes one `event_log` row on listen, stamped with the git SHA and commit
+subject. Verified safe to rely on: **pm2 does not watch this project** (`watch & reload: ✘`,
+72 restarts as of 2026-08-03), so a restart is always deliberate and a boot entry is a
+truthful deploy marker rather than a noisy side effect of file saves. Task `event-log`.
 
 ## Asset versioning covers app.js ONLY
 

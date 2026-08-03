@@ -6,6 +6,8 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import * as pacHost from './pac-host.js';
 import configRouter from './config-api.js';
+import { logEvent } from './hooks.js';
+import { execSync } from 'child_process';
 import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId, getAllDeviceCfgs } from './device-config.js';
 import deviceRemoveRouter from './device-remove.js';
 import { registerMacToNumResolver } from './node-filter.js';
@@ -381,6 +383,19 @@ if (!getConfig('migrations.node_device_mac', false)) {
 
 server.listen(PORT, () => {
   console.log(`[node-dash] listening on port ${PORT}`);
+  // DEPLOY MARKER, essentially free. pm2 does NOT watch this project (verified
+  // 2026-08-03: `watch & reload: ✘`), so every restart is a deliberate deploy —
+  // which makes a boot entry a reliable record of "the code changed". That is
+  // Peter's "changes in logic", captured without anyone remembering to note it.
+  // Task `event-log`.
+  try {
+    const sha = execSync('git rev-parse --short HEAD', { cwd: process.cwd() }).toString().trim();
+    const subject = execSync('git log -1 --format=%s', { cwd: process.cwd() }).toString().trim();
+    logEvent({ kind: 'deploy', source: 'index', summary: `started ${sha} — ${subject}`, detail: { sha, subject } });
+  } catch {
+    // Not a git checkout, or git unavailable. A boot is still worth recording.
+    logEvent({ kind: 'deploy', source: 'index', summary: 'started (revision unknown)' });
+  }
   bridge.start();
   pacHost.start();
   rotator.start();
