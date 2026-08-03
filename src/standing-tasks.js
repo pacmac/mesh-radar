@@ -15,6 +15,7 @@
 
 import db, { getConfig } from './db.js';
 import { defineHook } from './hooks.js';
+import { ownDeviceNums } from './node-filter.js';
 
 // 0xFFFFFFFF is the BROADCAST address, not a node. Without this the ghost-relay
 // hook reports a phantom that cannot exist — measured 2026-08-03, it was 1 of the
@@ -46,14 +47,30 @@ const T = {
   }),
 };
 
-// Our own antenna, for bounding a door's distance. Read once per run rather than
-// per row — it cannot change mid-sweep.
+/** WHERE WE ARE. Read once per run — it cannot change mid-sweep.
+ *
+ *  `home_pos` is NULL on this host (see the parked `radar-home-position-ssot`
+ *  task), so a fallback is needed. It must be OUR OWN RADIO and nothing else.
+ *
+ *  The first version fell back to "the most recently heard positioned node",
+ *  which is non-deterministic and silently wrong: on 2026-08-03 that happened to
+ *  be our own OMNI, giving a plausible 179 km, but the next two candidates were
+ *  Gozza_Mesh_2 in Bristol and mu7gci office in GUERNSEY. Picking either would
+ *  have rebased every door distance on a stranger's location and produced
+ *  confident nonsense that looked exactly like a measurement.
+ *
+ *  Returning null is the honest answer when we cannot place ourselves; the
+ *  caller then reports doors without distances rather than inventing them. */
 function homeLatLon() {
   const h = getConfig('home_pos', null);
   if (h && Number.isFinite(h.lat) && Number.isFinite(h.lon)) return h;
-  const r = db.prepare(`SELECT lat, lon FROM nodes
-                         WHERE num IN (SELECT num FROM nodes WHERE lat IS NOT NULL AND lat <> 0)
-                         ORDER BY last_heard DESC LIMIT 1`).get();
+  const own = [...ownDeviceNums()];
+  if (!own.length) return null;
+  const r = db.prepare(
+    `SELECT lat, lon FROM nodes
+      WHERE num IN (${own.map(() => '?').join(',')})
+        AND lat IS NOT NULL AND lat <> 0
+      ORDER BY last_heard DESC LIMIT 1`).get(...own);
   return r && r.lat ? { lat: r.lat, lon: r.lon } : null;
 }
 

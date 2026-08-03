@@ -1,7 +1,7 @@
 ---
 module: standing-tasks
 source: src/standing-tasks.js
-source_hash: 95556575eb0af65cbff882bfb8ba7d3a8e09e8950673841c44279f78741a2142
+source_hash: b1279c521c74f04a573a229a2854f787ed3f63decc2e0bbc0511d85491f00885
 updated: 2026-08-03
 ---
 
@@ -145,6 +145,32 @@ note: "door distance BOUNDS the node, it does not place it —
 - furthest door **178.9 km** — GU4WRP, Guernsey, the door of **Pokey Hollow**,
   the only target that answered that day
 - second: StAustellSimonBase, door GCM017-Lancresse Road, 175.7 km
+
+### Where "us" comes from, and why it nearly produced nonsense
+
+`home_pos` is **NULL** on this host — the parked `radar-home-position-ssot` task
+is exactly about that — so `homeLatLon()` needs a fallback.
+
+The first version fell back to *"the most recently heard positioned node"*. On
+2026-08-03 that happened to resolve to our own OMNI and gave a plausible 179 km,
+which is precisely what made it dangerous. The next two candidates in that same
+query were **Gozza_Mesh_2 in Bristol** and **mu7gci office in Guernsey**. Either
+would have silently rebased every door distance on a stranger's location and
+produced confident nonsense indistinguishable from a measurement.
+
+The fallback now resolves **only our own radios**, via `ownDeviceNums()`. Two
+consequences worth knowing:
+
+- `ownDeviceNums()` returns an empty set until `index.js:103` registers the MAC
+  resolver at startup. Standing tasks first run 60 s after boot, so the live
+  service is always past that — but a **standalone script is not**, and will get
+  no distances at all. That is the correct behaviour, not a bug.
+- Distances are measured from whichever of our radios was heard most recently
+  (OMNI or YAGI). They sit ~0.4 km apart, so figures move by a decimal between
+  runs: the same door reads 178.9 km from the YAGI and 179.0 km from the OMNI.
+
+When we cannot place ourselves, `homeLatLon()` returns **null** and the hook
+reports its doors **without distances** rather than inventing them.
 
 Both hooks report the zero case explicitly. "0 anchorable" is evidence; silence
 is indistinguishable from a broken hook, which is the failure that started the
