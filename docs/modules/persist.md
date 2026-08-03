@@ -1,7 +1,7 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: ba78f0686bce6558677795061518b7e72e2737640d6a086728a6d5ec30cb897e
+source_hash: fe24fd86d75e15c82ca3b8e79516c411dbc3930aa4cefd887ea000b804496e22
 updated: 2026-08-03
 ---
 
@@ -308,3 +308,39 @@ Ungated writes resume the moment the gate is removed.
 values still match no `signal_history` row. The node page no longer reads them
 (`node-status.js` now uses `latestDirectPerRadio`), but `node-list`/radar still
 do — recorded against task `signal-provenance-mixed-source`, not fixed here.
+
+
+## B69 — the nodedb path accepted impossible coordinates
+
+`handleNodeInfo` wrote `pos.latitude_i / 1e7` straight into `nodes` with no
+validity check, while the sibling `_upsertCache` applied `_validCoord` before
+writing `nodeinfo`. A nodedb row carrying an out-of-range latitude was therefore
+stored as a real position in one table and rejected by the other.
+
+Proven both ways against the real path (`handleEvent` -> `handleNodeInfo`), with
+a synthetic node at `latitude_i: 2000000000` (lat 200):
+
+```
+without the fix   nodes lat=200   nodeinfo lat=null   <- the asymmetry
+with the fix      nodes lat=null  nodeinfo lat=null
+```
+
+### The ledger entry was wrong and is corrected
+
+B69 was filed as "the nodedb path writes raw **0,0** into nodes.lat while
+nodeinfo rejects it". That is **not true**: `_validCoord` is
+
+```js
+lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180
+```
+
+so `_validCoord(0, 0)` returns **true** and *neither* table rejects null island.
+The test caught it — the first run stored `lat=0` in both tables, which is the
+opposite of what the ledger predicted.
+
+The real defect was narrower (out-of-range only) and the fix is the same one, but
+the reasoning behind it was wrong until measured.
+
+**Null island is a separate, still-open gap** — neither table rejects `0,0`, the
+classic "GPS has no fix yet" value. Filed as its own finding rather than folded
+in here.

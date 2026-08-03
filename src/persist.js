@@ -533,6 +533,9 @@ function handleNodeInfo(data, device) {
   const u = node.user || {};
   const pos = node.position || {};
   const m = node.device_metrics || {};
+  const nodedbLat = pos.latitude_i  != null ? pos.latitude_i  / 1e7 : null;
+  const nodedbLon = pos.longitude_i != null ? pos.longitude_i / 1e7 : null;
+  const nodedbPos = _validCoord(nodedbLat, nodedbLon);
   stmts.upsertNode.run({
     num:           node.num,
     node_id:       u.id          ?? null,
@@ -555,9 +558,16 @@ function handleNodeInfo(data, device) {
     snr:           null,
     rssi:          null,
     hops:          node.hops     ?? null,
-    lat:           pos.latitude_i  != null ? pos.latitude_i  / 1e7 : null,
-    lon:           pos.longitude_i != null ? pos.longitude_i / 1e7 : null,
-    alt:           pos.altitude   ?? null,
+    // B69: `_validCoord` was applied by the sibling `_upsertCache` below but NOT
+    // here, so a node reporting 0,0 — the classic "GPS has no fix yet" value —
+    // was stored as a real position in `nodes` while `nodeinfo` correctly
+    // rejected it. That is the exact inverse of B67, and it lands ~5,400 km
+    // away, where the funnel counts it under `skipped_suspect` rather than
+    // `unpositioned`: silently mis-classified, not silently targeted.
+    // No live instance had occurred when this was fixed (0 rows with lat = 0).
+    lat:           nodedbPos ? nodedbLat : null,
+    lon:           nodedbPos ? nodedbLon : null,
+    alt:           nodedbPos ? (pos.altitude ?? null) : null,
     battery:       m.battery_level  ?? null,
     voltage:       m.voltage        ?? null,
     channel_util:  m.channel_utilization ?? null,
