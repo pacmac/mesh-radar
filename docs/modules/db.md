@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: cf72e25b84051dc1ff759768f12c15ad9a4f6b2ac2aaeb5b8572cc4cc02911f4
+source_hash: 2c9859e096e24a8975df163e426275044895ab880f1bec251ba04a43595394a0
 updated: 2026-08-03
 ---
 
@@ -796,3 +796,64 @@ question this table exists to answer, from traceroute traffic already dispatched
 New table via plain `CREATE TABLE IF NOT EXISTS`, so the `table_xinfo` /
 `table_info` migration hazard documented above does not apply — there is no
 repeated `ALTER` to guard.
+
+## `frontier.strip` — the frontier card stops being two numbers (task `frontier-strip-payload`, 2026-08-03)
+
+Peter, 2026-08-03: *"I want the top frontier card to be formatted to show the
+current window, and the nodes heard and their distance and maybe signal strength
+in each bar as a colour."*
+
+The card spent full page width carrying two scalars. It now carries the
+distribution: one entry per positioned node on a distance axis, so the shape of
+our reach is visible rather than just its maximum.
+
+### Emitted per node
+
+```js
+strip: [ { km, hit_rate, attempts, direct, snr_db, tone, label } ]
+```
+
+`hit_rate` is `ok/attempts` or **null when never tried** — null is "unknown",
+which is not zero, and a never-tried node must not render as a failure.
+
+### `direct` and `snr_db` — the honesty constraint
+
+**`snr_db` is populated ONLY for nodes in `signal_history`, which records DIRECT
+receptions.** Measured 2026-08-03: of 503 positioned nodes within 250 km, 189
+have been heard at all and only **27** have ever been heard directly.
+
+For the other 476 the RSSI/SNR we hold describes **the last relay hop, not the
+node**. Colouring a 180 km bar with it would assert we hear that node strongly
+when we are actually hearing a relay 13 km away. So `direct: false` carries
+`snr_db: null`, and the renderer must use a flat tone for those rather than
+inventing a colour. A chart that implies reach we do not have is worse than no
+chart — see the 4x SNR overstatement (B72) and the direct-gate definition change
+that briefly looked like an RF collapse.
+
+### Naming — `best_km` supersedes `window_km`
+
+`frontier.window_km` never meant a window in kilometres; it is the **best
+distance achieved within the time window**. Discovery's `window_km` *is* a
+distance — the 50 km ladder band. Two different meanings, one name, and the card
+printed one under a label meaning the other.
+
+`best_km` is added as the correct name. **`window_km` stays, unchanged, as an
+alias** — the browser still reads it, and Domain 1 may not change Domain 2 in the
+same task. It is removed once the board renders `best_km`.
+
+### `window_days` on the frontier
+
+The card said "this period" without ever naming the period. `window_days` is now
+published on `frontier` itself (`0` = all time) so the card can say "last 7
+days". The selector already exists on the Charts tab over `[0,1,7,30,60]` and
+writes `observatory.window_days`, which is server state — one value, every
+viewer sees the same board.
+
+### The default that disagreed with the stored value
+
+`getConfig('observatory.window_days', 30)` and `boardVerdicts(days = 30)` both
+defaulted to **30** while the stored value was **7**. If that key ever went
+missing, every board figure would silently switch to a 30-day basis with nothing
+on screen saying so — the same silent-default class as B74. Both defaults are now
+**7**, matching what is actually configured, and `window_days` is published so a
+disagreement is visible rather than silent.

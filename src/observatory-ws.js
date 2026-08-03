@@ -304,7 +304,10 @@ function charts() {
   // while `silence` and `distance` were all-time, with nothing on screen saying
   // so — four series read side by side, two of which were not comparable with
   // the other two. Task `observatory-window`.
-  const windowDays = Number(getConfig('observatory.window_days', 30)) || 0;
+  // Default 7, matching the stored value. It was 30 here and in boardVerdicts
+  // while config held 7, so a missing key would have silently re-based the whole
+  // board on a different window with nothing on screen saying so.
+  const windowDays = Number(getConfig('observatory.window_days', 7)) || 0;
   const out = {
     ladder: [], record_km: null, daily: [], silence: [], distance: [], bands: [],
     window_days: windowDays, window_best_km: null, window_answered: 0,

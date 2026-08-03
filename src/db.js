@@ -1071,7 +1071,58 @@ export function radioAirtime(num) {
  *  browser no decisions, and a coloured light with no stated reason is a magic
  *  number wearing a colour.
  */
-export function boardVerdicts(days = 30) {
+// Default 7, not 30. It was 30 in both this signature and the getConfig call in
+// observatory-ws.js while the STORED value was 7 — so a missing key would have
+// silently re-based every board figure on a 30-day window with nothing on screen
+// saying so. Same silent-default class as B74. window_days is now published so a
+// disagreement is visible instead.
+// One entry per positioned node on the distance axis, so the frontier card shows
+// the SHAPE of our reach and not just its maximum.
+//
+// THE HONESTY CONSTRAINT, and it is the whole reason this is computed here
+// rather than in the browser: snr_db is populated ONLY from signal_history,
+// which records DIRECT receptions. Measured 2026-08-03 — 503 positioned nodes
+// within 250 km, 189 heard at all, 27 heard DIRECTLY. For the other 476 the
+// signal we hold describes the last RELAY hop, not the node, so colouring a
+// 180 km bar with it would claim reach we do not have. direct:false carries
+// snr_db:null and the renderer must use a flat tone.
+function frontierStrip() {
+  const home = db.prepare(`
+    SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') lon`).get();
+  if (!home || !Number.isFinite(home.lat) || home.lat === 0) return [];
+
+  const rows = db.prepare(`
+    SELECT n.num, n.short_name, n.long_name, n.lat, n.lon,
+           (SELECT COUNT(*) FROM traceroute_history t WHERE t.to_num = n.num) attempts,
+           (SELECT COUNT(*) FROM traceroute_history t WHERE t.to_num = n.num AND t.status='ok') hits,
+           (SELECT ROUND(AVG(s.snr),2) FROM signal_history s WHERE s.num = n.num) snr_db,
+           (SELECT COUNT(*) FROM signal_history s WHERE s.num = n.num) direct_rx
+      FROM nodes n
+     WHERE n.lat IS NOT NULL AND n.lat <> 0`).all();
+
+  const out = [];
+  for (const r of rows) {
+    const km = haversine(home.lat, home.lon, r.lat, r.lon);
+    // 250 km is the plausibility ceiling: beyond it positions are MQTT-sourced
+    // and self-reported, not RF evidence.
+    if (!(km <= 250)) continue;
+    const direct = r.direct_rx > 0;
+    out.push({
+      km: Math.round(km * 10) / 10,
+      attempts: r.attempts,
+      // null, NOT zero: never tried is unknown, and must not render as failure.
+      hit_rate: r.attempts > 0 ? Math.round(1000 * r.hits / r.attempts) / 10 : null,
+      direct,
+      snr_db: direct ? r.snr_db : null,
+      tone: direct ? 'signal' : (r.hits > 0 ? 'answered' : r.attempts > 0 ? 'tried' : 'untried'),
+      label: r.short_name || r.long_name || `!${(r.num >>> 0).toString(16)}`,
+    });
+  }
+  return out.sort((a, b) => a.km - b.km);
+}
+
+export function boardVerdicts(days = 7) {
   const now  = Math.floor(Date.now() / 1000);
   const win  = Number(days) > 0 ? Number(days) : 3650;   // "all time" still needs a span
   const from = now - win * 86400;
@@ -1305,6 +1356,15 @@ export function boardVerdicts(days = 30) {
                 prev_rate: prev.pct == null ? null : Math.round(prev.pct), basis: yBasis,
                 series: daily.map(d => ({ day: d.day, v: d.att >= MIN_ATT ? Math.round(100 * d.ok / d.att) : null })) },
     frontier: { state: fState, window_km: curKm == null ? null : Math.round(curKm * 10) / 10,
+                // best_km is window_km's correct name: it is the best distance
+                // achieved IN the time window, never a window measured in km —
+                // which is what discovery's own window_km means. Both are
+                // published until the board reads best_km; Domain 1 cannot
+                // change the browser in the same task.
+                best_km: curKm == null ? null : Math.round(curKm * 10) / 10,
+                // The card said "this period" without naming it. 0 = all time.
+                window_days: Number(days) > 0 ? Number(days) : 0,
+                strip: frontierStrip(),
                 record_km: recordKm, flat_days: flatDays,
                 // `where` is the location line; `basis` stays the verdict. The
                 // card prints the km itself, so neither line repeats it.

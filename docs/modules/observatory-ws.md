@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: f134c8de26e779882e0e8c1fa7d1172994fb344f318c9c747646b97fa3cba276
+source_hash: e3f1fd595d7070271752257df8536a35b0d6c5d18bf344126fab3ca0e2efa348
 updated: 2026-08-03
 ---
 
@@ -283,3 +283,13 @@ errors.
 
 - The page itself — Domain 2, its own task.
 - Any derived or formatted value. This module forwards what was recorded.
+
+## Window default corrected to 7 (task `frontier-strip-payload`, 2026-08-03)
+
+`getConfig('observatory.window_days', 30)` defaulted to **30** while the stored
+value was **7**, and `boardVerdicts(days = 30)` did the same. A missing key would
+therefore have silently re-based every board figure onto a 30-day window with
+nothing on screen saying so — the silent-default class of B74.
+
+Both defaults are now **7**, and `window_days` is published on `board.frontier`
+so the basis is visible to the reader instead of assumed. `0` means all time.
