@@ -39,55 +39,6 @@
   <!-- ══════════════════════ BOARD ══════════════════════════════════════════ -->
   <div x-show="obsTab==='board'" class="flex-1 min-h-0 flex flex-col gap-3">
 
-    <!-- THE VERDICTS. Peter, 2026-08-03: "at first glance it has been identical
-         since it was first built, I see no progress and no evidence that anything
-         is even happening."
-
-         Three answers, not three totals: is it alive, is it producing, is it
-         getting further. Every state and every basis string is computed by the
-         server (BROWSER_CONTRACT) — this markup colours what it is told and
-         assembles no explanation of its own.
-
-         Liveness is deliberate. Peter uses the node page "because I can see things
-         happening", and what makes that page feel alive is that every number is
-         anchored to NOW — "8m ago", "in 6m 23s". So the loop card leads with a
-         ticking time-since, not an average. -->
-    <template x-if="charts?.board">
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 shrink-0">
-
-        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-          <div class="stat-title text-xs">Loop</div>
-          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.loop.series, charts.board.loop.state)"></svg>
-          <div class="stat-value text-2xl font-mono tabular-nums"
-               :class="obsVerdictClass(charts.board.loop.state)"
-               x-text="charts.board.loop.since_sec == null ? '—'
-                       : charts.board.loop.since_sec < 90 ? charts.board.loop.since_sec + 's ago'
-                       : charts.board.loop.since_sec < 5400 ? Math.round(charts.board.loop.since_sec/60) + 'm ago'
-                       : Math.round(charts.board.loop.since_sec/3600) + 'h ago'"></div>
-          <div class="stat-desc text-xs" x-text="charts.board.loop.basis"></div>
-        </div>
-
-        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-          <div class="stat-title text-xs">Yield</div>
-          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.yield.series, charts.board.yield.state)"></svg>
-          <div class="stat-value text-2xl font-mono tabular-nums"
-               :class="obsVerdictClass(charts.board.yield.state)"
-               x-text="charts.board.yield.rate == null ? '—' : charts.board.yield.rate + '%'"></div>
-          <div class="stat-desc text-xs" x-text="charts.board.yield.basis"></div>
-        </div>
-
-        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-          <div class="stat-title text-xs">Frontier</div>
-          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.frontier.series, charts.board.frontier.state)"></svg>
-          <div class="stat-value text-2xl font-mono tabular-nums"
-               :class="obsVerdictClass(charts.board.frontier.state)"
-               x-text="charts.board.frontier.window_km == null ? '—' : charts.board.frontier.window_km + ' km'"></div>
-          <div class="stat-desc text-xs" x-text="charts.board.frontier.basis"></div>
-        </div>
-
-      </div>
-    </template>
-
     <!-- THE FRONTIER RULER. The only glance-graphic here that is a GAP rather
          than a trend, and the gap is the whole product: a sparkline cannot say
          "92 of 189, and the notch is over there". -->
@@ -130,42 +81,111 @@
       </div>
     </template>
 
+    <!-- THE VERDICTS. Peter, 2026-08-03: "at first glance it has been identical
+         since it was first built, I see no progress and no evidence that anything
+         is even happening."
+
+         Three answers, not three totals: is it alive, is it producing, is it
+         getting further. Every state and every basis string is computed by the
+         server (BROWSER_CONTRACT) — this markup colours what it is told and
+         assembles no explanation of its own.
+
+         Liveness is deliberate. Peter uses the node page "because I can see things
+         happening", and what makes that page feel alive is that every number is
+         anchored to NOW — "8m ago", "in 6m 23s". So the loop card leads with a
+         ticking time-since, not an average. -->
+    <template x-if="charts?.board">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
+
+        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+          <div class="stat-title text-xs opacity-100 text-base-content/75">Loop</div>
+          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.loop.series, charts.board.loop.state)"></svg>
+          <div class="stat-value text-2xl font-mono tabular-nums"
+               :class="obsVerdictClass(charts.board.loop.state)"
+               x-text="charts.board.loop.since_sec == null ? '—'
+                       : charts.board.loop.since_sec < 90 ? charts.board.loop.since_sec + 's ago'
+                       : charts.board.loop.since_sec < 5400 ? Math.round(charts.board.loop.since_sec/60) + 'm ago'
+                       : Math.round(charts.board.loop.since_sec/3600) + 'h ago'"></div>
+          <div class="stat-desc text-xs whitespace-normal leading-snug opacity-100 text-base-content/80" x-text="charts.board.loop.basis"></div>
+        </div>
+
+        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+          <div class="stat-title text-xs opacity-100 text-base-content/75">Yield</div>
+          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.yield.series, charts.board.yield.state)"></svg>
+          <div class="stat-value text-2xl font-mono tabular-nums"
+               :class="obsVerdictClass(charts.board.yield.state)"
+               x-text="charts.board.yield.rate == null ? '—' : charts.board.yield.rate + '%'"></div>
+          <div class="stat-desc text-xs whitespace-normal leading-snug opacity-100 text-base-content/80" x-text="charts.board.yield.basis"></div>
+        </div>
+
+        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+          <div class="stat-title text-xs opacity-100 text-base-content/75">Frontier</div>
+          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.frontier.series, charts.board.frontier.state)"></svg>
+          <div class="stat-value text-2xl font-mono tabular-nums"
+               :class="obsVerdictClass(charts.board.frontier.state)"
+               x-text="charts.board.frontier.window_km == null ? '—' : charts.board.frontier.window_km + ' km'"></div>
+          <div class="stat-desc text-xs whitespace-normal leading-snug opacity-100 text-base-content/80" x-text="charts.board.frontier.where"></div>
+          <div class="stat-desc text-xs whitespace-normal leading-snug opacity-100 text-base-content/60" x-text="charts.board.frontier.basis"></div>
+        </div>
+
+        <!-- LAST HIT. Peter, 2026-08-03: "why is there no last hit card at the
+             top with the other cards, giving the location, bearing, km and
+             age?" The other three say whether we are trying, whether we are
+             answered, and how far this period — none of them says what we
+             actually REACHED, which is the most concrete fact we have.
+             Every value and the basis string are computed server-side; this
+             renders them. A hit whose target has no position shows an em dash
+             rather than 0 km, because the node answered and we simply cannot
+             say how far — the basis then states that. -->
+        <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+          <div class="stat-title text-xs opacity-100 text-base-content/75">Last hit</div>
+          <svg viewBox="0 0 200 34" class="w-full -mb-1" x-html="obsSpark(charts.board.last_hit.series, charts.board.last_hit.state)"></svg>
+          <div class="stat-value text-2xl font-mono tabular-nums"
+               :class="obsVerdictClass(charts.board.last_hit.state)"
+               x-text="charts.board.last_hit.km == null ? '—' : charts.board.last_hit.km + ' km'"></div>
+          <div class="stat-desc text-xs whitespace-normal leading-snug opacity-100 text-base-content/80" x-text="charts.board.last_hit.where"></div>
+          <div class="stat-desc text-xs whitespace-normal leading-snug opacity-100 text-base-content/60" x-text="charts.board.last_hit.basis"></div>
+        </div>
+
+      </div>
+    </template>
+
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 shrink-0">
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-        <div class="stat-title text-xs">Furthest verified reach</div>
+        <div class="stat-title text-xs opacity-100 text-base-content/75">Furthest verified reach</div>
         <div class="stat-value text-2xl font-display"
              :class="reach?.record_km ? 'text-primary' : 'text-base-content/25'"
              x-text="reach?.record_km ? '≥ ' + reach.record_km + ' km' : '—'"></div>
         <!-- "at least", never "the maximum": silence is censored data (spec §4). -->
-        <div class="stat-desc text-xs"
+        <div class="stat-desc text-xs opacity-100 text-base-content/80"
              x-text="reach ? reach.verified + ' of ' + reach.targets + ' targets verified' : 'awaiting the reach model'"></div>
         <!-- THE BOARD MUST STATE THE AGE OF ITS EVIDENCE. Every panel here is
              derived from traceroute_history; presenting five-day-old figures as
              current is the failure Peter named. Tinted when stale. -->
-        <div class="stat-desc text-xs" x-show="obsFreshness()"
+        <div class="stat-desc text-xs opacity-100 text-base-content/80" x-show="obsFreshness()"
              :class="obsIsStale() ? 'text-warning' : 'text-base-content/40'"
              x-text="obsFreshness()"></div>
       </div>
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-        <div class="stat-title text-xs">Doors</div>
+        <div class="stat-title text-xs opacity-100 text-base-content/75">Doors</div>
         <div class="stat-value text-2xl font-display"
              :class="relayUsage.length ? 'text-secondary' : 'text-base-content/25'"
              x-text="relayUsage.length || '—'"></div>
-        <div class="stat-desc text-xs">relays carrying our routes</div>
+        <div class="stat-desc text-xs opacity-100 text-base-content/80">relays carrying our routes</div>
       </div>
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-        <div class="stat-title text-xs">Bearings recorded</div>
+        <div class="stat-title text-xs opacity-100 text-base-content/75">Bearings recorded</div>
         <div class="stat-value text-2xl font-display"
              :class="observations.filter(obsHasAz).length ? 'text-primary' : 'text-base-content/25'"
              x-text="observations.filter(obsHasAz).length || '—'"></div>
-        <div class="stat-desc text-xs">on screen, live</div>
+        <div class="stat-desc text-xs opacity-100 text-base-content/80">on screen, live</div>
       </div>
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-        <div class="stat-title text-xs">Nodes seen</div>
+        <div class="stat-title text-xs opacity-100 text-base-content/75">Nodes seen</div>
         <div class="stat-value text-2xl font-display"
              :class="obsNodeCount() ? '' : 'text-base-content/25'"
              x-text="obsNodeCount() || '—'"></div>
-        <div class="stat-desc text-xs">on screen, live</div>
+        <div class="stat-desc text-xs opacity-100 text-base-content/80">on screen, live</div>
       </div>
     </div>
 

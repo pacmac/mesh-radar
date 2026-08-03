@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 85a8cf2853963135eae960460af85b1a197ebcb9c0af26388657420bb037380e
+source_hash: 5767f59a7dcb9a0c6872bd0c20091e690ad37527d93669e995e4e09536cf0bc2
 updated: 2026-08-03
 ---
 
@@ -643,3 +643,65 @@ the fix here is one row per radio rather than a concatenated column.
   xsession item [inbound-relay-attribution]. Not guessed at here. Existing rows
   are therefore NOT backfilled or purged: they are a mix of true direct and
   mis-gated relay traffic, and nothing currently distinguishes them.
+
+
+## `boardVerdicts` — LAST HIT, and the frontier's location
+
+Task `last-hit-card`. Peter, 2026-08-03: *"why is there no last hit card at the
+top with the other cards, giving the location, bearing, km and age?"* Then:
+*"we need a last hit and a last frontier hit — or maybe the frontier card
+already there needs the location?"*
+
+**The second reading won, and the data settled it.** The furthest answered target
+IS the number the frontier card already prints. A separate "last frontier hit"
+card would have shown `176.2 km` twice and cost a fifth column for nothing. So
+the frontier hit does not become a card — it gives the existing frontier card the
+three facts it lacked: **who, which way, when**. `176.2 km` alone cannot be acted
+on; you cannot re-point an antenna at a scalar.
+
+`last_hit` stays separate because it answers a genuinely different question:
+
+| card | question |
+|---|---|
+| `last_hit` | did we reach **anything**, and when |
+| `frontier` | did we reach **far**, where, and how long ago |
+
+On 2026-08-03 the last hit was 67.5 km 24 minutes earlier while the frontier had
+not moved in **29 days**. A board showing only the first reads as healthy while
+the goal is static.
+
+### A hit we cannot place is still a hit
+
+`km` and `bearing` are **null**, never `0`, when the answering node has no
+position — and `basis` says so. Verified live in production: LAST HIT rendered
+
+```
+—
+Mid Dorset
+7s ago · position unknown, distance unmeasurable
+```
+
+Not hypothetical. The only mission answer of that day was Pokey Hollow, a
+HELTEC_V3 with no GPS that has never sent a position.
+
+### Two lines, one job each
+
+`where` locates, `basis` judges. They were one string first, which produced a
+110-character run that overflowed the card and repeated the value printed above
+it. Each verdict string also used to open with its own `curKm` — removed, because
+the card prints the number itself.
+
+`locality()` takes the **second** address field: Nominatim returns
+`"Clos des Mielles, Castel, GY5 7FX, Guernsey"` and a stat card has room for one
+word of it. The first field is the street, which locates nothing at 176 km; the
+tail is a postcode, which is precise and tells you nothing.
+
+### Shared helpers, not a fourth copy
+
+Distance and bearing come from `utils.js` (`haversine`, `bearing`) — the SSOT
+served to the browser as well, so server and page agree by construction. I first
+wrote calls to `greatCircleKm`/`bearingDegrees`, which do not exist in this
+codebase; checking rather than assuming is what caught it.
+
+Everything is computed server-side. The browser receives numbers and finished
+strings and decides nothing (`BROWSER_CONTRACT`).

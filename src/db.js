@@ -1,5 +1,9 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+// The SHARED pure helpers, not a fourth copy of the same formula. utils.js is
+// the SSOT for these calculations and is served to the browser too, so server
+// and page agree by construction rather than by luck.
+import { haversine, bearing as bearingDeg } from './utils.js';
 
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data/node-dash.db');
 
@@ -1040,15 +1044,18 @@ export function boardVerdicts(days = 30) {
      WHERE t.status='ok' AND n.lat IS NOT NULL AND ${KM} >= @rk`)
     .get({ hlat: home?.lat ?? 0, hlon: home?.lon ?? 0, rk: recordKm - 0.05 })?.ts ?? null;
   const flatDays = recAt ? Math.floor((now - recAt) / 86400) : null;
+  // THE VERDICT ONLY. Each of these used to open with `curKm`, which the card
+  // prints directly above as its value — so every frontier card said its own
+  // number twice and had less room for the thing that was actually missing.
   let fState = 'warn', fBasis;
   if (curKm == null) {
     fState = 'fault'; fBasis = 'nothing answered in this window';
   } else if (prevKm != null && curKm > prevKm) {
-    fState = 'ok';    fBasis = `${curKm.toFixed(1)} km, up from ${prevKm.toFixed(1)} km`;
+    fState = 'ok';    fBasis = `up from ${prevKm.toFixed(1)} km last period`;
   } else if (flatDays != null && flatDays > 7) {
-    fState = 'fault'; fBasis = `${curKm.toFixed(1)} km — record ${recordKm} km unbeaten ${flatDays} days`;
+    fState = 'fault'; fBasis = `record ${recordKm} km unbeaten ${flatDays} days`;
   } else {
-    fBasis = `${curKm.toFixed(1)} km, previous period ${prevKm != null ? prevKm.toFixed(1) + ' km' : 'nothing'}`;
+    fBasis = prevKm != null ? `previous period ${prevKm.toFixed(1)} km` : 'no previous period to compare';
   }
 
   // ── SPARKLINES ────────────────────────────────────────────────────────────
@@ -1063,15 +1070,149 @@ export function boardVerdicts(days = 30) {
      WHERE t.ts > @from GROUP BY day ORDER BY day`)
     .all({ from, hlat: home?.lat ?? 0, hlon: home?.lon ?? 0 });
   const MIN_ATT = 15;
+
+  // THE PLACE NAME, NOT THE POSTAL ADDRESS. Nominatim returns
+  // "Clos des Mielles, Castel, GY5 7FX, Guernsey" and a stat card has room for
+  // one word of it. The second field is the settlement; the first is the street,
+  // which locates nothing at 176 km. Falls back to the first field when there
+  // is only one.
+  const locality = (addr) => {
+    if (!addr) return null;
+    const parts = String(addr).split(',').map(s => s.trim()).filter(Boolean);
+    return parts[1] || parts[0] || null;
+  };
+
+  // ── LAST HIT ──────────────────────────────────────────────────────────────
+  // Peter, 2026-08-03: "why is there no last hit card at the top with the other
+  // cards, giving the location, bearing, km and age?"
+  //
+  // There was no reason. LOOP says whether we are trying, YIELD whether we are
+  // answered, FRONTIER how far this period — and none of them says WHAT WE
+  // ACTUALLY REACHED. It is the most concrete fact the system produces, and
+  // answering "was that a hit?" meant a hand query against traceroute_history.
+  //
+  // Distance and bearing are computed HERE, not in the browser, along with a
+  // finished basis string — the browser makes no decisions (BROWSER_CONTRACT).
+  const lh = db.prepare(`
+    SELECT t.ts, t.to_num, t.rtt_ms, n.long_name, n.lat, n.lon, g.address
+      FROM traceroute_history t
+      LEFT JOIN nodes n         ON n.num = t.to_num
+      LEFT JOIN geocode_cache g ON g.num = t.to_num
+     WHERE t.status = 'ok'
+     ORDER BY t.ts DESC LIMIT 1`).get();
+
+  let lastHit;
+  if (!lh) {
+    lastHit = { state: 'fault', name: null, km: null, bearing: null, age_sec: null,
+                place: null, basis: 'nothing has ever answered' };
+  } else {
+    const age    = now - Number(lh.ts);
+    const placed = lh.lat != null && lh.lat !== 0 && lh.lon != null;
+    // A HIT WE CANNOT PLACE IS STILL A HIT. km and bearing stay NULL rather
+    // than 0 — the target answered, we simply cannot say how far. Rendering a
+    // zero here would claim a measurement we never made. Recurring, not
+    // hypothetical: the only mission answer of 2026-08-03 was Pokey Hollow, a
+    // HELTEC_V3 with no GPS that has never sent a position.
+    const km  = placed ? Math.round(haversine(home?.lat, home?.lon, lh.lat, lh.lon) * 10) / 10 : null;
+    const brg = placed ? Math.round(bearingDeg(home?.lat, home?.lon, lh.lat, lh.lon)) : null;
+    const name = lh.long_name || `!${Number(lh.to_num).toString(16)}`;
+    const when = age < 90 ? `${age}s ago`
+               : age < 5400 ? `${Math.round(age / 60)} min ago`
+               : age < 172800 ? `${Math.round(age / 3600)}h ago`
+               : `${Math.round(age / 86400)}d ago`;
+    // Freshness is judged against the same cadence the loop uses, so the two
+    // cards cannot disagree about what "recent" means.
+    const state = age <= interval * 20 ? 'ok' : age <= 86400 ? 'warn' : 'fault';
+    // TWO LINES, ONE JOB EACH. `where` locates it, `basis` times it. Packing
+    // both into one string produced a 110-character run that overflowed the
+    // card and repeated the value already printed above it.
+    lastHit = {
+      state, name, km, bearing: brg, age_sec: age,
+      place: lh.address || null,
+      rtt_ms: lh.rtt_ms == null ? null : Number(lh.rtt_ms),
+      where: `${name}${placed ? ` · ${brg}°` : ''}`
+        + (locality(lh.address) ? ` · ${locality(lh.address)}` : ''),
+      basis: placed ? when : `${when} · position unknown, distance unmeasurable`,
+    };
+  }
+
+  // ── WHERE THE FRONTIER ACTUALLY IS ────────────────────────────────────────
+  // Peter, 2026-08-03: "we need a last hit and a last frontier hit — or maybe
+  // the frontier card already there needs the location?"
+  //
+  // The second reading is the right one, and the data settles it: the furthest
+  // answered target IS the number the frontier card already shows. A separate
+  // card would print 176.2 km twice and add a fifth column for nothing.
+  //
+  // So this does not become a card. It gives the existing frontier card the
+  // three facts it was missing — WHO, WHICH WAY, and WHEN — because "176.2 km"
+  // alone cannot be acted on: you cannot re-point an antenna at a scalar.
+  //
+  // LAST HIT stays separate and is genuinely a different question: on this day
+  // the last hit was 67.5 km 24 minutes earlier while the frontier had not
+  // moved in 29 days. A board showing only one of those reads as healthy while
+  // the actual goal is static.
+  const fh = db.prepare(`
+    SELECT t.ts, t.to_num, n.long_name, n.lat, n.lon, g.address, ${KM} AS km
+      FROM traceroute_history t
+      JOIN nodes n              ON n.num = t.to_num
+      LEFT JOIN geocode_cache g ON g.num = t.to_num
+     WHERE t.status = 'ok' AND t.ts > @from
+       AND n.lat IS NOT NULL AND n.lat <> 0
+     ORDER BY km DESC, t.ts DESC LIMIT 1`)
+    .get({ from, hlat: home?.lat ?? 0, hlon: home?.lon ?? 0 });
+
+  let frontierHit;
+  if (!fh) {
+    frontierHit = { state: 'fault', name: null, km: null, bearing: null, age_sec: null,
+                    place: null, basis: 'nothing answered in this window' };
+  } else {
+    const age = now - Number(fh.ts);
+    const km  = Math.round(Number(fh.km) * 10) / 10;
+    const brg = Math.round(bearingDeg(home?.lat, home?.lon, fh.lat, fh.lon));
+    const name = fh.long_name || `!${Number(fh.to_num).toString(16)}`;
+    const when = age < 5400 ? `${Math.round(age / 60)} min ago`
+               : age < 172800 ? `${Math.round(age / 3600)}h ago`
+               : `${Math.round(age / 86400)}d ago`;
+    // Judged on AGE, not distance: a frontier reached once and never revisited
+    // is the stagnation the board exists to expose.
+    const state = age <= 86400 ? 'ok' : age <= 7 * 86400 ? 'warn' : 'fault';
+    frontierHit = {
+      state, name, km, bearing: brg, age_sec: age, place: fh.address || null,
+      basis: `${name} · ${when} · ${brg}°`
+        + (fh.address ? ` · ${(String(fh.address).split(',')[1] || String(fh.address).split(',')[0] || '').trim()}` : ''),
+    };
+  }
+
+  // The frontier card states WHERE it got to, not just how far. Appended rather
+  // than replacing fBasis, so the verdict (rising / flat / stalled) still leads
+  // and the location qualifies it.
+  const fWhere = frontierHit.name
+    ? `${frontierHit.name} · ${frontierHit.bearing}°`
+      + (locality(frontierHit.place) ? ` · ${locality(frontierHit.place)}` : '')
+    : null;
+
   return {
     window_days: Number(days) || 0,
+    // Hits per day, so the card carries a sparkline in the same grammar as its
+    // neighbours without a second query.
+    last_hit: { ...lastHit, series: daily.map(d => ({ day: d.day, v: d.ok })) },
+
     loop:     { state: loopState, since_sec: since, per_hour: perHour, basis: loopBasis,
                 series: daily.map(d => ({ day: d.day, v: d.att })) },
     yield:    { state: yState, rate: cur.pct == null ? null : Math.round(cur.pct),
                 prev_rate: prev.pct == null ? null : Math.round(prev.pct), basis: yBasis,
                 series: daily.map(d => ({ day: d.day, v: d.att >= MIN_ATT ? Math.round(100 * d.ok / d.att) : null })) },
     frontier: { state: fState, window_km: curKm == null ? null : Math.round(curKm * 10) / 10,
-                record_km: recordKm, flat_days: flatDays, basis: fBasis,
+                record_km: recordKm, flat_days: flatDays,
+                // `where` is the location line; `basis` stays the verdict. The
+                // card prints the km itself, so neither line repeats it.
+                where: fWhere,
+                basis: fBasis,
+                // The reached target, published as fields too so the panel can
+                // link or re-aim at it rather than re-parse the sentence.
+                at_name: frontierHit.name, at_bearing: frontierHit.bearing,
+                at_place: frontierHit.place, at_age_sec: frontierHit.age_sec,
                 series: daily.map(d => ({ day: d.day, v: d.km == null ? null : Math.round(d.km * 10) / 10 })) },
   };
 }

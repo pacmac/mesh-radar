@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 2490f383cf23825670d1120f6ff28a6d25c325bab43035e357371d96d3a9f884
+source_hash: 2f6f55b917688b8bfd3a58018c04acffd57064a03cacdc187d11eb47bde3237c
 updated: 2026-08-03
 ---
 
@@ -343,3 +343,57 @@ declaredFontSize * (renderedWidth / viewBoxWidth)
 Requirement: **no SVG text on the page exceeds 13 px effective.** Verified 0
 violations after the change, with all four ruler labels at 12.75 px and no
 overlap (first label ends at x=328, next begins at x=1456).
+
+
+## The board leads with the gap, and the cards are legible
+
+Task `last-hit-card`.
+
+**Order.** Peter, 2026-08-03: *"I think that the frontier full width card should
+be at the top."* The gap between where we are and the record is the page's whole
+question ("how far can we get"), so it leads. The four verdict cards sit under
+it as the supporting detail.
+
+**LAST HIT** joins LOOP / YIELD / FRONTIER — the top row is now
+`sm:grid-cols-2 lg:grid-cols-4`. It answers the one thing the other three never
+did: *what did we actually reach, and when*.
+
+There is no separate "last frontier hit" card. The furthest answered target IS
+the frontier card's own number, so a second card would print `176.2 km` twice
+and cost a fifth column. The frontier card gained the location instead.
+
+### Two lines per card, one job each
+
+```
+176.2 km                        <- the value
+mu7gci office · 166° · Castel   <- where  (locates)
+record 189.1 km unbeaten 29d    <- basis  (judges)
+```
+
+Both strings are server-built (`BROWSER_CONTRACT`). They were one line first,
+which ran to 110 characters, overflowed the card, and repeated the value printed
+directly above it.
+
+### The card text was barely legible
+
+Peter: *"the light grey fonts you are using in cards is barely legible."* He was
+right, and it was DaisyUI's default compounded by my own `opacity-60`.
+
+`.stat-title` and `.stat-desc` carry a `0.6`-alpha colour **and** an element
+opacity (`0.5` / `0.45`), which multiply:
+
+| element | effective alpha before | after |
+|---|---|---|
+| `stat-title` | **0.30** | 0.75 |
+| `stat-desc` | **0.27** | 0.80 |
+| secondary line | 0.36 | 0.60 |
+
+`opacity-100` cancels the element opacity so the colour token's own alpha is the
+only thing dimming the text, then `text-base-content/{75,80,60}` sets it
+deliberately. Applied to every stat card on the board, not just the new one —
+the base default was the real problem.
+
+Note on method: two attempts to compute WCAG contrast ratios in-page returned
+garbage, because these themes use `oklch()` and neither a regex nor a canvas
+`fillStyle` round-trip normalised it. Effective alpha is the figure above because
+it is the one actually measured; the ratios were discarded rather than reported.
