@@ -49,6 +49,22 @@ const T = {
     name: 'blocked-corridors', scope: 'store',
     purpose: 'finds record-beating nodes excluded ONLY by the ladder window, and says how far it would have to widen',
   }),
+  stalled: defineHook({
+    name: 'probing-stalled', scope: 'store',
+    purpose: 'catches us receiving packets while sending almost none — a dead prober on a live mesh',
+  }),
+  changepoint: defineHook({
+    name: 'rate-changepoint', scope: 'store',
+    purpose: 'finds the DATE the answer rate stepped, so it can be matched against a deploy or a config change',
+  }),
+  dispatchers: defineHook({
+    name: 'dispatcher-yield', scope: 'store',
+    purpose: 'compares aimed missions against passive traces ON THE SAME NODES, so target selection cannot flatter either',
+  }),
+  calloutYield: defineHook({
+    name: 'callout-yield', scope: 'store',
+    purpose: 'reports what the public callouts actually bought — sent, answered, and the best two-way distance',
+  }),
   relayCorridors: defineHook({
     name: 'relay-corridors', scope: 'store',
     purpose: 'learns which relay carries our traffic toward each bearing, so a node we have never reached can still be aimed at through a door',
@@ -522,9 +538,153 @@ function runRelayCorridors() {
   });
 }
 
+/** A DEAD PROBER ON A LIVE MESH.
+ *
+ *  Between 28 July and 1 August we sent **14 traceroutes** — against roughly a
+ *  thousand a day either side — while still RECEIVING 2,256 messages. The mesh
+ *  was fine. We had stopped asking, and nothing anywhere said so; the gap was
+ *  only found by plotting a daily series five days later.
+ *
+ *  Receiving is the control. Silence on both sides is a quiet mesh and not our
+ *  problem; hearing plenty while sending nothing is OUR fault, every time.
+ */
+function runProbingStalled() {
+  const now = Math.floor(Date.now() / 1000);
+  // LIVENESS COMES FROM relay_observation, NOT messages. `messages` holds TEXT
+  // packets only — 29 in 6 h against 9,794 relay observations — so a threshold
+  // built on it would sit near zero and could call a real stall "healthy".
+  // relay_observation records EVERY received packet, which is what "is the mesh
+  // talking to us" actually means.
+  const rx = db.prepare('SELECT COUNT(*) n FROM relay_observation WHERE ts > ?').get(now - 6 * 3600).n;
+  const tx = db.prepare('SELECT COUNT(*) n FROM traceroute_history WHERE ts > ?').get(now - 6 * 3600).n;
+  // Judged against the configured cadence, not a guessed number: interval_sec
+  // implies a rate, and a tenth of it is unambiguously broken rather than slow.
+  const interval = Number((getConfig('discovery', {}) || {}).interval_sec) || 180;
+  const expected = Math.floor((6 * 3600) / interval);
+  const floor = Math.max(1, Math.floor(expected / 10));
+
+  const stalled = rx > 200 && tx < floor;
+  T.stalled.emit({
+    severity: stalled ? 'fault' : 'info',
+    summary: stalled
+      ? `PROBING STALLED — ${tx} traceroutes in 6h while hearing ${rx} packets (expected ~${expected})`
+      : `probing healthy — ${tx} traceroutes in 6h, ${rx} packets heard`,
+    detail: { traceroutes_6h: tx, packets_heard_6h: rx, expected, floor, interval_sec: interval },
+  });
+}
+
+/** WHEN did the rate change, not whether.
+ *
+ *  A slope is arguable; a STEP has a date, and a date can be matched against a
+ *  deploy, a config write or a firmware change. The close-range answer rate fell
+ *  from 35-45% to ~11% on 2026-07-17 and never recovered — found by eye, five
+ *  days after the fact, and still unexplained.
+ *
+ *  Compares the last 7 days against the 7 before, then walks the daily series to
+ *  name the day it broke. Days below MIN_ATT are skipped rather than plotted as
+ *  zero: a gap means "not known" and a zero means "nothing worked".
+ */
+function runRateChangepoint() {
+  const MIN_ATT = 30;
+  const rows = db.prepare(`
+    SELECT date(ts,'unixepoch') d, COUNT(*) n, SUM(status='ok') ok
+      FROM traceroute_history
+     WHERE ts > strftime('%s','now') - 30*86400
+       AND ts > (SELECT MIN(ts) FROM traceroute_history WHERE status <> 'ok')
+     GROUP BY d ORDER BY d`).all().filter(r => r.n >= MIN_ATT);
+  if (rows.length < 8) {
+    T.changepoint.emit({ summary: `only ${rows.length} days carry enough attempts to compare`, detail: { days: rows.length } });
+    return;
+  }
+  const pct = rows.map(r => ({ d: r.d, p: 100 * r.ok / r.n, n: r.n }));
+  // Largest drop between the mean before a day and the mean from it onward.
+  let best = null;
+  for (let i = 3; i < pct.length - 2; i++) {
+    const a = pct.slice(0, i), b = pct.slice(i);
+    const ma = a.reduce((s, x) => s + x.p, 0) / a.length;
+    const mb = b.reduce((s, x) => s + x.p, 0) / b.length;
+    const drop = ma - mb;
+    if (!best || drop > best.drop) best = { drop, at: pct[i].d, before: ma, after: mb };
+  }
+  const real = best && best.drop >= 10;
+  T.changepoint.emit({
+    severity: real ? 'notice' : 'info',
+    summary: real
+      ? `answer rate stepped down on ${best.at} — ${best.before.toFixed(1)}% before, ${best.after.toFixed(1)}% since`
+      : `no step in the answer rate over ${pct.length} comparable days (largest shift ${best ? best.drop.toFixed(1) : 0} pts)`,
+    detail: { ...best, days_compared: pct.length, min_attempts_per_day: MIN_ATT,
+              note: 'a STEP has a date and can be matched to a deploy or config change; a slope cannot' },
+  });
+}
+
+/** AIMED MISSIONS vs PASSIVE, ON THE SAME NODES.
+ *
+ *  The raw split flatters passive, because missions deliberately pick harder
+ *  targets. Measured 2026-08-03: raw 4.2% vs 10.9%, but on the 68 nodes tried by
+ *  BOTH in the same day it was 9.1% vs 12.4% — selection explained most of the
+ *  gap and not all of it.
+ *
+ *  Like-for-like is the only honest form of this comparison, and it is the
+ *  control this project has had to apply by hand three times.
+ */
+function runDispatcherYield() {
+  const since = Math.floor(Date.now() / 1000) - 7 * 86400;
+  const side = (aimed) => db.prepare(`
+    SELECT to_num, COUNT(*) n, SUM(status='ok') ok FROM traceroute_history
+     WHERE ts > ? AND rotator_az IS ${aimed ? 'NOT NULL' : 'NULL'} GROUP BY to_num`).all(since);
+  const m = new Map(side(true).map(r => [r.to_num, r]));
+  const p = new Map(side(false).map(r => [r.to_num, r]));
+  let mn = 0, mo = 0, pn = 0, po = 0, both = 0;
+  for (const [num, a] of m) {
+    const b = p.get(num); if (!b) continue;
+    both++; mn += a.n; mo += a.ok; pn += b.n; po += b.ok;
+  }
+  if (both < 5 || !mn || !pn) {
+    T.dispatchers.emit({ summary: `only ${both} nodes were tried by both dispatchers — too few to compare`, detail: { both } });
+    return;
+  }
+  const mr = 100 * mo / mn, pr = 100 * po / pn;
+  T.dispatchers.emit({
+    severity: mr < pr * 0.75 ? 'notice' : 'info',
+    summary: `on the same ${both} nodes: aimed ${mr.toFixed(1)}% (${mo}/${mn}) vs passive ${pr.toFixed(1)}% (${po}/${pn})`,
+    detail: { shared_nodes: both, aimed_pct: +mr.toFixed(1), passive_pct: +pr.toFixed(1),
+              note: 'LIKE-FOR-LIKE — the raw split flatters passive because missions pick harder targets' },
+  });
+}
+
+/** WHAT THE PUBLIC CALLOUTS ACTUALLY BOUGHT.
+ *
+ *  Callouts spend social capital rather than airtime, so their yield has to be
+ *  visible or the cost is invisible too. `calloutStats()` existed and nothing
+ *  ever emitted it.
+ *
+ *  0 of 6 proves nothing — at a 6/day ceiling this needs weeks — and the summary
+ *  says so rather than reading as a verdict.
+ */
+function runCalloutYield() {
+  const r = db.prepare(`
+    SELECT COUNT(*) sent, SUM(replied_ts IS NOT NULL) answered, MAX(reply_km) best_km
+      FROM callout_log WHERE ts > strftime('%s','now') - 30*86400`).get();
+  const sent = r.sent || 0, answered = r.answered || 0;
+  if (!sent) {
+    T.calloutYield.emit({ summary: 'no callouts sent in 30 days', detail: { sent: 0 } });
+    return;
+  }
+  T.calloutYield.emit({
+    severity: answered ? 'notice' : 'info',
+    summary: answered
+      ? `${answered} of ${sent} callouts answered — best two-way ${r.best_km} km`
+      : `${sent} callouts sent, none answered yet`
+        + (sent < 30 ? ' (too few to read anything into)' : ' — worth questioning the wording or the audience'),
+    detail: { sent, answered, best_two_way_km: r.best_km ?? null,
+              note: 'a reply is two-way contact at a known distance — the strongest reach evidence there is' },
+  });
+}
+
 const TASKS = [runUnknownNodes, runGhostRelays, runAsymmetricPaths,
                runStrandedPositions, runAnchorableNodes, runBlockedCorridors,
-               runRelayCorridors];
+               runRelayCorridors, runProbingStalled, runRateChangepoint,
+               runDispatcherYield, runCalloutYield];
 
 /** Run every standing task once, isolated. One throwing must not stop the rest —
  *  a broken analysis should cost its own finding, never the others'. */

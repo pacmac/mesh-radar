@@ -1,7 +1,7 @@
 ---
 module: standing-tasks
 source: src/standing-tasks.js
-source_hash: ddf227270d3924d8297985bab4b919a9ba16906268a987a1e9403eeaabfebaa4
+source_hash: a7c712f526f37673106ba265fa9ed718becf5ea93484d648848198fe7f44a3cf
 updated: 2026-08-03
 ---
 
@@ -325,3 +325,62 @@ and is untested.
 **Limit, published in the payload:** trained on ANSWERED routes only. The targets
 we actually probe have never answered and may be unreachable for reasons that
 have nothing to do with aim.
+
+
+## Four miners built from the trend analysis
+
+Peter, 2026-08-03: *"do these need workers (miners) and hooks"* — workers, and
+none of them wanted a hook. **Hooks announce what code does; workers ask what the
+data says.** Each of these had to be run by hand first, which is the definition
+of a worker that does not exist yet.
+
+### `probing-stalled` — a dead prober on a live mesh
+
+Between 28 July and 1 August we sent **14 traceroutes** — against ~1,000/day
+either side — while still hearing the mesh perfectly well. Nothing said so; the
+gap was found by plotting a daily series five days later.
+
+Receiving is the control: silence on both sides is a quiet mesh and not our
+problem; **hearing plenty while sending nothing is ours, every time.**
+
+Liveness comes from `relay_observation`, **not** `messages`. `messages` holds
+TEXT packets only — 29 in 6 h against **9,794** relay observations — so a
+threshold built on it would sit near zero and could call a real stall "healthy".
+That was the first version and it was wrong.
+
+The floor is derived from `interval_sec`, not guessed: a tenth of the implied
+rate is unambiguously broken rather than merely slow.
+
+**Proven to fire**, not merely to exist: against a copy with the last 6 h of
+traceroutes deleted and the packets left intact, it reported
+`[fault] PROBING STALLED — 0 traceroutes in 6h while hearing 9775 packets`.
+
+### `rate-changepoint` — the date, not the slope
+
+A slope is arguable; a **step has a date**, and a date can be matched to a
+deploy, a config write or a firmware change.
+
+It walks the daily series and reports the largest sustained drop.
+**Independently found 2026-07-17** — the same date reached by hand — reporting
+18.4% before and 7.2% since. That agreement is the validation.
+
+Days below 30 attempts are skipped rather than plotted as zero: a gap means "not
+known", a zero means "nothing worked", and they are different claims.
+
+### `dispatcher-yield` — like-for-like, always
+
+The raw split flatters passive because missions deliberately pick harder targets.
+Measured the same day: raw **4.2% vs 10.9%**, but on the nodes tried by **both**,
+**9.1% vs 12.4%** — selection explained most of the gap and not all of it.
+
+Only the shared-node form is honest, and this project has had to apply that
+control by hand three times. Now it runs hourly. Live at 7 days: aimed 8.5%
+(18/211) vs passive 12.0% (59/490) on 78 shared nodes.
+
+### `callout-yield` — what the social capital bought
+
+Callouts spend reputation rather than airtime, so their yield must be visible or
+the cost is invisible too. `calloutStats()` existed and nothing emitted it.
+
+It says **"too few to read anything into"** below 30 sends, because 0 of 6 is not
+a verdict — at a 6/day ceiling this needs weeks.
