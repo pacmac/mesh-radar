@@ -1,7 +1,7 @@
 ---
 module: standing-tasks
 source: src/standing-tasks.js
-source_hash: 19ed4003b06cd6f804de9c05f47dff38f2faae40dd168b08f204239897bdfa24
+source_hash: ab730c3237e2924315032366332f2c2b05538b8c8ba857c8a04e099fc070afeb
 updated: 2026-08-03
 ---
 
@@ -446,3 +446,58 @@ packets our own radios originated carry `transport = 'TRANSPORT_INTERNAL'` in
 `relay_observation`. Correct regardless of startup ordering. The general
 exposure — other callers of `ownDeviceNums()` sharing the same failure mode — is
 filed as **B74**, not fixed here.
+
+## `new-ground` — are we still taking ground, or just re-tracing?
+
+Peter, 2026-08-03, on reading the frontier card: *"and should what we now see
+graphically be the topic of a worker?"* Yes — the chart shows this only if
+someone looks at it, which is the same gap that left `relay_byte` unread for
+18,670 rows.
+
+### The question
+
+**Is the mesh still yielding nodes we have never reached?** Every other panel
+counts traffic; none of them separates *new ground* from *re-tracing the same
+nodes more often*. If first-ever contacts trend to zero while attempts sit at
+1140/day, we are spending airtime on nodes we already own — and nothing else
+would say so.
+
+### Reported against the denominator
+
+A raw count is unreadable: **4 of 1140** and **4 of 12** are opposite findings.
+The worker reports first-ever contacts, attempts, and the yield between them,
+plus how many of those contacts **moved the frontier** past the window's prior
+best.
+
+### It counts more than the chart can draw
+
+`frontier.reach` only carries nodes with a position inside 250 km, because a bar
+needs a height. **New ground does not require a position** — a first-ever answer
+from an unpositioned node is still a node we had never reached. Measured
+2026-08-03: **6** first-ever contacts that day, of which only **2** were
+plottable. The worker uses the unfiltered count and says how many lacked a
+position, rather than silently inheriting the chart's filter.
+
+### Zero is the important result
+
+Silence would be indistinguishable from a broken worker — the failure that hid
+the starved passive tracer for 9.5 hours. A window with no new ground is
+reported explicitly, and with attempts beside it, because "0 of 1140" is the
+finding this worker exists to raise.
+
+### Live at first run
+
+```
+9 first-ever contacts in 7d from 1467 attempts — none moved the frontier
+{ attempts: 1467, answered: 116, first_ever: 9, moved_frontier: 0,
+  unpositioned: 5, prior_best_km: 189.1 }
+```
+
+**Nine, against the chart's four** — the difference is the 5 unpositioned nodes
+the frontier bars cannot draw. That gap is the reason this worker does not
+inherit the chart's filter.
+
+Zero branch verified on a real quiet window (29–31 Jul: 0 first-ever, 5
+attempts). Severity is `notice` only above 200 attempts, so a quiet system is not
+alarmed while a busy-but-barren one is — "0 of 1140" is the alarm, "0 of 5" is
+just a quiet night.

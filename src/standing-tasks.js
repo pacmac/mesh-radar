@@ -73,6 +73,10 @@ const T = {
     name: 'outbound-relay-identity', scope: 'store',
     purpose: 'names the nodes that ACKed packets WE sent — the only outbound-direction relay evidence we get, against a mesh that routes 62% asymmetrically',
   }),
+  newGround: defineHook({
+    name: 'new-ground', scope: 'store',
+    purpose: 'separates ground we TOOK from traffic we repeated — first-ever contacts against attempts, so a busy day that reached nothing new cannot read as progress',
+  }),
 };
 
 /** WHERE WE ARE. Read once per run — it cannot change mid-sweep.
@@ -764,10 +768,86 @@ function runOutboundRelayIdentity() {
   });
 }
 
+// Is the mesh still yielding nodes we have NEVER reached, or are we re-tracing
+// the same few more often? Every other panel counts traffic; none separates
+// ground taken from ground repeated. If first-ever contacts go to zero while
+// attempts sit at 1140/day, we are spending airtime on nodes we already own.
+//
+// Reported AGAINST THE DENOMINATOR, because 4-of-1140 and 4-of-12 are opposite
+// findings and the raw count cannot tell them apart.
+//
+// Counts more than the frontier chart can draw: frontier.reach needs a position
+// (a bar needs a height), but new ground does not — a first-ever answer from an
+// unpositioned node is still a node we had never reached. Measured 2026-08-03:
+// 6 first-ever that day, only 2 plottable.
+function runNewGround() {
+  const days = Number(getConfig('observatory.window_days', 7)) || 7;
+  const from = Math.floor(Date.now() / 1000) - days * 86400;
+
+  const att = db.prepare(`SELECT COUNT(*) n, SUM(status='ok') ok
+                            FROM traceroute_history WHERE ts >= ?`).get(from);
+  const attempts = att?.n || 0;
+
+  // First-ever answer per node across ALL history; those landing in the window
+  // are the ground taken. Unfiltered by position, deliberately.
+  const fresh = db.prepare(`
+    WITH firsts AS (SELECT to_num, MIN(ts) t FROM traceroute_history
+                     WHERE status='ok' GROUP BY to_num)
+    SELECT f.to_num, f.t, n.short_name, n.long_name, n.lat, n.lon
+      FROM firsts f LEFT JOIN nodes n ON n.num = f.to_num
+     WHERE f.t >= ? ORDER BY f.t`).all(from);
+
+  // The prior bar: furthest verified BEFORE this window opened. A new contact
+  // beyond it is one that actually moved the frontier.
+  const home = homeLatLon();
+  let priorBest = 0;
+  if (home) {
+    for (const r of db.prepare(`
+      SELECT n.lat, n.lon FROM traceroute_history t JOIN nodes n ON n.num = t.to_num
+       WHERE t.status='ok' AND t.ts < ? AND n.lat IS NOT NULL AND n.lat <> 0`).all(from)) {
+      const km = haversineKm(home.lat, home.lon, r.lat, r.lon);
+      if (km <= 250 && km > priorBest) priorBest = km;
+    }
+  }
+
+  let moved = 0, unpositioned = 0;
+  const named = [];
+  for (const f of fresh) {
+    const positioned = home && f.lat != null && f.lat !== 0;
+    if (!positioned) { unpositioned++; named.push({ name: f.short_name || f.long_name || null, km: null }); continue; }
+    const km = haversineKm(home.lat, home.lon, f.lat, f.lon);
+    if (km > 250) { unpositioned++; named.push({ name: f.short_name || f.long_name || null, km: null }); continue; }
+    if (km > priorBest) moved++;
+    named.push({ name: f.short_name || f.long_name || null, km: +km.toFixed(1) });
+  }
+
+  if (!fresh.length) {
+    // THE FINDING THIS WORKER EXISTS FOR. Silence here would be
+    // indistinguishable from a broken worker, and "0 of 1140" is the alarm.
+    T.newGround.emit({
+      severity: attempts > 200 ? 'notice' : 'info',
+      summary: `no new ground in ${days}d — 0 first-ever contacts from ${attempts} attempts`,
+      detail: { window_days: days, attempts, first_ever: 0, moved_frontier: 0 },
+    });
+    return;
+  }
+
+  T.newGround.emit({
+    severity: moved ? 'notice' : 'info',
+    summary: `${fresh.length} first-ever contact${fresh.length === 1 ? '' : 's'} in ${days}d `
+           + `from ${attempts} attempts`
+           + (moved ? ` — ${moved} moved the frontier past ${priorBest.toFixed(1)} km` : ' — none moved the frontier'),
+    detail: { window_days: days, attempts, answered: att?.ok || 0,
+              first_ever: fresh.length, moved_frontier: moved,
+              unpositioned, prior_best_km: +priorBest.toFixed(1), nodes: named },
+  });
+}
+
 const TASKS = [runUnknownNodes, runGhostRelays, runAsymmetricPaths,
                runStrandedPositions, runAnchorableNodes, runBlockedCorridors,
                runRelayCorridors, runProbingStalled, runRateChangepoint,
-               runDispatcherYield, runCalloutYield, runOutboundRelayIdentity];
+               runDispatcherYield, runCalloutYield, runOutboundRelayIdentity,
+               runNewGround];
 
 /** Run every standing task once, isolated. One throwing must not stop the rest —
  *  a broken analysis should cost its own finding, never the others'. */
