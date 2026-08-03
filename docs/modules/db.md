@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: cbf14fee2f7eac88ef4fa487eb86d59f3c16df3b2d0c6c5809f0b1d31a9bcf76
+source_hash: 43cd55275e0aca125986ab0fa417fb9e5efbf2557b5c4683b2265c20d137fd67
 updated: 2026-08-03
 ---
 
@@ -412,6 +412,31 @@ tables).
 New table via `CREATE TABLE IF NOT EXISTS`, so no migration guard is involved — and in
 particular nothing here uses `PRAGMA table_info`, which omits generated columns and
 re-`ALTER`s on every boot.
+
+## Chart queries — `rateByBandByDay(days)`
+
+Task `rate-by-band-by-day`. Joins `attemptsByDay`, `answerRateBySilence` and
+`answerRateByDistance` as a named display query. Full rationale in
+`docs/OBSERVATORY_CHARTS.md`.
+
+Returns one row per `(day, band)` with `attempts`, `answers` and a server-computed `rate`.
+Bands are `<25`, `25-100`, `100+`, `no-pos`.
+
+Two deliberate differences from `answerRateByDistance()`, which is left untouched:
+
+- **`LEFT JOIN nodes`, not `JOIN`.** Position-less targets are a third of current attempts
+  and answer at 15-21%; the inner join in the older query discards them entirely. They get
+  their own `no-pos` bucket and are never folded into a distance band, because they have
+  no distance.
+- **`rate` is `NULL` below `BAND_MIN_ATTEMPTS` (15).** A day showing 24% on n=21 is noise.
+  The threshold lives here rather than in the chart because `BROWSER_CONTRACT` gives the
+  browser zero decisions; `attempts`/`answers` are always returned so a suppressed rate is
+  still auditable.
+
+The `days` filter is `ts > now - days*86400`, a rolling cut, so the OLDEST day in the
+window is always partial — the same convention the other chart queries use.
+
+Measured 35 ms for 108 rows against ~22k `traceroute_history` rows.
 
 ## Invariants
 

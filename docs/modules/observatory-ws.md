@@ -1,8 +1,8 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: 280e3e7926519a661bf1f1e0b02d522f63ccf3450cfd4cd40b8a8e3bee7fe17f
-updated: 2026-08-02
+source_hash: 5cb7f73254a8cef9c87f194c359828350b9d284a46dd7498a91919f6d48f3057
+updated: 2026-08-03
 ---
 
 # Module: observatory-ws
@@ -168,6 +168,21 @@ fill its queue.
 This is **raw observation data**, not display values. Anything the page needs
 *formatted* — relative ages, labels, counts — is a server-computed field and must
 be added here, never derived in the browser.
+
+## `charts.bands` — rate per day, split by distance band
+
+Task `rate-by-band-by-day`. Fifth series in `charts()`, in its own try/catch like the
+other four, riding the existing `{type:'charts'}` broadcast on connect and after each
+recompute. No new transport.
+
+It exists because the aggregate `daily` series cannot distinguish a change in TARGET MIX
+from a change in PERFORMANCE. That ambiguity concealed a fall from ~58% to ~7% in the
+answer rate to nodes within 25 km over three weeks, while the 100+ km band sat at 0-4%
+and never moved — a rig regression that looked like a targeting question.
+
+Data comes from `db.rateByBandByDay(30)`; this module only assembles and broadcasts, per
+the rule that display aggregation belongs in the display feed rather than the inference
+catalogue.
 
 ## Invariants
 

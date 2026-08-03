@@ -18,7 +18,8 @@ import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
 import { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
-         attemptsByDay, answerRateBySilence, answerRateByDistance } from './db.js';
+         attemptsByDay, answerRateBySilence, answerRateByDistance,
+         rateByBandByDay } from './db.js';
 
 // Read once: the map marks where we are, and the reach model already computes
 // every distance from it. A page load must not re-read config.
@@ -268,7 +269,7 @@ function missions() {
  *  Wrapped: a chart failing must degrade to an empty panel, not take the feed
  *  down with it. */
 function charts() {
-  const out = { ladder: [], record_km: null, daily: [], silence: [], distance: [] };
+  const out = { ladder: [], record_km: null, daily: [], silence: [], distance: [], bands: [] };
   try {
     const l = facts('reach.ladder')[0]?.value ?? null;
     out.ladder = (l?.rungs ?? []).map(r => ({
@@ -288,6 +289,11 @@ function charts() {
   } catch (e) { console.error(`[observatory-ws] silence series failed: ${e.message}`); }
   try { out.distance = answerRateByDistance(); }
   catch (e) { console.error(`[observatory-ws] distance series failed: ${e.message}`); }
+  // Rate per day SPLIT BY BAND — the aggregate `daily` series above cannot tell a
+  // change in target mix from a change in performance, and that hid a fall from
+  // ~58% to ~7% at under 25 km across three weeks. Task `rate-by-band-by-day`.
+  try { out.bands = rateByBandByDay(30); }
+  catch (e) { console.error(`[observatory-ws] bands series failed: ${e.message}`); }
   return out;
 }
 

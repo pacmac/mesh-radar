@@ -976,6 +976,70 @@ export function answerRateByDistance() {
   `).all();
 }
 
+/** Answer rate per day SPLIT BY DISTANCE BAND. Task `rate-by-band-by-day`.
+ *
+ *  The aggregate daily series cannot separate a change in TARGET MIX from a
+ *  change in PERFORMANCE, and that ambiguity hid a three-week collapse: the
+ *  answer rate to nodes within 25 km fell from ~58% (early July) to ~7% (late
+ *  July), while the 100+ km band sat at 0-4% throughout and never moved. Close
+ *  targets cannot be explained by mix, so that is the rig degrading — and it
+ *  reorders the project, because pursuing 200 km while 20 km is broken is the
+ *  wrong problem.
+ *
+ *  LEFT JOIN, not the INNER JOIN answerRateByDistance() uses: position-less
+ *  targets are a THIRD of today's attempts and answer at 15-21%. Dropping them
+ *  would hide where a third of the airtime goes. They get their own bucket
+ *  because they have no distance — never folded into a band.
+ *
+ *  `rate` is NULL below MIN_ATTEMPTS. 2026-08-02 shows 24% on n=21 and that is
+ *  noise; a page drawing it as a recovery would mislead. The threshold lives
+ *  here and not in the chart because BROWSER_CONTRACT gives the browser zero
+ *  decisions — it renders a gap where rate is null and never qualifies a number
+ *  itself. attempts/answers are always returned so the gap is still auditable.
+ */
+const BAND_MIN_ATTEMPTS = 15;
+
+export function rateByBandByDay(days = 30) {
+  const rows = db.prepare(`
+    WITH home AS (
+      SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') AS lat,
+             (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') AS lon
+    ),
+    d AS (
+      SELECT date(th.ts, 'unixepoch') AS day,
+             th.status                AS status,
+             CASE WHEN n.lat IS NULL OR n.lat = 0 THEN NULL ELSE
+               6371.0 * 2 * asin(min(1.0, sqrt(
+                 power(sin((n.lat - home.lat) * 0.0174532925 / 2), 2) +
+                 cos(home.lat * 0.0174532925) * cos(n.lat * 0.0174532925) *
+                 power(sin((n.lon - home.lon) * 0.0174532925 / 2), 2)
+               )))
+             END AS km
+      FROM traceroute_history th
+      LEFT JOIN nodes n ON n.num = th.to_num
+      CROSS JOIN home
+      WHERE th.ts > strftime('%s','now') - (? * 86400)
+    )
+    SELECT day,
+           CASE WHEN km IS NULL  THEN 'no-pos'
+                WHEN km <  25    THEN '<25'
+                WHEN km < 100    THEN '25-100'
+                ELSE                  '100+'
+           END                                              AS band,
+           COUNT(*)                                         AS attempts,
+           SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END)   AS answers
+    FROM d
+    GROUP BY day, band
+    ORDER BY day, band
+  `).all(days);
+  return rows.map(r => ({
+    ...r,
+    rate: r.attempts >= BAND_MIN_ATTEMPTS
+      ? Math.round((100 * r.answers) / r.attempts)
+      : null,
+  }));
+}
+
 export function recentAimedTraceroutes(limit = 25) {
   return db.prepare(`
     SELECT ts, to_num, rotator_az, status

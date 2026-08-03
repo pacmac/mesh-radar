@@ -1,7 +1,7 @@
 ---
 module: OBSERVATORY_CHARTS
-source_hash: d6609ce2ab321a804f2fb6eda28dd7c0c0ac827e67bd178745d2b7abb78a7fe7
-updated: 2026-08-02
+source_hash: 0a117a1222a9054b49a9b65a2d2e0d1c2cc2bb010cfa87300ae613411fcdb3e2
+updated: 2026-08-03
 ---
 
 # Charts — the questions that keep getting asked by hand
@@ -110,6 +110,83 @@ attempts produced nothing.
 
 That was invisible before this page existed, and it changes what the ladder
 should be aiming at.
+
+## The fifth — rate by band, by day
+
+Task: `rate-by-band-by-day`. **Domain 1 only**; the chart is a separate Domain 2 task.
+
+Peter, 2026-08-03: *"do we need a window so that we can actually see what's happened in
+the last x days, are we doing better now than we were before? was there a window when
+things suddenly spiked / dropped?"*
+
+Yes, and the aggregate daily chart above cannot answer it. It plots one line, in which a
+change in **target mix** and a change in **performance** are indistinguishable. That
+ambiguity hid a three-week collapse:
+
+```
+date          <25km        25-100km      100+km        no-pos
+2026-07-04   59%  (280)    5%  (538)    3%   (30)   18%   (88)
+2026-07-08   55%  (259)   17%  (501)    4%   (83)   13%   (46)
+2026-07-17   12%  (251)   12%  (468)    1%  (128)    9%  (211)
+2026-07-23    7%  (202)    2%  (395)    0%  (128)    3%  (348)
+2026-07-27    5%  (128)    3%  (403)    0%   (62)    5%  (317)
+2026-08-03   11%   (36)    4%  (180)    0%   (58)   15%  (137)
+```
+
+**Answer rate to nodes within 25 km fell from ~58% to ~7%.** Close targets cannot be
+explained by mix, so this is the rig degrading, not the strategy. Meanwhile the 100+ km
+band sat at 0–4% throughout and never moved — it was never working, before or after.
+
+That reorders the whole project: pursuing 200 km while 20 km is broken is the wrong
+problem. This series is also the only way to judge whether the YAGI `override_duty_cycle`
+change of 2026-08-03 helps, since a throttled send and a genuine silence are currently
+the same row.
+
+### Bands
+
+`<25`, `25-100`, `100+`, and `no-pos` — four, not the ten that `answerRateByDistance()`
+uses. Ten series across thirty days is unreadable, and four is what made the collapse
+visible by hand.
+
+**`no-pos` is a bucket, never folded into a distance band.** `answerRateByDistance()`
+inner-joins `nodes` and drops position-less targets entirely; they are 137 of 411
+attempts today — a third of all airtime — and they answer at 15–21%. Hiding where a third
+of the effort goes is how effort gets wasted unnoticed. They have no distance, so they
+are reported separately rather than guessed at.
+
+### The server decides what is renderable
+
+`rate` is `null` when `attempts < MIN_ATTEMPTS` (**15**). 2026-08-02 shows 24% on n=21 and
+that is noise; a page drawing it as a recovery would mislead.
+
+Per `BROWSER_CONTRACT` the browser makes zero decisions, so the threshold lives here and
+not in the chart. `attempts` and `answers` are always returned — the page renders a gap
+where `rate` is null, and never has to qualify a number itself.
+
+### Where it lives
+
+`db.js` as `rateByBandByDay(days)`, assembled by `observatory-ws.js charts()` into
+`out.bands`, riding the existing `{type:'charts'}` broadcast. Same rule as the other four:
+display aggregation belongs in the display feed, not the inference catalogue.
+
+The haversine expression is duplicated from `answerRateByDistance()` rather than factored
+into a shared fragment — extracting it would edit a working query for no behavioural gain.
+
+### The first day in the window is always partial
+
+The filter is `ts > now - days*86400`, a rolling cut at the current time of day, so the
+oldest day carries only the hours after that cut. Served on 2026-08-03 the first day reads
+`63% (186)` where the full day was `59% (280)` — not a discrepancy, just a part-day.
+
+Left as a rolling window rather than snapped to midnight: the other series use the same
+`days` convention, and a chart whose oldest column silently changed width would be worse
+than one whose oldest column is honestly short.
+
+### Verified against the hand analysis
+
+Served output matched the by-hand numbers exactly on every full day checked — 07-08, 07-17,
+07-23, 07-27 and 08-02 agreed to the individual attempt. Query 35 ms for 108 rows over
+~22k history rows.
 
 ## Axes
 
