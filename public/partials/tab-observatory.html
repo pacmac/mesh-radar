@@ -45,7 +45,10 @@
     <template x-if="charts?.board?.frontier?.record_km">
       <div class="card bg-base-100 shadow shrink-0">
         <div class="card-body p-3 gap-1">
-          <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">Frontier</h2>
+          <h2 class="text-xs font-display font-bold tracking-widest uppercase text-base-content/60">
+            Frontier
+            <span class="font-normal normal-case tracking-normal text-base-content/40">— every positioned node by distance from us</span>
+          </h2>
 
           <!-- TYPE IS NOT GEOMETRY. This was one <svg viewBox="0 0 520 40">
                holding both the bar and its labels. Stretched to 1309 px it
@@ -103,9 +106,17 @@
                  :title="charts.board.frontier.record_km + ' km record'"></div>
           </div>
 
+          <!-- THE AXIS IS DISTANCE, NOT TIME, and that was not obvious. Peter
+               read the 189.1 notch at 92% as "weeks ago" rather than "furthest",
+               which is the correct reading of a bar whose left-to-right used to
+               mean this-period -> all-time.
+               The mockup solves it with one word: position 0 is labelled "us",
+               not "0". An axis that starts at "us" cannot be read as a timeline. -->
           <div class="relative h-3 font-mono text-[10px] text-base-content/35">
             <template x-for="(t, ti) in obsStripTicks()" :key="'l'+ti">
-              <span class="absolute -translate-x-1/2" :style="`left:${t.left}%`" x-text="t.km"></span>
+              <span class="absolute -translate-x-1/2" :style="`left:${t.left}%`"
+                    :class="t.km === 0 ? 'text-base-content/55' : ''"
+                    x-text="t.km === 0 ? 'us' : t.km"></span>
             </template>
           </div>
 

@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: 5ffea677a4698ef26c7f6648164fcf4858da36e96a493033f896d42f0b5d39f4
+source_hash: db3f126aae0eb7885e4836964a1a0711083750718c79043874c2d824aeae1aa3
 updated: 2026-08-03
 ---
 
@@ -447,3 +447,23 @@ The footer said "this period" without ever saying what the period was.
 
 `best_km` replaces the misleading `window_km` in the header — that value is the
 best distance reached *within the window*, never a distance window.
+
+### The axis reads as distance, because it was read as time
+
+Peter, 2026-08-03: *"the target of 189km is shown at the end, that was weeks ago.
+this is against time in the x axis doesnt it."*
+
+It is not — x is **distance from us**, and 189.1 sits at 92% because it is the
+furthest, not the latest. That misreading was the labelling's fault, not his: the
+card this replaced ran "this period" → "all-time" left to right, so a left-to-right
+time reading was the trained expectation.
+
+Two fixes, both from the mockup's own grammar:
+
+- position 0 is labelled **`us`**, not `0`. An axis that begins at "us" cannot be
+  read as a timeline.
+- the card title carries the dimension: *"every positioned node by distance from
+  us"*.
+
+A chart whose axis can be misread is not a labelling detail — every conclusion
+drawn from it is wrong in the same direction.
