@@ -330,6 +330,46 @@ db.exec(`
   WHERE num IS NOT NULL AND address IS NOT NULL AND address <> ''
 `);
 
+// ONE-TIME BACKFILL of positions we already hold. Bug B67, 2026-08-03.
+//
+// The `stranded-positions` worker found 11 recently-heard nodes with a valid
+// lat/lon in `nodeinfo` and NULL in `nodes`. Discovery filters on `nodes.lat`,
+// so we were excluding targets whose position was sitting in the next table.
+//
+// I could NOT establish the mechanism. Every current call site passes lat/lon
+// to both tables, and `upsertNode` has carried them on the nodedb path since
+// the first commit. A monotonic-guard explanation was formed and then disproved
+// by the data: 10 of the 11 had identical `nodes.last_heard` and
+// `nodeinfo.updated_at`, so both writes happened in the same call. Most likely
+// legacy residue, but that is not proven and is not asserted here.
+//
+// The fix is safe regardless of cause: filling a NULL with a position we
+// already hold cannot roll anything backward.
+//
+// IT RUNS EXACTLY ONCE, and that is the important part. A repair that ran every
+// boot would keep `stranded-positions` reading zero forever and destroy the only
+// detector we have for a recurrence. If the divergence is still live, the worker
+// will say so again — and that is the signal that this was a symptom, not a fix.
+{
+  const KEY = 'migrations.backfill_stranded_positions_v1';
+  const done = db.prepare('SELECT value FROM config WHERE key = ?').get(KEY);
+  if (!done) {
+    const r = db.prepare(`
+      UPDATE nodes
+         SET lat = (SELECT i.lat FROM nodeinfo i WHERE i.num = nodes.num),
+             lon = (SELECT i.lon FROM nodeinfo i WHERE i.num = nodes.num),
+             updated_at = unixepoch()
+       WHERE nodes.lat IS NULL
+         AND EXISTS (SELECT 1 FROM nodeinfo i
+                      WHERE i.num = nodes.num
+                        AND i.lat IS NOT NULL AND i.lat <> 0
+                        AND i.lon IS NOT NULL)`).run();
+    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)')
+      .run(KEY, JSON.stringify({ at: Math.floor(Date.now() / 1000), filled: r.changes }));
+    console.log(`[db] B67 backfill: filled ${r.changes} node positions from nodeinfo (one-time)`);
+  }
+}
+
 // Migrations for columns added after initial schema
 {
   // callout_log gained its reply columns after the table shipped, so an existing

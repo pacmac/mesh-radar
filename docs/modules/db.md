@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 06c834c610c0723b547b29c3ecc8755bc575a0d8235457a265e51d798fdaacc1
+source_hash: 8f0844f63e9b91bddc5b8c85c003d257dade76a35389f07f6a5dd54d69648a7a
 updated: 2026-08-03
 ---
 
@@ -705,3 +705,50 @@ codebase; checking rather than assuming is what caught it.
 
 Everything is computed server-side. The browser receives numbers and finished
 strings and decides nothing (`BROWSER_CONTRACT`).
+
+
+## B67 — the one-time backfill of positions we already held
+
+`stranded-positions` found **15** nodes (11 of them heard within
+`max_silence_days`) with a valid lat/lon in `nodeinfo` and `NULL` in `nodes`.
+Discovery filters on `nodes.lat`, so those nodes were excluded as "no position"
+while their position sat in the next table.
+
+### The mechanism was NOT established
+
+Stated plainly rather than papered over. Every current call site passes lat/lon
+to both tables — the nodedb path feeds the same `pos` object to `upsertNode` and
+`_upsertCache` — and `upsertNode` has carried them on that path since the first
+commit (`2ec310f`).
+
+A monotonic-guard explanation was formed and **disproved by the data**: 10 of the
+11 had identical `nodes.last_heard` and `nodeinfo.updated_at`, so both writes
+happened in the same call and the guard passed. Most likely legacy residue from
+an earlier code shape — not proven, and not asserted.
+
+The fix does not depend on knowing: filling a `NULL` with a position we already
+hold cannot roll anything backward.
+
+### Why it runs exactly once
+
+Guarded by `migrations.backfill_stranded_positions_v1` in `config`.
+
+A repair that ran on every boot would keep `stranded-positions` reading zero
+forever and **destroy the only detector we have** for a recurrence. If the
+divergence is still live, the worker will say so again — and that is the signal
+that this was a symptom rather than a fix.
+
+Only `lat IS NULL` is filled. A stored `0` is deliberately left alone: it is a
+different defect with a different cause (ledger **B69**) and must not be swept
+into this one.
+
+### Verified
+
+| check | result |
+|---|---|
+| copy with the guard key pre-set | 15 → **15**, migration skipped |
+| copy without it | `filled 15`, stranded 15 → **0**, positions 610 → 625 |
+| same copy re-opened | 0 / 625 — no double-run |
+| live after deploy | stranded **0**, positions **625** |
+| worker afterwards | *"nodeinfo and nodes agree on every recently-heard position"*, severity `info` |
+| selector | `rows_in` 607 → **622**, `unpositioned` 331 → **316**, balance still closes |
