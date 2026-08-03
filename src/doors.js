@@ -75,6 +75,55 @@ export function dominantDoor() {
   return { num: best, carried: bestN, share: total ? bestN / total : 0 };
 }
 
+/** The set of nodes that have ever been a first hop, keyed by their LOW BYTE.
+ *
+ *  This is what makes relay_node usable. The byte alone names ~4.64 candidate
+ *  nodes across the 946 we know; restricted to nodes that have actually served
+ *  as a door it is 17 doors over 16 bytes, with one collision (byte 4) that the
+ *  route count settles 2039 to 10.
+ */
+function doorsByByte() {
+  const byByte = new Map();
+  for (const r of db.prepare(`SELECT route FROM traceroute_history
+                               WHERE status='ok' AND route <> '[]'`).all()) {
+    const chain = J(r.route).filter(n => n !== BROADCAST);
+    if (!chain.length) continue;
+    const num = chain[0], b = num & 0xff;
+    const seen = byByte.get(b) || new Map();
+    seen.set(num, (seen.get(num) || 0) + 1);
+    byByte.set(b, seen);
+  }
+  // collapse each byte to its most-used door
+  const out = new Map();
+  for (const [b, seen] of byByte) {
+    let best = null, bestN = 0;
+    for (const [num, c] of seen) if (c > bestN) { bestN = c; best = num; }
+    out.set(b, best);
+  }
+  return out;
+}
+
+/** The door this target's packets REACH US through.
+ *
+ *  MeshPacket field 19 (`relay_node`), stored per received packet as
+ *  `relay_byte` — populated even for nodes that have never answered a
+ *  traceroute, which is exactly the population `knownDoor` cannot serve.
+ *
+ *  Direction caveat, deliberately not hidden: this is the INBOUND relay. The
+ *  door we aim at is outbound and routing is 62% asymmetric, so this is
+ *  evidence, not proof. Measured 83.0% micro / 71.7% macro against the
+ *  dominant-door constant's 49.1% / 41.3% on the same rows, no leakage.
+ */
+export function relayDoor(num) {
+  const r = db.prepare(`
+    SELECT relay_byte, COUNT(*) c FROM relay_observation
+     WHERE from_num = ? AND relay_byte <> 0
+     GROUP BY relay_byte ORDER BY c DESC, relay_byte LIMIT 1`).get(num);
+  if (!r) return null;
+  const door = doorsByByte().get(r.relay_byte);
+  return door == null ? null : { num: door, byte: r.relay_byte, seen: r.c };
+}
+
 /** Where to point for this target, and whether pointing is worth anything.
  *
  *  Returns { az, door, source, km, needsBeam, why } or null when we cannot
@@ -87,7 +136,13 @@ export function doorAim(targetNum) {
 
   const pos = (n) => db.prepare('SELECT lat, lon, short_name, long_name FROM nodes WHERE num = ?').get(n);
 
+  // Evidence order, strongest first: this target's own answered route, then the
+  // relay its packets actually reach us through, then the global constant.
   let door = knownDoor(targetNum), source = 'known';
+  if (door == null) {
+    const rd = relayDoor(targetNum);
+    if (rd) { door = rd.num; source = 'relay'; }
+  }
   if (door == null) {
     const d = dominantDoor();
     if (!d) return null;
@@ -106,9 +161,9 @@ export function doorAim(targetNum) {
     // The honest part. A door inside the omni's proven reach does not need a
     // 9 dBi beam, and saying so is more useful than rotating for appearances.
     needsBeam: km >= BEAM_WORTH_IT_KM,
-    why: source === 'known'
-      ? 'this target answered through it before'
-      : 'carries most of our completed routes',
+    why: source === 'known'  ? 'this target answered through it before'
+       : source === 'relay'  ? 'this target reaches us through it (inbound relay, unproven outbound)'
+       :                       'carries most of our completed routes',
   };
 }
 
