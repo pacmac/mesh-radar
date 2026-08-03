@@ -34,6 +34,11 @@ export const DEFAULTS = {
   // will discard spurioos hits, but it needs to ve a knob." Threshold for the
   // rare-sender hook; counted over observatory.window_days.
   'alerts.rare_sender_max':   5,
+  // The explorer profile: distant, consistent, multi-hop, never answered.
+  // Peter, 2026-08-04: "should flag this node as being an explorer."
+  'explorers.min_km':         40,
+  'explorers.min_hops':       2,
+  'explorers.min_traffic':    20,
   // Retention for event_log (task `event-log`). ~6k rows/day at ~50 probes/hour
   // with ~5 events each — far less than relay_observation, but still bounded.
   'event_log.retain_days':    30,

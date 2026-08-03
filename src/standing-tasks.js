@@ -22,6 +22,10 @@ import { ownDeviceNums } from './node-filter.js';
 // 3 "unknown" relays found.
 const BROADCAST = 4294967295;
 
+// Roles that relay for others, and therefore CAN be a door. CLIENT_MUTE is the
+// explicit opposite — it never rebroadcasts, so it can never be one.
+const RELAY_ROLES = new Set(['ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'REPEATER']);
+
 const J = (s) => { try { const a = JSON.parse(s); return Array.isArray(a) ? a : []; } catch { return []; } };
 
 const T = {
@@ -72,6 +76,10 @@ const T = {
   outboundRelay: defineHook({
     name: 'outbound-relay-identity', scope: 'store',
     purpose: 'names the nodes that ACKed packets WE sent — the only outbound-direction relay evidence we get, against a mesh that routes 62% asymmetrically',
+  }),
+  explorers: defineHook({
+    name: 'explorers', scope: 'store',
+    purpose: 'flags distant, consistent, multi-hop nodes that reach us and never answer — each one is evidence of a corridor we cannot yet see',
   }),
   newGround: defineHook({
     name: 'new-ground', scope: 'store',
@@ -843,11 +851,96 @@ function runNewGround() {
   });
 }
 
+// EXPLORERS. Peter, 2026-08-04: "whatever the logic that calculates or flags
+// this as an important node, should flag this node as being an explorer."
+//
+// An explorer's traffic reliably crosses a long distance and several hops to
+// reach us, while it never answers anything we send. That is evidence a CORRIDOR
+// exists in its direction — the node is the far end of a working path, and the
+// relays along that path are the prize. PUCK arrives through our own ordinary
+// doors (fir, T4) after ~4 hops, so the interesting 3 hops are upstream and
+// completely unobserved.
+//
+// Ranked by TRAFFIC, not distance, because the defining quality is consistency:
+// a node heard once at 240 km is a fluke, not an explorer.
+function runExplorers() {
+  const minKm      = Number(getConfig('explorers.min_km', 40)) || 40;
+  const minHops    = Number(getConfig('explorers.min_hops', 2)) || 2;
+  const minTraffic = Number(getConfig('explorers.min_traffic', 20)) || 20;
+  const days       = Number(getConfig('observatory.window_days', 7)) || 7;
+  const home = homeLatLon();
+  if (!home) {
+    T.explorers.emit({ severity: 'info', summary: 'cannot place ourselves — no explorer ranking possible', detail: {} });
+    return;
+  }
+
+  // Our own radios are excluded by TRANSPORT, never by name.
+  const ours = new Set(db.prepare(`SELECT DISTINCT from_num n FROM relay_observation
+                                    WHERE transport = 'TRANSPORT_INTERNAL'`).all().map(r => r.n));
+  const since = Math.floor(Date.now() / 1000) - days * 86400;
+
+  const rows = db.prepare(`
+    SELECT n.num, n.short_name, n.long_name, n.lat, n.lon, n.last_heard,
+           (SELECT COUNT(*) FROM messages m          WHERE m.from_num = n.num AND m.ts > ?) msgs,
+           (SELECT COUNT(*) FROM relay_observation r WHERE r.from_num = n.num) pkts,
+           (SELECT MAX(hop_start - hop_limit) FROM relay_observation r
+             WHERE r.from_num = n.num AND r.hop_start IS NOT NULL) max_hops,
+           (SELECT COUNT(*) FROM traceroute_history t WHERE t.to_num = n.num AND t.status='ok') answered,
+           (SELECT COUNT(*) FROM traceroute_history t WHERE t.to_num = n.num) tried,
+           n.role
+      FROM nodes n
+     WHERE n.lat IS NOT NULL AND n.lat <> 0 AND n.last_heard > ?`).all(since, since);
+
+  const found = [];
+  for (const r of rows) {
+    if (ours.has(r.num)) continue;
+    if (r.answered > 0) continue;                       // it answered — a contact, not an explorer
+    const km = haversineKm(home.lat, home.lon, r.lat, r.lon);
+    if (km < minKm || km > 250) continue;               // 250 = MQTT plausibility ceiling
+    if ((r.max_hops ?? 0) < minHops) continue;          // a neighbour is not an explorer
+    // Traffic counts messages AND packets: a node can be consistently present
+    // without ever sending text.
+    const traffic = (r.msgs || 0) + (r.pkts || 0);
+    if (traffic < minTraffic) continue;
+    // ROLE CHANGES WHAT A NON-ANSWER MEANS. Peter, 2026-08-04: "repeaters are
+    // gold dust to us" — a relay-capable node is a DOOR CANDIDATE, while a
+    // CLIENT_MUTE cannot relay for anyone by configuration and never will be,
+    // however close or chatty it is. Silence from a router is worth chasing;
+    // silence from a mute client is the node working as designed.
+    const role = r.role || null;
+    const relay_capable = RELAY_ROLES.has(role);
+    found.push({ num: r.num, name: r.short_name || r.long_name || `!${(r.num >>> 0).toString(16)}`,
+                 km: +km.toFixed(1), hops: r.max_hops, traffic, tried: r.tried,
+                 role, relay_capable, can_never_relay: role === 'CLIENT_MUTE' });
+  }
+  // Relay-capable first, then by traffic: a router we cannot reach is a missing
+  // door, which is worth more than a chatty client that could never be one.
+  found.sort((a, b) => (b.relay_capable - a.relay_capable) || (b.traffic - a.traffic));
+
+  if (!found.length) {
+    T.explorers.emit({ severity: 'info',
+      summary: `no explorers — nothing beyond ${minKm} km reaches us consistently`,
+      detail: { min_km: minKm, min_hops: minHops, min_traffic: minTraffic, window_days: days } });
+    return;
+  }
+  const furthest = found.reduce((a, b) => (b.km > a.km ? b : a));
+  const relays = found.filter(f => f.relay_capable);
+  T.explorers.emit({
+    severity: relays.length ? 'notice' : 'info',
+    summary: relays.length
+      ? `${relays.length} RELAY-CAPABLE explorers of ${found.length} — furthest ${relays[0].km >= furthest.km ? relays[0].name : furthest.name} `
+        + `at ${Math.max(relays[0].km, furthest.km)} km; ${relays[0].name} is a ${relays[0].role} tried ${relays[0].tried}x, never answered`
+      : `${found.length} explorers, none relay-capable — furthest ${furthest.name} at ${furthest.km} km`,
+    detail: { min_km: minKm, min_hops: minHops, min_traffic: minTraffic, window_days: days,
+              count: found.length, relay_capable: relays.length, nodes: found.slice(0, 20) },
+  });
+}
+
 const TASKS = [runUnknownNodes, runGhostRelays, runAsymmetricPaths,
                runStrandedPositions, runAnchorableNodes, runBlockedCorridors,
                runRelayCorridors, runProbingStalled, runRateChangepoint,
                runDispatcherYield, runCalloutYield, runOutboundRelayIdentity,
-               runNewGround];
+               runNewGround, runExplorers];
 
 /** Run every standing task once, isolated. One throwing must not stop the rest —
  *  a broken analysis should cost its own finding, never the others'. */

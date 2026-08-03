@@ -1,7 +1,7 @@
 ---
 module: standing-tasks
 source: src/standing-tasks.js
-source_hash: ab730c3237e2924315032366332f2c2b05538b8c8ba857c8a04e099fc070afeb
+source_hash: 0bf4d414c774d011109bea624907d2191bfb847d10b839c2821be001fd80029a
 updated: 2026-08-03
 ---
 
@@ -501,3 +501,95 @@ Zero branch verified on a real quiet window (29–31 Jul: 0 first-ever, 5
 attempts). Severity is `notice` only above 200 attempts, so a quiet system is not
 alarmed while a busy-but-barren one is — "0 of 1140" is the alarm, "0 of 5" is
 just a quiet night.
+
+## `explorers` — distant, consistent, reaches us, never answers
+
+Peter, 2026-08-04, after tracing PUCK's behaviour: *"whatever the logic that
+calculates or flags this as an important node, should flag this node as being an
+explorer."*
+
+### The class
+
+An **explorer** is a node whose traffic reliably crosses a long distance and
+several hops to reach us, while never once answering anything we send. It is
+evidence that **a corridor exists in its direction** — the node is the far end of
+a working path, and the relays along that path are the prize.
+
+Four conditions, all knobs:
+
+| condition | default | why |
+|---|---|---|
+| distance | ≥ 40 km | inside that, an omni already reaches; nothing to explore |
+| hops observed | ≥ 2 | a neighbour is not an explorer |
+| traffic in window | ≥ 20 | *consistency* — Peter: "distant but consistent". One packet is a fluke |
+| answered us | 0 | the moment it answers it stops being unreached and becomes a contact |
+
+Traffic counts messages **plus** received packets: a node can be consistently
+present without ever sending text, and `JRSY` (33 packets, 0 messages) is as real
+an explorer as `PUCK` (61 messages).
+
+Our own radios are excluded via `TRANSPORT_INTERNAL`, not by name.
+
+### Measured on the live store, 2026-08-04
+
+60 nodes at traffic ≥5, 39 at ≥10, **18 at ≥20** — which is why the default is
+20. The shortlist it produces:
+
+```
+LWT1  116.7 km  7 hops  traffic 94  tried 16
+ApRo   63.1 km  7 hops  traffic 82  tried 71
+PUCK   79.5 km  6 hops  traffic 82  tried 23
+BSON  179.5 km  7 hops  traffic 58  tried 11
+79fc   66.9 km  7 hops  traffic 47  tried 88
+```
+
+`BSON` at **179.5 km** is the find: consistently heard, tried 11 times, never
+answered, and within 10 km of the standing record. `PUCK` — the node that
+prompted this — ranks third, so the instinct was right and there were two more
+like it nobody had looked for.
+
+### What it is NOT
+
+It does not claim these nodes are reachable. `79fc` has been tried **88 times**
+and never answered; an explorer is a corridor worth understanding, not a target
+worth hammering. Ranking is by traffic, deliberately, so consistency rather than
+raw distance leads — a node heard once at 240 km is not an explorer.
+
+### Role decides what a non-answer MEANS
+
+Peter, 2026-08-04: *"JRSY might be a repeatere, or sesnor or does no accept or
+monitor messages"*, then *"repeaters are gold dust to us"*. Both land.
+
+A node's `role` changes the meaning of silence entirely:
+
+| role | silence means |
+|---|---|
+| `ROUTER`, `ROUTER_LATE`, `ROUTER_CLIENT`, `REPEATER` | **a door we cannot reach** — worth chasing |
+| `CLIENT_MUTE` | working as designed; it never rebroadcasts and can NEVER be a door |
+| `CLIENT_BASE`, unset | an ordinary contact |
+
+So `relay_capable` and `can_never_relay` are published per node, and the sort puts
+relay-capable first — a router we cannot reach is a **missing door**, which is
+worth more than a chatty client that could never be one. Ranking on traffic alone
+had `LWT1` (`CLIENT_MUTE`, 116.7 km) at the top; it can never relay for anyone.
+
+### The finding this exposed
+
+31 relay-capable nodes sit within 250 km and **not one has ever been our
+`route[0]`**:
+
+```
+   km    az  role           pkts tried ok  alive   name
+ 218.6  159  ROUTER           33     4  0     2h   JRSY   29 km PAST the record
+ 171.6  236  ROUTER_LATE      13    58  0     0h   Star
+ 140.0  239  ROUTER           10    12  2     1h   Grn4   has answered twice
+ 127.8   36  ROUTER_CLIENT    21    20  0     4h   BBBC
+ 109.5    3  ROUTER           38    37  0     0h   35e7
+```
+
+`JRSY` is a live ROUTER **29 km beyond the standing record**, heard 2 h ago, and
+has been tried **four times** — while `79fc`, a CLIENT, has been tried **88**. We
+spend attempts on nodes that cannot relay and barely ask the ones built to.
+
+`Grn4` at 140 km has already answered **2 of 12** and has still never been used
+as a door.
