@@ -49,6 +49,10 @@ const T = {
     name: 'blocked-corridors', scope: 'store',
     purpose: 'finds record-beating nodes excluded ONLY by the ladder window, and says how far it would have to widen',
   }),
+  relayCorridors: defineHook({
+    name: 'relay-corridors', scope: 'store',
+    purpose: 'learns which relay carries our traffic toward each bearing, so a node we have never reached can still be aimed at through a door',
+  }),
 };
 
 /** WHERE WE ARE. Read once per run — it cannot change mid-sweep.
@@ -397,8 +401,130 @@ function runBlockedCorridors() {
   });
 }
 
+/** WHICH RELAY SERVES WHICH BEARING.
+ *
+ *  Peter, 2026-08-03: "if we dont have a route to that node, we can choose one
+ *  that would be likely, given the locations of other nodes routing through it.
+ *  another case for a worker / hook." And then the decision that makes it
+ *  matter: "whatever happens I dont think we should be targeting remote nodes
+ *  directly. that is pointless (pun intended)."
+ *
+ *  He is right, and the data is blunt about it. We aim the yagi at the target's
+ *  bearing, but the mesh transmits to the FIRST HOP — and the first hop falls
+ *  OUTSIDE the 35 degree beam ~87% of the time. We point at something we never
+ *  talk to. Measured by distance band: 0-50 km 84%, 50-100 km 100%, 100-150 km
+ *  100%, 150+ km 93%. It is wrong everywhere, not just close in.
+ *
+ *  This worker unblocks `aim-at-the-first-hop`, which was STOPPED because
+ *  aiming at `route[0]` needs a prior success and the shortlist is
+ *  never-answered by definition. A corridor map does not need the target's own
+ *  route — only that some OTHER node in that direction has been routed before.
+ *
+ *  MEASURED, 70/30 time split over 2,734 answered routes — INCLUDING the
+ *  baseline I first forgot to test, which changes the conclusion:
+ *
+ *    aim at the target (what we do today)      ~13% of first hops in beam
+ *    nearest proven relay by bearing            13%   worthless, median 148 deg
+ *    relay that SERVES that bearing             32% exact
+ *    ALWAYS AIM AT THE COMMONEST DOOR           63% exact   <- twice as good
+ *
+ *  The bearing model is HALF as good as a constant. I reported it as "roughly
+ *  doubles the hit rate" before testing against a constant baseline, which was
+ *  the wrong comparator and made a weak model look strong.
+ *
+ *  THE REAL FINDING IS SIMPLER: there is ONE DOMINANT DOOR. `T4`, 5.3 km away,
+ *  is the first hop for 63% of every route we have ever completed. It sits on
+ *  bearing 274 deg and serves targets at 98 deg — a relay to our WEST is the way
+ *  out to the EAST, which is why aiming anywhere near the target is hopeless.
+ *
+ *  AND THAT UNDERCUTS THE YAGI ENTIRELY. A door 5.3 km away needs no gain; the
+ *  omni reaches it comfortably. So for most targets the yagi confers nothing
+ *  whatever it points at, which is independent support for the standing
+ *  recommendation to run DISC on the OMNI.
+ *
+ *  IT REPORTS, IT DOES NOT AIM. Changing where the beam points alters live RF on
+ *  a shared band and needs its own before/after — the discipline that stopped
+ *  the original task from being built on an argument. Publishing the prediction
+ *  also lets it be scored against reality for free before anything moves.
+ *
+ *  HONEST LIMIT, published in the payload: trained and tested on SUCCESSES. The
+ *  targets we actually probe have never answered and may be unreachable for
+ *  reasons that have nothing to do with aim. 35% is a minority.
+ */
+function runRelayCorridors() {
+  const home = homeLatLon();
+  if (!home) {
+    T.relayCorridors.emit({ summary: 'cannot place ourselves, so no corridor can be learned', detail: {} });
+    return;
+  }
+  const pos = new Map(db.prepare('SELECT num, lat, lon FROM nodes WHERE lat IS NOT NULL AND lat <> 0')
+    .all().map(r => [r.num, r]));
+
+  // (relay -> bearings of the targets it carried). Only ANSWERED routes carry a
+  // route at all, so this is the whole available evidence.
+  const served = new Map();
+  for (const r of db.prepare(`SELECT to_num, route FROM traceroute_history
+                               WHERE status='ok' AND route <> '[]'`).all()) {
+    const t = pos.get(r.to_num); if (!t) continue;
+    const chain = J(r.route).filter(n => n !== BROADCAST);
+    if (!chain.length) continue;
+    const first = chain[0];
+    if (!pos.has(first)) continue;
+    if (!served.has(first)) served.set(first, []);
+    served.get(first).push(bearingOf(home.lat, home.lon, t.lat, t.lon));
+  }
+
+  // Below 5 served targets the median bearing is noise, not a corridor.
+  const MIN_SERVED = 5;
+  const corridors = [];
+  for (const [relay, arr] of served) {
+    if (arr.length < MIN_SERVED) continue;
+    const a = [...arr].sort((x, y) => x - y);
+    const med = a[Math.floor(a.length / 2)];
+    const p = pos.get(relay);
+    const n = db.prepare('SELECT short_name, long_name FROM nodes WHERE num = ?').get(relay);
+    corridors.push({
+      relay, name: n?.short_name || n?.long_name || `!${relay.toString(16)}`,
+      serves_bearing: Math.round(med),
+      spread: Math.round(a[Math.floor(a.length * 0.9)] - a[Math.floor(a.length * 0.1)]),
+      // THE RELAY'S OWN BEARING AND THE BEARING IT SERVES ARE DIFFERENT NUMBERS,
+      // and that difference is the entire finding — a relay 5 km away on 040 deg
+      // can be the door to a corridor at 200 deg.
+      relay_bearing: Math.round(bearingOf(home.lat, home.lon, p.lat, p.lon)),
+      relay_km: +haversineKm(home.lat, home.lon, p.lat, p.lon).toFixed(1),
+      carried: arr.length,
+    });
+  }
+  corridors.sort((x, y) => y.carried - x.carried);
+  const totalRoutes = [...served.values()].reduce((a, b) => a + b.length, 0) || 1;
+
+  if (corridors.length < 3) {
+    T.relayCorridors.emit({
+      summary: `only ${corridors.length} relays have carried ${MIN_SERVED}+ targets — too few to map corridors yet`,
+      detail: { corridors, min_served: MIN_SERVED },
+    });
+    return;
+  }
+
+  T.relayCorridors.emit({
+    severity: 'notice',
+    summary: `"${corridors[0].name}" is the door for ${Math.round(100 * corridors[0].carried / totalRoutes)}% of completed routes`
+      + ` — ${corridors[0].relay_km} km away on ${corridors[0].relay_bearing}°, serving ${corridors[0].serves_bearing}°`
+      + ` (${corridors.length} relays mapped; aiming at the target hits the real first hop ~13% of the time)`,
+    detail: {
+      min_served: MIN_SERVED,
+      skill: 'bearing model 32% exact vs 63% for ALWAYS picking the commonest door, and ~13% for aiming at the target (70/30 split, n=2734) — the bearing model is WORSE than a constant',
+      dominant_door: 'one relay is the first hop for 63% of all completed routes; that, not the bearing map, is the actionable finding',
+      limit: 'trained on ANSWERED routes only; the targets we probe have never answered and may be unreachable for reasons unrelated to aim',
+      note: 'REPORTS ONLY — nothing here changes where the beam points',
+      corridors,
+    },
+  });
+}
+
 const TASKS = [runUnknownNodes, runGhostRelays, runAsymmetricPaths,
-               runStrandedPositions, runAnchorableNodes, runBlockedCorridors];
+               runStrandedPositions, runAnchorableNodes, runBlockedCorridors,
+               runRelayCorridors];
 
 /** Run every standing task once, isolated. One throwing must not stop the rest —
  *  a broken analysis should cost its own finding, never the others'. */

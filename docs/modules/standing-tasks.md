@@ -1,7 +1,7 @@
 ---
 module: standing-tasks
 source: src/standing-tasks.js
-source_hash: 0f0a0b4022dc2d630d6e6c3c85720e88a1b31c7e0c9e8915af94be7dad58540f
+source_hash: ddf227270d3924d8297985bab4b919a9ba16906268a987a1e9403eeaabfebaa4
 updated: 2026-08-03
 ---
 
@@ -263,3 +263,65 @@ Reconciled against the hand figures at `window_km: 25` — 14 blocked, nearest
 needs 38 km. After raising the window to 50 the live hook reports **9 blocked,
 nearest needs 55 km**: the Jersey and Stafford corridors have been admitted and
 the hook now names the next one out, which is exactly what it is for.
+
+
+## `relay-corridors` — and the baseline that changed the conclusion
+
+Peter, 2026-08-03: *"if we dont have a route to that node, we can choose one that
+would be likely, given the locations of other nodes routing through it. another
+case for a worker / hook."* Then: *"whatever happens I dont think we should be
+targeting remote nodes directly. that is pointless (pun intended)."*
+
+He is right about the aim. We point the yagi at the target's bearing, but the
+mesh transmits to the **first hop**, and the first hop falls outside the 35°
+beam ~87% of the time. By distance band: 0–50 km 84%, 50–100 km 100%,
+100–150 km 100%, 150 km+ 93%. **It is wrong everywhere**, not only close in —
+correcting an earlier claim of mine that the error was concentrated in near
+targets. (The two far bands rest on 7 and 15 rows; indicative only.)
+
+### The measurement, including the baseline I initially skipped
+
+70/30 time split, 2,734 answered routes:
+
+| strategy | exact first-hop match |
+|---|---|
+| aim at the target (today) | ~13% in beam |
+| nearest proven relay by bearing | 13% — median error 148°, worthless |
+| relay that **serves** that bearing | **32%** |
+| **always aim at the commonest door** | **63%** |
+
+**The bearing model is half as good as a constant.** I reported it as "roughly
+doubles the hit rate" before testing it against a constant baseline — the wrong
+comparator, and it made a weak model look strong.
+
+### The real finding is simpler
+
+**There is one dominant door.** `T4`, 5.3 km away, is the first hop for **67%**
+of every route we have completed (63% on the held-out split). It sits on bearing
+**274°** and serves targets at **98°** — a relay to our *west* is the way out to
+the *east*, which is why aiming anywhere near the target is hopeless.
+
+### And it undercuts the yagi
+
+A door 5.3 km away needs no gain; the omni reaches it comfortably. So for most
+targets **the yagi confers nothing whatever it points at** — independent support
+for the standing recommendation to run DISC on the OMNI
+(`aim-at-the-first-hop`, improvement #1).
+
+### It reports, it does not aim
+
+Changing where the beam points alters live RF on a shared band and needs its own
+before/after. Publishing the prediction also allows it to be scored against
+reality for free before anything moves.
+
+Both the relay's **own** bearing and the bearing it **serves** are published,
+because they are different numbers and the difference is the whole finding.
+
+Relays need ≥5 served targets to qualify; below that a median bearing is noise.
+Spread is published too — several relays show a 180° spread, meaning they serve
+everywhere and are not corridors at all. Spread-weighting is **not** implemented
+and is untested.
+
+**Limit, published in the payload:** trained on ANSWERED routes only. The targets
+we actually probe have never answered and may be unreachable for reasons that
+have nothing to do with aim.
