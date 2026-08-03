@@ -509,7 +509,20 @@ export const observatoryMixin = {
       { k: 'exhausted',  n: s.skipped_exhausted ?? 0,     label: `tried out · ${s.attempts_per_target}`, tone: 'bg-base-content/25' },
       { k: 'window',     n: s.skipped_beyond_window ?? 0, label: `too far · ${s.window_km}km step`,      tone: 'bg-warning/70' },
       { k: 'silent',     n: s.skipped_silent ?? 0,        label: `silent · ${s.max_silence_days}d`,      tone: 'bg-base-content/40' },
-      { k: 'suspect',    n: s.skipped_suspect ?? 0,       label: 'no position',                          tone: 'bg-base-content/15' },
+      // WAS LABELLED "no position", WHICH IT NEVER WAS. skipped_suspect counts
+      // km > ceiling_km (250) — implausible COMPUTED distances — and every one
+      // of those nodes HAS a position. The wrong label sent the number to Peter
+      // as a position problem twice. The server now publishes ceiling_km so this
+      // states the server's rule instead of inventing a meaning for it.
+      { k: 'suspect',    n: s.skipped_suspect ?? 0,       label: `beyond ${s.ceiling_km ?? 250}km · unverifiable`, tone: 'bg-base-content/15' },
+      // NO CLASS CLAIMED IT — attempted, no reply, nearer than the bar. These
+      // left the selector uncounted until 2026-08-03, and they are why the
+      // shortlist empties without saying so.
+      { k: 'unclassified', n: s.skipped_unclassified ?? 0, label: `no rule matched · under ${Math.round(s.bar_km ?? 0)}km`, tone: 'bg-error/40' },
+      // NEVER REACHED THE SELECTOR AT ALL — filtered by the evidence query
+      // before any counter existed. The largest exclusion, and it was absent
+      // from this bar entirely.
+      { k: 'unpositioned', n: s.unpositioned ?? 0,        label: 'no position at all',                   tone: 'bg-base-content/10' },
     ].filter(x => x.n > 0);
     const total = segs.reduce((a, b) => a + b.n, 0) || 1;
     return segs.map(x => ({ ...x, pct: (100 * x.n) / total, total }));

@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: d0a02f8551b8aa1c91ffdf8d52b40a3daf74e771a8ff8d704a1e2cb06a6cc446
+source_hash: f3b03606947de38321615502fff74e5efaafb78dc18671bf0c4f9411ff19d250
 updated: 2026-08-03
 ---
 
@@ -343,3 +343,36 @@ and correctly shows its callsign rather than an invented place.
 - Any derivation the server should own.
 - The panels still awaiting a feed — they render an empty state naming the phase
   that fills them.
+
+
+## The funnel shows every exclusion, including the two it used to hide
+
+Task `funnel-accounts-for-every-node` (Domain 2 half; the counts are Domain 1,
+see `docs/modules/inferences.md`).
+
+Three segment changes:
+
+| segment | before | after |
+|---|---|---|
+| `suspect` | **"no position"** — wrong | `beyond ${ceiling_km}km · unverifiable` |
+| `unclassified` | absent | `no rule matched · under ${bar_km}km` |
+| `unpositioned` | absent | `no position at all` |
+
+**The mislabel mattered.** `skipped_suspect` counts `km > 250` — implausible
+*computed* distances — and every one of those 127 nodes **has** a position.
+Rendering it as "no position" sent the figure to Peter as a position problem
+twice. The label now states the server's own rule, using the `ceiling_km` the
+server publishes, rather than inventing a meaning for a number it does not own —
+the `BROWSER_CONTRACT` rule that the browser makes zero decisions.
+
+**`no rule matched` is toned `bg-error/40` deliberately.** It is not a normal
+exclusion, it is nodes leaving the selector through a branch that claimed nothing
+— and while it is non-zero the shortlist can empty with no other segment
+explaining why. Live on 2026-08-03: **75**, alongside `candidates: 0`. Red is the
+honest colour for "this is the reason nothing is being probed".
+
+**`no position at all` is the largest segment** (331) and was absent entirely,
+because those nodes never reach the selector to be counted.
+
+Verified live: the legend reads `14 cooling · 50 tried out · 189 too far ·
+152 silent · 127 beyond 250km · 75 no rule matched · 331 no position at all`.
