@@ -1,7 +1,7 @@
 ---
 module: mission-runner
 source: src/mission-runner.js
-source_hash: 2052c5f259122a6e131c703c964cf49db15ccd6e71cbce99a513d5df58f1e969
+source_hash: 9c2113770cf036339ef4a0619ce7d55aed7c91eb55fa687575a0a471441eaa85
 updated: 2026-08-03
 ---
 
@@ -439,3 +439,52 @@ concern.
 - The broadcast callout. Still unbuilt, still the contested instrument (§9).
 - Anything the rotator does. A mission uses the mode's transmitter and does not
   aim; the antenna is shared with the garage alarm.
+
+## B75 — the daily airtime budget must survive a restart
+
+`max_attempts_per_day` was enforced against `this._sent`, an **in-memory array**
+initialised empty in the constructor. Every process restart returned the budget
+to zero, so the cap bounded *attempts since the last deploy*, not attempts per
+day.
+
+Measured 2026-08-03 23:31: **1229 attempts in the preceding 24 h against a cap of
+400** — three times over, because node-dash was restarted five times that evening
+while shipping. The brake was never broken; it was repeatedly released, and
+nothing reported the overrun because from each fresh process's view it had not
+happened.
+
+Peter, when the cap was then raised to 2000: *"but that does not mean that you
+gate bug does not need fixing"* — correct. A larger cap on a counter that resets
+is still a cap that means nothing.
+
+### The count comes from the store
+
+```sql
+SELECT COUNT(*) FROM traceroute_history
+ WHERE ts > strftime('%s','now') - 86400 AND tx_device IS NOT NULL
+```
+
+Two details that are not optional:
+
+- **`tx_device IS NOT NULL`** excludes overheard/passive traceroutes. Those cost
+  us no airtime, and counting another station's traffic against our own budget
+  would brake us for someone else's transmissions. (Last 24 h: 1229 ours, 1
+  overheard — small tonight, wrong in principle always.)
+- **plus anything in flight.** A row is written at RESULT time — `setTraceroute`
+  on success, `_recordFailure` on timeout or send failure — so a dispatched
+  attempt is invisible to the query for up to `timeout_sec`. Without this the
+  budget would undercount by the mission currently running.
+
+Same failure class as B74: state that silently resets to a **permissive** value
+rather than failing closed. A budget that forgets is worse than no budget,
+because it reports compliance while exceeding.
+
+### Verified
+
+Process restarted at 23:38:35 on code modified 23:38:17. A fresh process now
+reports `sentToday() = 1228` (cap 2000, 772 remaining tonight). Under the
+in-memory array a fresh process necessarily reported **0** — that is the whole
+defect, and it is deterministic rather than something that needed re-running.
+
+`sent_today` is published on the runner's own emission, not on
+`missions.summary`, so it is not readable from the Observatory board payload.

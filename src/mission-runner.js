@@ -85,7 +85,7 @@ const H = {
   }),
 };
 import { getRotatorAddress, getAllDeviceCfgs } from './device-config.js';
-import { getConfig, ourChannelUtil } from './db.js';
+import db, { getConfig, ourChannelUtil } from './db.js';
 import { resolveNodeLabel } from './node-label.js';
 
 const DEFAULTS = {
@@ -154,7 +154,12 @@ class MissionRunner extends EventEmitter {
     // Rolling 24h dispatch log, for the daily budget. Timestamps only — the
     // stored rows are the record; this just has to answer "how many in the last
     // day" without a query on every tick.
-    this._sent     = [];
+    // B75: the daily budget is NOT held in memory. It was — an array seeded
+    // empty in this constructor — so every restart returned the budget to zero
+    // and the cap bounded "attempts since the last deploy", not attempts per
+    // day. Measured 2026-08-03: 1229 attempts against a cap of 400, because the
+    // process was restarted five times that evening while shipping. See
+    // sentToday().
     this._brake    = null;   // why we are not transmitting, or null
     this._dispatching = false;
     this._current  = null;
@@ -240,13 +245,33 @@ class MissionRunner extends EventEmitter {
       running:   this._started,
       queued:    this._queue.length + (this._holding ? 1 : 0),
       brake:     this._brake,
-      sent_today: this._sent.length,
+      sent_today: this.sentToday(),
       daily_cap: Number(c.max_attempts_per_day) || 400,
       holding:   this._holding ? { target: this._holding.target, label: this._holding.label, left: this._left } : null,
       current:   this._current,
       recent:    this._recent,
       discovered: { ...this._discovered },
     };
+  }
+
+  /** Attempts charged against today's airtime budget, from the STORE so it
+   *  survives a restart (B75).
+   *
+   *  `tx_device IS NOT NULL` excludes overheard/passive traceroutes: those cost
+   *  us no airtime, and braking ourselves for another station's transmissions
+   *  would be wrong however small the count.
+   *
+   *  A row is written at RESULT time (setTraceroute on success, _recordFailure
+   *  on timeout/send failure), so a dispatched attempt is invisible to the query
+   *  for up to timeout_sec — `_current` covers that gap. */
+  sentToday() {
+    let n = 0;
+    try {
+      n = db.prepare(`SELECT COUNT(*) n FROM traceroute_history
+                       WHERE ts > strftime('%s','now') - 86400
+                         AND tx_device IS NOT NULL`).get()?.n || 0;
+    } catch { n = 0; }
+    return n + (this._current ? 1 : 0);
   }
 
   _emit() { this.emit('activity', this.state()); }
@@ -316,10 +341,9 @@ class MissionRunner extends EventEmitter {
     // costs nothing. Both reasons are SURFACED (this._brake) rather than
     // silently skipping — an invisible pause is indistinguishable from a dead
     // loop, which this project has already learned the hard way.
-    const dayAgo = Date.now() - 86_400_000;
-    this._sent = this._sent.filter(ts => ts > dayAgo);
-    if (this._sent.length >= (Number(c.max_attempts_per_day) || 400)) {
-      this._brake = `daily budget spent (${this._sent.length}/${c.max_attempts_per_day})`;
+    const spentToday = this.sentToday();
+    if (spentToday >= (Number(c.max_attempts_per_day) || 400)) {
+      this._brake = `daily budget spent (${spentToday}/${c.max_attempts_per_day})`;
       this._sayIdle(this._brake, 'notice');
       this._emit();
       return;
@@ -479,7 +503,8 @@ class MissionRunner extends EventEmitter {
     }
 
     this._discovered.attempts++;
-    this._sent.push(Date.now());
+    // No local tally to push to — the traceroute_history row IS the record, and
+    // _current covers the gap before it is written.
     this._emit();
 
     H.dispatch.emit({
