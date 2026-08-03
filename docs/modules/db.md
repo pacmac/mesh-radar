@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 7b294d630e751ecfbc52d0183337585db09be1fd76cd7b2c7600d69c3a035fe6
+source_hash: 176f071ee59f15733354241cb7156ed94f04b63046fd92ad459252f40b08ec91
 updated: 2026-08-03
 ---
 
@@ -889,3 +889,28 @@ version of this — named `series` — was overwritten by it, and the field meas
 duplicate key wins, silently. Hence `reach`.
 
 `strip[]` remains only until the card stops reading it.
+
+### `reach[].kind` — colour carries FIRST-EVER CONTACT
+
+Colour was spent on direct-vs-relayed, which is the least interesting thing on
+the chart. It now carries the one question no other panel answers: **is the mesh
+still yielding nodes we have never reached, or are we re-tracing the same few?**
+
+`kind` is `new` | `direct` | `relay`, decided here so the browser only maps it to
+a colour. `first_ever` is also published for the tooltip.
+
+**`new` is computed against ALL history, not the window.** A node first reached
+last month is not a discovery today, and computing it from the window alone would
+relabel every returning node as new each time the window rolled.
+
+Live at time of writing, 7-day window: relay 48, direct 13, **new 4** —
+`TM89 65.4 km`, `24f0 22 km`, `59a7 175.7 km`, `Luke 176.4 km`.
+
+`Luke` is the window's best distance **and** a first-ever contact, which is the
+argument for this encoding in one bar: the frontier moved because we reached new
+ground, not because we re-traced known nodes.
+
+**Do not read the bar count as mesh activity.** Attempts went 1, 4, 1, 0, 8, 306,
+1140 per day across this window — the dense right-hand side is OUR attempt volume
+resuming, not the mesh waking up. Successes without their denominator will always
+tell that story; the `new` colour is what separates genuine discovery from it.

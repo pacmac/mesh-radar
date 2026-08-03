@@ -510,10 +510,12 @@ export const observatoryMixin = {
       left:   +Math.max(0, Math.min(100, ((p.ts - t0) / tSpan) * 100)).toFixed(3),
       bottom: +Math.max(0, Math.min(100, (p.km / yMax) * 100)).toFixed(3),
       direct: p.direct,
+      // Server-decided class; the browser only maps it to a colour.
+      kind: p.kind || (p.direct ? 'direct' : 'relay'),
       // Signal opacity across the LoRa demod range, -20 to +12 dB. Normalising a
       // server-supplied number, not deciding what counts as strong.
       opacity: p.snr_db == null ? null : Math.max(0.4, Math.min(1, (p.snr_db + 20) / 32)),
-      title: `${p.label} · ${p.km} km · ${new Date(p.ts * 1000).toLocaleString()}`
+      title: `${p.first_ever ? 'FIRST EVER CONTACT · ' : ''}${p.label} · ${p.km} km · ${new Date(p.ts * 1000).toLocaleString()}`
            + (p.snr_db == null ? ' · no direct signal' : ` · ${p.snr_db} dB direct`),
     }));
   },

@@ -1106,6 +1106,14 @@ function frontierSeries(fromTs) {
            (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') lon`).get();
   if (!home || !Number.isFinite(home.lat) || home.lat === 0) return [];
 
+  // FIRST-EVER contact per node, over ALL history — not just this window. A node
+  // first reached last month is not a discovery today, and computing this from
+  // the window alone would relabel every returning node as new every time the
+  // window rolls.
+  const firstEver = new Map(
+    db.prepare(`SELECT to_num, MIN(ts) t FROM traceroute_history
+                 WHERE status='ok' GROUP BY to_num`).all().map(r => [r.to_num, r.t]));
+
   const rows = db.prepare(`
     SELECT t.ts, n.num, n.lat, n.lon, n.short_name, n.long_name,
            (SELECT ROUND(AVG(s.snr),2) FROM signal_history s WHERE s.num = n.num) snr_db,
@@ -1121,10 +1129,17 @@ function frontierSeries(fromTs) {
     const km = haversine(home.lat, home.lon, r.lat, r.lon);
     if (!(km <= 250)) continue;                 // MQTT-sourced beyond here, not RF evidence
     const direct = r.direct_rx > 0;
+    // NEW GROUND. The one thing on this card no other panel answers: is the mesh
+    // still yielding nodes we have never reached, or are we re-tracing the same
+    // few? A row is `new` only if this row IS that node's first-ever answer.
+    const isNew = firstEver.get(r.num) === r.ts;
     out.push({
       ts: r.ts,
       km: Math.round(km * 10) / 10,
       direct,
+      first_ever: isNew,
+      // The class the browser colours by — decided here, not there.
+      kind: isNew ? 'new' : direct ? 'direct' : 'relay',
       snr_db: direct ? r.snr_db : null,
       label: r.short_name || r.long_name || `!${(r.num >>> 0).toString(16)}`,
     });

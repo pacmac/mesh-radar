@@ -92,8 +92,10 @@
                  it reached, so the silhouette is the reach over the window and
                  the record line is the ceiling above it. -->
             <template x-for="(p, pi) in obsReachPoints()" :key="'p'+pi">
-              <div class="absolute bottom-0 w-[3px] -translate-x-1/2 rounded-t-sm"
-                   :class="p.direct ? 'bg-success' : 'bg-primary'"
+              <div class="absolute bottom-0 -translate-x-1/2 rounded-t-sm"
+                   :class="{ 'bg-warning w-[4px] z-10': p.kind === 'new',
+                             'bg-success w-[3px]':      p.kind === 'direct',
+                             'bg-primary/60 w-[3px]':   p.kind === 'relay' }"
                    :style="`left:${p.left}%;height:${p.bottom}%` + (p.opacity != null ? `;opacity:${p.opacity}` : '')"
                    :title="p.title"></div>
             </template>
@@ -108,8 +110,9 @@
           <div class="flex justify-between items-center font-mono text-xs text-base-content/40">
             <span x-text="obsWindowLabel()"></span>
             <span class="flex items-center gap-2 text-[10px]">
-              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-full bg-success"></i>heard direct — opacity is signal</span>
-              <span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-full bg-primary"></i>answered via relay</span>
+              <span class="flex items-center gap-1"><i class="inline-block w-2 h-3 rounded-sm bg-warning"></i>NEW — first ever contact</span>
+              <span class="flex items-center gap-1"><i class="inline-block w-2 h-3 rounded-sm bg-success"></i>heard direct — opacity is signal</span>
+              <span class="flex items-center gap-1"><i class="inline-block w-2 h-3 rounded-sm bg-primary/60"></i>answered via relay</span>
             </span>
             <!-- The legend named the ruler encodings (hit rate,
                  tried / never tried). This plot has neither: one dot per ANSWERED
