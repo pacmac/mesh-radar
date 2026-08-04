@@ -231,9 +231,14 @@ export const perfMixin = {
     // page's currently-selected radio to every row.
     const gapTx    = row.gap_tx_db    ?? null;
     const marginTx = row.margin_tx_db ?? null;
-    const validTx = snrTx != null && metricDistKm != null && metricDistKm > 0.1;
-    const confidence = !validTx ? 'low' : direct ? 'high' : 'medium';
-    const routeKind = direct ? 'direct' : 'first-hop';
+    // SERVED. confidence, route kind and the distance label are decided in
+    // ws-relay.js from the same `direct`/`validTx` facts — BROWSER_CONTRACT:
+    // "if a display differs based on a condition, that condition is evaluated
+    // in Node.js". The ?? keeps a row that predates the enrichment renderable
+    // rather than blank.
+    const validTx    = row.valid_tx   ?? false;
+    const confidence = row.confidence ?? 'low';
+    const routeKind  = row.route_kind ?? (direct ? 'direct' : 'first-hop');
     return {
       ...row,
       route,
@@ -250,7 +255,7 @@ export const perfMixin = {
       firstHopName: firstHopNum === row.to_num
         ? (row.to_short_name || (this.nodeLabel ? this.nodeLabel(row.to_num) : row.to_num))
         : (this.nodeLabel ? this.nodeLabel(firstHopNum) : firstHopNum),
-      distLabel: direct ? 'target' : 'first hop',
+      distLabel: row.dist_label ?? (direct ? 'target' : 'first hop'),
       snrTx,
       snrRx,
       gapTx,

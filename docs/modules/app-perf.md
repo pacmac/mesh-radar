@@ -1,7 +1,7 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: 303b712b5262fb3d109626177dbfdc6fed07d809b71c3b094c7f9fb703e864af
+source_hash: c16cdaac0714472573898509f5c5eafb286c157b07c5cf7a5eaf4d7928a8d4e9
 updated: 2026-08-04
 ---
 
@@ -188,3 +188,28 @@ points), and margins unchanged — `snrTx 5.75 → 23.25`, exactly as before.
 **Nothing in `public/` may compute a link budget again.** One instance remains
 elsewhere and is filed as B80: `app-range.js:93` still computes FSPL, with
 `32.4` where `link-budget.js` uses `32.45`.
+
+
+## Verdicts are served too (task `verdict-strings-to-backend`, 2026-08-04)
+
+`confidence` (`low`/`medium`/`high`), `route_kind`, `dist_label` and `valid_tx`
+are decided in `ws-relay.js` from the same `direct` / `validTx` facts and arrive
+on the row. `perfEnrich` reads them.
+
+`BROWSER_CONTRACT`: *"if a display differs based on a condition, that condition is
+evaluated in Node.js"*. Whether a hop counts as `high` confidence is such a
+condition.
+
+Each read keeps a `??` fallback so a row predating the enrichment still renders
+rather than going blank.
+
+### Verified
+
+497 rows served (confidence low 472 / medium 22 / high 3). On the page: 200 rows,
+of which **190 are timeouts** that `perfEnrich` short-circuits by design — those
+still agree with the served value — and **zero mismatches** across the 10 real
+rows. Headroom renders +16.1 dB, 0 console errors.
+
+A first measurement reported 190 mismatches; the test was wrong, not the code. It
+compared enriched output against served fields on failure rows, which never reach
+that code path.

@@ -88,10 +88,12 @@ function withLinkBudget(row, loraFor) {
   const distKm = (pos?.lat && pos.lat !== 0 && Number.isFinite(home.lat) && home.lat !== 0)
     ? lbHaversine(home.lat, home.lon, pos.lat, pos.lon) : null;
 
+  const direct = route.length === 0;
   const snrTx = Array.isArray(row.snr_towards) && row.snr_towards.length ? row.snr_towards[0] : null;
   const back  = Array.isArray(row.snr_back) ? row.snr_back : [];
   const snrRx = back.length ? (route.length ? back[back.length - 1] : back[0]) : null;
   const r2 = (v) => v == null ? null : +v.toFixed(2);
+  const validTx = snrTx != null && distKm != null && distKm > 0.1;
 
   return {
     ...row,
@@ -102,7 +104,15 @@ function withLinkBudget(row, loraFor) {
     theo_snr_db:    r2(theoreticalSnrDb(distKm, lora, dev)),
     metric_dist_km: distKm == null ? null : +distKm.toFixed(1),
     // Enough evidence to plot: a reading, a real distance, and not on our doorstep.
-    valid_tx:       snrTx != null && distKm != null && distKm > 0.1,
+    valid_tx:       validTx,
+    // VERDICTS, decided here. The page derived confidence, route kind and the
+    // distance label from `direct` and `validTx` itself — BROWSER_CONTRACT: "if
+    // a display differs based on a condition, that condition is evaluated in
+    // Node.js". `direct` means the target WAS the first hop, i.e. no relay.
+    direct,
+    route_kind:     direct ? 'direct' : 'first-hop',
+    dist_label:     direct ? 'target' : 'first hop',
+    confidence:     !validTx ? 'low' : direct ? 'high' : 'medium',
   };
 }
 
