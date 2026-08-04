@@ -83,32 +83,79 @@ has been weakest at.
 
 ---
 
-## Doors and routers are infrastructure, not destinations
+## Three classes, and they are not interchangeable
+
+Peter, 2026-08-04: *"you have identified DOORS - opportunistic, and ROUTERS -
+dedicated but not ENDPOINTS"*.
+
+`src/doors.js:40-56` already draws the first line. This document had blurred it
+back together, which is the mistake this section exists to prevent.
+
+| class | evidence | durable? | what it is for |
+|---|---|---|---|
+| **ROUTER** | **declared** role — `ROUTER`, `ROUTER_LATE`, `ROUTER_CLIENT`, `REPEATER` | **yes** — the operator configured it to carry traffic, and it will keep doing so | siting a corridor on |
+| **DOOR** (relay) | **observed** — it carried a packet for us once | **no** — says nothing about intent, may never recur | a lead worth using now, and re-confirming |
+| **ENDPOINT** | it is a destination | n/a | the *point* — what we reach **through** the other two |
+
+**This is where "not one time but forever" actually comes from.** A door is
+opportunistic: it worked on one evening, and tomorrow it may not exist. A router
+is dedicated: it is infrastructure, and a corridor built on it survives. Both
+can carry a packet; only one can be planned around.
+
+So the two are used differently:
+
+- a **router** justifies standing investment — aim at it, map what lies behind
+  it, treat losing it as a significant event
+- a **door** is a lead with a shelf life — use it, but re-confirm before relying
+  on it, and never mistake one good night for a corridor
+
+Measured: **6 declared routers carry 95.1% of every route we have completed.**
+That is why they are gold dust — not because they are far, but because they are
+*dependable*.
+
+### An endpoint is never infrastructure
 
 Peter, 2026-08-03:
-
-> repeaters are gold dust to us
 
 > we should not waste time trying to get replies from routers, but we need to
 > use them for what they are and not treat them as just another endpoint which
 > they are not
 
-Measured: **6 declared routers carry 95.1% of every route we have completed.**
-
-A router is a **door**. Its worth is what it carries and what lies behind it —
-not whether it answers us. Probing a router to see if it replies is spending
-airtime to learn something we do not need. Probing *through* it, at a node
-behind it, is the entire job.
+The inverse holds just as hard: **an endpoint must never be scored as a door.**
+It is the destination, not the path. Reaching one proves the corridor worked; it
+does not make that node part of the infrastructure.
 
 Rules that follow:
 
 - A router's score is **traffic carried and targets reachable behind it**, never
-  its own reply rate.
-- `CLIENT_MUTE` can never be a door. It does not rebroadcast, by declaration.
-- A door with no confirmed route is still a door if we can hear it directly — the
-  bootstrap must not require a node to already have been `route[0]`.
-- Losing a door is a bigger event than losing a node, and should be treated as
-  one.
+  its own reply rate. Probing a router for a reply spends airtime to learn
+  something we do not need.
+- `CLIENT_MUTE` can never be a door — it does not rebroadcast, by declaration.
+- A door with no confirmed route is still a door if we can hear it **directly**.
+  The bootstrap must not require a node to already have been `route[0]`.
+- Losing a **router** is a bigger event than losing a door, which is a bigger
+  event than losing an endpoint. The board should reflect that ordering.
+
+### The gap this naming exposes
+
+`doorKind()` returns three values — `router`, `relay`, `never` — and there is no
+`endpoint`. A plain `CLIENT` that has never relayed anything falls through to
+`'relay'`, i.e. *potential door*, and so does a node whose role we simply do not
+know:
+
+```js
+function doorKind(role) {
+  if (RELAY_ROLES.has(role)) return 'router';
+  if (role === 'CLIENT_MUTE') return 'never';      // cannot relay, by configuration
+  return 'relay';                                  // observed only, or role unknown
+}
+```
+
+**Unknown role therefore reads as door-capable**, which is the fail-open pattern
+this project has been bitten by twice already. A third class is missing:
+`endpoint` — known role, cannot or does not carry — kept distinct from `unknown`,
+which is an absence of evidence and should be treated as such rather than
+optimistically.
 
 ---
 
