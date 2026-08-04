@@ -86,6 +86,31 @@ export function snrGapDb(snrDb, distKm, lora, devCfg) {
   return theo == null ? null : theo - snrDb;
 }
 
+/** Expected RSSI at the receiver, and how much worse reality was.
+ *
+ *  The range-test page derived this itself: FSPL, both ends' EIRP, and the
+ *  excess over free space. It also carried a THIRD copy of the region table,
+ *  which had drifted — JP 920 vs 923, KR 920 vs 921, IN 865 vs 866 — and used
+ *  32.4 for the FSPL constant where this module uses 32.45. Same formula, two
+ *  answers, both live (B80).
+ *
+ *  txCfg / rxCfg are the per-device antenna configs; region comes from whichever
+ *  radio received, as the page did it.
+ */
+export function expectedRssiDbm(distKm, region, txCfg, rxCfg) {
+  if (!(distKm > 0)) return null;
+  const mhz    = REGION_FREQ_MHZ[region] ?? 868.0;
+  const txEirp = (txCfg?.tx_power_dbm ?? 22) + (txCfg?.gain_dbi ?? 2) - (txCfg?.cable_loss_db ?? 0);
+  const rxGain = (rxCfg?.gain_dbi ?? 2) - (rxCfg?.cable_loss_db ?? 0);
+  return Math.round(txEirp + rxGain - fsplDb(distKm, mhz));
+}
+
+/** Positive = the real world cost more than free space, which it always does. */
+export function excessLossDb(rssi, expectedRssi) {
+  if (rssi == null || expectedRssi == null) return null;
+  return +(expectedRssi - rssi).toFixed(1);
+}
+
 /** The theoretical SNR-above-floor curve, as points.
  *
  *  The perf page draws "ideal (free space)" and "rural" reference lines against

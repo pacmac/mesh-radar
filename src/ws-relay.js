@@ -12,13 +12,37 @@ import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.j
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { snrDbList } from './snr.js';
-import { budget as linkBudget, marginDb, snrGapDb, theoreticalSnrDb } from './link-budget.js';
+import { budget as linkBudget, marginDb, snrGapDb, theoreticalSnrDb,
+         expectedRssiDbm, excessLossDb } from './link-budget.js';
 import { getDeviceCfg as lbDeviceCfg } from './device-config.js';
 import { haversine as lbHaversine } from './utils.js';
 import lbDb from './db.js';
 
 const lbPosStmt = lbDb.prepare('SELECT lat, lon FROM nodes WHERE num = ?');
 const lbNodePos = (num) => { try { return lbPosStmt.get(num) || null; } catch { return null; } };
+
+// RANGE-TEST DERIVATION, server-side (B80). The page computed expected RSSI and
+// excess loss itself, carrying a third copy of the region table that had drifted
+// (JP 920 vs 923, KR 920 vs 921, IN 865 vs 866) and 32.4 for the FSPL constant
+// against 32.45 here. Same formula, two answers, both live.
+function withRangeBudget(e, loraFor) {
+  if (!e || typeof e !== 'object') return e;
+  const home = { lat: getConfig('home.lat'), lon: getConfig('home.lon') };
+  const pos  = e.from_num != null ? lbNodePos(e.from_num) : null;
+  const distKm = (pos?.lat && pos.lat !== 0 && Number.isFinite(home.lat) && home.lat !== 0)
+    ? lbHaversine(home.lat, home.lon, pos.lat, pos.lon) : null;
+  // Region from the RECEIVING radio, as the page did it.
+  const region = loraFor(e.rx_device)?.region ?? 'EU_868';
+  const txCfg  = e.from_num != null ? lbDeviceCfg('!' + (e.from_num >>> 0).toString(16)) : null;
+  const rxCfg  = e.rx_device ? lbDeviceCfg(e.rx_device) : null;
+  const expected = expectedRssiDbm(distKm, region, txCfg, rxCfg);
+  return {
+    ...e,
+    dist_km:       distKm == null ? null : +distKm.toFixed(2),
+    expected_rssi: expected,
+    excess_loss_db: excessLossDb(e.rssi, expected),
+  };
+}
 
 import { ensureDeviceCfgMac, getDeviceCfg } from './device-config.js';
 import { DEFAULTS as CONFIG_DEFAULTS } from './config-api.js';
@@ -658,7 +682,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       broadcast({
         type: 'range_test_entry',
         device: ev.addr || ev.device,
-        data: { ts: Math.floor(Date.now() / 1000), from_num: ev.from_num ?? null, rssi: ev.rx_rssi ?? null, snr: ev.rx_snr ?? null, hops: ev.hops ?? null, seq, via_mqtt: ev.via_mqtt ?? false },
+        data: withRangeBudget({ ts: Math.floor(Date.now() / 1000), from_num: ev.from_num ?? null, rssi: ev.rx_rssi ?? null, snr: ev.rx_snr ?? null, hops: ev.hops ?? null, seq, via_mqtt: ev.via_mqtt ?? false, rx_device: ev.addr || ev.device },
+                               mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null),
       });
       return;
     }
@@ -975,9 +1000,9 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const envRows = queryAllEnvHistory(since7d);
       ws.send(JSON.stringify({ type: 'env_history', rows: envRows }));
 
-      const rangeLog = queryRangeTestLog(500).map(r => ({
+      const rangeLog = queryRangeTestLog(500).map(r => withRangeBudget({
         ...r, from_name: resolveNodeLabel(r.from_num), rx_name: resolveDeviceLabel(r.rx_device),
-      }));
+      }, mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null));
       ws.send(JSON.stringify({ type: 'range_test_log', log: rangeLog }));
 
       const timer = getRangeTimer();

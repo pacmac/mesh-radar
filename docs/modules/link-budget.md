@@ -1,7 +1,7 @@
 ---
 module: link-budget
 source: src/link-budget.js
-source_hash: a91303eb261600defd1d893362aae2b0bde6ee6139b6170392ac92c8ce5e00aa
+source_hash: 8fa86a47cba51802c6b6a496fea99fb0ebf7423557c7d230c2ae01bb16f012a0
 updated: 2026-08-04
 ---
 
@@ -91,3 +91,18 @@ the curve is served over a generous fixed domain (250 km, 80 points) as
 drawing. `rural_db` applies the usual `10·log10(km)` excess over free space.
 
 It rides on `link_budget`, so a page that has the budget already has the lines.
+
+
+## `expectedRssiDbm()` / `excessLossDb()` — the range-test derivation
+
+The range-test page computed its own expected RSSI: FSPL, both ends' EIRP, and
+the excess over free space (B80). It is served now.
+
+`expectedRssiDbm(distKm, region, txCfg, rxCfg)` takes the region from the
+**receiving** radio, as the page did, and defaults tx power 22 dBm / gain 2 dBi
+where a device config is absent — preserving the page's prior behaviour rather
+than silently changing numbers during a move.
+
+Verified: 500 of 500 range rows served with `dist_km`, `expected_rssi` and
+`excess_loss_db`; `-50 dBm actual` against `-53 expected` at 0.43 km reads as
+`-3` excess.

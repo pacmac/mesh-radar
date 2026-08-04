@@ -73,36 +73,23 @@ export const rangeMixin = {
     return Array.from(seen.entries()).map(([num, name]) => ({ num, name }));
   },
 
-  _loraFreqMHz(rxDevice) {
-    const REGION_FREQ = {
-      EU_868: 868, US: 915, EU_433: 433, CN: 470, JP: 920, ANZ: 915,
-      KR: 920, TW: 923, RU: 868, IN: 865, NZ_865: 865, TH: 923,
-      UA_433: 433, UA_868: 868, MY_433: 433, MY_919: 919, SG_923: 923,
-    };
-    const id = rxDevice || this.rangeRxFilter || this.activeNodeId;
-    return REGION_FREQ[this.deviceConfigs[id]?.lora_region] ?? 868;
-  },
-
+  // RENDERS, DOES NOT DERIVE. FSPL, both ends' EIRP, expected RSSI and excess
+  // loss are computed in src/link-budget.js and arrive on the row. This mixin
+  // also held a THIRD copy of the region-frequency table which had drifted from
+  // the backend's — JP 920 vs 923, KR 920 vs 921, IN 865 vs 866 — and used 32.4
+  // for the FSPL constant against 32.45. Same formula, two answers, both live
+  // (B80). Deleted, not reconciled.
+  //
+  // Distance still comes from the node list for az; the served dist_km wins.
   rangeEnrich(e) {
     const node = this.nodes.find(n => n.num === e.from_num);
-    const distKm = node?._km ?? null;
-    const az     = node?._az ?? null;
-    let expectedRssi = null, excessLoss = null;
-    if (distKm != null && distKm > 0) {
-      const freq = this._loraFreqMHz(e.rx_device);
-      const fspl = 20 * Math.log10(distKm) + 20 * Math.log10(freq) + 32.4;
-      const txNodeId = '!' + (e.from_num >>> 0).toString(16);
-      const txCfg = this.deviceConfigs[txNodeId] || {};
-      const txPow  = txCfg.tx_power_dbm ?? 22;
-      const txEIRP = txPow + (txCfg.gain_dbi ?? 2) - (txCfg.cable_loss_db ?? 0);
-      const rxCfg = this.deviceConfigs[e.rx_device] || {};
-      const rxGain = (rxCfg.gain_dbi ?? 2) - (rxCfg.cable_loss_db ?? 0);
-      expectedRssi = Math.round(txEIRP + rxGain - fspl);
-      if (e.rssi != null) excessLoss = parseFloat((expectedRssi - e.rssi).toFixed(1));
-    }
+    const az   = node?._az ?? null;
     return {
       ...e,
-      distKm, az: az != null ? Math.round(az) : null, expectedRssi, excessLoss,
+      distKm:       e.dist_km ?? node?._km ?? null,
+      az:           az != null ? Math.round(az) : null,
+      expectedRssi: e.expected_rssi ?? null,
+      excessLoss:   e.excess_loss_db ?? null,
     };
   },
 
