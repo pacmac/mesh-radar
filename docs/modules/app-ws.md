@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 4c6a98ea2221b137c0d96e0aa602f32bc73e1552a7152066dfc71b99911b949a
+source_hash: f20912841c4d3bede88bec4fae1ed501eaa2acbaf1ce849a84c0f1c9f71c6e4d
 updated: 2026-08-03
 ---
 
@@ -245,3 +245,14 @@ The handler now builds the entry with its real `replyId` and calls the shared
 `this.messages`, computes threadRootPktId/replyDepth/isReply/isOrphan, splices
 the entry after the parent's thread (else unshift), and caps at 200 — the same
 threading `sendMessage` applies to TX. The stray 50-cap here is removed.
+
+
+## The SNR ingest boundary moved to the server (2026-08-04)
+
+`decodeRowSnr` and the five `snrDbList` calls are gone. The conversion happens in
+`ws-relay.js` using `src/snr.js`, so rows reach this module already in dB with
+`null` for unmeasured hops.
+
+This module keeps its role as the single ingest point for traceroute data — it
+simply no longer *decodes* anything. Re-introducing a `/4` here would
+double-decode and would put protocol knowledge back in the presentation layer.

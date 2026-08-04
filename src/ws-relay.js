@@ -11,6 +11,8 @@ import { handleAlertEvent } from './alerts.js';
 import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.js';
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
+import { snrDbList } from './snr.js';
+
 import { ensureDeviceCfgMac, getDeviceCfg } from './device-config.js';
 import { DEFAULTS as CONFIG_DEFAULTS } from './config-api.js';
 import { getAutoPurgeCfg } from './auto-purge-api.js';
@@ -18,6 +20,14 @@ import { lookupGeocode } from './geocode.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 import { fmtAgo } from './format.js';
+
+// THE SNR EMIT BOUNDARY. Everything leaving for the browser carries dB, never
+// the raw quarter-dB the wire uses — see src/snr.js for why that module is
+// backend-only. Applied here rather than at storage: the store holds what the
+// wire said.
+const withSnrDb = (o) => (o && typeof o === 'object')
+  ? { ...o, snr_towards: snrDbList(o.snr_towards), snr_back: snrDbList(o.snr_back) }
+  : o;
 
 function makeRotatorThrottle(sendFn) {
   let lastMs    = 0;
@@ -668,10 +678,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   passiveTracer.on('tracing', (data) => broadcast({ type: 'passive_trace_start', ...data }));
   // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────────
   if (!FF.SSOT_TRACEROUTE) {
-    passiveTracer.on('traced', (data) => broadcast({ type: 'route_discovered', ...data }));
+    passiveTracer.on('traced', (data) => broadcast({ type: 'route_discovered', ...withSnrDb(data) }));
   // ── [V2] SSOT — all traceroute results emit route_discovered, not PASV only
   } else {
-    traceroute.on('result', (data) => broadcast({ type: 'route_discovered', ...data }));
+    traceroute.on('result', (data) => broadcast({ type: 'route_discovered', ...withSnrDb(data) }));
   }
   // ──────────────────────────────────────────────────────────────────────────
   nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
@@ -746,7 +756,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       _rcActive = false;
       broadcastRadarContext();
       // Failed attempts reach the perf page live — same channel as results
-      if (row) broadcast({ type: 'traceroute_failed', row });
+      if (row) broadcast({ type: 'traceroute_failed', row: withSnrDb(row) });
     });
     passiveTracer.on('tracing', (data) => {
       _rcPassiveTracingNode = data.from;
@@ -924,8 +934,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         ...r,
         route:           JSON.parse(r.route           || '[]'),
         route_back:      JSON.parse(r.route_back      || '[]'),
-        snr_towards:     JSON.parse(r.snr_towards     || '[]'),
-        snr_back:        JSON.parse(r.snr_back        || '[]'),
+        // CONVERTED HERE, at the emit boundary. The store keeps raw wire
+        // units; the browser is handed dB and decides nothing.
+        snr_towards:     snrDbList(JSON.parse(r.snr_towards || '[]')),
+        snr_back:        snrDbList(JSON.parse(r.snr_back    || '[]')),
         relay_positions: JSON.parse(r.relay_positions || '{}'),
       }));
       ws.send(JSON.stringify({ type: 'traceroute_history', rows: traceRows,

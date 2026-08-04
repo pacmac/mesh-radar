@@ -1,7 +1,7 @@
 ---
 module: app-helpers
 source: public/app-helpers.js
-source_hash: e46529783e56e6780aad4c03aa90390e4876956e7c27b2147121b9da2bd55e58
+source_hash: ae3499db099df0453b3153105bc437b85acf468154f7c2280bf7f196750ab835
 updated: 2026-08-03
 ---
 
@@ -107,3 +107,18 @@ _N/A_
 
 - Any change to `signalQuality`, which scores live RSSI/SNR from a different source and
   is already in dB.
+
+
+## The SNR decoder has LEFT the browser (2026-08-04)
+
+`snrDb` / `snrDbList` / `SNR_UNKNOWN` are gone from this module. They encoded the
+Meshtastic wire format — quarter-dB scaling and an `INT8_MIN` sentinel — which is
+gw API knowledge, and `CLAUDE.md` Domain 2 says the browser has none of it.
+
+Peter: *"that is a blant violation of the UI rule."* It now lives in `src/snr.js`,
+a **backend-only** module, applied at the WS emit boundary. Deliberately not
+`src/utils.js`, which is served to the browser verbatim and would have reproduced
+the violation.
+
+Traceroute SNR now arrives **already in dB**, `null` for unmeasured hops.
+**Nothing in `public/` may divide by 4 or test for `-128` again.**

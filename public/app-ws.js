@@ -1,15 +1,10 @@
 // WebSocket connection and event dispatch mixin.
-import { b64ToUtf8, summarizeEvent, FEED_FILTER_OPTIONS, snrDbList } from './app-helpers.js';
+import { b64ToUtf8, summarizeEvent, FEED_FILTER_OPTIONS } from './app-helpers.js';
 import { persistSet, persistGet } from './app-persist.js';
 
-// B72 — the traceroute SNR ingest boundary. This file is the SOLE entry point
-// for traceroute data into the browser ("History arrives EXCLUSIVELY over WS",
-// app-perf.js), so quarter-dB is decoded here and nowhere else. Everything
-// downstream of this module holds dB and nulls. Applies snrDbList, never its
-// own arithmetic — there is one decoder and it lives in app-helpers.js.
-const decodeRowSnr = (row) => Array.isArray(row)
-  ? row.map(decodeRowSnr)
-  : (row && { ...row, snr_towards: snrDbList(row.snr_towards), snr_back: snrDbList(row.snr_back) });
+// The SNR ingest boundary moved to the SERVER (src/snr.js, applied in
+// ws-relay.js). Rows arrive in dB with null for unmeasured hops, so there is
+// nothing to decode here — and nothing in public/ may decode again.
 import { FF } from './feature-flags.js';
 import { handleConfigOp } from './op-client.js';
 window.feedFilterOptions = FEED_FILTER_OPTIONS;
@@ -510,14 +505,14 @@ export const wsMixin = {
       // Sole transport for perf-page history (C1: page data is WS-only).
       // All-device rows are stored; the page shows the perfDev() slice —
       // presentation scoping, same pattern as tilt/env history.
-      this._trHistAll = decodeRowSnr(ev.rows || []);
+      this._trHistAll = ev.rows || [];
       if (ev.failure_epoch != null) this.perfFailureEpoch = ev.failure_epoch;
       this.perfHistory = this.perfHistorySlice();
       return;
     }
 
     if (ev.type === 'traceroute_failed' && ev.row) {
-      const failedRow = decodeRowSnr(ev.row);
+      const failedRow = ev.row;
       this._trHistAll = [failedRow, ...(this._trHistAll || [])].slice(0, 500);
       if (failedRow.tx_device === this.perfDev()) {
         this.perfHistory = [failedRow, ...(this.perfHistory || [])].slice(0, 200);
@@ -549,8 +544,8 @@ export const wsMixin = {
             num:         pkt.from,
             route:       rd.route       ?? [],
             route_back:  rd.route_back  ?? [],
-            snr_towards: snrDbList(rd.snr_towards),
-            snr_back:    snrDbList(rd.snr_back),
+            snr_towards: rd.snr_towards ?? [],
+            snr_back:    rd.snr_back    ?? [],
             ts: Date.now(),
           };
           const ni = this.nodes.findIndex(n => n.num === pkt.from);
@@ -612,8 +607,8 @@ export const wsMixin = {
         this.nodes[ni] = { ...this.nodes[ni], last_traceroute: {
           route:           ev.route           ?? [],
           route_back:      ev.route_back      ?? [],
-          snr_towards:     snrDbList(ev.snr_towards),
-          snr_back:        snrDbList(ev.snr_back),
+          snr_towards:     ev.snr_towards     ?? [],
+          snr_back:        ev.snr_back        ?? [],
           relay_positions: ev.relay_positions ?? {},
           ts:              ev.ts              ?? Date.now(),
         }};
@@ -626,7 +621,7 @@ export const wsMixin = {
           id: ev.id ?? null,
           from_num: ev.from, to_num: ev.to ?? null,
           route: ev.route ?? [], route_back: ev.route_back ?? [],
-          snr_towards: snrDbList(ev.snr_towards), snr_back: snrDbList(ev.snr_back),
+          snr_towards: ev.snr_towards ?? [], snr_back: ev.snr_back ?? [],
           relay_positions: ev.relay_positions ?? {},
           ts: ev.ts != null && ev.ts > 1e12 ? Math.floor(ev.ts / 1000) : (ev.ts ?? Math.floor(Date.now() / 1000)),
           rx_device: ev.rx_device ?? null,

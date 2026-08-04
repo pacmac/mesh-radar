@@ -41,3 +41,4 @@ export function numToNodeId(num) {
 export function nodeIdToNum(id) {
   return parseInt((id ?? '').replace('!', ''), 16) || 0;
 }
+
