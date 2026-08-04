@@ -76,13 +76,17 @@ function extractRelayPositions(route) {
 }
 
 // Is AUTOMATIC traceroute dispatch enabled? Persisted (config key
-// `traceroute.enabled`, declared in config-api DEFAULTS so it survives restarts
-// and reaches the browser on the settings WS). Exported so a caller can skip
-// before dispatching rather than treat a gated dispatch as a failed one —
-// passive-tracer needs that, since its catch path records a failure.
-export function tracerouteEnabled() {
-  return getConfig('traceroute.enabled', true) !== false;
-}
+// THE GLOBAL SWITCH IS GONE. Peter, 2026-08-04: "the traceroute button that
+// exists should not be there. traceroute is a node function and NOT a global
+// switch."
+//
+// tracerouteEnabled() gated every non-manual dispatch on a single config key.
+// It was a SECOND OWNER of behaviour dash-mode owns: with it off, DISC ran and
+// attempted nothing, and the only clue was one line in the mission runner's
+// idle reason — the same hole that hid passive tracing for 9.5 hours.
+//
+// Automatic tracing is now a property of the MODE (Config -> Modes), where
+// rx/tx/aim/radio already live. To stop tracing, change mode.
 
 class TracerouteManager extends EventEmitter {
   constructor() {
@@ -278,10 +282,6 @@ class TracerouteManager extends EventEmitter {
     //
     // Checked BEFORE the cooldown guard: a disabled dispatch must not consume
     // the cooldown slot, or re-enabling would silently skip the next attempt.
-    if (!manual && !tracerouteEnabled()) {
-      return Promise.reject(new Error('traceroute disabled'));
-    }
-
     // Cooldown guard — caller's responsibility to pass the right key/window
     if (cooldownMs != null && cooldownKey != null) {
       const last = this._cooldowns.get(cooldownKey) ?? 0;

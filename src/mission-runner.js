@@ -45,7 +45,7 @@
 // feeds the shortlist in via setQueue() and broadcasts activity out. This is a
 // dumb executor: handed a list, it works it.
 import { EventEmitter } from 'events';
-import { traceroute, tracerouteEnabled } from './traceroute.js';
+import { traceroute } from './traceroute.js';
 import { transmitterForMode, isTransmitterForMode, dashMode, modeName } from './dash-mode.js';
 import { rotator } from './rotator.js';
 import { doorAim } from './doors.js';
@@ -240,7 +240,6 @@ class MissionRunner extends EventEmitter {
     const c = cfg();
     return {
       enabled:   c.enabled !== false,
-      gated:     !tracerouteEnabled(),
       interval:  c.interval_sec,
       running:   this._started,
       queued:    this._queue.length + (this._holding ? 1 : 0),
@@ -373,11 +372,10 @@ class MissionRunner extends EventEmitter {
     const idleReason =
         mode !== 'disc'                              ? `mode is ${mode}, discovery only runs in DISC`
       : c.enabled === false                          ? 'discovery runner is switched off'
-      : !tracerouteEnabled()                         ? 'automatic traceroute is off (traceroute.enabled)'
       : this.busy                                    ? null   // normal: a probe is in hand
       : (!this._queue.length && !this._holding)      ? 'no candidates — the shortlist is empty'
       : null;
-    if (idleReason || mode !== 'disc' || c.enabled === false || !tracerouteEnabled()
+    if (idleReason || mode !== 'disc' || c.enabled === false
         || this.busy || (!this._queue.length && !this._holding)) {
       if (idleReason) this._sayIdle(idleReason, 'notice');
       return;   // the finally in _schedule() brings us back

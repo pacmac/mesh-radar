@@ -8,7 +8,7 @@ import { defineHook } from './hooks.js';
 import db, { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
 import { FF } from './feature-flags.js';
-import { traceroute, tracerouteEnabled } from './traceroute.js';
+import { traceroute } from './traceroute.js';
 import { missionRunner } from './mission-runner.js';
 
 // A PER-MODE HOOK DECLARES ITS MODES. Task `hooks-per-mode-scope`.
@@ -187,7 +187,6 @@ class PassiveTracer extends EventEmitter {
     // FAILED and push bogus empty routes to the browser (task
     // `traceroute-manual-enable`).
 
-    if (!tracerouteEnabled()) return;
     if (this._busy) return;
     const rxDevice = ev.__ble_addr ?? ev.addr ?? ev.device ?? null;
     if (!pkt?.from) return;

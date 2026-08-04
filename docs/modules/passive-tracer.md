@@ -1,7 +1,7 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: 6f918318f165a6bf4474688c440a242a9eadb27ae0fa1f42054d36b0da8d3417
+source_hash: 5905db8646c8e581bc702a77204ddbd2b10ff3a36e1300c47b9c05258cf49c7f
 updated: 2026-08-04
 ---
 
