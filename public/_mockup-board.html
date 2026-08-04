@@ -59,6 +59,27 @@
        border:1px solid currentColor;opacity:.9}
   .lead{background:#1a2420}
 
+  .act{white-space:nowrap}
+  .btn{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.05em;
+       background:#16211f;color:var(--dim);border:1px solid var(--line);border-radius:3px;
+       padding:1px 6px;margin-left:3px;cursor:pointer}
+  .btn:hover{color:var(--acc);border-color:var(--acc)}
+  .btn.pin{color:var(--gold);border-color:#3a3520}
+  .btn.pin:hover{background:#2a2410}
+
+  .dossier{margin-top:12px;background:var(--panel2);border:1px solid var(--line);
+           border-left:2px solid var(--acc);border-radius:6px;padding:12px 14px}
+  .dossier h3{font-family:Oxanium,sans-serif;font-size:12px;letter-spacing:.14em;
+              text-transform:uppercase;margin:0 0 2px;color:var(--acc)}
+  .dossier .who{font-size:10px;color:var(--dimmer);margin-bottom:10px}
+  .dcols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .dcol h4{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+           margin:0 0 5px;font-weight:400;border-bottom:1px solid var(--line);padding-bottom:3px}
+  .dcol div{font-size:11px;line-height:1.65}
+  .dcol .lbl{color:var(--dimmer)}
+  .verdict{margin-top:11px;padding-top:9px;border-top:1px solid var(--line);
+           font-size:11.5px;line-height:1.55}
+
   .note{margin-top:8px;font-size:11px;color:var(--dimmer);line-height:1.5}
   .foot{margin-top:26px;border-top:1px solid var(--line);padding-top:12px;
         font-size:11px;color:var(--dimmer);line-height:1.6}
@@ -93,26 +114,76 @@
     <thead><tr>
       <th>Node</th><th class="r">km</th><th class="r">az</th><th>Role</th>
       <th class="r">hops</th><th class="r">heard</th><th class="r">SNR</th>
-      <th class="r">probes</th><th>Evidence</th>
+      <th class="r">probes</th><th>Evidence</th><th class="r">Act</th>
     </tr></thead>
     <tbody>
-      <tr class="lead"><td class="acc">!07a8</td><td class="r">308.6</td><td class="r dim">148°</td><td class="dim">—</td><td class="r">5</td><td class="r dim">25 h</td><td class="r dim">–</td><td class="r err">0</td><td><span class="tag ok">packet</span></td></tr>
-      <tr><td>!83cc</td><td class="r">291.3</td><td class="r dim">107°</td><td class="dim">—</td><td class="r">2</td><td class="r dim">45 h</td><td class="r dim">–</td><td class="r err">0</td><td class="dim">nodedb only</td></tr>
-      <tr class="lead"><td class="acc">!547c</td><td class="r">285.8</td><td class="r dim">90°</td><td class="dim">—</td><td class="r ok">0</td><td class="r">3 h</td><td class="r dim">–</td><td class="r err">0</td><td><span class="tag ok">packet</span></td></tr>
-      <tr><td>14PT</td><td class="r">280.3</td><td class="r dim">173°</td><td class="dim">—</td><td class="r">4</td><td class="r dim">10 h</td><td class="r ok">+2.5</td><td class="r warn">4</td><td><span class="tag ok">packet</span></td></tr>
-      <tr><td>!fdf8</td><td class="r">274.2</td><td class="r dim">168°</td><td class="dim">—</td><td class="r">2</td><td class="r dim">6 d</td><td class="r">-9.2</td><td class="r err">0</td><td class="dim">nodedb only</td></tr>
-      <tr><td>!b684</td><td class="r">261.3</td><td class="r dim">30°</td><td class="dim">—</td><td class="r">5</td><td class="r dim">6 d</td><td class="r">-5.8</td><td class="r err">0</td><td class="dim">nodedb only</td></tr>
-      <tr><td>JCW1</td><td class="r">245.2</td><td class="r dim">91°</td><td class="dim">—</td><td class="r">1</td><td class="r dim">45 h</td><td class="r dim">–</td><td class="r err">0</td><td class="dim">nodedb only</td></tr>
-      <tr class="lead"><td class="gold">JRSY</td><td class="r">218.6</td><td class="r dim">159°</td><td><span class="tag gold">ROUTER</span></td><td class="r">3</td><td class="r dim">12 h</td><td class="r ok">+2.5</td><td class="r warn">4</td><td><span class="tag ok">packet</span></td></tr>
-      <tr><td>Nova</td><td class="r">217.3</td><td class="r dim">82°</td><td class="dim">—</td><td class="r">1</td><td class="r dim">45 h</td><td class="r">-18</td><td class="r err">0</td><td class="dim">nodedb only</td></tr>
-      <tr><td>!4384</td><td class="r">215.6</td><td class="r dim">160°</td><td class="dim">—</td><td class="r">4</td><td class="r dim">19 h</td><td class="r">-5.0</td><td class="r warn">1</td><td><span class="tag ok">packet</span></td></tr>
-      <tr><td>GA3</td><td class="r">212.9</td><td class="r dim">161°</td><td class="dim">—</td><td class="r">3</td><td class="r dim">19 h</td><td class="r">-6.8</td><td class="r warn">5</td><td><span class="tag ok">packet</span></td></tr>
-      <tr><td>Sen1</td><td class="r">208.0</td><td class="r dim">240°</td><td class="dim">CLIENT_BASE</td><td class="r">7</td><td class="r dim">29 h</td><td class="r">-1.5</td><td class="r err">19</td><td><span class="tag ok">packet</span></td></tr>
-      <tr><td>f3ed</td><td class="r">206.8</td><td class="r dim">356°</td><td><span class="tag dim">CLIENT_MUTE</span></td><td class="r">7</td><td class="r ok">71 m</td><td class="r">-12.8</td><td class="r err">9</td><td><span class="tag ok">packet</span></td></tr>
+      <tr class="lead"><td class="acc">!07a8</td><td class="r">308.6</td><td class="r dim">148°</td><td class="dim">—</td><td class="r">5</td><td class="r dim">25 h</td><td class="r dim">–</td><td class="r err">0</td><td><span class="tag ok">packet</span></td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>!83cc</td><td class="r">291.3</td><td class="r dim">107°</td><td class="dim">—</td><td class="r">2</td><td class="r dim">45 h</td><td class="r dim">–</td><td class="r err">0</td><td class="dim">nodedb only</td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr class="lead"><td class="acc">!547c</td><td class="r">285.8</td><td class="r dim">90°</td><td class="dim">—</td><td class="r ok">0</td><td class="r">3 h</td><td class="r dim">–</td><td class="r err">0</td><td><span class="tag ok">packet</span></td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>14PT</td><td class="r">280.3</td><td class="r dim">173°</td><td class="dim">—</td><td class="r">4</td><td class="r dim">10 h</td><td class="r ok">+2.5</td><td class="r warn">4</td><td><span class="tag ok">packet</span></td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>!fdf8</td><td class="r">274.2</td><td class="r dim">168°</td><td class="dim">—</td><td class="r">2</td><td class="r dim">6 d</td><td class="r">-9.2</td><td class="r err">0</td><td class="dim">nodedb only</td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>!b684</td><td class="r">261.3</td><td class="r dim">30°</td><td class="dim">—</td><td class="r">5</td><td class="r dim">6 d</td><td class="r">-5.8</td><td class="r err">0</td><td class="dim">nodedb only</td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>JCW1</td><td class="r">245.2</td><td class="r dim">91°</td><td class="dim">—</td><td class="r">1</td><td class="r dim">45 h</td><td class="r dim">–</td><td class="r err">0</td><td class="dim">nodedb only</td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr class="lead"><td class="gold">JRSY</td><td class="r">218.6</td><td class="r dim">159°</td><td><span class="tag gold">ROUTER</span></td><td class="r">3</td><td class="r dim">12 h</td><td class="r ok">+2.5</td><td class="r warn">4</td><td><span class="tag ok">packet</span></td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>Nova</td><td class="r">217.3</td><td class="r dim">82°</td><td class="dim">—</td><td class="r">1</td><td class="r dim">45 h</td><td class="r">-18</td><td class="r err">0</td><td class="dim">nodedb only</td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>!4384</td><td class="r">215.6</td><td class="r dim">160°</td><td class="dim">—</td><td class="r">4</td><td class="r dim">19 h</td><td class="r">-5.0</td><td class="r warn">1</td><td><span class="tag ok">packet</span></td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>GA3</td><td class="r">212.9</td><td class="r dim">161°</td><td class="dim">—</td><td class="r">3</td><td class="r dim">19 h</td><td class="r">-6.8</td><td class="r warn">5</td><td><span class="tag ok">packet</span></td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>Sen1</td><td class="r">208.0</td><td class="r dim">240°</td><td class="dim">CLIENT_BASE</td><td class="r">7</td><td class="r dim">29 h</td><td class="r">-1.5</td><td class="r err">19</td><td><span class="tag ok">packet</span></td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
+      <tr><td>f3ed</td><td class="r">206.8</td><td class="r dim">356°</td><td><span class="tag dim">CLIENT_MUTE</span></td><td class="r">7</td><td class="r ok">71 m</td><td class="r">-12.8</td><td class="r err">9</td><td><span class="tag ok">packet</span></td><td class="r act"><button class="btn">probe</button><button class="btn">analyse</button><button class="btn pin">pin</button></td></tr>
     </tbody>
   </table>
+  <div class="dossier">
+    <h3>!dad907a8 — 308.6 km, bearing 148°</h3>
+    <div class="who">what <b>analyse</b> opens · every field below is a query already run by hand today · REAL DATA</div>
+    <div class="dcols">
+      <div class="dcol">
+        <h4>Where</h4>
+        <div><span class="lbl">position</span> 48.6506, −0.9339</div>
+        <div><span class="lbl">place</span> <span class="gold">Normandy, FR</span> — cross-Channel</div>
+        <div><span class="lbl">altitude</span> 283 m <span class="ok">— well sited</span></div>
+        <div><span class="lbl">source</span> <span class="warn">nodedb, self-reported</span></div>
+      </div>
+      <div class="dcol">
+        <h4>Evidence we hold</h4>
+        <div><span class="lbl">relay_observation</span> <span class="ok">2 packets</span></div>
+        <div><span class="lbl">messages</span> 0 · <span class="lbl">signal_history</span> 0</div>
+        <div><span class="lbl">first/last</span> both 2026-08-03 07:43</div>
+        <div><span class="lbl">verdict</span> <span class="ok">CONTACT — not a route</span></div>
+      </div>
+      <div class="dcol">
+        <h4>How it reached us</h4>
+        <div><span class="lbl">hops used</span> 5 → <b>62 km/hop</b> <span class="ok">plausible</span></div>
+        <div><span class="lbl">byte 4</span> <span class="warn">10 candidates</span> · best T4 <span class="gold">ROUTER</span> 5.3 km az 274°</div>
+        <div><span class="lbl">byte 176</span> <span class="warn">12 candidates</span> · S2 <span class="gold">ROUTER</span> 30 km az 227°, ilmn 20 km az 120°</div>
+        <div><span class="ok">two radios, two doors, same second</span></div>
+      </div>
+      <div class="dcol">
+        <h4>What we've tried</h4>
+        <div><span class="lbl">traceroutes ever</span> <span class="err">0</span></div>
+        <div><span class="lbl">excluded by</span> <span class="err">ceiling 250 km</span></div>
+        <div><span class="lbl">and by</span> <span class="err">window 226 km</span></div>
+        <div><span class="lbl">role</span> — <span class="dim">(unknown ≠ endpoint)</span></div>
+      </div>
+    </div>
+    <div class="verdict">
+      <b class="acc">Assessment.</b> Real contact 119 km past the record, corroborated by two
+      independent receivers via different last-hop relays. Never probed — three separate
+      filters excluded it.<br>
+      <b class="warn">The relay byte is one byte, and it is ambiguous</b> — 10 and 12 nodes
+      match. The plausible doors sit at <b>az 274°, 227°, 120°, 102°</b>. The destination is
+      at <b>148°</b>, so pointing there aims at <i>none of them</i> — which is the
+      <span class="warn">aim-at-the-first-hop defect</span> made concrete, and an argument
+      for the OMNI on this shot rather than the beam.<br>
+      A round trip over 5 hops is unlikely at our 8.3% answer rate — <b>a timeout would prove
+      nothing.</b> Worth the airtime because we have never once asked.
+    </div>
+  </div>
+
   <div class="note">
-    Top 13 of 314 live+placed, furthest first. <span class="acc">Highlighted</span> = a lead:
+    Top 13 of 314 live+placed, furthest first.
+    <b>Every row carries the actions</b> — <code>probe</code> dispatches now,
+    <code>analyse</code> opens the dossier above, <code>pin</code> promotes it past the
+    ceiling, silence and window filters. <span class="acc">Highlighted</span> = a lead:
     past the 189.1 km envelope, alive, and never or barely probed.
     <b>JRSY is a declared ROUTER at 218.6 km — past the record, 4 probes, no answer.</b>
     Sen1 has taken 19 probes for nothing; f3ed is CLIENT_MUTE and can never be a door.
