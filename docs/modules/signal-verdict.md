@@ -1,7 +1,7 @@
 ---
 module: signal-verdict
 source: src/signal-verdict.js
-source_hash: dfb7e453573018456fd3e5c40bf340f020e78f03d09ec4acf081b4e901aa7851
+source_hash: 79997a5921e5aceb6684b68a2707ebd8d89e3582f4768499b2f12e0a49534830
 updated: 2026-08-04
 ---
 
@@ -324,3 +324,31 @@ server uses.
 signal bands reproduce the server: 9/9   (0 / 25 / 26 / 50 / 51 / 75 / 76 / 100 / null)
 served: 76→Excellent/success  51→Good/success  26→Fair/warning  0→Poor/error
 ```
+
+### Two more, found in TEMPLATES (step 7)
+
+The Domain 2 static check caught three sites the Phase 1 enumeration missed,
+because that sweep grepped `public/*.js` and **not `public/partials/*.html`**:
+
+| site | decided |
+|---|---|
+| `tab-perf.html:42-43` | success rate ≥90 / ≥60 → colour |
+| `tab-perf.html:85` | trend delta ≥0 → colour |
+| `tab-radar.html:278` | signal age ≥30 s → colour |
+
+The second is fixable from what is already served (`perfTrendDirection()`'s
+tone). The other two needed serving:
+
+- `success_rate` — bands, plus `successRateTone()` so the server has one rule.
+- `live_signal_fresh_sec` — **30 was hardcoded in four places**:
+  `tab-radar.html:278` and `app-radar.js:433,438,457`. One rule, one owner.
+
+```
+success_rate table reproduces server: 7/7   (null/0/59/60/89/90/100)
+live_signal_fresh_sec: 30
+```
+
+**The lesson, recorded because it will recur:** a threshold in a template is
+invisible to a sweep of the script files, and the templates are where a lot of
+`:class` logic lives. Any future audit must grep `public/partials/*.html` as
+well, or it will report clean while the page still decides.

@@ -90,6 +90,25 @@ export function sampleConfidence(n) {
 // preserved and now owned here.
 const TREND_DEAD_BAND_DB = 1;
 
+// Traceroute success rate. Was in a TEMPLATE — tab-perf.html:42-43 — which is
+// how it survived the first sweep of app-*.js.
+const SUCCESS_RATE_BANDS = [
+  { min: 90, tone: 'success' },
+  { min: 60, tone: 'warning' },
+  { min: 0,  tone: 'error'   },
+];
+
+/** Verdict for a traceroute success-rate percentage. */
+export function successRateTone(pct) {
+  if (pct == null || !Number.isFinite(Number(pct))) return 'muted';
+  const b = SUCCESS_RATE_BANDS.find(x => Number(pct) >= x.min) ?? SUCCESS_RATE_BANDS[SUCCESS_RATE_BANDS.length - 1];
+  return b.tone;
+}
+
+// How recent a live yagi reading must be to count as current. tab-radar.html
+// and app-radar.js each hardcoded 30 — three copies of one rule.
+const LIVE_SIGNAL_FRESH_SEC = 30;
+
 /** Direction of travel for median margin, with the 1 dB dead-band preserved
  *  from app-perf.js:373-386 — a change under 1 dB is noise, not a trend.
  *
@@ -133,7 +152,7 @@ export function blePctTone(pct) {
   return p >= 50 ? 'success' : p >= 25 ? 'warning' : 'error';
 }
 
-export { MARGIN_BANDS, CONFIDENCE_BANDS, TREND_DEAD_BAND_DB };
+export { MARGIN_BANDS, CONFIDENCE_BANDS, TREND_DEAD_BAND_DB, SUCCESS_RATE_BANDS, LIVE_SIGNAL_FRESH_SEC };
 
 /** The band tables, wire-safe, for the browser to look up against.
  *
@@ -165,5 +184,9 @@ export function verdictBands() {
     margin_none: marginHealth(null),
     confidence: CONFIDENCE_BANDS.map(b => ({ min: b.min, level: b.level })),
     trend_dead_band_db: TREND_DEAD_BAND_DB,
+    // Both of these lived in TEMPLATES, which is why the first sweep of
+    // app-*.js missed them: tab-perf.html:42-43 and tab-radar.html:278.
+    success_rate: SUCCESS_RATE_BANDS.map(b => ({ min: b.min, tone: b.tone })),
+    live_signal_fresh_sec: LIVE_SIGNAL_FRESH_SEC,
   };
 }
