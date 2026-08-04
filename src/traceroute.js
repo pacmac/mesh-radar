@@ -27,12 +27,37 @@ import { dashMode, modeName, modeAim, transmitterForMode } from './dash-mode.js'
 import { doorAim } from './doors.js';
 import { getDeviceCfg } from './device-config.js';
 
+/** ONE DEVICE VOCABULARY FOR EVERY LOOKUP AND COMPARE. Task
+ *  `aim-provenance-requested-az`.
+ *
+ *  `transmitterForMode()` returns a NODE_ID (it ends in `macToNodeId(mac)`).
+ *  `getRotatorAddress()` returns a MAC. `getDeviceCfg()` keys on uppercase MAC.
+ *  Handing a node_id to either the config lookup or the rotator identity compare
+ *  silently fails — and both were being handed one:
+ *
+ *    getDeviceCfg('!39f7b6')                  -> {...DEFAULT}, beam_deg 360
+ *    '!39F7B6' !== 'F4:12:FA:39:F7:B6'        -> "radio is not on the rotator"
+ *
+ *  ...said about the rotator's own radio, so every `radio: 'auto'` dispatch went
+ *  out unaimed, in every mode. The recorded beam_deg of 360 on a device configured
+ *  35 was the fingerprint; the discovery loop never pointing the antenna was the
+ *  defect. Same resolution rule already used by the row recorder below.
+ *
+ *  NOT applied to the device passed on to dispatch() — that value goes to the
+ *  bridge REST call, and the transmit path is deliberately left untouched. */
+function toMac(device) {
+  if (!device) return null;
+  const s = String(device);
+  return s.includes(':') ? s.toUpperCase() : (getLiveMacByNodeId(device) ?? s);
+}
+
 /** The transmitting antenna's beamwidth, so a 3-element and a 7-element yagi
  *  stay separable in the data when Peter upgrades. Null when unknown — never a
  *  guessed default, which would silently merge the two. */
 function beamwidthFor(device) {
-  if (!device) return null;
-  const cfg = getDeviceCfg(device);
+  const mac = toMac(device);
+  if (!mac) return null;
+  const cfg = getDeviceCfg(mac);
   const d = Number(cfg?.beam_deg);
   return Number.isFinite(d) && d > 0 ? d : null;
 }
@@ -41,9 +66,22 @@ function beamwidthFor(device) {
  *  doorAim: pointing at the endpoint is a DIFFERENT and usually worse choice,
  *  and the two must never quietly substitute for one another. */
 function bearingToNode(num) {
-  const n = nodeList.get?.(num) ?? null;
-  const lat = n?.lat ?? n?.position?.latitude_i / 1e7;
-  const lon = n?.lon ?? n?.position?.longitude_i / 1e7;
+  // `nodeList.get(num)` DOES NOT EXIST — the class has getters `homePos`,
+  // `nodes`, `ownDeviceNodes` and no `get(num)` method. Written as
+  // `nodeList.get?.(num)`, the optional call swallowed that silently: it
+  // evaluated to undefined every single time, so this returned null on every
+  // call and `aim: 'endpoint'` could NEVER aim. Verified 2026-08-04 by
+  // dispatching on the yagi with aim=endpoint and getting aim_mode='none'.
+  //
+  // That also invalidates the claim in run()'s header that endpoint-aiming
+  // "underperforms not aiming at all in every distance band" — it was never
+  // measured against anything, because it never ran.
+  //
+  // Read the same source doors.js uses (`nodes` table via db), so the two aim
+  // modes cannot silently disagree about where a node is.
+  const n = stmts.getNodeByNum.get(num) ?? null;
+  const lat = n?.lat;
+  const lon = n?.lon;
   if (!lat || !lon) return null;
   const h = { lat: getConfig('home.lat'), lon: getConfig('home.lon') };
   if (h.lat == null || h.lon == null) return null;
@@ -177,8 +215,11 @@ class TracerouteManager extends EventEmitter {
 
     // ONLY THE ROTATOR RADIO CAN BE AIMED. Recorded as 'none' rather than
     // pretending, so the row is honest about what actually happened.
+    // BOTH SIDES IN MAC SPACE. A node_id-vs-MAC compare here is always false, so
+    // this returned "not on the rotator" about the rotator itself — see toMac().
     const rot = getRotatorAddress();
-    if (!rot || !device || device.toUpperCase() !== rot.toUpperCase())
+    const devMac = toMac(device);
+    if (!rot || !devMac || devMac.toUpperCase() !== rot.toUpperCase())
       return { mode: 'none', target: null, az: null, beam_deg, settled: false, note: 'radio is not on the rotator' };
 
     this.emit('aiming', { to, az, via: aimTarget, mode });
@@ -392,6 +433,11 @@ class TracerouteManager extends EventEmitter {
       aim_mode:   aimMode ?? null,
       aim_target: aimTarget ?? null,
       beam_deg:   beamDeg ?? null,
+      // WHERE WE AIMED, beside rotator_az (where it said it arrived). Without
+      // both, "aimed badly" and "aimed right, then the shared neighbour moved
+      // it" are the same row — and six door aims at one door recorded arrivals
+      // 111-139 degrees apart. Never derived from rotator_az.
+      aim_az_req: aim?.az ?? null,
       ...(() => {
         const n = devId ? (parseInt(String(devId).replace('!', ''), 16) >>> 0) : 0;
         return radioAirtime(n);
@@ -428,8 +474,20 @@ class TracerouteManager extends EventEmitter {
     const txDevice = pendingDev
       ? (String(pendingDev).includes(':') ? pendingDev : (getLiveMacByNodeId(pendingDev) ?? pendingDev))
       : null;
-    let rotatorAz = null;
-    if (txDevice) {
+    // AIM PROVENANCE ON SUCCESSES TOO. Task `aim-provenance-requested-az`.
+    //
+    // node-list.setTraceroute has always MAPPED aim_mode/aim_target/beam_deg —
+    // and nothing here ever populated them, so every ok row carried NULL. Aiming
+    // therefore could not be evaluated at all: the only outcomes that matter, the
+    // replies, recorded nothing about the aim that produced them.
+    //
+    // rotator_az comes from the aim context for the same reason it does in
+    // _recordFailure: re-sampling rotator.status.az HERE reads the azimuth at
+    // REPLY time, which can be a full timeout after the beam was pointed, and the
+    // rotator is shared. az_actual is what it reported on arrival.
+    const aim = pendingEntry?.aim ?? null;
+    let rotatorAz = aim ? (aim.az_actual ?? aim.az ?? null) : null;
+    if (rotatorAz == null && txDevice) {
       const rotMac = getRotatorAddress();
       if (rotMac && txDevice === rotMac && rotator.status?.az != null) {
         rotatorAz = Number(rotator.status.az);
@@ -451,6 +509,12 @@ class TracerouteManager extends EventEmitter {
       // time, no transmitting radio, all three stay null. Correct — we did not
       // send it, so there is nothing to diagnose.
       rtt_ms:          pendingEntry?.startedAt ? Date.now() - pendingEntry.startedAt : null,
+      // Same four as the failure path. An OVERHEARD reply has no aim context of
+      // ours — all four stay null, which is genuinely unknown, never 'none'.
+      aim_mode:        aim?.mode   ?? null,
+      aim_target:      aim?.target ?? null,
+      beam_deg:        aim?.beam_deg ?? null,
+      aim_az_req:      aim?.az     ?? null,
       ...(txDevice
         ? radioAirtime(parseInt(String(getLiveNodeIdByMac(txDevice) ?? '').replace('!', ''), 16) >>> 0)
         : { channel_util: null, air_util_tx: null }),

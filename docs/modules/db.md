@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 7ff3aeddaae5a722917a03e5fcee3ece5bd63d88ada65566b959394ab98a67d1
+source_hash: 48f5fd3668e5b36cd6ec136ba634a290e0631b6e1fe5541febe348e3387b8ac4
 updated: 2026-08-04
 ---
 
@@ -951,3 +951,19 @@ The distinction that makes this workable:
 
 Caveat: the epoch is the **commit** time. Deployment may have lagged it, so rows
 in the minutes immediately after are marginally less certain.
+
+
+## `traceroute_history.aim_az_req` (task `aim-provenance-requested-az`, 2026-08-04)
+
+`REAL`, nullable, added by guarded migration (`PRAGMA table_xinfo`, never
+`table_info` — that omits generated columns and re-ALTERs every boot).
+
+The azimuth the rotator was ASKED for. `rotator_az` is where it REPORTED
+arriving. Both columns are required to say anything about aiming: with only
+`rotator_az`, "aimed badly" and "aimed correctly, then the shared neighbour moved
+it" are the same row. Measured 2026-08-04, six door aims at one door recorded
+arrivals of 218/219/79/221/107/217.
+
+Carried by BOTH `insertTracerouteHistory` (success) and `insertTracerouteFailure`
+(timeout / send_failed). Historic rows stay NULL — genuinely unknown, never
+backfilled.

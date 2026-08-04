@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 8c115fc1cbdd53a9b470b0da561e67678c1e482f39a1408ddb644a3cb3028d46
+source_hash: 2b3ebe0d39c4f7a75e94fdd1abade251638b6a618cab647bd82ca2b3da07aa85
 updated: 2026-08-03
 ---
 
@@ -229,48 +229,17 @@ recorded failure row (with DB `id`). Results carry `id` (the history row
 id returned by `nodeList.setTraceroute`) so WS consumers key live rows
 exactly like replayed ones.
 
-## Master switch — `traceroute.enabled` (task `traceroute-manual-enable`)
+## Master switch — REMOVED (commit 8ddd4a0, 2026-08-04)
 
-Before this, there was no mode in which automatic traceroute was off. Each mode
-had its own dispatcher, so switching mode swapped the trigger rather than
-stopping it:
+`tracerouteEnabled()` and the persisted `traceroute.enabled` key are gone, with
+all four call sites. Automatic tracing is a property of the MODE, not a second
+global owner of the same behaviour: with the switch off, DISC ran and attempted
+nothing, visible only as one line in an idle reason.
 
-| mode | dispatch site | trigger |
-|---|---|---|
-| PASV | `passive-tracer.js` | every qualifying heard packet |
-| ACTV | `lifecycle.js` | `rotator.on('point_target')` |
-| SCAN | `lifecycle.js` | `scanner.on('contact')` |
-
-Measured while enabled: 8 dispatches in 10 minutes, 25 in 30 minutes.
-
-`tracerouteEnabled()` reads the persisted config key `traceroute.enabled`
-(declared in `config-api.js` DEFAULTS, so it survives restart and is broadcast
-to the browser on the settings WS). Default `true` — shipping this changes no
-behaviour until it is switched off.
-
-### Gated at `dispatch()`, deliberately
-
-`dispatch()` is the one chokepoint every caller passes through, so the gate
-lives there rather than at each call site: a future caller cannot accidentally
-bypass it. That is the failure mode that let `imap-receiver` and `op-manager`
-post around `mesh-send`'s "single send path" — same shape, avoided here.
-
-Checked BEFORE the cooldown guard. A gated dispatch must not consume the
-cooldown slot, or re-enabling would silently skip the next attempt for that key.
-
-### `manual: true` is never gated
-
-A user-initiated request (`traceroute-api.js`) passes `manual: true`. Turning
-automatic traceroute off must not disable *asking* for one. Verified live with
-the switch off: the manual route returned `timeout !987ab80f`, i.e. it reached
-dispatch and transmitted, rather than `traceroute disabled`.
-
-### Known NOT covered
-
-The `[V1] LEGACY` paths behind `FF.SSOT_TRACEROUTE` in `passive-tracer.js` and
-`lifecycle.js` post to the bridge directly and bypass `dispatch()` entirely, so
-they bypass this gate too. Dormant — `FF.SSOT_TRACEROUTE` is `true`. Recorded in
-the bug ledger; removing them is a separate task.
+This section previously documented the switch as live. `check_specs.py` compares
+SOURCE HASHES, not prose, so a spec can describe deleted code and still validate —
+it did here for one commit. Recorded so the next reader does not trust a green
+validator as proof the prose is true.
 
 ---
 
@@ -428,3 +397,171 @@ in a crash loop once already.
 - **Simplifying the miner** to work with the radar. Peter's direction, and a
   large separate piece.
 - Cosmetic radar work (closer nodes dimmer). Deferred by Peter explicitly.
+
+---
+
+## Aim provenance II — the radio was never a MAC (task `aim-provenance-requested-az`, 2026-08-04)
+
+Shipping the rework produced 73 aimed rows in under two hours — the first aim
+provenance this project has ever held. Reading it back the same evening showed
+the aiming had not actually been happening.
+
+### The fingerprint
+
+15 rows with `tx_device = 'F4:12:FA:39:F7:B6'` (the YAGI, whose stored config is
+`beam_deg: 35`) recorded `beam_deg = 360.0`, and every one of them recorded
+`aim_mode = 'none'`. The 6 rows that *did* aim recorded 35 correctly.
+
+```
+tx_device            aim_mode  beam_deg   n
+E9:B0:3F:17:27:91    none      360.0     53    OMNI — correct
+F4:12:FA:39:F7:B6    door       35.0      6    YAGI, aimed — correct
+F4:12:FA:39:F7:B6    none      360.0     15    YAGI, NOT AIMED — the defect
+```
+
+### The cause: two device vocabularies, compared directly
+
+`transmitterForMode()` (dash-mode.js:224) returns `macToNodeId(mac)` — a **node_id**
+once ws-relay has registered the live resolver. `getRotatorAddress()` returns a
+**MAC**. `_resolveAim` then does both of these with the value it was handed:
+
+```js
+const beam_deg = beamwidthFor(device);          // getDeviceCfg(node_id) MISSES
+...
+if (!rot || !device || device.toUpperCase() !== rot.toUpperCase())
+  return { mode: 'none', ..., note: 'radio is not on the rotator' };
+```
+
+`getDeviceCfg` keys on uppercase MAC, so a node_id misses every entry and returns
+`{...DEFAULT}` — whose `beam_deg` is **360**. And the identity compare
+`'!39F7B6' !== 'F4:12:FA:39:F7:B6'` is always true, so the function returns
+*"radio is not on the rotator"* **about the rotator's own radio**.
+
+Reproduced with the live resolver registered:
+
+```
+getRotatorAddress()          = F4:12:FA:39:F7:B6   (MAC)
+transmitterForMode('actv')   = "!39f7b6"           (node_id)
+   getDeviceCfg(tx).beam_deg = 360                 <- beamwidthFor() returns this
+   tx === rotator (line 181) = false               <- so it is NEVER aimed
+```
+
+**Every `radio: 'auto'` dispatch is unaimed, in every mode.** That is
+`mission-runner` (the entire discovery loop) and both `lifecycle.js` sites. The 6
+rows that worked came in as `radio: 'yagi'`, which resolves via
+`getRotatorAddress()` and is therefore already a MAC.
+
+`beam_deg = 360` was the fingerprint, not the disease. The logged bug
+`BUG-yagi-records-omni-beamwidth` under-rated it: a cosmetic column error was
+actually the discovery loop silently never pointing the antenna.
+
+### Fix: resolve to MAC at the point of comparison, not at the point of transmit
+
+A single `toMac()` helper, applied in `beamwidthFor()` and to both sides of the
+rotator identity compare.
+
+Deliberately **not** applied to the `device` passed on to `dispatch()`. That value
+goes to the bridge REST call, and changing what the transmit path receives is a
+separate risk with no bearing on this defect. The aim logic is made
+vocabulary-correct; the send path is left exactly as it was.
+
+### The second hole: only failures carried aim provenance
+
+`handlePacket()` builds the success `result` with no `aim_mode`, `aim_target` or
+`beam_deg` at all — `node-list.setTraceroute` maps all three, and they were always
+null because nothing populated them. It also re-sampled `rotator.status.az` at
+REPLY time, which is the exact defect already fixed on the failure path
+(`_recordFailure`, traceroute.js:357-374).
+
+So aiming could never be evaluated: the only outcomes that matter — the successes —
+recorded nothing about the aim. Fixed by stamping all four fields from the pending
+entry's aim context, and taking `rotator_az` from `az_actual` rather than a live
+re-sample.
+
+### The third hole: the row says where we ARRIVED, never where we AIMED
+
+All 6 door-aimed attempts named the same door (`aim_target = 3608510722`), so the
+requested azimuth was identical every time. Recorded arrivals:
+
+```
+218.0   219.0   79.0   221.0   107.0   217.0
+```
+
+Two of six landed 111-139 degrees away. With a 35 degree beam the target was
+outside the pattern entirely — worse than not aiming, because the gain is pointed
+at nothing.
+
+That cannot be diagnosed from the stored row, because the row holds only
+`rotator_az` (arrival). "Aimed badly" and "aimed correctly, then something moved
+it" are the same row. The candidate causes — the neighbouring app's 15-second
+hold, a stale `done` handshake, the re-aim retry's own arrival — are separable
+only by comparing REQUESTED against ACTUAL on the same row.
+
+**New column `aim_az_req REAL`**: the azimuth `_resolveAim` asked the rotator for.
+`rotator_az` keeps its meaning (where it reported arriving). The pair is the
+measurement; neither alone is.
+
+### Changes
+
+| file | change |
+|---|---|
+| `src/traceroute.js` | `toMac()` helper; `beamwidthFor()` resolves via it; rotator identity compare resolves both sides; `aim_az_req` on the failure row; success `result` carries all four aim fields and `rotator_az` from `az_actual` |
+| `src/db.js` | `aim_az_req REAL` column, migration guarded on `PRAGMA table_xinfo`; both insert statements |
+| `src/node-list.js` | map `aim_az_req` through `setTraceroute` |
+
+### Invariants
+
+- `aim_az_req` is what we ASKED for; `rotator_az` is what the rotator SAID it
+  reached. Neither is ever derived from the other, and neither is ever sampled
+  from live status after the fact.
+- `beam_deg` is null when the device's beamwidth is genuinely unknown — never a
+  guessed default. A 360 on a device configured 35 is a bug, not an omni.
+- The transmit path's device value is untouched by this change.
+
+### The fourth hole: `nodeList.get()` does not exist
+
+Found while verifying the fix above. `bearingToNode()` opened with:
+
+```js
+const n = nodeList.get?.(num) ?? null;
+```
+
+`NodeList` has getters `homePos`, `nodes` and `ownDeviceNodes`, and **no `get(num)`
+method**. The optional call `?.()` swallowed that: it evaluated to `undefined`
+every time, so `bearingToNode()` returned null on every call and `aim: 'endpoint'`
+could never aim. Verified by dispatching on the yagi with `aim=endpoint` and
+getting `aim_mode='none'` back on a fully-positioned target.
+
+This also invalidates the claim written in `run()`'s own header — that
+endpoint-aiming *"underperforms not aiming at all in every distance band"*. It was
+never measured against anything, because it never ran. The comparison has to be
+made again now that both modes actually execute.
+
+Fixed by reading `stmts.getNodeByNum`, the same `nodes` table `doors.js` reads, so
+the two aim modes cannot disagree about where a node is.
+
+### Verified 2026-08-04, same request before and after
+
+`POST /!8cee336b/traceroute {"via":"!fa39f7b4","aim":"endpoint"}` — the yagi
+addressed by NODE_ID, which is exactly the condition the discovery loop produces:
+
+| | aim_mode | aim_target | aim_az_req | rotator_az | beam_deg |
+|---|---|---|---|---|---|
+| before | `none` | null | null | 216.01 | **360** |
+| after  | `endpoint` | 2364420971 | **121.0** | 122.0 | **35** |
+
+Three aimed probes on three different bearings, requested vs arrived:
+
+```
+req 121.0  actual 122.0  err 1.0
+req  59.0  actual  58.0  err 1.0
+req 202.0  actual 201.0  err 1.0
+```
+
+1 degree on every one — the QMC5883's stated +/-1 accuracy, and nothing worse.
+The 111-139 degree misses recorded earlier are therefore NOT a property of every
+aim; they need the requested-vs-actual pair over a longer run to characterise,
+which is now being collected.
+
+Regression: OMNI dispatches in the same window still record `aim_mode='none'`,
+`beam_deg=360`, no azimuth — correct, the OMNI is not on the rotator.

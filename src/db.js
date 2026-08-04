@@ -434,6 +434,14 @@ db.exec(`
   if (!thCols.includes('aim_mode'))   db.exec(`ALTER TABLE traceroute_history ADD COLUMN aim_mode TEXT`);
   if (!thCols.includes('aim_target')) db.exec(`ALTER TABLE traceroute_history ADD COLUMN aim_target INTEGER`);
   if (!thCols.includes('beam_deg'))   db.exec(`ALTER TABLE traceroute_history ADD COLUMN beam_deg REAL`);
+  // WHERE WE AIMED, beside where we ARRIVED (task `aim-provenance-requested-az`).
+  // rotator_az is what the rotator SAID it reached. On its own it cannot separate
+  // "aimed badly" from "aimed correctly, then something moved it" — and something
+  // does: the neighbouring app holds this rotator for up to 15s every ~15 min.
+  // Measured 2026-08-04: six door aims at the SAME door recorded arrivals of
+  // 218/219/79/221/107/217 — two of six over 110 degrees out, undiagnosable
+  // because the request was never stored. The pair is the measurement.
+  if (!thCols.includes('aim_az_req')) db.exec(`ALTER TABLE traceroute_history ADD COLUMN aim_az_req REAL`);
   // Task `timeout-diagnosis`: a duty-cycle drop, a CSMA defer, a collision and a
   // genuine silence were all recorded identically as 'timeout'. These three make
   // a miss diagnosable. Historic rows stay NULL — not backfilled, because the
@@ -730,16 +738,16 @@ export const stmts = {
 
   insertTracerouteHistory: db.prepare(`
     INSERT INTO traceroute_history
-      (ts, from_num, to_num, rx_device, route, route_back, snr_towards, snr_back, relay_positions, tx_device, rotator_az, status, rtt_ms, channel_util, air_util_tx, aim_mode, aim_target, beam_deg)
+      (ts, from_num, to_num, rx_device, route, route_back, snr_towards, snr_back, relay_positions, tx_device, rotator_az, status, rtt_ms, channel_util, air_util_tx, aim_mode, aim_target, beam_deg, aim_az_req)
     VALUES
-      (@ts, @from_num, @to_num, @rx_device, @route, @route_back, @snr_towards, @snr_back, @relay_positions, @tx_device, @rotator_az, @status, @rtt_ms, @channel_util, @air_util_tx, @aim_mode, @aim_target, @beam_deg)
+      (@ts, @from_num, @to_num, @rx_device, @route, @route_back, @snr_towards, @snr_back, @relay_positions, @tx_device, @rotator_az, @status, @rtt_ms, @channel_util, @air_util_tx, @aim_mode, @aim_target, @beam_deg, @aim_az_req)
   `),
 
   // Failed dispatch attempts (timeout / send error) — payload columns stay NULL.
   // Without these rows every stat is survivorship-biased.
   insertTracerouteFailure: db.prepare(`
-    INSERT INTO traceroute_history (ts, from_num, to_num, tx_device, rotator_az, status, rtt_ms, channel_util, air_util_tx, aim_mode, aim_target, beam_deg)
-    VALUES (@ts, @from_num, @to_num, @tx_device, @rotator_az, @status, @rtt_ms, @channel_util, @air_util_tx, @aim_mode, @aim_target, @beam_deg)
+    INSERT INTO traceroute_history (ts, from_num, to_num, tx_device, rotator_az, status, rtt_ms, channel_util, air_util_tx, aim_mode, aim_target, beam_deg, aim_az_req)
+    VALUES (@ts, @from_num, @to_num, @tx_device, @rotator_az, @status, @rtt_ms, @channel_util, @air_util_tx, @aim_mode, @aim_target, @beam_deg, @aim_az_req)
   `),
 
   queryTracerouteHistory: db.prepare(`

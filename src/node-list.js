@@ -262,6 +262,10 @@ class NodeList extends EventEmitter {
       aim_mode:        data.aim_mode ?? null,
       aim_target:      data.aim_target ?? null,
       beam_deg:        data.beam_deg ?? null,
+      // What we ASKED the rotator for, beside rotator_az (where it said it got
+      // to). Task `aim-provenance-requested-az` — the pair is the measurement,
+      // neither alone is.
+      aim_az_req:      data.aim_az_req ?? null,
     });
     const historyId = info.lastInsertRowid;
     const existing = this._cache.get(num) ?? this._pending.get(num);

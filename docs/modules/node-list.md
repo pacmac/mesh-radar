@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 0e729407ae04eaf5ff23063e2e47a30836e4aaf22f10f5e27e82220196923ea3
+source_hash: b05163ed89e3c8363eafcb727b7d6d607f40a3a73d9cdd092dbf4056cbe862ac
 updated: 2026-08-03
 ---
 
@@ -346,3 +346,23 @@ ev.node_id`), matching `_cache._device` — audit violation B8.
 ## Phase C1
 
 `setTraceroute` returns the inserted history row id (for WS row keying).
+
+
+## `setTraceroute` carries `aim_az_req` (task `aim-provenance-requested-az`, 2026-08-04)
+
+Mapped through alongside `aim_mode` / `aim_target` / `beam_deg`, exactly as
+`tx_device` and `rotator_az` are. Null on an overheard reply we did not initiate —
+genuinely unknown, never `'none'`.
+
+Note for readers of this module: those three aim fields were mapped here from the
+day they were added, and were ALWAYS NULL, because `traceroute.js:handlePacket`
+never populated them on the success result. A mapping in this file is not evidence
+that the field is filled; the producer has to be checked too.
+
+## `get(num)` does not exist on this class
+
+Only the getters `homePos`, `nodes`, `ownDeviceNodes`. `traceroute.js` called
+`nodeList.get?.(num)` and the optional call silently evaluated to `undefined` on
+every call, disabling `aim: 'endpoint'` entirely. If a caller needs one node by
+num, read `stmts.getNodeByNum` — do not add a `get()` here without also finding
+the callers that assumed it already existed.
