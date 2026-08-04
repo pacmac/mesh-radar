@@ -194,16 +194,15 @@
                     @click="setRotatorMode(3)">DISC</button>
           </div>
         </div>
-        <!-- Traceroute master switch. Deliberately OUTSIDE the rotator group's
-             x-show above: traceroute is unrelated to the rotator, and hiding
-             this when the rotator is disconnected would remove the control at
-             exactly the moment you still want to stop traceroutes. -->
-        <div class="hidden sm:flex items-center pl-1">
-          <button class="btn btn-xs font-mono tracking-widest px-2"
-                  :class="tracerouteEnabled ? 'btn-outline btn-success' : 'btn-ghost opacity-40'"
-                  :title="tracerouteEnabled ? 'Automatic traceroute ON — click to disable' : 'Automatic traceroute OFF — click to enable'"
-                  @click="toggleTraceroute()">TRACE</button>
-        </div>
+        <!-- The global TRACE switch was HERE and is deliberately gone.
+             Peter, 2026-08-04: "the traceroute button that exists should not be
+             there. traceroute is a node function and NOT a global switch."
+             It was also a second owner of behaviour dash-mode owns: with it off,
+             DISC ran and attempted nothing, and the only clue was a line in the
+             mission runner's idle reason. Automatic tracing is now a property of
+             the MODE (Config -> Modes -> aim/radio). Per-node tracing is the
+             TRACE button on the node itself, which stays. -->
+        
       </div>
 
       <!-- Mobile title + permanent spacer -->

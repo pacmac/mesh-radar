@@ -86,6 +86,25 @@
             <span class="text-base-content/40"
                   x-text="charts.contribution.new_routes_unplaced ? '(' + charts.contribution.new_routes_unplaced + ' unplaceable)' : ''"></span></span>
         </div>
+        <!-- WHAT IT ACTUALLY REACHED. A count in a card is not evidence; the
+             names are. Peter believed it had mined nothing in three days — it
+             had reached 11 nodes for the first time, and the app never said so. -->
+        <div class="mt-2 pt-2 border-t border-base-content/10"
+             x-show="charts.contribution.recent_first_contacts?.length">
+          <div class="text-[10px] uppercase tracking-widest text-base-content/40 mb-1">
+            Reached for the first time · last 7 days</div>
+          <div class="flex gap-x-4 gap-y-1 flex-wrap text-[11px]">
+            <template x-for="n in charts.contribution.recent_first_contacts" :key="n.ts + '-' + n.km">
+              <span :class="n.past_record ? 'text-success font-semibold' : 'text-base-content/70'">
+                <b x-text="n.km + ' km'"></b>
+                <span class="text-base-content/50" x-text="n.label || '(unnamed)'"></span>
+              </span>
+            </template>
+            <span x-show="charts.contribution.recent_unplaced > 0" class="text-base-content/35"
+                  x-text="'+ ' + charts.contribution.recent_unplaced + ' with no position'"></span>
+          </div>
+        </div>
+
         <div class="mt-2 pt-2 border-t border-base-content/10 text-[11px] text-base-content/60"
              x-show="!charts.contribution.gaining">
           <span class="text-base-content/40">why not further —</span>

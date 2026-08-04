@@ -107,7 +107,6 @@ export const wsMixin = {
       this.radarRange     = String(cfg['radar.max_range_km'] ?? 50);
       this.radarLogScale  = cfg['radar.log_scale']  ?? false;
       this.radarCrosshair = cfg['radar.crosshair']  ?? true;
-      this.tracerouteEnabled = cfg['traceroute.enabled'] ?? true;
       this.packetSources  = cfg['packet_sources']   ?? [];
       if (cfg['perf.failure_epoch'] != null) this.perfFailureEpoch = cfg['perf.failure_epoch'];
       if (cfg['range_test.duration']) this.rangeDuration = cfg['range_test.duration'];
@@ -149,6 +148,31 @@ export const wsMixin = {
 
     if (ev.type === 'rotator') {
       this._onRotatorEvent(ev.data || {}); return;
+    }
+
+    // THE AIMING ANIMATION, FROM EVERY PATH. Peter, 2026-08-04: "the beauty and
+    // refinement of the radar is it actually animates the whole traceroute, the
+    // antenna aiming, the target node, and also displays an animated route when
+    // it is actively trace routing."
+    //
+    // It was fed ONLY by rotator's point_target, emitted only by active-tracker
+    // in ACTV — so a DISC mission, a passive trace or a manual probe animated
+    // nothing. traceroute.run() now emits these for every caller.
+    //
+    // Every value is server-decided (az, via, mode, settled); this stores and
+    // renders, it decides nothing.
+    if (ev.type === 'trace_aiming') {
+      this.traceAim = { to: ev.to, az: ev.az, via: ev.via, mode: ev.mode, settled: false };
+      if (ev.az != null && this.tab === 'radar') this._animateBeam(ev.az);
+      return;
+    }
+    if (ev.type === 'trace_aimed') {
+      this.traceAim = { to: ev.to, az: ev.az, via: ev.via, mode: ev.mode, settled: !!ev.settled };
+      // az_actual is where the rotator REPORTED it arrived — animate to the
+      // truth, not to the request.
+      const at = ev.az_actual ?? ev.az;
+      if (at != null && this.tab === 'radar') this._animateBeam(at);
+      return;
     }
 
     if (ev.type === 'device_list') {

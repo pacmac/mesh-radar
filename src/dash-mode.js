@@ -152,6 +152,14 @@ export function modeVocabulary() {
     aim:   AIM_MODES.map(opt),
     radio: RADIO_MODES.map(opt),
     modes: [...MODE_KEYS],
+    // The FIELD labels too. The page must not name "Listener (RX)" any more than
+    // it names "Rotator" — same rule, same reason.
+    fields: [
+      { key: 'rx',    label: 'Listener (RX)' },
+      { key: 'tx',    label: 'Transmitter (TX)' },
+      { key: 'aim',   label: 'Aim at' },
+      { key: 'radio', label: 'Radio' },
+    ],
   };
 }
 

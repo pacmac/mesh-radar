@@ -91,6 +91,9 @@ function dashboard() {
     yagiAz:          null,
     yagiConnected:   false,
     yagiPointTarget: null,
+    // What traceroute.run() is currently aiming at, from trace_aiming/trace_aimed.
+    // Display cache — every field is server-decided. Task `traceroute-ui-domain2`.
+    traceAim:        null,
     yagiTargetMeta:  {},
     yagiSignal:      { num: null, rssi: null, snr: null, ts: null },
     _sigTick:        0,
@@ -132,10 +135,6 @@ function dashboard() {
     homePos:        null,
     geocoding:      false,
     radarCrosshair: true,
-    // Master switch for AUTOMATIC traceroute dispatch (backend config key
-    // `traceroute.enabled`). Display cache only — the server owns it and pushes
-    // it on the settings WS event; the browser never decides it.
-    tracerouteEnabled: true,
     heatmapMaxAge:  3600,
     nodeInfo:       null,
     // Node focus page (NODE_FOCUS_PAGE_SPEC). nodeStatus holds the last payload
@@ -248,19 +247,10 @@ function dashboard() {
     modesCfgSaving:   false,
     modesCfgSaved:    false,
     modesCfgError:    '',
-    rxRoleOptions: [
-      { value: 'rotator',     label: 'Rotator' },
-      { value: 'non-rotator', label: 'Any non-rotator' },
-      { value: 'primary',     label: 'Primary' },
-      { value: 'all',         label: 'All radios' },
-    ],
-    txRoleOptions: [
-      { value: 'rotator',     label: 'Rotator' },
-      { value: 'primary',     label: 'Primary' },
-      { value: 'non-rotator', label: 'Any non-rotator' },
-      { value: 'all',         label: 'All radios' },
-      { value: 'rx',          label: 'Whichever heard it' },
-    ],
+    // rxRoleOptions/txRoleOptions DELETED — they were a retyped copy of the
+    // server's RX_ROLES/TX_ROLES with the page's own labels. Served now via
+    // GET /config/mode-vocabulary. Task `serve-mode-vocabulary`.
+    modeVocab: null,
     rotatorCalSent:   false,
     rotatorCalError:  '',
     rotatorOffsetInput: '',

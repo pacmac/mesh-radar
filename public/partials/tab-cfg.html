@@ -206,80 +206,45 @@
               These drive the backend directly; the RX/TX badges on the Devices page reflect the live roles.
             </p>
 
-            <!-- PASV roles -->
-            <div class="card bg-base-100 shadow">
-              <div class="card-body py-3">
-                <h2 class="card-title">PASV — Passive</h2>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
-                  <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Listener (RX)</span></div>
-                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.pasv.rx">
-                      <template x-for="r in rxRoleOptions" :key="r.value">
-                        <option :value="r.value" x-text="r.label"></option>
-                      </template>
-                    </select>
-                  </label>
-                  <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Transmitter (TX)</span></div>
-                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.pasv.tx">
-                      <template x-for="r in txRoleOptions" :key="r.value">
-                        <option :value="r.value" x-text="r.label"></option>
-                      </template>
-                    </select>
-                  </label>
+            <!-- ONE CARD PER MODE, FROM THE SERVED LIST. Peter, 2026-08-04: "we have a
+                 config page to define what a mode should do" and "DISC is not even there."
+            
+                 It was three hand-written cards — pasv, actv, scan — so disc, which is a
+                 real mode with real roles, had no entry and its aim could not be set.
+                 Looping over `modeVocab.modes` means a mode added server-side APPEARS
+                 here; it cannot be forgotten again.
+            
+                 Every option list and every LABEL comes from GET /config/mode-vocabulary.
+                 The page previously kept its own retyped copy of the role values and
+                 named them itself (app.js:251-262). It now names nothing and offers
+                 nothing it was not given — Peter: "do NOT break the UI golden rule." -->
+            <template x-for="m in (modeVocab?.modes || [])" :key="m">
+              <div class="card bg-base-100 shadow" x-show="modesCfg?.[m]">
+                <div class="card-body py-3">
+                  <h2 class="card-title uppercase" x-text="m"></h2>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                    <template x-for="f in (modeVocab?.fields || [])" :key="f.key">
+                      <label class="form-control w-full">
+                        <div class="label py-1"><span class="label-text text-xs" x-text="f.label"></span></div>
+                        <!-- :value + @change, NOT x-model. x-model initialises BEFORE the
+                 nested x-for has rendered the <option> elements, so the select
+                 fell back to option[0] and every mode displayed the first value
+                 in the list instead of its own. Caught in the screenshot, not in
+                 the DOM query — the elements existed, they were just wrong. -->
+            <select class="select select-bordered select-sm w-full"
+                    :value="modesCfg[m][f.key]"
+                    @change="modesCfg[m][f.key] = $event.target.value">
+                          <template x-for="o in (modeVocab?.[f.key] || [])" :key="o.value">
+                            <option :value="o.value" x-text="o.label"></option>
+                          </template>
+                        </select>
+                      </label>
+                    </template>
+                  </div>
                 </div>
               </div>
-            </div>
+            </template>
 
-            <!-- ACTV roles -->
-            <div class="card bg-base-100 shadow">
-              <div class="card-body py-3">
-                <h2 class="card-title">ACTV — Active targeting</h2>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
-                  <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Listener (RX)</span></div>
-                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.actv.rx">
-                      <template x-for="r in rxRoleOptions" :key="r.value">
-                        <option :value="r.value" x-text="r.label"></option>
-                      </template>
-                    </select>
-                  </label>
-                  <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Transmitter (TX)</span></div>
-                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.actv.tx">
-                      <template x-for="r in txRoleOptions" :key="r.value">
-                        <option :value="r.value" x-text="r.label"></option>
-                      </template>
-                    </select>
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <!-- SCAN roles -->
-            <div class="card bg-base-100 shadow">
-              <div class="card-body py-3">
-                <h2 class="card-title">SCAN — Polar scan</h2>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
-                  <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Listener (RX)</span></div>
-                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.scan.rx">
-                      <template x-for="r in rxRoleOptions" :key="r.value">
-                        <option :value="r.value" x-text="r.label"></option>
-                      </template>
-                    </select>
-                  </label>
-                  <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Transmitter (TX)</span></div>
-                    <select class="select select-bordered select-sm w-full" x-model="modesCfg.scan.tx">
-                      <template x-for="r in txRoleOptions" :key="r.value">
-                        <option :value="r.value" x-text="r.label"></option>
-                      </template>
-                    </select>
-                  </label>
-                </div>
-              </div>
-            </div>
 
             <!-- Save -->
             <div class="flex items-center gap-2">

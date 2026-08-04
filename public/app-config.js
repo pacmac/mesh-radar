@@ -61,7 +61,15 @@ export const configMixin = {
   // Per-mode radio roles (config-editor form flow — GET populates, PUT submits).
   async loadModesCfg() {
     try {
-      this.modesCfg = await fetchJSON('/config/modes');
+      // Both, together: the values AND the vocabulary that describes them. The
+      // page holds no list of its own — Peter, 2026-08-04: "do NOT break the UI
+      // golden rule."
+      const [cfg, vocab] = await Promise.all([
+        fetchJSON('/config/modes'),
+        fetchJSON('/config/mode-vocabulary'),
+      ]);
+      this.modesCfg  = cfg;
+      this.modeVocab = vocab;
     } catch (e) {
       console.warn('loadModesCfg failed', e);
     }
