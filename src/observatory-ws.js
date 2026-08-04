@@ -197,6 +197,8 @@ function relayUsage() {
       bearing:  bearingFromHome(pos.get(Number(f.entity))?.lat, pos.get(Number(f.entity))?.lon),
       since:    sinceStr(heard.has(Number(f.entity)) ? now - heard.get(Number(f.entity)) : null),
       since_sec: heard.has(Number(f.entity)) ? now - heard.get(Number(f.entity)) : null,
+      since_tone: sinceTone(heard.has(Number(f.entity)) ? now - heard.get(Number(f.entity)) : null),
+      furthest_tone: furthestTone(f.value?.furthest_km ?? null),
       at:       f.ts,
       evidence: f.evidence_count,
       // Classification decided HERE, not in the browser (BROWSER_CONTRACT).
@@ -314,6 +316,8 @@ function missions() {
       since_sec: heard.has(Number(f.entity)) ? nowM - heard.get(Number(f.entity)) : null,
       obs_target: targeted.has(Number(f.entity)),
       step_km: f.value.step_km ?? null,
+      step_tone: stepTone(f.value.step_km ?? null),
+      since_tone: sinceTone(heard.has(Number(f.entity)) ? nowM - heard.get(Number(f.entity)) : null),
       cls:    f.value.cls,
       reason: f.value.reason,
       attempts: f.value.attempts,
@@ -340,6 +344,30 @@ const RATE_BANDS = [
   { min: 5,  tone: 'warning' },
   { min: 0,  tone: 'error'   },
 ];
+// Three more thresholds found in tab-observatory.html during the Domain 2
+// sweep. Templates hide this logic from a grep of the script files, which is
+// how they survived — see docs/modules/signal-verdict.md.
+//
+//   :524  m.step_km > 50            -> warning / success
+//   :594  r.since_sec < 86400/604800 -> success / muted / warning
+//   :597  r.furthest_km > 150       -> primary / muted
+//
+// A STEP past proven ground is judged here because "how big a leap is too big"
+// is the selector's own rule, not a rendering choice.
+const BIG_STEP_KM   = 50;
+const FAR_RELAY_KM  = 150;
+const SINCE_BANDS = [
+  { max: 86400,  tone: 'success' },   // within a day
+  { max: 604800, tone: 'muted'   },   // within a week
+  { max: null,   tone: 'warning' },   // longer, or never
+];
+function stepTone(km)     { return km == null ? 'muted' : km > BIG_STEP_KM ? 'warning' : 'success'; }
+function furthestTone(km) { return km == null ? 'muted' : km > FAR_RELAY_KM ? 'primary' : 'muted'; }
+function sinceTone(sec)   {
+  if (sec == null) return 'muted';
+  return (SINCE_BANDS.find(b => b.max == null || sec < b.max) ?? SINCE_BANDS[SINCE_BANDS.length - 1]).tone;
+}
+
 function withRateVerdict(row) {
   if (!row) return row;
   const attempts = Number(row.attempts) || 0;
