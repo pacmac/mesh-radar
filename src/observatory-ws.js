@@ -18,7 +18,7 @@ import { onEvent, listHooks } from './hooks.js';
 import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
-import { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
+import db, { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
          attemptsByDay, answerRateBySilence, answerRateByDistance,
          rateByBandByDay, windowBestKm, boardVerdicts, recentEventLog, interventions } from './db.js';
 
@@ -158,8 +158,29 @@ function placeName(address) {
  *  A pure read of stored facts — the inference already ran; this does not
  *  recompute on a page load. Provenance rides along (`at`, `evidence`) so the
  *  page can say when it was last worked out rather than implying it is live. */
+// A RELAY AND A ROUTER ARE NOT THE SAME THING. Peter, 2026-08-04: "we are still
+// treating routers and clients the same and they are all grouped into doors in
+// the dashboard", and earlier: "repeaters are gold dust to us".
+//
+//   router — DECLARED role, configured to carry other people's traffic.
+//   relay  — OBSERVED only. Any node can carry a packet once; it may never again.
+//
+// Measured: 6 declared routers carry 2865 of our completed routes (95.1%); 11
+// observed relays carry 148 (4.9%), and 4 of those 11 are our own radios. The
+// distinction is the dominant fact about our routing, so the page must be able
+// to show it rather than lumping both under "Doors".
+const RELAY_ROLES = new Set(['ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'REPEATER']);
+
+function roleMap() {
+  const m = new Map();
+  for (const r of db.prepare('SELECT num, role FROM nodes WHERE role IS NOT NULL').all()) {
+    m.set(r.num, r.role);
+  }
+  return m;
+}
+
 function relayUsage() {
-  const heard = lastHeardMap(), pos = positionMap();
+  const heard = lastHeardMap(), pos = positionMap(), roles = roleMap();
   const now = Math.floor(Date.now() / 1000);
   return facts('relay.usage')
     .map(f => ({
@@ -178,6 +199,15 @@ function relayUsage() {
       since_sec: heard.has(Number(f.entity)) ? now - heard.get(Number(f.entity)) : null,
       at:       f.ts,
       evidence: f.evidence_count,
+      // Classification decided HERE, not in the browser (BROWSER_CONTRACT).
+      // `kind` is what the page colours by; `role` is shown verbatim so a
+      // junk value (B77: three nodes carry role "200.0") is visible rather
+      // than silently folded into "relay".
+      role:      roles.get(Number(f.entity)) ?? null,
+      kind:      RELAY_ROLES.has(roles.get(Number(f.entity))) ? 'router'
+               : roles.get(Number(f.entity)) === 'CLIENT_MUTE' ? 'never'
+               : 'relay',
+      is_router: RELAY_ROLES.has(roles.get(Number(f.entity))),
     }))
     .sort((a, b) => b.uses - a.uses);
 }

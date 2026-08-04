@@ -545,7 +545,8 @@
                 Doors — relays our traffic depends on</h2>
               <span class="text-xs text-base-content/35 ml-auto"
                     x-show="relayUsage.length"
-                    x-text="relayUsage.length + ' carry every route we have completed'"></span>
+                    x-text="relayUsage.filter(r => r.is_router).length + ' declared routers · '
+                            + relayUsage.filter(r => !r.is_router).length + ' relay only'"></span>
             </div>
 
             <template x-if="!relayUsage.length">
@@ -559,6 +560,7 @@
                 <thead>
                   <tr>
                     <th>Relay</th>
+                    <th>Role</th>
                     <th>Where</th>
                     <th class="text-right pr-2">BRG</th>
                     <th class="text-right pr-2">AGE</th>
@@ -571,7 +573,19 @@
                 <tbody>
                   <template x-for="r in relayUsage.slice(0, 8)" :key="r.relay">
                     <tr>
-                      <td class="text-secondary" x-text="r.label"></td>
+                      <td :class="r.is_router ? 'text-warning font-semibold' : 'text-secondary'" x-text="r.label"></td>
+                      <!-- A ROUTER IS NOT A CLIENT THAT HAPPENED TO RELAY.
+                           Peter: "we are still treating routers and clients the
+                           same and they are all grouped into doors". Declared
+                           routers carry 95.1% of every route we have completed;
+                           the rest is mostly our own radios. The role is shown
+                           verbatim so a junk value (B77: role "200.0") is
+                           visible rather than folded silently into "relay". -->
+                      <td class="text-[10px]">
+                        <span x-show="r.is_router" class="badge badge-xs badge-warning" x-text="r.role"></span>
+                        <span x-show="!r.is_router" class="text-base-content/35"
+                              x-text="r.role || 'relay only'"></span>
+                      </td>
                       <td class="text-base-content/50 truncate max-w-[12rem]" x-text="r.place || ''"></td>
                       <td class="text-right pr-2 text-base-content/50" x-text="r.bearing != null ? r.bearing + '°' : '—'"></td>
                       <!-- A door that has gone quiet is the thing you most want

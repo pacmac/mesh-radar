@@ -1,8 +1,8 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: a1ea3ad91ba7878db539238a856f63212c369910016fa9a71ba78ac035288bf6
-updated: 2026-08-03
+source_hash: 4895507aa38089463666d5eb1a07f5f681997dd2cc6372eb333aa0cefd5d5b9a
+updated: 2026-08-04
 ---
 
 # Module: tab-observatory
@@ -515,3 +515,24 @@ Two defects fixed on sight after the first render:
 
 Verified live: 63 dots in the DOM over a 7-day window, x labels Jul 28 → Aug 3,
 record line at 90.9% and best at 84.8% of the plot height.
+
+### Doors: routers are not clients that happened to relay
+
+Peter, 2026-08-04: *"we are still treating routers and clients the same and they
+are all grouped into doors in the dashboard."* He was right — `relayUsage()`
+carried label, place, bearing and usage but no role, so the panel could not tell
+infrastructure from an accident.
+
+The payload now carries `role`, `kind` (`router` | `relay` | `never`) and
+`is_router`, decided server-side. The table gains a **Role** column: declared
+routers get an amber badge and an amber label, everything else reads "relay
+only" in muted text. The caption counts them — **19 declared routers · 78 relay
+only** — instead of a single undifferentiated total.
+
+Why it earns the column: **6 declared routers carry 2865 of our completed routes
+(95.1%)**; the 11 observed relays carry 148, and 4 of those are our own radios.
+The top four doors by usage — `T4`, `fir`, `TE 5`, `S2` — are all ROUTERs.
+
+The role string is rendered **verbatim** rather than mapped to a friendly label,
+so a junk value stays visible (B77: three nodes carry `role = "200.0"`) instead
+of being silently folded into "relay only".
