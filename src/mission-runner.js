@@ -84,7 +84,7 @@ const H = {
     purpose: 'records what came back, or that nothing did',
   }),
 };
-import { getRotatorAddress, getAllDeviceCfgs } from './device-config.js';
+import { getRotatorAddress, getAllDeviceCfgs, getDeviceCfg } from './device-config.js';
 import db, { getConfig, ourChannelUtil } from './db.js';
 import { resolveNodeLabel } from './node-label.js';
 
@@ -492,7 +492,12 @@ class MissionRunner extends EventEmitter {
     const beamNow = aim.az != null ? aim.az : rotator.status?.az;
     const beamOff = (beamNow != null && m.bearing != null)
       ? Math.abs(angleDiff(beamNow, m.bearing)) : 0;
-    const offBeam = beamOff > beamwidthOf(getRotatorAddress()) && aim.az != null;
+    // UNKNOWN BEAMWIDTH MUST NOT REJECT. beamwidthOf() returns null when the
+    // device has no configured beam_deg; `beamOff > null` coerces to
+    // `beamOff > 0` and would mark every aim off-beam. Unknown means we cannot
+    // judge, so we do not.
+    const _bw = beamwidthOf(getRotatorAddress());
+    const offBeam = _bw != null && beamOff > _bw && aim.az != null;
     if (offBeam) {
       // B58: do NOT charge this against the budget — it proved nothing about
       // the target, so spending one of its six shots on it would be a lie.
@@ -660,7 +665,7 @@ class MissionRunner extends EventEmitter {
     // One re-issue if it stopped well short. The v4 often lands closer on a
     // second, shorter move; a third would just be stubbornness.
     if (!r.busy && !r.timeout && r.ok === false
-        && r.az != null && Math.abs(angleDiff(r.az, bearing)) > beam / 2) {
+        && r.az != null && beam != null && Math.abs(angleDiff(r.az, bearing)) > beam / 2) {
       r = await rotator.point(bearing, aimArgs);
     }
 
@@ -673,6 +678,8 @@ class MissionRunner extends EventEmitter {
 
     const off = Math.round(Math.abs(angleDiff(r.az, bearing)));
     const az  = Math.round(r.az);
+    // No configured beamwidth: report the aim, judge nothing.
+    if (beam == null) return { az, note: `aimed ${az}° — beamwidth not configured`, wait: false };
     if (off > beam) {
       // Outside the main lobe entirely — this would be a shot in a different
       // direction, and the airtime would prove nothing about the target.
@@ -739,12 +746,23 @@ class MissionRunner extends EventEmitter {
   }
 }
 
-/** The rotator's beamwidth, from its stored profile. Defaults to 35 — the value
- *  the radar has used all along — rather than to something narrow, because a
- *  too-narrow assumption rejects usable aims. */
+/** The rotator's beamwidth. FROM CONFIG, NEVER A LITERAL.
+ *
+ *  Peter, 2026-08-04: "I told you the beam angle is in the configs and in the
+ *  sqlite db DO NOT HARD CODE IT."
+ *
+ *  This read getAllDeviceCfgs(), which returns the STORED rows only and does not
+ *  merge device-config's DEFAULT — so an unconfigured device yielded undefined
+ *  and fell through to a hardcoded 35. getDeviceCfg() merges DEFAULT (beam_deg
+ *  360 = omni), so the value is always defined and declared exactly once, in
+ *  device-config.js.
+ *
+ *  360 is returned unchanged for an omni: "the whole sky is in beam" is the
+ *  correct answer for a non-directional antenna, and the callers' `off > beam`
+ *  tests then never reject, which is what we want. */
 function beamwidthOf(mac) {
-  const b = getAllDeviceCfgs()?.[mac]?.beam_deg;
-  return (typeof b === 'number' && b > 0 && b < 360) ? b : 35;
+  const b = Number(getDeviceCfg(mac)?.beam_deg);
+  return Number.isFinite(b) && b > 0 ? b : null;
 }
 
 /** Signed smallest angle between two bearings. 359 and 1 are 2 apart, not 358 —

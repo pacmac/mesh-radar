@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 272859d95a97e93cf2157f301151b1813fe3b24173e10d01908ba45405c8e4f0
+source_hash: e4fd5f257f941dfe44a43d367bf522be7856cf3f7f73f9a0f72f158ece4360fb
 updated: 2026-08-03
 ---
 

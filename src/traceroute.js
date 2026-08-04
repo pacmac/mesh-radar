@@ -225,6 +225,30 @@ class TracerouteManager extends EventEmitter {
         ...(opts.patience_ms !== undefined ? { patienceMs: opts.patience_ms } : {}),
       });
       settled = !!(r && r.ok && !r.busy);
+      if (r && r.az != null && Number.isFinite(Number(r.az))) azActual = Number(r.az);
+
+      // ASK IT A SECOND TIME IF IT LANDED OUTSIDE THE BEAM. Peter, 2026-08-04:
+      // "if it's so far out you can ask it a second time. this issue is resolved
+      // in v5 but you have to make do with what you have for now."
+      //
+      // Measured on the first five door aims: the v4 either lands within 0-2
+      // degrees or misses by 112-140. A miss leaves a 9 dBi beam pointing at
+      // nothing, which is WORSE than not aiming — so one re-issue is worth the
+      // seconds. Long arcs overshoot; a second, shorter move usually lands.
+      //
+      // The threshold is HALF THE CONFIGURED BEAMWIDTH — from device config,
+      // never a literal, and null means "cannot judge, do not retry".
+      // One retry, never a loop: mission-runner already settled on that rule.
+      const half = beam_deg != null ? beam_deg / 2 : null;
+      const errOf = (got) => Math.abs(((Number(got) - az + 540) % 360) - 180);
+      if (half != null && r && r.az != null && !r.busy && errOf(r.az) > half) {
+        const r2 = await rotator.point(az, {
+          by: 'traceroute',
+          ...(holdMs !== undefined ? { hold: holdMs } : {}),
+          ...(aimMs  !== undefined ? { timeoutMs: aimMs } : {}),
+        });
+        if (r2 && r2.az != null) { settled = !!(r2.ok && !r2.busy) && errOf(r2.az) <= half; azActual = Number(r2.az); }
+      }
       // WHERE IT SAYS IT GOT TO. Peter, 2026-08-04: "the yagi rotates at about
       // 60rpm, point and settle should never take more than about 1.5 seconds,
       // but the point is, the pointer will tell you when it has reached, you do
@@ -233,7 +257,6 @@ class TracerouteManager extends EventEmitter {
       // point() already waits for the rotator's `done` handshake, and that
       // message carries the arrived azimuth. Captured HERE, at the moment of
       // arrival — see _recordFailure for why sampling it later was wrong.
-      if (r && r.az != null && Number.isFinite(Number(r.az))) azActual = Number(r.az);
     } catch { /* a rotator failure must not stop the trace — record unsettled */ }
     this.emit('aimed', { to, az, az_actual: azActual, via: aimTarget, mode, settled });
     return { mode, target: aimTarget, az, az_actual: azActual, beam_deg, settled };
