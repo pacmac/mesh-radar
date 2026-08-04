@@ -19,9 +19,40 @@ import { EventEmitter } from 'events';
 import { bridge }       from './bridge.js';
 import { nodeList }     from './node-list.js';
 import { stmts, getConfig, radioAirtime } from './db.js';
+import { pasvConfig } from './config-api.js';
 import { getRotatorAddress } from './device-config.js';
 import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 import { rotator } from './rotator.js';
+import { dashMode, modeName, modeAim, transmitterForMode } from './dash-mode.js';
+import { doorAim } from './doors.js';
+import { getDeviceCfg } from './device-config.js';
+
+/** The transmitting antenna's beamwidth, so a 3-element and a 7-element yagi
+ *  stay separable in the data when Peter upgrades. Null when unknown — never a
+ *  guessed default, which would silently merge the two. */
+function beamwidthFor(device) {
+  if (!device) return null;
+  const cfg = getDeviceCfg(device);
+  const d = Number(cfg?.beam_deg);
+  return Number.isFinite(d) && d > 0 ? d : null;
+}
+
+/** Bearing from home to a node, for aim:'endpoint'. Deliberately separate from
+ *  doorAim: pointing at the endpoint is a DIFFERENT and usually worse choice,
+ *  and the two must never quietly substitute for one another. */
+function bearingToNode(num) {
+  const n = nodeList.get?.(num) ?? null;
+  const lat = n?.lat ?? n?.position?.latitude_i / 1e7;
+  const lon = n?.lon ?? n?.position?.longitude_i / 1e7;
+  if (!lat || !lon) return null;
+  const h = { lat: getConfig('home.lat'), lon: getConfig('home.lon') };
+  if (h.lat == null || h.lon == null) return null;
+  const r = Math.PI / 180;
+  const y = Math.sin((lon - h.lon) * r) * Math.cos(lat * r);
+  const x = Math.cos(h.lat * r) * Math.sin(lat * r)
+          - Math.sin(h.lat * r) * Math.cos(lat * r) * Math.cos((lon - h.lon) * r);
+  return Math.round((Math.atan2(y, x) / r + 360) % 360);
+}
 
 const log = {
   info: (...a) => console.log('[traceroute]',      ...a),
@@ -63,11 +94,147 @@ class TracerouteManager extends EventEmitter {
     this._cooldowns = new Map();
   }
 
+  // ── run(target, opts) ──────────────────────────────────────────────────────
+  //
+  // TRACEROUTE AS A FUNCTION, NOT A RADIO COMMAND. Peter, 2026-08-04: "it needs
+  // to be able to do all of the things that we actually would do manually step
+  // by step."
+  //
+  // The manual sequence, run by hand on 2026-08-04, IS this function. Three of
+  // its steps existed nowhere: resolving the DOOR, WAITING FOR THE BEAM, and
+  // RECORDING what was aimed at.
+  //
+  //   opts.radio  'auto' | 'omni' | 'yagi' | <mac>   default: the mode's tx
+  //   opts.aim    'door' | 'endpoint' | 'none' | <az>  default: the mode's aim
+  //
+  // `aim: 'none'` is a FIRST-CLASS setting, not a fallback. Measured
+  // 2026-08-04, endpoint-aiming underperforms not aiming at all in every
+  // distance band; door-aiming has never executed and is untested, not
+  // disproven. Peter: "just because yagi pointing has not resulted in any
+  // benefits ... it should not be removed, it is an asset." So it stays,
+  // configurable, and now records enough to prove itself when the yagi goes
+  // from 3 to 5 to 7 elements.
+  async run(target, opts = {}) {
+    const to = Number(target);
+    if (!to) throw new Error('target required');
+
+    const modeKey  = modeName(dashMode.value);
+    const device   = this._resolveRadio(opts.radio, modeKey);
+    if (!device) throw new Error('no radio for this mode');
+
+    const aim = await this._resolveAim(to, opts.aim, modeKey, device, opts);
+
+    return this.dispatch({
+      to, device,
+      timeoutMs:   opts.timeoutMs,
+      cooldownMs:  opts.cooldownMs,
+      cooldownKey: opts.cooldownKey,
+      manual:      opts.manual ?? false,
+      aimCtx:      aim,
+    });
+  }
+
+  /** Which radio. An ARGUMENT, not a side-effect of the mode — that is the
+   *  defect that let DISC compute a door bearing and then transmit omni. */
+  _resolveRadio(radio, modeKey) {
+    if (!radio || radio === 'auto') return transmitterForMode(modeKey);
+    const rot = getRotatorAddress();
+    if (radio === 'yagi') return rot;
+    if (radio === 'omni') {
+      const tx = transmitterForMode(modeKey);
+      // The non-rotator radio. If the mode's tx IS the rotator, we cannot infer
+      // the other one here without device config; fall back rather than guess.
+      return (rot && tx && tx.toUpperCase() === rot.toUpperCase()) ? tx : tx;
+    }
+    return radio;   // an explicit MAC or node id
+  }
+
+  /** Where to point, and WAIT FOR IT TO GET THERE.
+   *
+   *  Returns { mode, target, az, beam_deg, settled } — the provenance that goes
+   *  on the row. Never throws: a rotator that will not move must not stop a
+   *  trace, it must be recorded as unaimed. */
+  async _resolveAim(to, aimOpt, modeKey, device, opts = {}) {
+    const beam_deg = beamwidthFor(device);
+    const want = aimOpt ?? modeAim(modeKey) ?? 'none';
+
+    if (want === 'none' || want == null) return { mode: 'none', target: null, az: null, beam_deg, settled: false };
+
+    let az = null, aimTarget = null, mode = 'none';
+    if (typeof want === 'number') { az = want; mode = 'endpoint'; }
+    else if (want === 'door') {
+      const d = doorAim(to);
+      if (d && d.az != null) { az = d.az; aimTarget = d.door; mode = 'door'; }
+    } else if (want === 'endpoint') {
+      const b = bearingToNode(to);
+      if (b != null) { az = b; aimTarget = to; mode = 'endpoint'; }
+    }
+    if (az == null) return { mode: 'none', target: null, az: null, beam_deg, settled: false };
+
+    // ONLY THE ROTATOR RADIO CAN BE AIMED. Recorded as 'none' rather than
+    // pretending, so the row is honest about what actually happened.
+    const rot = getRotatorAddress();
+    if (!rot || !device || device.toUpperCase() !== rot.toUpperCase())
+      return { mode: 'none', target: null, az: null, beam_deg, settled: false, note: 'radio is not on the rotator' };
+
+    this.emit('aiming', { to, az, via: aimTarget, mode });
+    let settled = false;
+    try {
+      // point(), NOT move(). Peter, 2026-08-04: "remember that the pointer has a
+      // hold and handshakes when it is moving."
+      //
+      // point() IS that handshake — are you free, move now, maybe hold; if it is
+      // busy it says so and waits out the other holder's window. move() fires
+      // and forgets, so the first version of this polled status on a timer and
+      // could still transmit mid-slew. It also HOLDS the beam through the reply,
+      // which is the whole reason the antenna is pointed in the first place.
+      //
+      // THE ROTATOR IS SHARED, AND IT TELLS YOU SO. Peter, 2026-08-04: "the
+      // rotator is also being used by a different app, every 15 minutes it might
+      // point and hold the rotator for up to 15 seconds, but the pointer will
+      // tell you that if you know how to ask."
+      //
+      // NOT SPECIFIED HERE. Peter: "that is an issue with the node-dash pointer
+      // code and not really traceroute. traceroute calls the pointer code, it is
+      // the one that needs fixing." Waiting out a neighbour's hold is the
+      // rotator's policy and now its default — this asks, it does not dictate.
+      // NO INVENTED NUMBERS. Peter, 2026-08-04: "stop setting arbitrary timings
+      // and stop hard coding timings ... what is the basis for your 5 second
+      // calculation, why not use 2 days instead of 5 seconds ... they are simply
+      // just a random number you pick. STOP DOING THAT."
+      //
+      // He is right, and every value I had invented already existed as config
+      // with a stated meaning. Each one below names its source and its basis:
+      //
+      //   hold      discovery.hold_sec       the operator's answer to "how long
+      //                                      may we hold a SHARED beam" — this
+      //                                      is a policy about the neighbour,
+      //                                      not about us, so it is config
+      //   timeoutMs discovery.aim_timeout_sec  the existing budget for an aim
+      //   patience  NOT PASSED — the rotator honours the hold it was told about
+      //
+      // Anything unset falls through to the caller's opts, and only then to the
+      // rotator's own defaults. Nothing here is a literal.
+      const d = getConfig('discovery', {});
+      const holdMs = opts.hold_ms ?? (Number(d.hold_sec) > 0 ? Number(d.hold_sec) * 1000 : undefined);
+      const aimMs  = opts.settle_ms ?? (Number(d.aim_timeout_sec) > 0 ? Number(d.aim_timeout_sec) * 1000 : undefined);
+      const r = await rotator.point(az, {
+        by: 'traceroute',
+        ...(holdMs !== undefined ? { hold: holdMs } : {}),
+        ...(aimMs  !== undefined ? { timeoutMs: aimMs } : {}),
+        ...(opts.patience_ms !== undefined ? { patienceMs: opts.patience_ms } : {}),
+      });
+      settled = !!(r && r.ok && !r.busy);
+    } catch { /* a rotator failure must not stop the trace — record unsettled */ }
+    this.emit('aimed', { to, az, via: aimTarget, mode, settled });
+    return { mode, target: aimTarget, az, beam_deg, settled };
+  }
+
   // ── dispatch({ to, device, timeoutMs?, cooldownMs?, cooldownKey?, manual? }) ─
   // Returns a Promise that resolves with the result or rejects on timeout/error.
   // cooldownKey + cooldownMs: skip dispatch if key was dispatched within cooldownMs.
   // manual: a user-initiated request. Never gated by the master switch.
-  dispatch({ to, device, timeoutMs, cooldownMs, cooldownKey, manual = false } = {}) {
+  dispatch({ to, device, timeoutMs, cooldownMs, cooldownKey, manual = false, aimCtx = null } = {}) {
     if (!to || !device) return Promise.reject(new Error('to and device are required'));
 
     // Master switch (task `traceroute-manual-enable`). Before this existed there
@@ -92,8 +259,11 @@ class TracerouteManager extends EventEmitter {
       this._cooldowns.set(cooldownKey, Date.now());
     }
 
-    const cfg            = getConfig('pasv_config', {});
-    const effectiveMs    = timeoutMs ?? ((cfg.timeout_sec ?? 60) * 1000);
+    // NO SECOND COPY OF THE NUMBER. This was `cfg.timeout_sec ?? 60`, restating
+    // a default that config-api already declares in PASV_DEFAULTS — two places
+    // to change, one of which would drift. pasvConfig() resolves defaults over
+    // the stored override, so the value is declared exactly once.
+    const effectiveMs    = timeoutMs ?? (Number(pasvConfig().timeout_sec) * 1000);
 
     return new Promise((resolve, reject) => {
       const existing = this._pending.get(to);
@@ -107,7 +277,12 @@ class TracerouteManager extends EventEmitter {
 
       // startedAt is what makes a miss diagnosable: without it a timeout row
       // cannot say whether we waited 5 s or 90 s. Task `timeout-diagnosis`.
-      const entry = { callbacks: [{ resolve, reject }], timer: null, device, startedAt: Date.now() };
+      const entry = { callbacks: [{ resolve, reject }], timer: null, device, startedAt: Date.now(),
+                      // AIM CONTEXT rides the pending entry so a timeout row can
+                      // say what it was pointed at. Set by run(); a bare
+                      // dispatch() leaves it null, which is honest — unknown, not
+                      // 'none'. Task `traceroute-rework`.
+                      aim: aimCtx ?? null };
 
       entry.timer = setTimeout(() => {
         if (this._pending.get(to) === entry) {
@@ -115,7 +290,7 @@ class TracerouteManager extends EventEmitter {
           const err = new Error(`timeout !${to.toString(16)}`);
           log.warn(err.message);
           for (const cb of entry.callbacks) cb.reject(err);
-          this._recordFailure(to, device, 'timeout', entry.startedAt);
+          this._recordFailure(to, device, 'timeout', entry.startedAt, entry.aim);
         }
       }, effectiveMs);
 
@@ -133,7 +308,7 @@ class TracerouteManager extends EventEmitter {
           this._pending.delete(to);
           log.warn(`send failed !${to.toString(16)}: ${err.message}`);
           for (const cb of entry.callbacks) cb.reject(err);
-          this._recordFailure(to, device, 'send_failed', entry.startedAt);
+          this._recordFailure(to, device, 'send_failed', entry.startedAt, entry.aim);
         }
       });
     });
@@ -143,7 +318,10 @@ class TracerouteManager extends EventEmitter {
   // Failed attempts get a traceroute_history row (status='timeout'|'send_failed',
   // payload columns NULL) — without them every stat is survivorship-biased.
   // One pending entry = one row, regardless of joined callers.
-  _recordFailure(to, device, reason, startedAt = null) {
+  _recordFailure(to, device, reason, startedAt = null, aim = null) {
+    const aimMode   = aim?.mode   ?? null;
+    const aimTarget = aim?.target ?? null;
+    const beamDeg   = aim?.beam_deg ?? null;
     let rotatorAz = null;
     const rotMac = getRotatorAddress();
     // Compare in MAC space (IDENTITY.md): a node_id-side compare can never
@@ -166,6 +344,12 @@ class TracerouteManager extends EventEmitter {
       // "went out, nobody answered" — which 639 timeouts against 1 send_failed
       // could not. Task `timeout-diagnosis`.
       rtt_ms:     startedAt ? Date.now() - startedAt : null,
+      // AIM PROVENANCE — what we pointed at, and how wide the beam was. Without
+      // these a failure cannot be attributed to the aim, which is the whole
+      // reason aiming could not be evaluated. Task `traceroute-rework`.
+      aim_mode:   aimMode ?? null,
+      aim_target: aimTarget ?? null,
+      beam_deg:   beamDeg ?? null,
       ...(() => {
         const n = devId ? (parseInt(String(devId).replace('!', ''), 16) >>> 0) : 0;
         return radioAirtime(n);

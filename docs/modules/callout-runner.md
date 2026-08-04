@@ -1,7 +1,7 @@
 ---
 module: callout-runner
 source: src/callout-runner.js
-source_hash: 3c9917fa45cfad145dde4351dc9812fa3070d41ab45c06a0969fe5edf1dd5880
+source_hash: 2fa635477a124ee0163e7d5ab13e89ff6194465ef80dacd6412eabab4494db41
 updated: 2026-08-03
 ---
 

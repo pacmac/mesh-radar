@@ -248,7 +248,9 @@ class PassiveTracer extends EventEmitter {
       // device arrived as ev.addr (MAC); dispatch takes the node_id so
       // tx_device attribution stays single-vocabulary (perf page queries
       // by !hex). URL addressing resolves back to MAC inside dispatch.
-      traceroute.dispatch({ to: from_num, device: transmitterForMode('pasv', { rxDevice: device }) })
+      // PASV is aim:'none' by mode definition, so this never moves the antenna —
+      // stated through the mode rather than by omitting an argument.
+      traceroute.run(from_num, { radio: transmitterForMode('pasv', { rxDevice: device }), reason: 'passive' })
         .then(result => {
           _attempted.set(from_num, Date.now());
           this.emit('traced', result);

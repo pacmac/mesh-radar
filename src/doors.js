@@ -24,6 +24,7 @@
 // so instead of solemnly rotating to no purpose.
 
 import db, { DIRECT_GATE_TS } from './db.js';
+import { getRotatorAddress, getDeviceCfg } from './device-config.js';
 import { haversine, bearing as bearingOf } from './utils.js';
 
 const BROADCAST = 4294967295;
@@ -61,7 +62,25 @@ const J = (s) => { try { const a = JSON.parse(s); return Array.isArray(a) ? a : 
 // it, the omni reaches the door and the rotator is theatre. Chosen as roughly
 // the furthest DIRECT contact either radio has ever made (omni 43.0 km), so it
 // is anchored to measured reach rather than picked.
-const BEAM_WORTH_IT_KM = 40;
+// DERIVED, NOT A CONSTANT. Peter, 2026-08-04: "likely yagi will go from its
+// current 3 elements to 5 elements and 7 elements" — and more elements means
+// more gain, so the beam becomes worth using at SHORTER range. A hardcoded 40
+// would silently stay put through that upgrade.
+//
+// gain_dbi and beam_deg are already per-device config; this reads them. The
+// reference point is the 3-element yagi at 9 dBi = 40 km, and range scales with
+// the field ratio, 10^(dB/20). Falls back to 40 when the rotator has no
+// configured gain, which is what it was before.
+const BEAM_WORTH_IT_REF_KM  = 40;
+const BEAM_WORTH_IT_REF_DBI = 9;
+function beamWorthItKm() {
+  try {
+    const mac = getRotatorAddress();
+    const g = Number(getDeviceCfg(mac)?.gain_dbi);
+    if (!Number.isFinite(g) || g <= 0) return BEAM_WORTH_IT_REF_KM;
+    return Math.round(BEAM_WORTH_IT_REF_KM / Math.pow(10, (g - BEAM_WORTH_IT_REF_DBI) / 20));
+  } catch { return BEAM_WORTH_IT_REF_KM; }
+}
 
 function home() {
   const r = db.prepare(`
@@ -247,7 +266,7 @@ export function doorAim(targetNum) {
     km: +km.toFixed(1),
     // The honest part. A door inside the omni's proven reach does not need a
     // 9 dBi beam, and saying so is more useful than rotating for appearances.
-    needsBeam: km >= BEAM_WORTH_IT_KM,
+    needsBeam: km >= beamWorthItKm(),
     why: (source === 'known'  ? 'this target answered through it before'
         : source === 'relay'  ? 'this target reaches us through it (inbound relay, unproven outbound)'
         :                       'carries most of our completed routes')
@@ -255,4 +274,4 @@ export function doorAim(targetNum) {
   };
 }
 
-export { BEAM_WORTH_IT_KM };
+export { beamWorthItKm, BEAM_WORTH_IT_REF_KM as BEAM_WORTH_IT_KM };

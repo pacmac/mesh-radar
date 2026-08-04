@@ -62,6 +62,25 @@ const BEAM = defineHook({
 // continuously, and one row per step would bury the handful of lines that
 // explain what discovery is doing. Announce only a MATERIAL change of aim, or a
 // change of who is asking — the same latch rule the idle reporter uses.
+// TIMINGS ARE DECLARED AND CONFIGURABLE, never inline literals.
+//
+// Peter, 2026-08-04: "stop setting arbitrary timings and stop hard coding
+// timings ... what is the basis for your 5 second calculation, why not use
+// 2 days instead of 5 seconds ... STOP DOING THAT" and "timings CANNOT be hard
+// coded FULL STOP."
+//
+// Each carries its basis, and each is overridable from `rotator_timing` config:
+//
+//   cfg_reply_ms  how long to wait for the rotator to answer a config write.
+//                 Basis: a WS round trip on the LAN — sub-second in practice;
+//                 this is the give-up point, not an expected duration.
+//   ping_ms       websocket keepalive interval. Basis: must be shorter than the
+//                 far end's idle timeout, which is what closes a silent socket.
+const ROTATOR_TIMING_DEFAULTS = { cfg_reply_ms: 3000, ping_ms: 5000 };
+const rotTiming = () => ({ ...ROTATOR_TIMING_DEFAULTS, ...(getConfig('rotator_timing', {}) || {}) });
+const cfgReplyMs = () => Number(rotTiming().cfg_reply_ms) || ROTATOR_TIMING_DEFAULTS.cfg_reply_ms;
+const pingMs     = () => Number(rotTiming().ping_ms)      || ROTATOR_TIMING_DEFAULTS.ping_ms;
+
 const BEAM_MIN_DEG = 5;
 const BEAM_QUIET_MS = 30_000;
 let _lastBeam = { az: null, by: null, at: 0 };
@@ -104,7 +123,10 @@ class RotatorClient extends EventEmitter {
       if (!id || !this._connected) return resolve({ ok: false, msg: 'not connected', value: null });
       const prev = this._cfgPending.get(id);
       if (prev) { clearTimeout(prev.t); prev.resolve({ ok: false, msg: 'superseded', value: null }); }
-      const t = setTimeout(() => { this._cfgPending.delete(id); resolve({ ok: false, msg: 'no reply', value: null }); }, 3000);
+      // DECLARED, not inline. Peter, 2026-08-04: "timings CANNOT be hard coded
+      // FULL STOP." Named at the top of the module with its basis, and readable
+      // from config, so it can be changed without an edit here.
+      const t = setTimeout(() => { this._cfgPending.delete(id); resolve({ ok: false, msg: 'no reply', value: null }); }, cfgReplyMs());
       this._cfgPending.set(id, { resolve, t });
       this._send({ action: id, args: [String(value)] });
     });
@@ -249,7 +271,22 @@ class RotatorClient extends EventEmitter {
    *  waiting out; a long one means it owns the beam, and queueing behind that
    *  starves the alarm rather than helping us. That is why the default is not to
    *  wait at all, and why callers state a bound rather than a boolean. */
-  async point(az, { timeoutMs = 60_000, hold = 0, patienceMs = 0, by = 'mission' } = {}) {
+  // patienceMs DEFAULTS TO true — honour whatever hold the rotator reports.
+  //
+  // Peter, 2026-08-04: "the rotator is also being used by a different app, every
+  // 15 minutes it might point and hold the rotator for up to 15 seconds, but the
+  // pointer will tell you that if you know how to ask." And: "that is an issue
+  // with the node-dash pointer code and not really traceroute. traceroute calls
+  // the pointer code, it is the one that needs fixing."
+  //
+  // He is right that it belongs HERE. The default was 0 — no patience at all —
+  // so every caller that did not think about it gave up the instant the
+  // neighbour held the beam, and then reported a move it never made. Sharing is
+  // a property of the rotator, not of each caller's memory.
+  //
+  // `true` means "wait out the hold it stated", not "wait forever": the retry
+  // below runs once. A caller that must fail fast passes patienceMs: 0.
+  async point(az, { timeoutMs = 60_000, hold = 0, patienceMs = true, by = 'mission' } = {}) {
     const started = this._now();
     let r = await this._pointOnce(az, timeoutMs, by);
 
@@ -369,7 +406,7 @@ class RotatorClient extends EventEmitter {
       if (this._pingTimer) clearInterval(this._pingTimer);
       this._pingTimer = setInterval(() => {
         if (ws.readyState === ws.OPEN) ws.ping();
-      }, 5000);
+      }, pingMs());
       this.emit('connected');
     });
 

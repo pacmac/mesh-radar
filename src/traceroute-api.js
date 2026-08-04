@@ -27,7 +27,14 @@ router.post('/:nodeId/traceroute', async (req, res) => {
     } else {
       // manual: a user pressed the button. Never gated by the master switch —
       // turning automatic traceroute off must not disable asking for one.
-      const result = await traceroute.dispatch({ to: targetNum, device: sender, manual: true });
+      // A user pressed the button on a NODE. aim comes from the request when
+      // given, else the mode's — the button is a node function, not a global.
+      const result = await traceroute.run(targetNum, {
+        radio:  via ?? undefined,
+        aim:    typeof req.body?.aim === 'string' ? req.body.aim : undefined,
+        manual: true,
+        reason: 'manual',
+      });
       res.json(result);
     }
     // ───────────────────────────────────────────────────────────────────────

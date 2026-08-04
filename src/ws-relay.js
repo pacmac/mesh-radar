@@ -916,6 +916,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     _getRadarContext = buildRadarContext;
 
     // Wire up triggers
+    // THE AIMING ANIMATION, from EVERY path. Peter: "the beauty and refinement
+    // of the radar is it actually animates the whole traceroute — the antenna
+    // aiming, the target node, and an animated route." That was fed only by
+    // rotator's point_target, emitted only by active-tracker in ACTV, so any
+    // other path animated nothing. run() emits these for all of them.
+    traceroute.on('aiming', (d) => broadcast({ type: 'trace_aiming', ...d }));
+    traceroute.on('aimed',  (d) => broadcast({ type: 'trace_aimed',  ...d }));
+
     traceroute.on('start', ({ to }) => {
       _rcTracerouteNode = to;
       _rcActive         = true;

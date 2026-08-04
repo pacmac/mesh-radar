@@ -3,6 +3,17 @@ import { rotator } from './rotator.js';
 import { isListenerForMode } from './dash-mode.js';
 import { getConfig, setConfig } from './db.js';
 
+// poll_idle_ms / poll_busy_ms — how often the scanner asks the rotator whether
+// it has arrived. Basis: the rotator's own move cadence; polling faster than it
+// can move only adds WS traffic. These are the two knobs Peter is most likely to
+// want when the antenna changes.
+//
+// Declared and overridable — Peter, 2026-08-04: "all timings need to be vars.
+// some if not all will be selected to be configurables / knobs."
+const TIMING_DEFAULTS = { poll_idle_ms: 600, poll_busy_ms: 200 };
+const timing = () => ({ ...TIMING_DEFAULTS, ...(getConfig('scanner_timing', {}) || {}) });
+
+
 class Scanner extends EventEmitter {
   constructor() {
     super();
@@ -94,7 +105,7 @@ class Scanner extends EventEmitter {
     this.emit('progress', { az: this._az, dwell_az: null });
     rotator.move(this._az, { by: 'scanner' });
     this._pollStart = Date.now();
-    this._timer = setTimeout(() => this._pollIdle(), 600);
+    this._timer = setTimeout(() => this._pollIdle(), timing().poll_idle_ms);
   }
 
   _pollIdle() {
@@ -109,7 +120,7 @@ class Scanner extends EventEmitter {
         this._doStep();
       }, this._dwell * 1000);
     } else {
-      this._timer = setTimeout(() => this._pollIdle(), 200);
+      this._timer = setTimeout(() => this._pollIdle(), timing().poll_busy_ms);
     }
   }
 

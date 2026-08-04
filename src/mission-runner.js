@@ -516,8 +516,14 @@ class MissionRunner extends EventEmitter {
     let outcome;
     this._dispatching = true;
     try {
-      const result = await traceroute.dispatch({
-        to, device, timeoutMs: c.timeout_sec * 1000,
+      // run(), not dispatch(): the door aim, the settle wait and the aim
+      // provenance are all inside the function now. _aim() above still moves the
+      // beam for the hold/negotiation, and run() re-resolves and waits — the
+      // rotator is idempotent on an azimuth it is already at.
+      const result = await traceroute.run(to, {
+        radio:     'auto',                  // the mode's tx; changing it is a config edit
+        timeoutMs: c.timeout_sec * 1000,
+        reason:    'mission',
       });
       outcome = this._analyse(result);
       this._discovered.replies++;

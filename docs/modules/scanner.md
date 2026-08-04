@@ -1,7 +1,7 @@
 ---
 module: scanner
 source: src/scanner.js
-source_hash: 9f6614c8f20d86a4e214661c2db5e29330d425eef0a5335bb7e61b2d19e448cb
+source_hash: ef7598dc57e77159994fd5888521191cfc436380a6ab80df14a0eb65578afcbc
 updated: 2026-08-03
 ---
 

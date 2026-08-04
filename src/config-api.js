@@ -129,6 +129,15 @@ router.get('/', (req, res) => {
   res.json(result);
 });
 
+/** Resolved pasv config — defaults merged with the stored override.
+ *
+ *  EXPORTED so no other module restates a timing. traceroute.js carried its own
+ *  `?? 60` for timeout_sec, a second copy of the number declared here, and a
+ *  second copy is a value that can drift. Peter, 2026-08-04: "timings CANNOT be
+ *  hard coded FULL STOP." Declared once, here, where every other default lives.
+ */
+export function pasvConfig() { return { ...PASV_DEFAULTS, ...getConfig('pasv_config', {}) }; }
+
 const PASV_DEFAULTS = { stale_sec: 1800, stale_fail_sec: 600, timeout_sec: 60,
   // Targets with zero lifetime successes drop to the slow lane after this many
   // attempts — a BACKOFF, not a cap. 26.6% of 30 days of attempts went to nodes

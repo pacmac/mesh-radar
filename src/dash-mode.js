@@ -30,10 +30,20 @@ export const dashMode = new DashMode();
 // a user knob: PUT /config/modes copies only rx and tx, so an override can never
 // carry it. It gates ONLY whether passive acts; passive keeps PASV's radio roles
 // in every mode and never takes the YAGI.
+// AIM AND RADIO ARE PART OF WHAT A MODE IS (task `traceroute-rework`).
+// Peter, 2026-08-04: "we have a config page to define what a mode should do."
+//
+// Added, nothing here changed: rx/tx/passive keep the exact values and the
+// reasoning below them. Before this the aim was a side-effect buried in
+// mission-runner._aim(), which is how DISC came to compute a door bearing and
+// discard it — aim-at-the-door never once executed.
+//
+//   aim:   'door' | 'endpoint' | 'none'
+//   radio: 'auto' | 'omni' | 'yagi'      'auto' defers to the tx role
 const MODE_DEFAULTS = {
-  pasv: { rx: 'non-rotator', tx: 'rx',      passive: true  }, // passive: hear on non-rotator radios, re-trace via the hearer
-  actv: { rx: 'rotator',     tx: 'rotator', passive: false }, // active: the aimed YAGI hears and transmits
-  scan: { rx: 'rotator',     tx: 'rotator', passive: false }, // scan: the sweeping YAGI hears and transmits
+  pasv: { rx: 'non-rotator', tx: 'rx',      passive: true,  aim: 'none',     radio: 'auto' }, // passive: hear on non-rotator radios, re-trace via the hearer
+  actv: { rx: 'rotator',     tx: 'rotator', passive: false, aim: 'endpoint', radio: 'auto' }, // active: the aimed YAGI hears and transmits
+  scan: { rx: 'rotator',     tx: 'rotator', passive: false, aim: 'none',     radio: 'auto' }, // scan: the sweeping YAGI hears and transmits
   // DISC — discovery. Peter, 2026-08-02: "well this is a new mode isnt it?"
   //
   // It is, and the roles are why. A discovery mission chooses a distant target
@@ -57,7 +67,7 @@ const MODE_DEFAULTS = {
   // mode, so it works the OMNI while missions work the YAGI. The one real
   // conflict is airtime, and passive already yields on missionRunner.dispatching
   // for the seconds a mission packet is actually in the air.
-  disc: { rx: 'all',         tx: 'rotator', passive: true },
+  disc: { rx: 'all',         tx: 'rotator', passive: true,  aim: 'door',     radio: 'auto' },
 };
 const MODE_NAME = { 0: 'pasv', 1: 'actv', 2: 'scan', 3: 'disc' };
 
@@ -147,6 +157,18 @@ export function modeConfigAll() {
 
 // Resolve the single transmitter (dispatch) node_id for a mode. ctx.rxDevice (a
 // MAC) is used by the 'rx' role; when it is absent the role falls back to primary.
+/** What this mode points at, and which radio it prefers. Asked of dash-mode
+ *  rather than decided by each caller — the same rule that already owns rx/tx,
+ *  and the rule whose absence let the aim live in mission-runner. */
+export function modeAim(mode) {
+  const name = typeof mode === 'number' ? modeName(mode) : mode;
+  return modeCfg(name)?.aim ?? 'none';
+}
+export function modeRadio(mode) {
+  const name = typeof mode === 'number' ? modeName(mode) : mode;
+  return modeCfg(name)?.radio ?? 'auto';
+}
+
 export function transmitterForMode(mode, ctx = {}) {
   const role = modeCfg(mode).tx || 'primary';
   let mac;

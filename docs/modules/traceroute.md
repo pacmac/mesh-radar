@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 1dbe4fbb781a5ade6725786c8d8eda28742747a838458f415a7f3c1265967b8e
+source_hash: 882141ac7b97a412d31783ba27e8148e2372b09cf643b7c6e1dc05104b290f39
 updated: 2026-08-03
 ---
 
@@ -271,3 +271,160 @@ The `[V1] LEGACY` paths behind `FF.SSOT_TRACEROUTE` in `passive-tracer.js` and
 `lifecycle.js` post to the bridge directly and bypass `dispatch()` entirely, so
 they bypass this gate too. Dormant — `FF.SSOT_TRACEROUTE` is `true`. Recorded in
 the bug ledger; removing them is a separate task.
+
+---
+
+## The rework: a function with args, not a radio command (task `traceroute-rework`, 2026-08-04)
+
+Peter, 2026-08-04:
+
+> the current logic of traceroute is wrong ... it needs to be able to do all of
+> the things that we actually would do manually step by step
+
+> Traceroute should be a function with args / opts, i.e radio/antenna to use,
+> point at endpoint or known doors / routers
+
+### The manual sequence IS the specification
+
+Run by hand on 2026-08-04 against three targets. These are the steps, and three
+of them exist nowhere in the code:
+
+| step | today |
+|---|---|
+| 1. pick the target | callers do this |
+| 2. resolve its **door** | `doorAim()` exists — **never executes**, see below |
+| 3. choose the **radio** | implicit from dash-mode; not an argument |
+| 4. **aim** at the door | computed then discarded |
+| 5. **wait for the beam to settle** | **does not exist** — nothing waits |
+| 6. dispatch | `dispatch({to, device})` |
+| 7. await hops / timeout | exists |
+| 8. **record what was aimed at** | **does not exist** — 56% have no azimuth at all |
+
+Step 5 silently corrupts results: the first by-hand run probed while the rotator
+was still slewing, at 170° instead of 219°, and that probe was void.
+
+### Why door-aiming has never run
+
+`mission-runner._aim()` computes `doorAim(target)` and then hits:
+
+```js
+if (!rotMac || !isTransmitterForMode(modeName(dashMode.value), rotMac))
+  return { az: null, note: 'omni — not the rotator', wait: false };
+```
+
+Verified 2026-08-04: `isTransmitterForMode('disc', 'F4:12:FA:39:F7:B6')` is
+**false** — DISC transmits on the OMNI, which is not on the rotator. The mission
+runner is the only caller of `doorAim()`, and it only runs in DISC. So the door
+bearing is computed and thrown away on every mission, and **aim-at-the-door has
+never once executed.**
+
+This is why the aiming data reads badly: the 10,537 "aimed" yagi attempts were
+aimed at ENDPOINTS from other paths. Endpoint-aiming underperforms not aiming
+at all, matched by distance. Door-aiming is untested, not disproven.
+
+### The function
+
+```js
+traceroute.run(target, {
+  radio:    'auto' | 'omni' | 'yagi' | <mac>,   // default: the mode's transmitter
+  aim:      'door' | 'endpoint' | 'none' | <az>, // default: the mode's aim
+  hold_ms,                                       // hold the beam through the reply
+  settle_ms,                                     // max wait for the rotator to stop
+  timeoutMs, cooldownMs, cooldownKey, manual,
+  reason,                                        // why, for the log and the row
+})
+```
+
+`dispatch({to, device, ...})` stays as a thin wrapper so nothing breaks in one
+step; the four call sites move to `run()` in this task.
+
+### The event contract — the radar animation is the feature
+
+Peter: *"the beauty and refinement of the radar is it actually animates the whole
+traceroute — the antenna aiming, the target node, and an animated route when it
+is actively tracerouting."*
+
+Today the aiming animation is fed by `rotator.emit('point_target')`, emitted
+**only** by `active-tracker` in ACTV. Any path that aims without going through
+the tracker — which is every other path — animates nothing.
+
+`run()` emits the whole sequence, so every caller animates identically:
+
+```
+aiming  { target, az, via, via_name, source }   before the rotator moves
+aimed   { target, az, settled }                 beam in position
+start   { to, device }                          existing
+result  { ... }                                 existing
+cancel  { to, device, reason, row }             existing
+```
+
+`aiming`/`aimed` are NEW. `point_target` stays for ACTV's own tracker so nothing
+regresses; `run()` does not depend on it.
+
+### Aim provenance — so the asset can prove itself
+
+Peter: *"just because yagi pointing has not resulted in any benefits in the last
+few days of testing, it should not be removed, it is an asset."*
+
+Agreed, and the reason it cannot be judged today is that we do not record what we
+did. Measured 2026-08-04: **24,101 attempts, 10,537 with an azimuth (44%)** — and
+none record *what* was aimed at, or how wide the beam was.
+
+Four columns on `traceroute_history`, so a 3-element and a 7-element yagi stay
+separable when the antenna is upgraded:
+
+| column | meaning |
+|---|---|
+| `aim_mode` | `door` / `endpoint` / `none` |
+| `aim_target` | the door's node num, when there was one |
+| `beam_deg` | the transmitting antenna's beamwidth at that moment |
+| `rotator_az` | **existing**, now written on EVERY dispatch including omni |
+
+Migration guards on `PRAGMA table_xinfo`, not `table_info` — `table_info` omits
+generated columns and re-`ALTER`s every boot, which took node-dash and DEV1 down
+in a crash loop once already.
+
+### Configurable, per Peter's constraint
+
+> I am open to the suggestion that pointing MIGHT not be the best at the moment,
+> but this must be configurable. likely yagi will go from its current 3 elements
+> to 5 elements and 7 elements
+
+- **per device** — `gain_dbi` and `beam_deg` already exist in `device-config.js`.
+  `BEAM_WORTH_IT_KM = 40`, hardcoded at `doors.js:64` and duplicated as a literal
+  at `standing-tasks.js:762`, becomes derived from them: more gain, worth using
+  at shorter range. An element upgrade then changes the behaviour by itself.
+- **per mode** — `aim` and `radio` join `rx`/`tx` in the mode definition,
+  including `disc`, which has no entry on the Modes page today.
+- **per call** — the same opts, overriding the mode.
+
+`aim: 'none'` is a first-class setting, not a fallback. On present evidence a
+3-element yagi at 9 dBi may not be worth rotating for; at 7 elements it will be.
+
+## Files this task changes (Domain 1 only)
+
+| file | change |
+|---|---|
+| `src/traceroute.js` | `run(target, opts)`; radio + aim resolution; settle wait; `aiming`/`aimed` events; `dispatch()` becomes a wrapper |
+| `src/db.js` | 3 new columns + `table_xinfo` guard; `rotator_az` always written |
+| `src/doors.js` | `BEAM_WORTH_IT_KM` derived from `gain_dbi`/`beam_deg` |
+| `src/dash-mode.js` | `aim` and `radio` per mode, `disc` included |
+| `src/config-api.js` | accept/validate the two new mode keys |
+| `src/mission-runner.js`, `src/passive-tracer.js`, `src/lifecycle.js` ×2, `src/traceroute-api.js` | move to `run()` with explicit opts |
+| `src/ws-relay.js` | broadcast `aiming`/`aimed` |
+
+## Explicitly NOT in this task
+
+- **Domain 2** — deleting the header TRACE switch, adding `disc` to the Modes
+  page, the radar consuming `aiming`/`aimed`. CLAUDE.md forbids one task
+  spanning domains; raised separately.
+- **Removing `traceroute.enabled`.** The switch is wrong and Peter has said so,
+  but deleting it while the mode definitions that replace it are still being
+  built would leave a window with no way to stop automatic tracing at all.
+  It goes with the Domain 2 task, once `aim`/`radio` per mode exist.
+- **Dual-radio probing.** `_pending` is keyed by `to_num`, so two radios cannot
+  probe one target concurrently. `radio: 'auto'` picks ONE. Concurrent dual
+  needs that key changed to `(to, device)` and is its own task.
+- **Simplifying the miner** to work with the radar. Peter's direction, and a
+  large separate piece.
+- Cosmetic radar work (closer nodes dimmer). Deferred by Peter explicitly.

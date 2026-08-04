@@ -1,7 +1,7 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: 329dac42dda90b82e59161eb9e4050a2886df99397a7987dfb36ef53b167815a
+source_hash: 26759257af8674b61dd7afd3f4fb97e663517bfa7257e31e8ef20d99ed02acd8
 updated: 2026-08-03
 ---
 

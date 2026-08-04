@@ -14,8 +14,19 @@
 // broken, which is exactly how the passive tracer failed for 9.5 hours.
 
 import db, { getConfig } from './db.js';
+import { beamWorthItKm } from './doors.js';
 import { defineHook } from './hooks.js';
 import { ownDeviceNums } from './node-filter.js';
+
+// first_run_ms — the miners sweep whole tables, so they wait for boot traffic
+// to settle rather than competing with it. Basis: same settle window as the
+// observatory's first recompute.
+//
+// Declared and overridable — Peter, 2026-08-04: "all timings need to be vars.
+// some if not all will be selected to be configurables / knobs."
+const TIMING_DEFAULTS = { first_run_ms: 60_000 };
+const timing = () => ({ ...TIMING_DEFAULTS, ...(getConfig('standing_tasks_timing', {}) || {}) });
+
 
 // 0xFFFFFFFF is the BROADCAST address, not a node. Without this the ghost-relay
 // hook reports a phantom that cannot exist — measured 2026-08-03, it was 1 of the
@@ -759,9 +770,10 @@ function runOutboundRelayIdentity() {
       known: !!node,
       already_a_door: doors.has(r.from_num),
       km,
-      // 40 km is doors.js BEAM_WORTH_IT_KM — below it the omni already reaches
-      // and turning the yagi buys nothing.
-      worth_the_beam: km != null ? km >= 40 : null,
+      // ASKED, not repeated. This was a literal 40 duplicating doors.js, so an
+      // antenna upgrade would have moved one and not the other. beamWorthItKm()
+      // derives it from the rotator's configured gain.
+      worth_the_beam: km != null ? km >= beamWorthItKm() : null,
       acks: r.n,
     };
   });
@@ -956,6 +968,6 @@ export function runStandingTasks() {
  *  start has findings without waiting an hour. */
 export function startStandingTasks() {
   const mins = Math.min(1440, Math.max(5, Number(getConfig('standing_tasks.every_min', 60)) || 60));
-  setTimeout(runStandingTasks, 60_000);
+  setTimeout(runStandingTasks, timing().first_run_ms);
   setInterval(runStandingTasks, mins * 60_000);
 }

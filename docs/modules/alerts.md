@@ -1,7 +1,7 @@
 ---
 module: alerts
 source: src/alerts.js
-source_hash: 8fc05f80f867c3541fd7dd4ed98253f4aa8f25b0965f32e4060bd99434754e38
+source_hash: 39c5d6d3537813a84dc370d46acd1408ad39c2f235f7abf9b7618a6640addb2e
 updated: 2026-07-03
 ---
 

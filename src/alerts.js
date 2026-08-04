@@ -4,6 +4,17 @@ import { getAlertRule, touchAlertLastSent, createReplyToken, pruneExpiredTokens,
 import db from './db.js';
 import { sendAlert } from './mailer.js';
 import { randomUUID } from 'crypto';
+import { getConfig } from './db.js';
+
+// poll_ms — how often alert conditions are re-evaluated. Basis: the shortest
+//   alert window worth reacting to; faster costs CPU for no earlier warning.
+// token_prune_ms — reply-token GC. Basis: daily, because tokens expire in days.
+//
+// Declared and overridable — Peter, 2026-08-04: "all timings need to be vars.
+// some if not all will be selected to be configurables / knobs."
+const TIMING_DEFAULTS = { poll_ms: 60_000, token_prune_ms: 86_400_000 };
+const timing = () => ({ ...TIMING_DEFAULTS, ...(getConfig('alerts_timing', {}) || {}) });
+
 
 const BROADCAST_NUM = 0xffffffff;
 
@@ -38,8 +49,8 @@ let _db       = null;
 export function startAlertPoller(nodeList) {
   _nodeList = nodeList;
   _db       = db;
-  setInterval(runPollingChecks, 60_000);
-  setInterval(pruneExpiredTokens, 86_400_000);
+  setInterval(runPollingChecks, timing().poll_ms);
+  setInterval(pruneExpiredTokens, timing().token_prune_ms);
 }
 
 function runPollingChecks() {

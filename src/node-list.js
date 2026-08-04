@@ -256,6 +256,12 @@ class NodeList extends EventEmitter {
       rtt_ms:          data.rtt_ms ?? null,
       channel_util:    data.channel_util ?? null,
       air_util_tx:     data.air_util_tx ?? null,
+      // AIM PROVENANCE, passed through exactly as tx_device and rotator_az are.
+      // Null on an overheard reply we did not initiate — genuinely unknown, not
+      // 'none'. Task `traceroute-rework`.
+      aim_mode:        data.aim_mode ?? null,
+      aim_target:      data.aim_target ?? null,
+      beam_deg:        data.beam_deg ?? null,
     });
     const historyId = info.lastInsertRowid;
     const existing = this._cache.get(num) ?? this._pending.get(num);

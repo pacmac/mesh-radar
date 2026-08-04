@@ -19,6 +19,17 @@ import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
 import { hitRateVerdict } from './signal-verdict.js';
+
+// first_recompute_ms — wait for the store and gw connection to be up before
+//   the first inference sweep. Basis: boot to first packet, observed.
+// runner_start_ms — the discovery runner starts AFTER that sweep, so its
+//   shortlist is built from fresh facts rather than an empty fact table.
+//
+// Declared and overridable — Peter, 2026-08-04: "all timings need to be vars.
+// some if not all will be selected to be configurables / knobs."
+const TIMING_DEFAULTS = { first_recompute_ms: 10_000, runner_start_ms: 20_000 };
+const timing = () => ({ ...TIMING_DEFAULTS, ...(getConfig('observatory_timing', {}) || {}) });
+
 import db, { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
          attemptsByDay, answerRateBySilence, answerRateByDistance,
          rateByBandByDay, windowBestKm, boardVerdicts, recentEventLog, interventions } from './db.js';
@@ -761,9 +772,23 @@ function contribution(windowDays) {
   // say what is capping it instead of leaving the reader to ask.
   const m = facts('reach.mission').find(f => f.entity === 'global')?.value ?? {};
 
+  // THE NAMES, not just the count. Peter, 2026-08-04: "it has not mined a single
+  // sucessful node" — it had mined 11 in 3 days, and the app never said so. A
+  // count in a card is not evidence; a list of what was reached is.
+  const recent = all
+    .filter(r => r.t > now - 7 * 86400 && r.km <= PLAUSIBLE_KM)
+    .sort((a, b) => b.t - a.t)
+    .slice(0, 12)
+    .map(r => ({ km: +r.km.toFixed(1), label: r.nm ?? null, ts: r.t,
+                 past_record: record != null && r.km > record }));
+
   return {
     window_days: win,
     record_km: record,
+    recent_first_contacts: recent,
+    // Stated because they cannot move any frontier and would otherwise inflate
+    // the headline count silently.
+    recent_unplaced: fresh.filter(r => r.t > now - 7 * 86400).length - all.filter(r => r.t > now - 7 * 86400).length,
     attempts: att.n,
     answered: att.ok || 0,
     new_routes: fresh.length,
@@ -889,7 +914,7 @@ function recompute(broadcast) {
 }
 
 registerWsWiring(({ broadcast }) => {
-  setTimeout(() => recompute(broadcast), 10_000);
+  setTimeout(() => recompute(broadcast), timing().first_recompute_ms);
   // Settable (discovery.recompute_min): selection latency is a timing that
   // changes what the operator sees, so it needs a bounded knob like the rest.
   // Read once at wiring — a live re-read would need the interval torn down and
@@ -906,5 +931,5 @@ registerWsWiring(({ broadcast }) => {
   });
 
   // Started after the first recompute has had a chance to fill the queue.
-  setTimeout(() => missionRunner.start(), 20_000);
+  setTimeout(() => missionRunner.start(), timing().runner_start_ms);
 });

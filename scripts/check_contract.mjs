@@ -61,7 +61,27 @@ real.length
   ? fail('no threshold decides a class in public/', real.join('\n        '))
   : pass(`no threshold decides a class in public/ (${uiFiles.length} files)`);
 
-// ── 3. observatory.window_days must default the same everywhere.
+// ── 3. NO INLINE TIMING LITERALS. Every timing is a named var, and most become
+// knobs. Peter, 2026-08-04: "stop setting arbitrary timings and stop hard coding
+// timings ... what is the basis for your 5 second calculation, why not use 2
+// days instead of 5 seconds ... STOP DOING THAT", then "timings CANNOT be hard
+// coded FULL STOP", then "all timings need to be vars. some if not all will be
+// selected to be configurables / knobs."
+//
+// A named constant with a stated basis is fine; a bare number in a setTimeout is
+// not, because it says nothing about WHY and cannot be changed without an edit.
+const TIMING_RE = /set(?:Timeout|Interval)\s*\([^,]*,\s*[0-9_]{3,}\s*\)/;
+const timers = [];
+for (const f of readdirSync(ROOT + 'src').filter(f => f.endsWith('.js'))) {
+  R(`src/${f}`).split('\n').forEach((line, i) => {
+    if (TIMING_RE.test(line) && !line.trim().startsWith('//')) timers.push(`src/${f}:${i + 1}`);
+  });
+}
+timers.length
+  ? fail('no inline timing literals', timers.join('\n        '))
+  : pass('no inline timing literals (src/*.js)');
+
+// ── 4. observatory.window_days must default the same everywhere.
 // Bug: charts() read 7 while config-api and three SQL COALESCEs read 30, so a
 // missing key produced 7-day series next to 30-day figures in one payload.
 const defs = new Set();

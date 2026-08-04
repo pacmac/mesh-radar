@@ -27,7 +27,9 @@ export function initLifecycle() {
     if (FF.SSOT_TRACEROUTE && contact.from) {
       const sender = transmitterForMode('scan');
       if (sender)
-        traceroute.dispatch({ to: contact.from, device: sender, cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: contact.from })
+        // SCAN is already pointing at the contact's bearing — the sweep put it
+        // there. aim:'none' so run() does not re-aim and fight the scanner.
+        traceroute.run(contact.from, { radio: sender, aim: 'none', cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: contact.from, reason: 'scan-contact' })
           .catch(() => {});
     }
   });
@@ -72,7 +74,10 @@ export function initLifecycle() {
       bridge.post(`/${sender}/traceroute`, { to: num }).catch(() => {});
     // ── [V2] SSOT — traceroute.js owns dispatch and cooldown ─────────────────
     } else {
-      traceroute.dispatch({ to: num, device: sender, cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: num })
+      // ACTV: the tracker has ALREADY aimed at this node — that is what
+      // point_target means — so aim:'none' here records the truth (the beam is
+      // on the endpoint) without moving it again.
+      traceroute.run(num, { radio: sender, aim: 'none', cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: num, reason: 'actv-point' })
         .catch(() => {});
     }
     // ─────────────────────────────────────────────────────────────────────────

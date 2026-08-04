@@ -20,6 +20,16 @@ import { calloutConfig, evaluate, callout } from './callout.js';
 import { dashMode, transmitterForMode, modeName } from './dash-mode.js';
 import { haversine } from './utils.js';
 
+// boot_settle_ms — the node list is still filling from the gw on boot, and a
+// callout chosen from a half-built list picks the wrong node. Basis: observed
+// time for the list to stop growing after a restart.
+//
+// Declared and overridable — Peter, 2026-08-04: "all timings need to be vars.
+// some if not all will be selected to be configurables / knobs."
+const TIMING_DEFAULTS = { boot_settle_ms: 120_000 };
+const timing = () => ({ ...TIMING_DEFAULTS, ...(getConfig('callout_timing', {}) || {}) });
+
+
 function homeLatLon() {
   const r = db.prepare(`
     SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') lat,
@@ -91,6 +101,6 @@ export function startCalloutRunner() {
   const tick = () => {
     sweepCallouts().catch(e => console.error(`[callout] sweep failed: ${e.message}`));
   };
-  setTimeout(tick, 120_000);          // let the node list settle after boot
+  setTimeout(tick, timing().boot_settle_ms);
   setInterval(tick, mins * 60_000);
 }
