@@ -1,7 +1,7 @@
 ---
 module: passive-tracer
 source: src/passive-tracer.js
-source_hash: 84b4eccf565f7c20c866fa26cd8056380da0f3dbab57b9ca339ca7e9a339fdec
+source_hash: c81649b44d915c2104bda79bed370ac43518e282f58ed7b7cfba4c25f4e2d95a
 updated: 2026-08-04
 ---
 
@@ -313,3 +313,30 @@ fir    23 attempts,  21 ok  ->  normal cadence
 "never back off", so a swallowed error would silently restore the entire waste —
 the failed-permissive pattern that already produced B74 and B75. The `db` default
 import was missing on the first pass and the catch would have hidden it.
+
+
+### The half-fix, and how measurement caught it
+
+The first implementation took the attempt COUNT from the store but still read
+"when did we last try" from the in-memory `_failed` / `_attempted` maps. Those are
+empty after a restart, so `lastAny` was 0, the fallback `!ts` returned true, and
+every slow-lane node was retried immediately on boot — the exact restart-reset
+failure the fix was written to escape, reintroduced in the same function.
+
+Measured point-in-time (attempts made when the target ALREADY had >=10 prior
+attempts and 0 prior successes), across the deploy:
+
+```
+before  57 violations in 5.0h   = 11.4/h
+after   35 violations in 5.7h   =  6.1/h     (46% cut, not the intended ~95%)
+```
+
+A naive before/after on *current* lifetime counts showed **no improvement at
+all**, because it retroactively counted the attempts that carried a target over
+the threshold. Both readings were wrong in different directions; only the
+point-in-time window function answered the question.
+
+`lifetime()` now returns `last_ts` alongside the counts and every input comes from
+the store. Verified on the six worst targets: the three attempted within 12 h are
+blocked, the three last tried 18–668 h ago are due for their single retry.
+`!aee62111` has absorbed **425** attempts for zero replies.

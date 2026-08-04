@@ -60,9 +60,15 @@ const _failed    = new Map();
  *  evening. */
 function lifetime(from_num) {
   try {
-    return db.prepare(`SELECT COUNT(*) n, SUM(status='ok') ok
+    // last_ts TOO, not just the counts. The first version took the count from
+    // the store but still read "when did we last try" from the in-memory maps —
+    // which are empty after a restart, so lastAny was 0, the fallback `!ts`
+    // returned true, and every slow-lane node was retried immediately on boot.
+    // Half-fixing restart-reset state is worse than not fixing it, because the
+    // measurement then says the backoff works.
+    return db.prepare(`SELECT COUNT(*) n, SUM(status='ok') ok, MAX(ts) last_ts
                          FROM traceroute_history WHERE to_num = ?`).get(from_num)
-        || { n: 0, ok: 0 };
+        || { n: 0, ok: 0, last_ts: 0 };
   } catch (e) {
     // LOUD, not silent. Returning zeros here means "never backed off", so a
     // swallowed error would quietly restore the exact waste this fixes — the
@@ -90,11 +96,9 @@ function needsTrace(from_num) {
   // every ten minutes — and one success returns it to the fast cadence forever.
   const life = lifetime(from_num);
   if ((life.ok || 0) === 0 && (life.n || 0) >= dead_after) {
-    const lastAny = Math.max(lastFail, lastSuccess);
-    if (lastAny && (now - lastAny) <= dead_retry_ms) return false;
-    const node = nodeList._cache.get(from_num);
-    const ts   = node?.last_traceroute?.ts ?? 0;
-    return !ts || (now - ts) > dead_retry_ms;
+    // Every input from the STORE. traceroute_history.ts is in seconds.
+    const lastAny = Math.max(lastFail, lastSuccess, (life.last_ts || 0) * 1000);
+    return !lastAny || (now - lastAny) > dead_retry_ms;
   }
 
   if (lastFail    && (now - lastFail)    <= stale_fail_ms) return false;
