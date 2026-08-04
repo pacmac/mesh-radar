@@ -24,6 +24,8 @@
   <div class="tabs tabs-bordered w-full sm:w-fit shrink-0">
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='board' && 'tab-active font-semibold'"
        @click="switchObsTab('board')">Board</a>
+    <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='leads' && 'tab-active font-semibold'"
+       @click="switchObsTab('leads')">Leads</a>
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='radar' && 'tab-active font-semibold'"
        @click="switchObsTab('radar')">Radar</a>
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='map' && 'tab-active font-semibold'"
@@ -34,6 +36,81 @@
        @click="switchObsTab('logs')">Logs</a>
     <a class="tab px-3 sm:px-5 text-xs sm:text-sm" :class="obsTab==='receptions' && 'tab-active font-semibold'"
        @click="switchObsTab('receptions')">Receptions</a>
+  </div>
+
+  <!-- ══════════════════════ LEADS ══════════════════════════════════════════ -->
+  <!-- The STATE band of docs/APP_ROLE.md: node-dash's own data, summarised, so a
+       lead can be seen and acted on without switching screens. ADDED beside
+       Board, which is untouched — Peter: "that is a good refrence we should keep
+       both".
+
+       THIS TABLE DECIDES NOTHING. lead, lead_reason, heard_tone, role_tone,
+       can_be_door and evidence all arrive served from nodeTable(). The markup
+       maps a tone to a class and prints the rest. No threshold appears here. -->
+  <div x-show="obsTab==='leads'" class="flex-1 min-h-0 flex flex-col gap-3"
+       x-effect="obsTab==='leads' && obsPinned === null && obsLoadPinned()">
+    <div class="flex items-baseline gap-3 shrink-0">
+      <h2 class="font-display text-sm tracking-widest uppercase text-primary">Leads</h2>
+      <span class="text-xs text-base-content/50"
+            x-text="charts?.nodes ? `${charts.nodes.rows.length} of the furthest live nodes · past ${charts.nodes.record_km} km is a lead · ${charts.nodes.window_days}-day window` : ''"></span>
+      <span class="ml-auto text-xs text-base-content/40">SOURCE: NODE-DASH · CONTEXT, NOT SCORE</span>
+    </div>
+
+    <div class="overflow-auto flex-1 min-h-0 rounded-box border border-base-300/60">
+      <table class="table table-xs table-pin-rows">
+        <thead><tr>
+          <th>Node</th><th>Where</th><th class="text-right">km</th><th class="text-right">az</th>
+          <th>Role</th><th class="text-right">hops</th><th class="text-right">heard</th>
+          <th class="text-right">SNR</th><th class="text-right">probes</th>
+          <th>Evidence</th><th class="text-right">Act</th>
+        </tr></thead>
+        <tbody>
+          <template x-for="n in (charts?.nodes?.rows || [])" :key="n.num">
+            <tr :class="n.lead && 'bg-primary/5'">
+              <td class="font-mono whitespace-nowrap">
+                <span :class="n.lead ? 'text-primary font-semibold' : ''" x-text="n.label"></span>
+              </td>
+              <td class="text-base-content/60 max-w-[13rem] truncate" x-text="n.place || '—'"
+                  :title="n.lead_reason || ''"></td>
+              <td class="text-right font-mono" x-text="n.km"></td>
+              <td class="text-right font-mono text-base-content/50" x-text="n.az != null ? n.az + '°' : '—'"></td>
+              <td class="whitespace-nowrap">
+                <span x-show="n.role" class="badge badge-xs" :class="toneCls(n.role_tone)" x-text="n.role"></span>
+                <span x-show="!n.role" class="text-base-content/30">—</span>
+                <span x-show="!n.can_be_door" class="text-[9px] text-base-content/40 ml-1">never a door</span>
+              </td>
+              <td class="text-right font-mono" x-text="n.hops ?? '—'"></td>
+              <td class="text-right font-mono" :class="toneCls(n.heard_tone)" x-text="n.heard"></td>
+              <td class="text-right font-mono text-base-content/60" x-text="n.snr != null ? n.snr : '—'"></td>
+              <td class="text-right font-mono"
+                  :class="n.probes === 0 ? 'text-base-content/30' : ''"
+                  x-text="n.answered > 0 ? n.probes + '/' + n.answered : n.probes"></td>
+              <td>
+                <span class="badge badge-xs"
+                      :class="n.evidence === 'packet' ? 'badge-success' : 'badge-ghost'"
+                      x-text="n.evidence === 'packet' ? 'packet' : 'nodedb'"></span>
+              </td>
+              <td class="text-right whitespace-nowrap">
+                <!-- Only the two actions that are actually wired. A dead button
+                     teaches the operator that the page lies; probe and analyse
+                     are not built and so are not drawn. -->
+                <button class="btn btn-xs btn-ghost" @click="obsPin(n.num)"
+                        :class="obsPinned === n.num && 'text-warning'"
+                        :title="obsPinned === n.num ? 'pinned — click to unpin' : 'pin: work this ahead of everything, past the ceiling/silence/window filters'"
+                        x-text="obsPinned === n.num ? 'pinned' : 'pin'"></button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div x-show="!(charts?.nodes?.rows || []).length" class="p-6 text-center text-base-content/40 text-sm">
+        No live placed nodes in the window.
+      </div>
+    </div>
+    <div class="text-xs text-base-content/40 shrink-0">
+      Highlighted rows are leads — past the record, alive, and unworked. Hover a place for the reason.
+      <span class="text-base-content/30">probe and analyse are not built yet, so they are not shown.</span>
+    </div>
   </div>
 
   <!-- ══════════════════════ BOARD ══════════════════════════════════════════ -->

@@ -1,7 +1,7 @@
 ---
 module: app-observatory
 source: public/app-observatory.js
-source_hash: e364a2269a82363ab3487b41e178d9fd28ff46729b14a480e1288e3c16c4c502
+source_hash: a8122e3b28dbacd93d989d561c3645581245cfbe9586af61dc75daf5da628a8b
 updated: 2026-08-03
 ---
 
@@ -428,3 +428,47 @@ bars moved to the 250 km axis the notches stayed on the old 204 km scale and
 pointed at the wrong nodes. It now calls `obsStripSpan()` rather than restating
 it. Verified by landing the record notch on the bar it names: 75.64% resolves to
 `!da6392a0 · 189.1 km`.
+
+## The Leads sub-tab (task `board-leads-tab`, 2026-08-04)
+
+Peter, 2026-08-04:
+
+> I dont think you should replace the existing board page as that is a good
+> refrence we should keep both
+
+So this is an **added** sub-tab, not a redesign. `Board` is untouched and stays
+the reference.
+
+### What it renders
+
+`charts.nodes`, served by `nodeTable()` in `src/observatory-ws.js` — the STATE
+band of `docs/APP_ROLE.md`. node-dash's own node data, summarised, so a lead can
+be seen and acted on without switching screens.
+
+### It decides NOTHING
+
+Every judgement arrives served: `lead`, `lead_reason` (a full sentence),
+`heard_tone`, `role_tone`, `can_be_door`, `evidence`. The markup maps a tone to
+a class via `toneCls()` and prints the rest.
+
+No threshold, no comparison against `record_km`, no `answers/attempts`. The
+whole of 2026-08-04 was spent removing the last of those from `public/`; a new
+table reintroducing one would undo it on the day.
+
+### Actions
+
+| button | wiring | status |
+|---|---|---|
+| `pin` | `PUT /config/discovery {pinned}` | live — bypasses ceiling, silence and window; keeps the cooldown |
+| `star` | `PUT /nodes/:num/obs_target` | live — same three bypasses |
+| `probe` | dispatch now | **not built** — later Domain 1 task |
+| `analyse` | dossier | **not built** — later Domain 1 task |
+
+The two that are not built are **not rendered**. A dead button is worse than a
+missing one: it teaches the operator the page lies.
+
+### Out of scope
+
+- The CONTRIBUTION band — needs the attribution ledger, which does not exist.
+- Any change to `Board`.
+- Targeting behaviour. This tab exposes the selector; it does not alter it.

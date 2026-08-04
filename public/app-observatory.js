@@ -15,7 +15,7 @@
 // a clock time. When the server starts pushing a formatted age, it can replace
 // this without the page changing shape.
 import { persistSet } from './app-persist.js';
-import { toneColour } from './app-helpers.js';
+import { toneColour, fetchJSON } from './app-helpers.js';
 
 // Enough to fill a tall screen and scroll a while, small enough that an idle tab
 // cannot grow without bound. The server replays 200 on connect.
@@ -33,6 +33,34 @@ export const observatoryMixin = {
   switchObsTab(name) {
     this.obsTab = name;
     persistSet('obsTab', name);
+  },
+
+  // ── LEADS ────────────────────────────────────────────────────────────────
+  //
+  // The pinned node num, read from the discovery config so the button reflects
+  // SERVER state rather than what was last clicked here. A pin survives a
+  // reload and is set from the Config page too; local state would drift.
+  obsPinned: null,
+
+  async obsLoadPinned() {
+    try { this.obsPinned = (await fetchJSON('/config/discovery'))?.pinned ?? null; }
+    catch (e) { console.warn('obsLoadPinned failed', e); }
+  },
+
+  /** Pin, or unpin if already pinned. A SINGLETON by design — pinning is
+   *  "work this ahead of everything", and a list of those is just the queue
+   *  again. Bypasses the ceiling, silence and window filters server-side;
+   *  the cooldown and attempt cap still apply, so this cannot become
+   *  harassment of a stranger's node. */
+  async obsPin(num) {
+    const next = this.obsPinned === num ? null : num;
+    try {
+      await fetchJSON('/config/discovery', 'PUT', { pinned: next });
+      this.obsPinned = next;
+      this.showToast?.(next ? `Pinned — worked ahead of everything` : 'Unpinned', 'success');
+    } catch (e) {
+      this.showToast?.(e.message || 'Pin failed', 'error', 0);
+    }
   },
 
   /** Newest first. Fed by both WS messages below. */
