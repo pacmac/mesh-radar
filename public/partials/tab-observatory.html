@@ -418,13 +418,15 @@
                       x-text="missionActivity.discovered.attempts + ' tried · ' + missionActivity.discovered.replies + ' answered'"></span>
                 <span class="badge badge-sm font-mono tracking-wider gap-1.5"
                       :class="missionActivity?.current ? 'badge-primary'
-                              : missionActivity?.gated ? 'badge-warning'
                               : missionActivity?.running ? 'badge-ghost' : 'badge-ghost opacity-50'">
                   <span class="inline-block w-1.5 h-1.5 rounded-full"
                         :class="missionActivity?.current ? 'bg-primary-content animate-ping'
                                 : missionActivity?.running ? 'bg-base-content/40' : 'bg-base-content/25'"></span>
+                  <!-- The `gated` branch is gone with the global TRACE switch
+                       (8ddd4a0). Automatic tracing is a property of the MODE now,
+                       so "HELD — traceroute off" describes a state that can no
+                       longer exist. -->
                   <span x-text="missionActivity?.current ? 'IN PROGRESS'
-                                : missionActivity?.gated ? 'HELD — traceroute off'
                                 : missionActivity?.running ? ('WAITING · next of ' + missionActivity.queued)
                                 : 'STOPPED'"></span>
                 </span>
@@ -498,7 +500,7 @@
               <div class="rounded border border-dashed border-base-300 bg-base-200/40 px-4 py-8 text-center">
                 <p class="text-xs text-base-content/50">No attempt has completed yet this session.</p>
                 <p class="text-xs text-base-content/35 mt-1"
-                   x-text="missionActivity?.gated ? 'Automatic traceroute is switched off — nothing will be dispatched.' : 'The first mission dispatches shortly.'"></p>
+                   x-text="'The first mission dispatches shortly.'"></p>
               </div>
             </template>
 
