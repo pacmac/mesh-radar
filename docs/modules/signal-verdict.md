@@ -1,7 +1,7 @@
 ---
 module: signal-verdict
 source: src/signal-verdict.js
-source_hash: a566f0e5b1edff53701a13a845b331e27c860143ab233e0999caefa62f29a4e3
+source_hash: dfb7e453573018456fd3e5c40bf340f020e78f03d09ec4acf081b4e901aa7851
 updated: 2026-08-04
 ---
 
@@ -303,3 +303,24 @@ catch-all band min -> null (must be null, not -Infinity)
 
 Live on WS `/events` after restart: 5 margin bands, `margin_none` No data/muted,
 confidence `40→high 12→medium 1→low 0→none`, `trend_dead_band_db: 1`.
+
+### The other half of the original bug (step 6)
+
+This module's header records that the labels used `76/51/26` while *"the colour
+ramp beside them (`sigQualColor`) used `75/50/25`"*. Serving `signal` per node
+fixed the **labels**. The **ramp was never fixed** — `app-nodes.js:273-279`
+still held `75/50/25` and `tab-radar.html:354` still called it, so the defect
+named in this file's own comment stayed half-live.
+
+It cannot simply read `node.signal.tone`: `tab-radar.html:336` derives its
+percentage from a **live yagi reading** (`yagiSignal.rssi/snr`) that may not be
+the node's stored value, so no per-node verdict describes it.
+
+`verdictBands()` therefore also serves `signal` (the `BANDS` table) and
+`signal_none`, so a live percentage is looked up against the same numbers the
+server uses.
+
+```
+signal bands reproduce the server: 9/9   (0 / 25 / 26 / 50 / 51 / 75 / 76 / 100 / null)
+served: 76→Excellent/success  51→Good/success  26→Fair/warning  0→Poor/error
+```

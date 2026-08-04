@@ -146,6 +146,18 @@ export { MARGIN_BANDS, CONFIDENCE_BANDS, TREND_DEAD_BAND_DB };
  *  lookup treats null as "always matches". */
 export function verdictBands() {
   return {
+    // THE OTHER HALF OF THE ORIGINAL BUG. This module's header records that the
+    // labels used 76/51/26 while "the colour ramp beside them (sigQualColor)
+    // used 75/50/25". Serving `signal {pct,label,tone}` per node fixed the
+    // LABELS. The ramp was never fixed — app-nodes.js:273-279 still holds
+    // 75/50/25, and tab-radar.html:354 still calls it.
+    //
+    // It cannot just read node.signal.tone: the radar card's percentage comes
+    // from a LIVE yagi reading that may not be the node's stored value, so no
+    // per-node verdict describes it. Serving the table lets the browser look
+    // that live percentage up against the SAME numbers the server uses.
+    signal: BANDS.map(b => ({ min: b.min, label: b.label, tone: b.tone })),
+    signal_none: signalVerdict(null, { hasReading: false }),
     margin: MARGIN_BANDS.map(b => ({
       min: Number.isFinite(b.min) ? b.min : null,
       label: b.label, desc: b.desc, tone: b.tone, bars: b.bars,
