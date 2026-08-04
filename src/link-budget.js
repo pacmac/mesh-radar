@@ -86,6 +86,31 @@ export function snrGapDb(snrDb, distKm, lora, devCfg) {
   return theo == null ? null : theo - snrDb;
 }
 
+/** The theoretical SNR-above-floor curve, as points.
+ *
+ *  The perf page draws "ideal (free space)" and "rural" reference lines against
+ *  its scatter. The SHAPE is physics and belongs here; only the x-range the page
+ *  chooses to show is display, so the curve is served over a generous fixed
+ *  domain and the browser clips it to whatever axis it is drawing.
+ *
+ *  rural applies the usual log-distance excess over free space.
+ */
+export function referenceCurve(lora, devCfg, { maxKm = 250, points = 80 } = {}) {
+  const out = [];
+  for (let i = 1; i <= points; i++) {
+    const km = (i / points) * maxKm;
+    const theo = theoreticalSnrDb(km, lora, devCfg);
+    if (theo == null) continue;
+    const ideal = theo - sfLimit(lora);
+    out.push({
+      km:       +km.toFixed(2),
+      ideal_db: +ideal.toFixed(2),
+      rural_db: +(ideal - 10 * Math.log10(km)).toFixed(2),
+    });
+  }
+  return out;
+}
+
 /** The whole per-radio budget, for a page that wants to show the theory. */
 export function budget(lora, devCfg) {
   return {
@@ -95,5 +120,7 @@ export function budget(lora, devCfg) {
     rx_sensitivity_dbm:  +rxSensitivityDbm(lora).toFixed(2),
     eirp_dbm:            +eirpDbm(lora, devCfg).toFixed(2),
     max_range_km:        +maxRangeKm(lora, devCfg).toFixed(1),
+    // The reference lines, so the page never evaluates Friis itself.
+    reference_curve:     referenceCurve(lora, devCfg),
   };
 }

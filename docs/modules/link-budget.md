@@ -1,7 +1,7 @@
 ---
 module: link-budget
 source: src/link-budget.js
-source_hash: 485a2c5f16208fc94b611a9fbf9f64533727dfd0fd561aa716dfd7e92b0b8fe1
+source_hash: a91303eb261600defd1d893362aae2b0bde6ee6139b6170392ac92c8ce5e00aa
 updated: 2026-08-04
 ---
 
@@ -77,3 +77,17 @@ Per-radio budgets served: EIRP 36/39 dBm, sensitivity −130.02 dBm, max range
 
 - Anything the radio reports directly (`rx_snr`, `rx_rssi`) — already dB
 - Quarter-dB decoding — `src/snr.js`
+
+
+## `referenceCurve()` — the theory lines, served as points
+
+The perf page draws "ideal (free space)" and "rural" reference lines against its
+scatter. It built them by calling `perfTheoChipSnr(km)` in a loop — 80 evaluations
+of Friis in the browser.
+
+The **shape is physics**; only the x-range the page chooses to show is display. So
+the curve is served over a generous fixed domain (250 km, 80 points) as
+`{km, ideal_db, rural_db}` and the browser clips it to whatever axis it is
+drawing. `rural_db` applies the usual `10·log10(km)` excess over free space.
+
+It rides on `link_budget`, so a page that has the budget already has the lines.
