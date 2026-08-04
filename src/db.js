@@ -1200,7 +1200,15 @@ function frontierStrip() {
       hit_rate: r.attempts > 0 ? Math.round(1000 * r.hits / r.attempts) / 10 : null,
       direct,
       snr_db: direct ? r.snr_db : null,
-      tone: direct ? 'signal' : (r.hits > 0 ? 'answered' : r.attempts > 0 ? 'tried' : 'untried'),
+      // TOKENS THE BROWSER'S TONE MAP ACTUALLY DEFINES. These were 'signal' /
+      // 'answered' / 'tried' / 'untried', which exist in no CSS and in no map —
+      // the strip is not yet rendered by any template (frontier-strip-card was
+      // never finished) so nothing was visibly broken, but the moment it is
+      // rendered every bar would have painted the same. Caught by
+      // scripts/check_contract.mjs, not by reading it.
+      tone: direct ? 'info' : (r.hits > 0 ? 'success' : r.attempts > 0 ? 'warning' : 'muted'),
+      // The semantic name kept alongside, for a legend that wants words.
+      kind: direct ? 'direct' : (r.hits > 0 ? 'answered' : r.attempts > 0 ? 'tried' : 'untried'),
       label: r.short_name || r.long_name || `!${(r.num >>> 0).toString(16)}`,
     });
   }

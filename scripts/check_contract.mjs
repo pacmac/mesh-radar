@@ -1,0 +1,130 @@
+#!/usr/bin/env node
+// CONTRACT CHECK — catches the class of defect that shipped on 2026-08-04.
+//
+// Peter: "I cannot sit here for the next 2 weeks picking up your bugs."
+//
+// Every assertion here corresponds to a real bug that reached him. It is not a
+// general test suite; it is a regression net for MY failure mode, which is
+// verifying the payload and claiming the feature works.
+//
+// Run: node scripts/check_contract.mjs        (exit 1 on any failure)
+
+import { readFileSync, readdirSync } from 'node:fs';
+import WebSocket from 'ws';
+
+const ROOT = new URL('..', import.meta.url).pathname;
+const R = (p) => readFileSync(ROOT + p, 'utf8');
+let failures = 0;
+const fail = (what, detail) => { failures++; console.log(`  FAIL  ${what}\n        ${detail}`); };
+const pass = (what) => console.log(`  ok    ${what}`);
+
+// ── 1. Every tone token the SERVER emits must exist in the BROWSER's TONE map.
+// Bug: role_tone emitted 'gold'/'dim'; TONE has neither, so toneCls() fell
+// through to muted and every ROUTER badge rendered identically to a CLIENT.
+// I had "verified" it by reading the payload.
+const helpers = R('public/app-helpers.js');
+const TONES = new Set([...helpers.matchAll(/^\s{2}(\w+):\s*\{ cls:/gm)].map(m => m[1]));
+// Only assignments to a `tone` / `*_tone` FIELD count. An earlier version
+// matched any string ternary and flagged 'running', 'idle', 'packet' — status
+// enums, not tones. A check that cries wolf gets ignored, which is worse than
+// no check.
+const srcTones = new Set();
+for (const f of readdirSync(ROOT + 'src').filter(f => f.endsWith('.js'))) {
+  for (const line of R(`src/${f}`).split('\n')) {
+    const m = line.match(/(?:^|[\s{,])(?:\w*_)?tone:\s*(.+?)(?:,\s*$|$)/);
+    if (!m) continue;
+    for (const lit of m[1].matchAll(/'([a-z]+)'/g)) srcTones.add(lit[1]);
+  }
+}
+const bogus = [...srcTones].filter(t => !TONES.has(t) && !['primary','secondary','accent','neutral','ghost'].includes(t));
+bogus.length
+  ? fail('served tone tokens all render', `not in app-helpers TONE: ${bogus.join(', ')} (known: ${[...TONES].join(', ')})`)
+  : pass(`served tone tokens all render (${TONES.size} known)`);
+
+// ── 2. No numeric threshold in public/ may select a class, colour or label.
+// Bug: swept twice and missed both the partials and every `<` comparison.
+const uiFiles = [
+  ...readdirSync(ROOT + 'public').filter(f => f.endsWith('.js')).map(f => `public/${f}`),
+  ...readdirSync(ROOT + 'public/partials').filter(f => f.endsWith('.html')).map(f => `public/partials/${f}`),
+];
+const THRESH = /(>=|<=|>|<)\s*-?\d+(\.\d+)?\s*\?[^?]*?['"](text-|badge-|bg-|oklch|rgba|Excellent|Good|Fair|Poor|Usable|Fragile|Failing|high|medium|better|worse)/;
+const ALLOW = /opacity|i \* 25|bars > i|width|height|scrollHeight/;
+const offenders = [];
+for (const f of uiFiles) {
+  R(f).split('\n').forEach((line, i) => {
+    if (THRESH.test(line) && !ALLOW.test(line)) offenders.push(`${f}:${i + 1}`);
+  });
+}
+// app-perf.js:397 reads the SERVED dead-band then tests a sign — allowed.
+const real = offenders.filter(o => !/app-perf\.js:39[0-9]/.test(o));
+real.length
+  ? fail('no threshold decides a class in public/', real.join('\n        '))
+  : pass(`no threshold decides a class in public/ (${uiFiles.length} files)`);
+
+// ── 3. observatory.window_days must default the same everywhere.
+// Bug: charts() read 7 while config-api and three SQL COALESCEs read 30, so a
+// missing key produced 7-day series next to 30-day figures in one payload.
+const defs = new Set();
+for (const [f, re] of [
+  ['src/observatory-ws.js', /getConfig\('observatory\.window_days',\s*(\d+)\)/g],
+  ['src/config-api.js',     /window_days:\s*(\d+)/g],
+  ['src/inferences.js',     /key = 'observatory\.window_days'\),\s*(\d+)\)/g],
+]) for (const m of R(f).matchAll(re)) defs.add(m[1]);
+defs.size > 1
+  ? fail('observatory.window_days default agrees', `found ${[...defs].join(' and ')}`)
+  : pass(`observatory.window_days default agrees (${[...defs][0] ?? 'none found'})`);
+
+// ── 4. Live payload invariants.
+// Bugs: contribution() had no plausibility ceiling, so one laundered position
+// would flip the headline green; and it printed literal "null" before the
+// ladder produced a fact.
+const PLAUSIBLE = 445;
+await new Promise((resolve) => {
+  const ws = new WebSocket('ws://127.0.0.1:8000/events');
+  const t = setTimeout(() => { fail('live payload reachable', 'no charts within 20s'); ws.close(); resolve(); }, 20000);
+  ws.on('error', (e) => { clearTimeout(t); fail('live payload reachable', e.message); resolve(); });
+  ws.on('message', (d) => {
+    let ev; try { ev = JSON.parse(d); } catch { return; }
+    if (ev.type !== 'charts' || !ev.charts) return;
+    clearTimeout(t); const c = ev.charts;
+
+    const far = (c.nodes?.rows ?? []).filter(r => r.km > PLAUSIBLE);
+    far.length ? fail('no served distance exceeds the plausibility ceiling',
+                      `${far.length} rows > ${PLAUSIBLE} km, furthest ${far[0].km}`)
+               : pass('no served distance exceeds the plausibility ceiling');
+
+    // Walk STRING VALUES only. An earlier version regexed the JSON text and
+    // matched `"key":null` — a legitimate null field, not a display string.
+    const bad = [];
+    const walk = (v) => {
+      if (typeof v === 'string') { if (/\b(null|undefined|NaN)\b/.test(v)) bad.push(v); }
+      else if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+    };
+    walk(c.contribution); walk(c.nodes?.rows);
+    bad.length
+      ? fail('no served display string contains null/undefined/NaN', bad[0].slice(0, 120))
+      : pass('no served display string contains null/undefined/NaN');
+
+    // ── Every served reach FIGURE must be rendered somewhere.
+    // Bug: charts.heard_km (proven contact, 444.2 km) was computed, served, and
+    // rendered NOWHERE, so every headline on the board was traceroute-only and
+    // the first number Peter looked at was the wrong one.
+    const markup = R('public/partials/tab-observatory.html');
+    const unrendered = ['record_km', 'window_best_km', 'heard_km']
+      .filter(k => c[k] != null && !markup.includes(k));
+    unrendered.length
+      ? fail('every served reach figure is rendered', `served but never rendered: ${unrendered.join(', ')}`)
+      : pass('every served reach figure is rendered');
+
+    const cont = c.contribution;
+    (cont && cont.beyond_record > 0 && !cont.gaining) || (cont && cont.beyond_record === 0 && cont.gaining)
+      ? fail('gaining flag agrees with beyond_record', JSON.stringify({ beyond: cont.beyond_record, gaining: cont.gaining }))
+      : pass('gaining flag agrees with beyond_record');
+
+    ws.close(); resolve();
+  });
+});
+
+console.log(failures ? `\n${failures} contract failure(s).` : '\nContract clean.');
+process.exit(failures ? 1 : 0);

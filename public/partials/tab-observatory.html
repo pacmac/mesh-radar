@@ -317,9 +317,29 @@
       </div>
     </template>
 
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 shrink-0">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-3 shrink-0">
+      <!-- PROVEN CONTACT. Peter, 2026-08-04: "we are supposed to treat ANY
+           packet received from a node as contact verified" and, on the board
+           still leading with the traceroute figure, "that is NOT the record".
+           charts.heard_km was served and rendered NOWHERE in the entire UI, so
+           every headline on this page was traceroute-only. Three different
+           facts, kept apart per docs/APP_ROLE.md: a relayed contact is not a
+           radio path, and neither is a completed route. -->
       <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
-        <div class="stat-title text-xs opacity-100 text-base-content/75">Furthest verified reach</div>
+        <div class="stat-title text-xs opacity-100 text-base-content/75">Furthest proven contact</div>
+        <div class="stat-value text-2xl font-display"
+             :class="charts?.heard_km ? 'text-success' : 'text-base-content/25'"
+             x-text="charts?.heard_km ? charts.heard_km + ' km' : '—'"></div>
+        <div class="stat-desc text-xs opacity-100 text-base-content/80"
+             x-text="charts?.heard_nodes_window != null
+                     ? 'a packet from it reached us · ' + charts.heard_nodes_window + ' nodes in window'
+                     : 'a packet from it reached us'"></div>
+        <div class="stat-desc text-xs opacity-100 text-base-content/60"
+             x-show="charts?.heard_rejected"
+             x-text="charts.heard_rejected + ' rejected above ' + charts.heard_max_km_per_hop + ' km/hop'"></div>
+      </div>
+      <div class="stat bg-base-100 rounded-lg shadow py-3 px-4">
+        <div class="stat-title text-xs opacity-100 text-base-content/75">Furthest verified route</div>
         <div class="stat-value text-2xl font-display"
              :class="reach?.record_km ? 'text-primary' : 'text-base-content/25'"
              x-text="reach?.record_km ? '≥ ' + reach.record_km + ' km' : '—'"></div>
