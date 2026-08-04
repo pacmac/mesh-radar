@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 2b3ebe0d39c4f7a75e94fdd1abade251638b6a618cab647bd82ca2b3da07aa85
+source_hash: 23373b2ba0b599fd81f4a93bdcda7c44edff4c5455f276ebdb2f18fe17a5db97
 updated: 2026-08-03
 ---
 
@@ -565,3 +565,44 @@ which is now being collected.
 
 Regression: OMNI dispatches in the same window still record `aim_mode='none'`,
 `beam_deg=360`, no azimuth — correct, the OMNI is not on the rotator.
+
+## One aim per mission (task `mission-runner-single-aim`, 2026-08-04)
+
+`mission-runner._aim()` points and holds the beam. `run()` then calls
+`_resolveAim()`, which points it again at the same azimuth. Two rotator commands
+per mission where one is correct.
+
+The comment introduced with the rework justified it as harmless — *"run()
+re-resolves and waits — the rotator is idempotent on an azimuth it is already
+at"*. Idempotent is not free:
+
+- it is a second command and a second hold on a **shared** rotator, widening the
+  window in which the neighbouring app can take the beam BETWEEN our aim and our
+  transmit;
+- the two resolvers can legitimately DISAGREE. `_aim()` declines to move when the
+  door is inside omni reach (`door.needsBeam === false`) and returns
+  `az: null, wait: false`; `_resolveAim()` with `aim:'door'` has no such rule and
+  will point anyway. So the mission's own "the beam is theatre at 5.3 km"
+  decision was being silently overridden.
+
+**Currently dormant, not fixed speculatively.** It fires only when the DISC mode's
+`tx` is `rotator`. As of 2026-08-04 19:xx `disc.tx = 'primary'`, so `_aim()`
+returns early ("omni — not the rotator") and `run()` resolves to the OMNI too —
+neither aims. It DID fire between 17:18 and 18:30 today, which is when the six
+door-aimed rows were written.
+
+### Fix: `opts.aimCtx` — the caller may supply an aim it has already performed
+
+`run()` uses a caller-supplied aim context verbatim and does not point again.
+`_resolveAim()` is skipped entirely, not called-and-ignored, so no second
+`rotator.point()` is issued.
+
+Deliberately a passthrough rather than deleting `mission-runner._aim()`: that
+function owns mission POLICY the traceroute layer has no business knowing —
+whether the door is close enough that the beam is theatre, and whether a held or
+short-stopping rotator should make the mission yield (`wait: true`). Moving that
+into `run()` would put mission scheduling inside a dispatch function.
+
+The aim context supplied must carry the same shape `_resolveAim` returns —
+`{ mode, target, az, az_actual, beam_deg, settled }` — so the row records identical
+provenance either way, and a reader cannot tell which path produced it.

@@ -527,6 +527,10 @@ class MissionRunner extends EventEmitter {
         radio:     'auto',                  // the mode's tx; changing it is a config edit
         timeoutMs: c.timeout_sec * 1000,
         reason:    'mission',
+        // WE ALREADY AIMED. Handing the context over stops run() issuing a second
+        // point() to a shared rotator, and stops it overriding the "door is inside
+        // omni reach, do not move" decision _aim() just made.
+        aimCtx:    aim.ctx ?? null,
       });
       outcome = this._analyse(result);
       this._discovered.replies++;
@@ -614,24 +618,42 @@ class MissionRunner extends EventEmitter {
     // imprecise, it was pointing the opposite way.
     const door = targetNum == null ? null : doorAim(targetNum);
 
+    // AIM PROVENANCE, in the shape traceroute._resolveAim returns, so run() can
+    // use OUR aim instead of pointing the beam a second time (task
+    // `mission-runner-single-aim`). Every return below carries one — a mission
+    // that deliberately did not move the beam is still a fact about the attempt,
+    // and 'none' is the honest record of it, never null.
+    // NO beam_deg HERE. It describes the TRANSMITTING antenna, and this function
+    // only knows about the rotator — stamping the yagi's 35 on a row the OMNI
+    // transmitted would be a lie. traceroute.run() fills it from the radio the
+    // dispatch actually resolved to.
+    const ctxNone = (note) => ({ mode: 'none', target: null, az: null, az_actual: null,
+                                 settled: false, note });
+    const ctxAimed = (az, azActual, settled) => ({
+      mode: door ? 'door' : 'endpoint',
+      target: door ? door.door : targetNum,
+      az, az_actual: azActual, settled });
+
     // AND IF THE DOOR IS CLOSE, THE BEAM IS THEATRE. The dominant door is
     // 5.3 km away; a 9 dBi yagi buys nothing at 5.3 km that the omni does not
     // already have. Rotating anyway would spend up to aim_timeout_sec pointing
     // at something we could already hear. Peter: "or, if all doors are
     // comfortably in sight of OMNI using OMNI?"
     if (door && !door.needsBeam) {
-      return { az: null, wait: false,
-               note: `not aiming — door ${door.name} is ${door.km} km away, well inside omni reach` };
+      const note = `not aiming — door ${door.name} is ${door.km} km away, well inside omni reach`;
+      return { az: null, wait: false, note, ctx: ctxNone(note) };
     }
     if (door) bearing = door.az;
     // Asked of dash-mode rather than compared by hand: the tx role is editable
     // config, and it already owns the "is this MAC the transmitter" question.
     const rotMac = getRotatorAddress();
     if (!rotMac || !isTransmitterForMode(modeName(dashMode.value), rotMac)) {
-      return { az: null, note: 'omni — not the rotator', wait: false };
+      return { az: null, note: 'omni — not the rotator', wait: false,
+               ctx: ctxNone('omni — not the rotator') };
     }
     if (bearing == null) {
-      return { az: rotator.status?.az ?? null, note: 'no bearing known', wait: false };
+      return { az: rotator.status?.az ?? null, note: 'no bearing known', wait: false,
+               ctx: ctxNone('no bearing known') };
     }
 
     // THE V4 DOES NOT ALWAYS REACH ITS TARGET, AND SAYS SO:
@@ -677,14 +699,16 @@ class MissionRunner extends EventEmitter {
     const off = Math.round(Math.abs(angleDiff(r.az, bearing)));
     const az  = Math.round(r.az);
     // No configured beamwidth: report the aim, judge nothing.
-    if (beam == null) return { az, note: `aimed ${az}° — beamwidth not configured`, wait: false };
+    if (beam == null) return { az, note: `aimed ${az}° — beamwidth not configured`, wait: false,
+                               ctx: ctxAimed(bearing, r.az, true) };
     if (off > beam) {
       // Outside the main lobe entirely — this would be a shot in a different
       // direction, and the airtime would prove nothing about the target.
       return { az, note: `stopped ${off}° off ${Math.round(bearing)}°`, wait: true };
     }
-    if (off > beam / 2) return { az, note: `aimed ${az}° — ${off}° off, inside the ${beam}° beam`, wait: false };
-    return { az, note: `aimed ${az}°`, wait: false };
+    if (off > beam / 2) return { az, note: `aimed ${az}° — ${off}° off, inside the ${beam}° beam`, wait: false,
+                                 ctx: ctxAimed(bearing, r.az, true) };
+    return { az, note: `aimed ${az}°`, wait: false, ctx: ctxAimed(bearing, r.az, true) };
   }
 
   /** WHAT THE ROUTE REVEALED. Computed against what was known BEFORE it landed

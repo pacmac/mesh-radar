@@ -149,10 +149,17 @@ class TracerouteManager extends EventEmitter {
   //   opts.radio  'auto' | 'omni' | 'yagi' | <mac>   default: the mode's tx
   //   opts.aim    'door' | 'endpoint' | 'none' | <az>  default: the mode's aim
   //
-  // `aim: 'none'` is a FIRST-CLASS setting, not a fallback. Measured
-  // 2026-08-04, endpoint-aiming underperforms not aiming at all in every
-  // distance band; door-aiming has never executed and is untested, not
-  // disproven. Peter: "just because yagi pointing has not resulted in any
+  // `aim: 'none'` is a FIRST-CLASS setting, not a fallback.
+  //
+  // THE CLAIM THAT USED TO BE HERE — "endpoint-aiming underperforms not aiming at
+  // all in every distance band" — WAS FALSE, and is struck rather than quietly
+  // deleted. bearingToNode() called a `nodeList.get()` that does not exist, so
+  // endpoint-aiming never once executed; the "measurement" compared unaimed
+  // attempts against other unaimed attempts. Door-aiming likewise did not run
+  // until 2026-08-04 17:18. NEITHER mode has been evaluated. Both now execute and
+  // record requested-vs-arrived azimuth, so the comparison can finally be made.
+  //
+  // Peter: "just because yagi pointing has not resulted in any
   // benefits ... it should not be removed, it is an asset." So it stays,
   // configurable, and now records enough to prove itself when the yagi goes
   // from 3 to 5 to 7 elements.
@@ -164,7 +171,26 @@ class TracerouteManager extends EventEmitter {
     const device   = this._resolveRadio(opts.radio, modeKey);
     if (!device) throw new Error('no radio for this mode');
 
-    const aim = await this._resolveAim(to, opts.aim, modeKey, device, opts);
+    // ONE AIM PER MISSION. Task `mission-runner-single-aim`.
+    //
+    // A caller that has ALREADY pointed the beam supplies its aim context here
+    // and we do not point again. Two commands to a SHARED rotator is not free
+    // even when the second is a no-op: it widens the window for the neighbouring
+    // app to take the beam between our aim and our transmit, and it lets this
+    // function silently override a decision the caller made — mission-runner
+    // declines to move when the door is inside omni reach, and _resolveAim has
+    // no such rule.
+    //
+    // The context must be the same shape _resolveAim returns, so the recorded
+    // provenance is identical either way.
+    // beam_deg is ALWAYS ours, even on a supplied context. It describes the
+    // TRANSMITTING antenna, and only this function knows which radio the dispatch
+    // resolved to — mission-runner's context is built around the ROTATOR, so
+    // taking its beam_deg verbatim would stamp 35 on rows the OMNI transmitted.
+    // (Introduced and caught here, before it reached a row.)
+    const aim = opts.aimCtx
+      ? { ...opts.aimCtx, beam_deg: beamwidthFor(device) }
+      : await this._resolveAim(to, opts.aim, modeKey, device, opts);
 
     return this.dispatch({
       to, device,
