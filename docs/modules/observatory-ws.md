@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: 608d3786d4c2644f35a2ebb82dee3a83fef9c1ec4848eb9b8bb981396dcff95d
+source_hash: f15a46018c44407c87be19d49c06efada4c9c73d21996f2540039236d0d21921
 updated: 2026-08-04
 ---
 
@@ -293,3 +293,30 @@ nothing on screen saying so — the silent-default class of B74.
 
 Both defaults are now **7**, and `window_days` is published on `board.frontier`
 so the basis is visible to the reader instead of assumed. `0` means all time.
+
+## Answer-rate verdict served (task `verdict-strings-to-backend`, 2026-08-04)
+
+`app-observatory.js:300,307` divided `answers/attempts` itself and then applied
+`>=15 / >=5` to choose a bar colour — a judgement about discovery **yield**,
+made in the presentation layer.
+
+`withRateVerdict()` now serves both halves on every `silence` and `distance`
+row: `rate_pct` (the division) and `tone` (the band). Serving only the tone
+would have left half the decision in the browser.
+
+| rate | tone |
+|---|---|
+| ≥15% | success |
+| ≥5% | warning |
+| ≥0% | error |
+| **0 attempts** | **muted**, `rate_pct: null` |
+
+**Zero attempts is not a zero rate.** It is no data and must not paint red — the
+same distinction `signal-verdict.js` draws with `none`.
+
+### Why this is not in `signal-verdict.js`
+
+That module judges how good a **link** is. An answer rate is a different kind of
+fact with a different owner, and this chart builder is its only consumer. One
+owner each is what SSOT requires; a single module holding every band table in
+the app would just be a dumping ground.

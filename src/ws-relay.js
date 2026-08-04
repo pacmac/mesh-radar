@@ -12,7 +12,7 @@ import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.j
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { snrDbList } from './snr.js';
-import { signalVerdict } from './signal-verdict.js';
+import { signalVerdict, marginHealth, hopsTone, blePctTone } from './signal-verdict.js';
 import { signalQuality as sigQualityPct } from './utils.js';
 import { budget as linkBudget, marginDb, snrGapDb, theoreticalSnrDb,
          expectedRssiDbm, excessLossDb } from './link-budget.js';
@@ -113,6 +113,11 @@ function withLinkBudget(row, loraFor) {
     route_kind:     direct ? 'direct' : 'first-hop',
     dist_label:     direct ? 'target' : 'first hop',
     confidence:     !validTx ? 'low' : direct ? 'high' : 'medium',
+    // HEADROOM VERDICT, decided here. app-perf.js:308-315 turned this same
+    // margin into Excellent/Good/Usable/Fragile/Failing, and :333-344 chose the
+    // bar count from one band table and the colour from a DIFFERENT one. Both
+    // now come from marginHealth(). `bars` is a count; the browser draws them.
+    health:         marginHealth(r2(marginDb(snrTx, lora))),
   };
 }
 
@@ -446,7 +451,11 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         const staleMs = (getConfig('pasv_config', {}).stale_sec ?? 1800) * 1000;
         const traceTs = n.last_traceroute?.ts;
         const hops_fresh = hops_verified != null && traceTs != null && (Date.now() - traceTs) <= staleMs;
-        return { ...n, display_name: resolveNodeLabel(n.num), via, hops_verified, hops_display, hops_fresh, signal };
+        // Hop-count TONE decided here — app-components.js:43-45 held the
+        // 0/1/2 thresholds. The badge's TEXT (Direct vs "n hops", the
+        // verified/reported suffix) is display composition and stays there.
+        return { ...n, display_name: resolveNodeLabel(n.num), via, hops_verified, hops_display, hops_fresh, signal,
+                 hops_tone: hopsTone(hops_display) };
       }) };
     }
     if (ev.type === 'device_list') {
@@ -532,6 +541,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         ? linkBudget(lastDeviceLora[d.addr.toUpperCase()], lbDeviceCfg(d.addr))
         : null,
       channels: d.addr ? (lastDeviceChannels[d.addr.toUpperCase()] ?? null) : null,
+      // BLE link tone — app-components.js:80 held >=50/25. This is the BLE
+      // percentage the gateway reports, NOT a LoRa measurement, so it keeps its
+      // own two bands rather than signalVerdict's 76/51/26.
+      signal_pct_tone: blePctTone(d.signal_pct),
       auto_purge: getAutoPurgeCfg(d.node_id ?? d.addr),
       // Per-radio role for the CURRENT mode — the browser renders RX/TX badges
       // from this and makes no decision (BROWSER_CONTRACT).
@@ -545,7 +558,11 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // to all clients after a dash send (message-tx-broadcast). 200 rows: bot
   // chatter churned the old 50-row window within hours.
   function buildMessageFeedRows() {
-    return _enrichMessages(queryMessages(200).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) })));
+    // hops_tone: tab-messages.html calls hopsBadge(m.hops), which held the
+    // 0/1/2 threshold in the browser. Same decision, same owner as the node feed.
+    return _enrichMessages(queryMessages(200).map(r => ({
+      ...r, display_name: resolveNodeLabel(r.from_num), hops_tone: hopsTone(r.hops),
+    })));
   }
   function buildMessageHistoryEvent(rows) {
     return { type: 'message_history', messages: rows ?? buildMessageFeedRows() };

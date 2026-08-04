@@ -329,6 +329,26 @@ function missions() {
  *
  *  Wrapped: a chart failing must degrade to an empty panel, not take the feed
  *  down with it. */
+
+/** Answer-rate bands for the yield charts. Serves the RATE as well as the tone:
+ *  the browser was dividing answers/attempts itself and then thresholding the
+ *  result, so serving only a tone would leave half the decision behind.
+ *
+ *  Zero attempts is NOT a zero rate — it is no data, and must not paint red. */
+const RATE_BANDS = [
+  { min: 15, tone: 'success' },
+  { min: 5,  tone: 'warning' },
+  { min: 0,  tone: 'error'   },
+];
+function withRateVerdict(row) {
+  if (!row) return row;
+  const attempts = Number(row.attempts) || 0;
+  if (!attempts) return { ...row, rate_pct: null, tone: 'muted' };
+  const pct  = 100 * (Number(row.answers) || 0) / attempts;
+  const band = RATE_BANDS.find(b => pct >= b.min) ?? RATE_BANDS[RATE_BANDS.length - 1];
+  return { ...row, rate_pct: +pct.toFixed(1), tone: band.tone };
+}
+
 function charts() {
   // ONE window for every series. Before this, `daily` and `bands` were 30 days
   // while `silence` and `distance` were all-time, with nothing on screen saying
@@ -367,14 +387,22 @@ function charts() {
   } catch (e) { console.error(`[observatory-ws] ladder series failed: ${e.message}`); }
   try { out.daily = attemptsByDay(windowDays); }
   catch (e) { console.error(`[observatory-ws] daily series failed: ${e.message}`); }
+  // ANSWER-RATE VERDICT. app-observatory.js:300,307 divided answers/attempts
+  // itself and then applied >=15/>=5 to pick a colour — a judgement about
+  // discovery YIELD, made in the presentation layer.
+  //
+  // Deliberately NOT in signal-verdict.js: that module judges how good a LINK
+  // is. An answer rate is a different kind of fact with a different owner, and
+  // this chart builder is its only consumer. One owner each is what SSOT means;
+  // a single module holding every band table in the app is just a dumping ground.
   try {
     // Ordered here, not in SQL: the buckets are a scale (best to worst) and the
     // page must not have to know their order to draw them correctly.
     const order = ['direct RF', '< 24h', '< 7d', 'silent 7d+'];
     const by = new Map(answerRateBySilence(windowDays).map(r => [r.bucket, r]));
-    out.silence = order.filter(k => by.has(k)).map(k => by.get(k));
+    out.silence = order.filter(k => by.has(k)).map(k => withRateVerdict(by.get(k)));
   } catch (e) { console.error(`[observatory-ws] silence series failed: ${e.message}`); }
-  try { out.distance = answerRateByDistance(windowDays); }
+  try { out.distance = answerRateByDistance(windowDays).map(withRateVerdict); }
   catch (e) { console.error(`[observatory-ws] distance series failed: ${e.message}`); }
   // Rate per day SPLIT BY BAND — the aggregate `daily` series above cannot tell a
   // change in target mix from a change in performance, and that hid a fall from

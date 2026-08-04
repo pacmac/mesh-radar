@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 805cfc0371ec794d2738d126cd4dff7472c1814a034d49799c5f26a403e7498e
+source_hash: d2f452c2ea9d7ae0d36b98d9cebd1f148bc02654322167d60d89d02a19dd43d7
 updated: 2026-08-04
 ---
 
@@ -805,3 +805,35 @@ last-writer-wins summary and the browser's existing rendering is untouched. This
 is additive capture, not a change to how status is displayed. No new
 transmissions: the rows accumulate from the traceroutes and messages we already
 send.
+
+## Verdict tones served (task `verdict-strings-to-backend`, 2026-08-04)
+
+The RF *maths* moved server-side in `perf-maths-to-backend`; `margin_tx_db` has
+been served from this module since. The *verdicts drawn from that number* stayed
+in the browser, so it received a correct measurement and then decided what it
+meant — the violation `BROWSER_CONTRACT` names directly.
+
+Four additive fields, all from `src/signal-verdict.js`, none of them CSS:
+
+| line | field | replaces |
+|---|---|---|
+| ~120 | `health { label, desc, tone, bars, none }` on each perf row | `app-perf.js:308-315` and `:333-344` |
+| ~458 | `hops_tone` on each node in `node_list` | `app-components.js:43-45` |
+| ~564 | `hops_tone` on each row in `message_history` | same, via `hopsBadge(m.hops)` |
+| ~547 | `signal_pct_tone` on each device in `device_list` | `app-components.js:80` |
+
+`bars` is a **count 0–4**, never markup. `hopsBadge`'s text — `Direct` vs
+`n hops`, the verified/reported suffix — is display composition and stays in the
+browser; only the 0/1/2 threshold moved.
+
+`signal_pct_tone` uses its own `>=50/25` bands and deliberately does **not**
+share `signalVerdict`'s `76/51/26`: it is a BLE link percentage from the
+gateway, not a LoRa RF measurement.
+
+`device_list` is the single composition point for all device state — every
+`device_state` path funnels through `broadcastDeviceList()` — so one call there
+covers the browser's `deviceBleStates`, which is built from that feed.
+
+**Behaviour-preserving:** the served tones were checked against the old browser
+rules at every band boundary — 67/67 identical. Nothing on screen moves until
+Domain 2 switches over, and nothing should move then either.
