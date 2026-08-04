@@ -70,7 +70,10 @@ real.length
 //
 // A named constant with a stated basis is fine; a bare number in a setTimeout is
 // not, because it says nothing about WHY and cannot be changed without an edit.
-const TIMING_RE = /set(?:Timeout|Interval)\s*\([^,]*,\s*[0-9_]{3,}\s*\)/;
+// Two shapes, because the first version only caught the timer call and missed a
+// bare `Date.now() - t > 25000` comparison sitting three lines away in the same
+// file. A timing is a timing wherever it appears.
+const TIMING_RE = /set(?:Timeout|Interval)\s*\([^,]*,\s*[0-9_]{3,}\s*\)|Date\.now\(\)\s*-\s*\w+[^;]{0,40}[<>]=?\s*[0-9_]{3,}/;
 const timers = [];
 for (const f of readdirSync(ROOT + 'src').filter(f => f.endsWith('.js'))) {
   R(`src/${f}`).split('\n').forEach((line, i) => {

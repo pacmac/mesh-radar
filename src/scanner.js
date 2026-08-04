@@ -10,7 +10,7 @@ import { getConfig, setConfig } from './db.js';
 //
 // Declared and overridable — Peter, 2026-08-04: "all timings need to be vars.
 // some if not all will be selected to be configurables / knobs."
-const TIMING_DEFAULTS = { poll_idle_ms: 600, poll_busy_ms: 200 };
+const TIMING_DEFAULTS = { poll_idle_ms: 600, poll_busy_ms: 200, move_giveup_ms: 25_000 };
 const timing = () => ({ ...TIMING_DEFAULTS, ...(getConfig('scanner_timing', {}) || {}) });
 
 
@@ -110,7 +110,9 @@ class Scanner extends EventEmitter {
 
   _pollIdle() {
     if (this._aborted) { this._end(); return; }
-    const timedOut = Date.now() - this._pollStart > 25000;
+    // move_giveup_ms — how long to wait for a step before moving on regardless.
+    // Was an inline 25000. Peter: "timings CANNOT be hard coded FULL STOP."
+    const timedOut = Date.now() - this._pollStart > timing().move_giveup_ms;
     if (!rotator.status.busy || timedOut) {
       this._dwellAz = this._az;
       this.emit('progress', { az: this._az, dwell_az: this._az });
