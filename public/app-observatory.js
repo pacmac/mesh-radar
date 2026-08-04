@@ -718,13 +718,15 @@ export const observatoryMixin = {
    *  rule that governs the target crosshair above. The allowed values are the
    *  server's enum; a value outside it is rejected with 400 rather than clamped. */
   async setObsWindow(days) {
+    // fetchJSON, NOT raw fetch. fetch only rejects on a NETWORK error, so a 400
+    // from config-api (or a 404 on an unknown key) resolved normally, the catch
+    // never fired, no toast appeared and no charts rebroadcast followed — the
+    // button silently did nothing and there was no way to tell. fetchJSON throws
+    // on !res.ok. obsPin three methods above already used it correctly.
     try {
-      await fetch('/config/observatory.window_days', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: Number(days) }),
-      });
+      await fetchJSON('/config/observatory.window_days', 'PUT', { value: Number(days) });
     } catch (e) {
+      this.showToast?.(e.message || 'Could not change the window', 'error', 0);
       console.error('window set failed', e);
     }
   },

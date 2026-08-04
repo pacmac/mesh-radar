@@ -1,7 +1,7 @@
 ---
 module: relay-observation
 source: src/relay-observation.js
-source_hash: abe87df69e1165b36b9ef7f1f5cbb998543d22d97e167f6f49295f4782665220
+source_hash: 9804b5ba7b12c23794134cd311160ecf5f94c703f7311502c5e086ccbe97f62c
 updated: 2026-08-03
 ---
 

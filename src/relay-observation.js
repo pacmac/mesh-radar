@@ -15,14 +15,22 @@ import { getConfig } from './db.js';
 
 const PRUNE_EVERY = 5000;
 let _sincePrune = 0;
+let _prunedOnLoad = false;
 
 // Retention is enforced inline rather than on a timer. `startAutoPurgeScheduler`
 // purges the RADIO's NodeDB over the air on a per-device schedule and has nothing
 // to do with local table retention; hooking it there would couple a database
 // concern to a mesh operation. A counter needs no scheduler and cannot drift.
 function _maybePrune() {
-  if (++_sincePrune < PRUNE_EVERY) return;
-  _sincePrune = 0;
+  // PRUNE ONCE ON THE FIRST PACKET AFTER BOOT, as well as on the counter. The
+  // counter alone is ~4 hours at ~20 packets/min, and _sincePrune is a
+  // module-level variable reseeded at 0 on every restart — so under PM2 watch,
+  // any restart cadence faster than 5,000 packets meant pruning NEVER ran and
+  // the table grew past retain_days unbounded. The comment below claims a
+  // counter "cannot drift"; it cannot drift, but it can be reset forever.
+  if (!_prunedOnLoad) { _prunedOnLoad = true; }
+  else if (++_sincePrune < PRUNE_EVERY) return;
+  else _sincePrune = 0;
   const raw  = Number(getConfig('relay_observation.retain_days', 30));
   const days = Number.isFinite(raw) ? Math.min(365, Math.max(1, raw)) : 30;
   try {

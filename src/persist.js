@@ -385,7 +385,13 @@ function handlePacket(packet, device, ts, replay) {
   //
   // Isolated like _notifyPacketObservers: this runs for EVERY packet on the hot
   // path, and a throw here must never stop ingestion.
-  try { captureRelayObservation(packet, device, ts); }
+  // isReplay: mesh-gw seeds packet events from REST on boot, so without this
+  // every restart re-recorded the same packets as fresh observations. Measured
+  // 2026-08-04: 1,111 exact-duplicate rows of 39,264. Not cosmetic —
+  // doors.js:152 counts relay_byte=0 rows as DIRECT reception evidence and
+  // doors.js:202 ranks doors by COUNT(*) per byte, so inflated counts change
+  // which node the rotator is aimed at.
+  try { if (!replay) captureRelayObservation(packet, device, ts); }
   catch (e) { console.error(`[relay-obs] capture failed: ${e.message}`); }
 
   if (!packet?.decoded) return;

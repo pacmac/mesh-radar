@@ -72,14 +72,14 @@
         </div>
         <div class="flex gap-6 flex-wrap mt-2 text-xs">
           <span><span class="text-base-content/50">furthest new route</span>
-            <b x-text="charts.contribution.furthest_km + ' km'"></b>
-            <span class="text-base-content/50" x-text="'(' + charts.contribution.furthest_label + ')'"></span>
+            <b x-text="charts.contribution.furthest_km != null ? charts.contribution.furthest_km + ' km' : '—'"></b>
+            <span class="text-base-content/50" x-show="charts.contribution.furthest_label" x-text="'(' + charts.contribution.furthest_label + ')'"></span>
             <span class="text-error" x-show="charts.contribution.furthest_short_by > 0"
                   x-text="'— ' + charts.contribution.furthest_short_by + ' km short'"></span></span>
           <span><span class="text-base-content/50">median new route</span>
-            <b x-text="charts.contribution.median_km + ' km'"></b></span>
+            <b x-text="charts.contribution.median_km != null ? charts.contribution.median_km + ' km' : '—'"></b></span>
           <span><span class="text-base-content/50">cost</span>
-            <b x-text="charts.contribution.cost_per_new_route"></b>
+            <b x-text="charts.contribution.cost_per_new_route ?? '—'"></b>
             <span class="text-base-content/50">attempts per new node</span></span>
           <span><span class="text-base-content/50">new nodes</span>
             <b x-text="charts.contribution.new_routes"></b>
@@ -89,11 +89,16 @@
         <div class="mt-2 pt-2 border-t border-base-content/10 text-[11px] text-base-content/60"
              x-show="!charts.contribution.gaining">
           <span class="text-base-content/40">why not further —</span>
-          <span x-text="'strategy ' + charts.contribution.caps.strategy"></span> ·
-          <span x-text="'window ' + charts.contribution.caps.window_km + ' km above a ' + charts.contribution.caps.bar_km + ' km bar'"></span> ·
-          <span x-text="'ceiling ' + charts.contribution.caps.ceiling_km + ' km'"></span> ·
-          <span class="text-warning" x-text="charts.contribution.caps.skipped_beyond_window + ' skipped beyond window'"></span> ·
-          <span class="text-warning" x-text="charts.contribution.caps.skipped_silent + ' skipped as silent (' + charts.contribution.caps.max_silence_days + 'd)'"></span>
+          <template x-if="charts.contribution.caps.strategy">
+            <span>
+              <span x-text="'strategy ' + charts.contribution.caps.strategy"></span> ·
+              <span x-text="'window ' + charts.contribution.caps.window_km + ' km above a ' + charts.contribution.caps.bar_km + ' km bar'"></span> ·
+              <span x-text="'ceiling ' + charts.contribution.caps.ceiling_km + ' km'"></span> ·
+              <span class="text-warning" x-text="charts.contribution.caps.skipped_beyond_window + ' skipped beyond window'"></span> ·
+              <span class="text-warning" x-text="charts.contribution.caps.skipped_silent + ' skipped as silent (' + charts.contribution.caps.max_silence_days + 'd)'"></span>
+            </span>
+          </template>
+          <span x-show="!charts.contribution.caps.strategy" class="text-base-content/40">selector has not run yet</span>
         </div>
       </div>
     </template>
@@ -117,7 +122,8 @@
               <td class="text-right font-mono" x-text="n.km"></td>
               <td class="text-right font-mono text-base-content/50" x-text="n.az != null ? n.az + '°' : '—'"></td>
               <td class="whitespace-nowrap">
-                <span x-show="n.role" class="badge badge-xs" :class="toneCls(n.role_tone)" x-text="n.role"></span>
+                <span x-show="n.role" class="badge badge-xs"
+                      :class="n.is_router ? 'badge-warning' : 'badge-ghost'" x-text="n.role"></span>
                 <span x-show="!n.role" class="text-base-content/30">—</span>
                 <span x-show="!n.can_be_door" class="text-[9px] text-base-content/40 ml-1">never a door</span>
               </td>
@@ -543,7 +549,7 @@
                            189 km on one hit in 63 tries is a rare event, not a link. -->
                       <td class="text-right"
                           :class="f.hit_rate_tone === 'warning' ? 'text-warning' : 'text-base-content/60'"
-                          x-text="Math.round((f.hits / f.attempts) * 100) + '%'"></td>
+                          x-text="(f.hit_rate != null ? f.hit_rate + '%' : '—')"></td>
                     </tr>
                   </template>
                 </tbody>

@@ -80,7 +80,12 @@ registerSettingsListener(() => {
   // frozen no matter which window was selected. Only the two window-dependent
   // reach inferences are re-run; the rest are untouched and keep their cadence.
   try {
-    for (const key of ['reach.ladder', 'reach.heard']) runInference(key);
+    // reach.mission reads observatory.window_days too (inferences.js:603), and
+    // contribution().caps — the "why not further" line — is read from its global
+    // fact. Without it that panel showed the PREVIOUS window's numbers for up to
+    // 15 minutes, which is the panel the operator is looking at when they change
+    // the window.
+    for (const key of ['reach.ladder', 'reach.heard', 'reach.mission']) runInference(key);
   } catch (e) {
     console.error(`[observatory-ws] window recompute failed: ${e.message}`);
   }
@@ -390,7 +395,12 @@ function charts() {
   // Default 7, matching the stored value. It was 30 here and in boardVerdicts
   // while config held 7, so a missing key would have silently re-based the whole
   // board on a different window with nothing on screen saying so.
-  const windowDays = Number(getConfig('observatory.window_days', 7)) || 0;
+  // 30, matching config-api.js:32 and the COALESCE in inferences.js:285/393/603.
+  // This read 7 while those read 30, so with the key absent charts()'s series
+  // were 7-day while window_frontier_km/heard_km in the SAME object were 30-day.
+  // The observatory-window task claimed to have fixed this and changed only two
+  // of the four sites.
+  const windowDays = Number(getConfig('observatory.window_days', 30)) || 0;
   const out = {
     ladder: [], record_km: null, daily: [], silence: [], distance: [], bands: [],
     window_days: windowDays, window_best_km: null, window_answered: 0,
@@ -662,7 +672,13 @@ function nodeTable(windowDays, limit = 15) {
         role: n.role || null,
         // CLIENT_MUTE is called out because it can never be a door, however
         // close or loud — it does not rebroadcast, by declaration.
-        role_tone: mute ? 'muted' : (RELAY_ROLE_SET.has(n.role) ? 'gold' : 'dim'),
+        // TOKENS THE BROWSER ACTUALLY DEFINES. This emitted 'gold' and 'dim',
+        // neither of which is in app-helpers.js TONE, so toneCls() fell through
+        // to muted and a declared ROUTER painted identically to a plain CLIENT —
+        // the one distinction the field exists to carry. Caught by review; I had
+        // "verified" it by reading the payload, not the rendered badge.
+        role_tone: mute ? 'muted' : (RELAY_ROLE_SET.has(n.role) ? 'warning' : 'muted'),
+        is_router: RELAY_ROLE_SET.has(n.role),
         can_be_door: !mute,
         hops: n.hops ?? null,
         heard_sec: age,
@@ -720,10 +736,18 @@ function contribution(windowDays) {
   const firstOk = db.prepare(
     `SELECT to_num n, MIN(ts) t FROM traceroute_history WHERE status='ok' GROUP BY to_num`).all();
   const fresh = firstOk.filter(r => r.t > from);
-  const placed = fresh.map(r => {
+  // PLAUSIBILITY CEILING. Without it ONE laundered self-reported position flips
+  // the headline to a green "Gaining ground" — §12's "EA1HTF claims 1003 km".
+  // Every sibling path filters (nodeTable 400, boardVerdicts/answerRateByDistance
+  // 250, mission selection at ceiling_km); this one did not. The DB holds 128
+  // placed nodes beyond 250 km today, so the failure was one reply away.
+  const PLAUSIBLE_KM = 250;
+  const all = fresh.map(r => {
     const p = pos.get(r.n);
     return p ? { km: haversine(HOME.lat, HOME.lon, p.lat, p.lon), nm: p.short_name, t: r.t } : null;
-  }).filter(Boolean).sort((a, b) => b.km - a.km);
+  }).filter(Boolean);
+  const suspect = all.filter(r => r.km > PLAUSIBLE_KM).length;
+  const placed = all.filter(r => r.km <= PLAUSIBLE_KM).sort((a, b) => b.km - a.km);
 
   const att = db.prepare(
     `SELECT COUNT(*) n, SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) ok
@@ -754,9 +778,15 @@ function contribution(windowDays) {
     cost_per_new_route: fresh.length ? Math.round(att.n / fresh.length) : null,
     // The verdict, written here. The page must not decide what this means.
     gaining: beyond != null && beyond > 0,
-    verdict: beyond === 0
-      ? `${att.n.toLocaleString()} attempts, ${fresh.length} nodes reached for the first time — but NONE past the ${record} km record`
-      : `${beyond} new route${beyond === 1 ? '' : 's'} past the ${record} km record`,
+    suspect_beyond_plausible: suspect,
+    // `record` is null until reach.ladder has produced a fact. Without this the
+    // else branch rendered "null new routes past the null km record" inside a
+    // red panel, on every fresh install.
+    verdict: record == null
+      ? `${att.n.toLocaleString()} attempts — no verified route on record yet, so there is nothing to measure against`
+      : beyond === 0
+        ? `${att.n.toLocaleString()} attempts, ${fresh.length} nodes reached for the first time — but NONE past the furthest verified route (${record} km)`
+        : `${beyond} new route${beyond === 1 ? '' : 's'} past the furthest verified route (${record} km)`,
     caps: {
       window_km: m.window_km ?? null,
       bar_km: m.bar_km ?? null,
