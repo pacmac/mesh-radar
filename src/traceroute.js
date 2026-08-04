@@ -178,7 +178,7 @@ class TracerouteManager extends EventEmitter {
       return { mode: 'none', target: null, az: null, beam_deg, settled: false, note: 'radio is not on the rotator' };
 
     this.emit('aiming', { to, az, via: aimTarget, mode });
-    let settled = false;
+    let settled = false, azActual = null;
     try {
       // point(), NOT move(). Peter, 2026-08-04: "remember that the pointer has a
       // hold and handshakes when it is moving."
@@ -225,9 +225,18 @@ class TracerouteManager extends EventEmitter {
         ...(opts.patience_ms !== undefined ? { patienceMs: opts.patience_ms } : {}),
       });
       settled = !!(r && r.ok && !r.busy);
+      // WHERE IT SAYS IT GOT TO. Peter, 2026-08-04: "the yagi rotates at about
+      // 60rpm, point and settle should never take more than about 1.5 seconds,
+      // but the point is, the pointer will tell you when it has reached, you do
+      // not have to guess."
+      //
+      // point() already waits for the rotator's `done` handshake, and that
+      // message carries the arrived azimuth. Captured HERE, at the moment of
+      // arrival — see _recordFailure for why sampling it later was wrong.
+      if (r && r.az != null && Number.isFinite(Number(r.az))) azActual = Number(r.az);
     } catch { /* a rotator failure must not stop the trace — record unsettled */ }
-    this.emit('aimed', { to, az, via: aimTarget, mode, settled });
-    return { mode, target: aimTarget, az, beam_deg, settled };
+    this.emit('aimed', { to, az, az_actual: azActual, via: aimTarget, mode, settled });
+    return { mode, target: aimTarget, az, az_actual: azActual, beam_deg, settled };
   }
 
   // ── dispatch({ to, device, timeoutMs?, cooldownMs?, cooldownKey?, manual? }) ─
@@ -322,12 +331,22 @@ class TracerouteManager extends EventEmitter {
     const aimMode   = aim?.mode   ?? null;
     const aimTarget = aim?.target ?? null;
     const beamDeg   = aim?.beam_deg ?? null;
-    let rotatorAz = null;
+    // THE AZIMUTH WE TRANSMITTED AT, not the one we happen to be at now.
+    //
+    // This sampled rotator.status.az at RECORD time — up to a full timeout AFTER
+    // the beam was aimed — so a row could say az=79 for a trace aimed at 219,
+    // because the antenna had moved on (the shared neighbour, or the next
+    // mission) while we waited. Observed exactly that on 2026-08-04.
+    //
+    // The aim context carries what the rotator REPORTED on arrival. Only fall
+    // back to a live sample when there is no aim context at all — a bare
+    // dispatch() — and even then it is the honest best available.
+    let rotatorAz = aim?.az_actual ?? aim?.az ?? null;
     const rotMac = getRotatorAddress();
     // Compare in MAC space (IDENTITY.md): a node_id-side compare can never
     // match a MAC-vocabulary device, which silently skipped the az stamp.
     const devMac = String(device).includes(':') ? device : getLiveMacByNodeId(device);
-    if (rotMac && devMac === rotMac && rotator.status?.az != null) {
+    if (rotatorAz == null && rotMac && devMac === rotMac && rotator.status?.az != null) {
       rotatorAz = Number(rotator.status.az);
     }
     // from_num derives only from a !hex id — never parseInt a MAC (=233).
