@@ -1,8 +1,8 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: a934f0166bc235c0d651489912f4e3ab8fa430b2753881cd7136874bedcd760f
-updated: 2026-08-03
+source_hash: 03e7888c303efb0f68cfc2df857d5dc8d406136d3a9dca7e2e8ada612cb8b656
+updated: 2026-08-04
 ---
 
 # Module: app-radar
@@ -134,3 +134,43 @@ firmware could not measure was drawn as a confident `-32.0`. The existing
 `!= null` test now filters those correctly because the sentinel becomes `null`
 at ingest. The local is named `snrHopDb`, not `snrRaw` — it is not raw, and the
 old name was part of how the bug survived.
+
+
+## The quantile scale is SERVED (task `radar-scale-to-backend`, 2026-08-04)
+
+This spec previously argued `_radarScaleCtrl` was *"sanctioned display arithmetic
+(derived from the displayed list, same class as the existing auto-range
+computation) — no backend state"*. Defensible, and it is now superseded.
+
+**The quantiles are a property of the DATA.** The backend already holds every
+distance, so computing them on both sides invites disagreement — which is exactly
+how the region-frequency table ended up with three drifted copies (B80).
+
+`radar_context.scale` carries `{ max_km, kms[], fracs[] }`, computed in
+`ws-relay.js` from `nodeList.nodes[]._km` — the **same field and the same filtered
+list** the browser plots, so the rings still describe what is on screen rather
+than the whole store.
+
+**Hysteresis moved with it.** The 15% drift guard exists so rings do not jitter as
+nodes come and go, and that only works if one side owns the previous value. Split
+across the boundary it would fight itself.
+
+`_radarScaleCtrl` is now a lookup. **`_radarNorm` stays** — piecewise-linear
+interpolation from a distance to a radius is display, and the fixed `pow(x,0.4)`
+fallback still applies when the server sends `null` (fewer than four distinct
+distances), which remains the spec'd degraded mode.
+
+The adaptive rings remain **canonical**, per the REQUIREMENT STATUS section above.
+
+### Verified
+
+Served `{max_km:100, kms:[3,31,44], fracs:[0.28,0.52,0.76]}`, matching what the
+mixin returns. The curve is still compressive — 1 km→0.093, 5→0.297, 20→0.426,
+42→0.723, 60→0.814, 100→0.95, so the first 5 km takes 30% of the radius and the
+last 40 km takes 14%. Rings render at 3 / 31 / 44 / 100 km with 21 nodes plotted
+and 0 console errors.
+
+Two mistakes on the way, both caught by checking the served payload rather than
+assuming: the first version read `n.lat`, which nodes do not carry (they hold
+`position` and a precomputed `_km`), so every scale came back null; and the
+browser property is `radarCtx`, not `radarContext`.

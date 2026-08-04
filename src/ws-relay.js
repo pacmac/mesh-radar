@@ -775,6 +775,51 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     let _rcActive             = false;  // true while a traceroute dispatch is in flight
     let _rcPassiveTracingNode = null;   // node currently being traced (PASV card spinner)
 
+    // Quantile control points for the radar's adaptive scale.
+    //
+    // docs/modules/app-radar.md argued this was "sanctioned display arithmetic
+    // (derived from the displayed list)". Defensible, but the QUANTILES are a
+    // property of the data, and the backend already holds every distance — so
+    // computing them twice invites the two sides to disagree, which is exactly
+    // what happened with the region-frequency table (B80).
+    //
+    // The hysteresis lives here too: it exists to stop the rings jittering as
+    // nodes come and go, and that only works if one place owns the previous
+    // value. Split across the boundary it would fight itself.
+    let _radarScalePrev = null;
+    function radarScaleCtrl() {
+      const maxKm = Number(getConfig('radar.max_range_km', 50)) || 50;
+      // `_km` — the SAME field and the SAME filtered list the browser plotted.
+      // A node here carries `position` and a precomputed `_km`, NOT a top-level
+      // `lat`; reading `n.lat` returned undefined for every node and the scale
+      // came back null. Using _km also keeps the quantiles over the DISPLAYED
+      // set, so the rings still describe what is on screen rather than the whole
+      // store.
+      const kms = (nodeList.nodes || [])
+        .map(n => n?._km)
+        .filter(km => km != null && km > 0 && km <= maxKm)
+        .sort((a, b) => a - b);
+      // Fewer than four distinct distances cannot describe a distribution; the
+      // browser falls back to its fixed pow-0.4 curve, which is the spec'd
+      // degraded mode rather than a failure.
+      if (new Set(kms.map(k => k.toFixed(1))).size < 4) return null;
+
+      const q = f => kms[Math.min(kms.length - 1, Math.floor(f * kms.length))];
+      // Rounded for readable ring labels, but never snapped so hard that
+      // quartiles inside the cluster band collapse into one ring.
+      const snap = km => km >= 10 ? Math.round(km) : Math.round(km * 2) / 2;
+      let pts = [...new Set([q(0.25), q(0.5), q(0.75)].map(snap).filter(k => k < maxKm))];
+      if (!pts.length) return null;
+
+      const prev = _radarScalePrev;
+      if (prev && prev.max_km === maxKm && prev.kms.length === pts.length &&
+          prev.kms.every((k, i) => Math.abs(k - pts[i]) / k <= 0.15)) return prev;
+
+      const fr = pts.map((_, i) => 0.28 + (0.76 - 0.28) * (i / Math.max(1, pts.length - 1)));
+      _radarScalePrev = { max_km: maxKm, kms: pts, fracs: pts.length === 1 ? [0.52] : fr };
+      return _radarScalePrev;
+    }
+
     function buildRadarContext() {
       const mode      = dashMode.value;      // 0=PASV, 1=ACTV, 2=SCAN
       const targetNum = lastPointTarget?.point_target ?? null;
@@ -813,6 +858,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         traceroute_active: _rcActive,
         target_arm_az:     armAz,
         active_card:       activeCard,
+        // THE SCALE'S CONTROL POINTS. Quantiles of the plotted node distances —
+        // a property of the DATA, so decided here. The browser interpolates
+        // between them, which is the display half and stays there.
+        scale:             radarScaleCtrl(),
       };
     }
 

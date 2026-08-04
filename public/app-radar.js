@@ -222,29 +222,17 @@ export const radarMixin = {
   // band gets ~half the radius wherever it sits). NICE-snapped + hysteresis
   // so the plot doesn't jitter as nodes come and go. Display arithmetic
   // derived from the pushed node list — no state decisions.
+  // THE QUANTILES ARE SERVED. This computed them from the displayed list — a
+  // defensible reading of "display arithmetic", but the quantiles are a property
+  // of the DATA, and computing them on both sides is how the region-frequency
+  // table ended up with three drifted copies (B80).
+  //
+  // radar_context.scale carries { max_km, kms[], fracs[] }, hysteresis included
+  // (it only works if one side owns the previous value). What stays here is the
+  // interpolation — mapping a distance to a radius — which is display.
   _radarScaleCtrl(maxKm) {
-    const kms = this.radarNodes
-      .map(n => n._km).filter(k => k != null && k > 0 && k <= maxKm)
-      .sort((a, b) => a - b);
-    if (new Set(kms.map(k => k.toFixed(1))).size < 4) return null; // too few — caller falls back
-    const q = f => kms[Math.min(kms.length - 1, Math.floor(f * kms.length))];
-    // Round for readable ring labels, but never snap so hard that quartiles
-    // inside the cluster band collapse together (that destroys adaptivity).
-    const snap = km => km >= 10 ? Math.round(km) : Math.round(km * 2) / 2;
-    let pts = [q(0.25), q(0.5), q(0.75)].map(snap).filter(k => k < maxKm);
-    pts = [...new Set(pts)];
-    if (!pts.length) return null;
-    const prev = this._radarScalePts;
-    // Hysteresis: keep the previous control points unless one drifts >15%
-    if (prev && prev.maxKm === maxKm && prev.kms.length === pts.length &&
-        prev.kms.every((k, i) => Math.abs(k - pts[i]) / k <= 0.15)) {
-      return prev;
-    }
-    // Radius fractions spread evenly up to 0.95, one segment per control point
-    const fr = pts.map((_, i) => 0.28 + (0.76 - 0.28) * (i / Math.max(1, pts.length - 1)));
-    const next = { maxKm, kms: pts, fracs: pts.length === 1 ? [0.52] : fr };
-    this._radarScalePts = next;
-    return next;
+    const s = this.radarCtx?.scale;
+    return (s && s.max_km === maxKm) ? { maxKm: s.max_km, kms: s.kms, fracs: s.fracs } : null;
   },
 
   _radarNorm(km, maxKm) {
