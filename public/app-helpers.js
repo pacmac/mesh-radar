@@ -40,6 +40,16 @@ export function bandFor(value, bands) {
   return bands.find(b => b.min == null || v >= b.min) ?? bands[bands.length - 1];
 }
 
+/** Same, for a SERVED descending table (`max`, lower-is-better). Kept separate
+ *  rather than overloading bandFor: silently applying the ascending rule to a
+ *  descending table would mis-colour every row and look like it worked. */
+export function bandForMax(value, bands) {
+  if (!Array.isArray(bands) || !bands.length) return null;
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  const v = Number(value);
+  return bands.find(b => b.max == null || v < b.max) ?? bands[bands.length - 1];
+}
+
 export async function fetchJSON(url, method = 'GET', body) {
   const opts = { method, headers: {} };
   if (body !== undefined) {

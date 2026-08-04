@@ -1,7 +1,7 @@
 ---
 module: app-helpers
 source: public/app-helpers.js
-source_hash: ecbb9892e52e525f14a225d13e93774882e886530b13fa345cf55e9959676a89
+source_hash: 7f9cd69729cf534ffc6ca62008107e943a967d38c46937e174f6640613caee7f
 updated: 2026-08-03
 ---
 

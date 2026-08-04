@@ -12,7 +12,8 @@ import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.j
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { snrDbList } from './snr.js';
-import { signalVerdict, marginHealth, hopsTone, blePctTone, verdictBands } from './signal-verdict.js';
+import { signalVerdict, marginHealth, hopsTone, blePctTone, verdictBands,
+         gapTone, excessLossTone, heardTone } from './signal-verdict.js';
 import { signalQuality as sigQualityPct } from './utils.js';
 import { budget as linkBudget, marginDb, snrGapDb, theoreticalSnrDb,
          expectedRssiDbm, excessLossDb } from './link-budget.js';
@@ -43,6 +44,9 @@ function withRangeBudget(e, loraFor) {
     dist_km:       distKm == null ? null : +distKm.toFixed(2),
     expected_rssi: expected,
     excess_loss_db: excessLossDb(e.rssi, expected),
+    // tab-range.html:64,157 coloured this itself. Lower is better here, which
+    // is precisely the sort of inverted rule a :class attribute gets wrong.
+    excess_loss_tone: excessLossTone(excessLossDb(e.rssi, expected)),
   };
 }
 
@@ -118,6 +122,8 @@ function withLinkBudget(row, loraFor) {
     // bar count from one band table and the colour from a DIFFERENT one. Both
     // now come from marginHealth(). `bars` is a count; the browser draws them.
     health:         marginHealth(r2(marginDb(snrTx, lora))),
+    // tab-perf.html:243 held <15/<35 for the SNR gap. Lower is better.
+    gap_tone:       gapTone(r2(snrGapDb(snrTx, distKm, lora, dev))),
   };
 }
 
@@ -455,7 +461,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         // 0/1/2 thresholds. The badge's TEXT (Direct vs "n hops", the
         // verified/reported suffix) is display composition and stays there.
         return { ...n, display_name: resolveNodeLabel(n.num), via, hops_verified, hops_display, hops_fresh, signal,
-                 hops_tone: hopsTone(hops_display) };
+                 hops_tone: hopsTone(hops_display),
+                 // tab-nodes.html:163-164 did its own Date.now() arithmetic AND
+                 // set the bands. Age is server-side; the row renders a tone.
+                 heard_tone: heardTone(n.last_heard == null ? null : (Date.now() / 1000) - n.last_heard) };
       }) };
     }
     if (ev.type === 'device_list') {

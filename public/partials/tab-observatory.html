@@ -417,13 +417,13 @@
                       <!-- Tinted by liveness: a node silent for weeks answers
                            1.8% of the time, one heard today 16-26%. -->
                       <td class="text-right pr-3"
-                          :class="f.since_sec == null ? 'text-base-content/25' : f.since_sec < 86400 ? 'text-success' : f.since_sec < 604800 ? 'text-base-content/50' : 'text-warning'"
+                          :class="toneCls(f.since_tone)"
                           x-text="f.since"></td>
                       <td class="text-right pr-3 text-base-content/60" x-text="f.hits + '/' + f.attempts"></td>
                       <!-- Hit rate is the honest headline for a single target:
                            189 km on one hit in 63 tries is a rare event, not a link. -->
                       <td class="text-right"
-                          :class="(f.hits / f.attempts) < 0.1 ? 'text-warning' : 'text-base-content/60'"
+                          :class="f.hit_rate_tone === 'warning' ? 'text-warning' : 'text-base-content/60'"
                           x-text="Math.round((f.hits / f.attempts) * 100) + '%'"></td>
                     </tr>
                   </template>
@@ -514,7 +514,7 @@
                         <td class="text-right pr-2" x-text="m.km"></td>
                         <td class="text-right pr-2 text-base-content/50" x-text="m.bearing != null ? m.bearing + '°' : '—'"></td>
                         <td class="text-right pr-2"
-                            :class="m.since_sec == null ? 'text-base-content/25' : m.since_sec < 86400 ? 'text-success' : m.since_sec < 604800 ? 'text-base-content/50' : 'text-warning'"
+                            :class="toneCls(m.since_tone)"
                             x-text="m.since"></td>
                         <!-- THE STEP. How far past the nearest node we have
                              actually reached — the number that says whether an

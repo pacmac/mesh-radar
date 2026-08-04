@@ -18,6 +18,7 @@ import { onEvent, listHooks } from './hooks.js';
 import { resolveNodeLabel } from './node-label.js';
 import { mqttDiscarded } from './observations.js';
 import { missionRunner } from './mission-runner.js';
+import { hitRateVerdict } from './signal-verdict.js';
 import db, { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
          attemptsByDay, answerRateBySilence, answerRateByDistance,
          rateByBandByDay, windowBestKm, boardVerdicts, recentEventLog, interventions } from './db.js';
@@ -248,9 +249,13 @@ function reachModel() {
       bearing: f.value.bearing ?? null,
       since:   sinceStr(heard.has(Number(f.entity)) ? nowS - heard.get(Number(f.entity)) : null),
       since_sec: heard.has(Number(f.entity)) ? nowS - heard.get(Number(f.entity)) : null,
+      since_tone: sinceTone(heard.has(Number(f.entity)) ? nowS - heard.get(Number(f.entity)) : null),
       obs_target: targeted.has(Number(f.entity)),
       hits:    f.value.hits,
       attempts: f.value.attempts,
+      // tab-observatory.html:426 divided hits/attempts and applied <0.1 itself.
+      hit_rate: hitRateVerdict(f.value.hits, f.value.attempts).rate,
+      hit_rate_tone: hitRateVerdict(f.value.hits, f.value.attempts).tone,
       last_ok: f.value.last_ok,
       // A place beats a callsign for judging a corridor: "St Ives, Cornwall"
       // says why the shot is hard in a way "Ives" never can. Trimmed to the

@@ -240,7 +240,7 @@
                             <td class="font-mono text-right" x-show="perfExpert"
                                 x-text="row.snrTx != null ? row.snrTx.toFixed(1)+' dB' : '–'"></td>
                             <td class="font-mono text-right" x-show="perfExpert"
-                                :class="row.gapTx == null ? 'text-base-content/30' : row.gapTx < 15 ? 'text-success' : row.gapTx < 35 ? 'text-warning' : 'text-error'"
+                                :class="toneCls(row.gap_tone)"
                                 x-text="row.gapTx != null ? '+' + row.gapTx.toFixed(0)+' dB' : '–'"></td>
                           </tr>
                         </template>

@@ -1,7 +1,7 @@
 ---
 module: app-range
 source: public/app-range.js
-source_hash: 04c0f0f97e007b22b54f517c7b88cb04884eb431f9aa13d48d7124d1ea5e89c3
+source_hash: 0ae7e868292c9e5c0e68b38a115d1fb9878b30f20d8e84f506b86df2ff7af0bd
 updated: 2026-08-04
 ---
 

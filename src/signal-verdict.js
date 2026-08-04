@@ -109,6 +109,59 @@ export function successRateTone(pct) {
 // and app-radar.js each hardcoded 30 — three copies of one rule.
 const LIVE_SIGNAL_FRESH_SEC = 30;
 
+// Measured-vs-theory penalty in dB. Lower is better, so these read the other
+// way round from every band above — which is exactly why they belong here and
+// not in a :class attribute. Was tab-perf.html:243 (SNR gap) and
+// tab-range.html:64,157 (excess path loss).
+const GAP_BANDS = [
+  { max: 15,   tone: 'success' },
+  { max: 35,   tone: 'warning' },
+  { max: null, tone: 'error'   },
+];
+const EXCESS_LOSS_BANDS = [
+  { max: 0,    tone: 'success' },   // at or better than free-space theory
+  { max: 10,   tone: 'warning' },
+  { max: null, tone: 'error'   },
+];
+const lowerIsBetter = (bands) => (v) => {
+  if (v == null || !Number.isFinite(Number(v))) return 'muted';
+  const n = Number(v);
+  return (bands.find(b => b.max == null || n < b.max) ?? bands[bands.length - 1]).tone;
+};
+
+/** SNR gap: how far below theory a link measured. Lower is better. */
+export const gapTone = lowerIsBetter(GAP_BANDS);
+
+/** Excess path loss vs FSPL. `<= 0` is better than theory, hence the shifted
+ *  boundary: the old template used `<= 0` for success and `< 10` for warning. */
+export function excessLossTone(db) {
+  if (db == null || !Number.isFinite(Number(db))) return 'muted';
+  const n = Number(db);
+  return n <= 0 ? 'success' : n < 10 ? 'warning' : 'error';
+}
+
+// A target that answers less than this fraction of the time is worth flagging.
+// Was `(f.hits / f.attempts) < 0.1` in tab-observatory.html:426 — the browser
+// doing the division AND setting the bar.
+const POOR_HIT_RATE = 0.1;
+
+/** Hit rate verdict. Serves the RATE too: the browser was dividing. */
+export function hitRateVerdict(hits, attempts) {
+  const a = Number(attempts) || 0;
+  if (!a) return { rate: null, tone: 'muted' };
+  const rate = (Number(hits) || 0) / a;
+  return { rate: +(rate * 100).toFixed(1), tone: rate < POOR_HIT_RATE ? 'warning' : 'muted' };
+}
+
+// How long since we heard a node, in the three steps the node list paints.
+// Was tab-nodes.html:163-164, which also did its own Date.now() arithmetic.
+const HEARD_BANDS = [
+  { max: 1800,  tone: 'muted'   },   // under 30 min — unremarkable
+  { max: 3600,  tone: 'warning' },   // under an hour
+  { max: null,  tone: 'error'   },
+];
+export const heardTone = lowerIsBetter(HEARD_BANDS);
+
 /** Direction of travel for median margin, with the 1 dB dead-band preserved
  *  from app-perf.js:373-386 — a change under 1 dB is noise, not a trend.
  *
@@ -188,5 +241,9 @@ export function verdictBands() {
     // app-*.js missed them: tab-perf.html:42-43 and tab-radar.html:278.
     success_rate: SUCCESS_RATE_BANDS.map(b => ({ min: b.min, tone: b.tone })),
     live_signal_fresh_sec: LIVE_SIGNAL_FRESH_SEC,
+    // LOWER IS BETTER, so these carry `max` rather than `min` and the browser
+    // must not reuse the ascending lookup on them. app-range's median is
+    // client-side (same reason as the perf medians), so it needs the table.
+    excess_loss: EXCESS_LOSS_BANDS.map(b => ({ max: b.max, tone: b.tone })),
   };
 }

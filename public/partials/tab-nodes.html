@@ -159,10 +159,7 @@
                                 <div class="font-semibold text-sm leading-tight truncate"
                                      x-text="n.user?.long_name || n.user?.short_name || '–'"></div>
                                 <div class="text-xs leading-tight mt-0.5"
-                                     :class="n.last_heard == null ? 'text-base-content/30'
-                                       : (Date.now()/1000 - n.last_heard) < 1800 ? 'text-base-content/40'
-                                       : (Date.now()/1000 - n.last_heard) < 3600 ? 'text-warning/80'
-                                       : 'text-error/60'"
+                                     :class="toneCls(n.heard_tone)"
                                      x-text="fmtAge(n.last_heard)"></div>
                               </div>
                             </div>

@@ -1,7 +1,7 @@
 ---
 module: tab-range
 source: public/partials/tab-range.html
-source_hash: c18fba074a308fdf5c109ed30ee37c8dc9699a513bc453fbf45914da931dea4c
+source_hash: dd51623fb96325974171243ce5509d3b0915ad66e21168efafab07e8132a7d2c
 updated: 2026-07-02
 ---
 

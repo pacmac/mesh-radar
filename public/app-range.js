@@ -1,5 +1,5 @@
 // Range test mixin: loading, display, chart, export.
-import { fetchJSON } from './app-helpers.js';
+import { fetchJSON, bandForMax } from './app-helpers.js';
 
 export const rangeMixin = {
   loadRangeTest() { /* no-op — log arrives via WS range_test_log on connect */ },
@@ -90,6 +90,9 @@ export const rangeMixin = {
       az:           az != null ? Math.round(az) : null,
       expectedRssi: e.expected_rssi ?? null,
       excessLoss:   e.excess_loss_db ?? null,
+      // SERVED. tab-range.html:157 held <=0/<10 — an inverted rule (lower is
+      // better) in a :class attribute, which is where they get written wrong.
+      excessLossTone: e.excess_loss_tone ?? 'muted',
     };
   },
 
@@ -188,6 +191,11 @@ export const rangeMixin = {
       medianSnr:  snrs.length  ? parseFloat(median(snrs).toFixed(1))  : null,
       bestSnr:    snrs.length  ? snrs[snrs.length - 1]                 : null,
       medianExcessLoss: losses.length ? parseFloat(median(losses).toFixed(1)) : null,
+      // The median is client-side (arithmetic over served values), so its band
+      // comes from the served DESCENDING table — note bandForMax, not bandFor.
+      medianExcessLossTone: losses.length
+        ? (bandForMax(parseFloat(median(losses).toFixed(1)), this.verdictBands?.excess_loss)?.tone ?? 'muted')
+        : 'muted',
       maxDistKm: dists.length ? Math.max(...dists).toFixed(1) : null,
     };
     return this._rangeStats;
