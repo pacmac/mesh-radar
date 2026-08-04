@@ -93,23 +93,23 @@
             <div class="stat bg-base-100 shadow" x-show="perfExpert">
               <div class="stat-title">EIRP</div>
               <div class="stat-value"
-                   x-text="perfEirpDbm().toFixed(1) + ' dBm'"></div>
+                   x-text="perfBudget().eirp_dbm != null ? perfBudget().eirp_dbm.toFixed(1) + ' dBm' : '—'"></div>
               <div class="stat-desc font-mono"
                    x-text="(loraCfg?.tx_power??'–') + ' + ' + (perfDevCfg()?.gain_dbi??0) + ' - ' + (perfDevCfg()?.cable_loss_db??0) + ' dB'"></div>
             </div>
             <div class="stat bg-base-100 shadow" x-show="perfExpert">
               <div class="stat-title">Sensitivity</div>
               <div class="stat-value"
-                   x-text="perfRxSensitivityDbm().toFixed(1) + ' dBm'"></div>
+                   x-text="perfBudget().rx_sensitivity_dbm != null ? perfBudget().rx_sensitivity_dbm.toFixed(1) + ' dBm' : '—'"></div>
               <div class="stat-desc font-mono"
                    x-text="'SF' + (loraCfg?.spread_factor??'?') + ' BW' + (loraCfg?.bandwidth??'?') + 'k · ' + (loraCfg?.sx126x_rx_boosted_gain ? 'boosted' : 'normal')"></div>
             </div>
             <div class="stat bg-base-100 shadow" x-show="perfExpert">
               <div class="stat-title">Link Budget</div>
               <div class="stat-value text-success"
-                   x-text="(perfEirpDbm() - perfRxSensitivityDbm()).toFixed(0) + ' dB'"></div>
+                   x-text="perfBudget().eirp_dbm != null ? (perfBudget().eirp_dbm - perfBudget().rx_sensitivity_dbm).toFixed(0) + ' dB' : '—'"></div>
               <div class="stat-desc font-mono"
-                   x-text="(loraCfg?.region ?? '–') + ' · ' + perfFreqMHz().toFixed(0) + ' MHz · n=3 ' + perfMaxRangeKm(3).toFixed(0) + ' km'"></div>
+                   x-text="(loraCfg?.region ?? '–') + (perfBudget().freq_mhz != null ? ' · ' + perfBudget().freq_mhz.toFixed(0) + ' MHz · n=3 ' + perfBudget().max_range_km.toFixed(0) + ' km' : '')"></div>
             </div>
             <div class="stat bg-base-100 shadow" x-show="perfExpert">
               <div class="stat-title">Median SNR</div>

@@ -2,18 +2,10 @@
 // Chart instances live outside Alpine's reactive scope to prevent proxy recursion.
 let _charts = {}; // reassigned by destroyPerfCharts() on tab-leave (lazy tabs)
 
-const REGION_FREQ_MHZ = {
-  EU_433: 433.175, EU_868: 868.0, US: 915.0, AU_915: 915.0, CN: 470.0,
-  JP: 920.0, ANZ: 915.0, KR: 920.0, TW: 923.0, RU: 868.9, IN: 865.0,
-  NZ_865: 865.0, TH: 920.0, LORA_24: 2400.0, UA_868: 868.0, MY_919: 919.0,
-  SG_923: 923.0, PH_868: 868.0,
-};
 
 // LoRa SNR limits (dB) from Semtech datasheets — minimum decodable SNR per SF
-const SF_SNR_LIMIT = { 6: -5, 7: -7.5, 8: -10, 9: -12.5, 10: -15, 11: -17.5, 12: -20 };
 
 // NF for SX1262 (typical) + implementation margin
-const RX_NOISE_FIGURE_DB = 6;
 
 export const perfMixin = {
   perfHistory:      [],     // the perfDev() slice shown by the page
@@ -24,77 +16,25 @@ export const perfMixin = {
   _perfAutoTimer:   null,
 
   // ── Link budget ──────────────────────────────────────────────────────────
+  //
+  // THE PHYSICS IS GONE FROM HERE. Friis sensitivity, free-space path loss, the
+  // thermal noise floor, EIRP, max range and the reference curve all moved to
+  // src/link-budget.js and arrive computed. Peter, 2026-08-04: "the first thing
+  // I want to do is to bring us back into compliance with the UI rules."
+  //
+  // What the page reads now:
+  //   per row     margin_tx_db, gap_tx_db, theo_snr_db, metric_dist_km, valid_tx
+  //   per radio   link_budget { freq_mhz, sf_snr_limit_db, noise_floor_dbm,
+  //                             rx_sensitivity_dbm, eirp_dbm, max_range_km,
+  //                             reference_curve[] }
+  //
+  // Nothing in public/ may compute a link budget again.
 
-  perfFreqMHz() {
-    const region = this.loraCfg?.region ?? 'EU_868';
-    return REGION_FREQ_MHZ[region] ?? 868.0;
-  },
-
-  perfRxSensitivityDbm() {
-    const sf = this.loraCfg?.spread_factor ?? 11;
-    const bwKhz = this.loraCfg?.bandwidth ?? 250;
-    const bwHz  = bwKhz * 1000;
-    const snrLimit = SF_SNR_LIMIT[sf] ?? -17.5;
-    // Friis: sensitivity = kTB + NF + SNR_min
-    // kT at 290K = -174 dBm/Hz
-    const sensitivity = -174 + 10 * Math.log10(bwHz) + RX_NOISE_FIGURE_DB + snrLimit;
-    // Boost gain improves NF by ~1.5 dB
-    return this.loraCfg?.sx126x_rx_boosted_gain ? sensitivity + 1.5 : sensitivity;
-  },
-
-  perfEirpDbm() {
-    const cfg   = this.perfDevCfg();
-    const txPwr = this.loraCfg?.tx_power ?? 0;
-    const gain  = cfg.gain_dbi      ?? 0;
-    const loss  = cfg.cable_loss_db ?? 0;
-    return txPwr + gain - loss;
-  },
-
-  // Free-space path loss (dB) at distance_km and freq_MHz
-  perfFspl(distKm, freqMhz) {
-    if (distKm <= 0) return 0;
-    return 20 * Math.log10(distKm) + 20 * Math.log10(freqMhz) + 32.45;
-  },
-
-  // Thermal noise floor — kTB + NF, no SF demodulation limit included
-  // This is the reference the SX126x chip uses for its SNR measurement
-  perfNoiseFloorDbm() {
-    const bwHz = (this.loraCfg?.bandwidth ?? 250) * 1000;
-    return -174 + 10 * Math.log10(bwHz) + RX_NOISE_FIGURE_DB;
-  },
-
-  // Minimum decodable SNR for the current spreading factor
-  perfSfSnrLimitDb() {
-    return SF_SNR_LIMIT[this.loraCfg?.spread_factor ?? 11] ?? -17.5;
-  },
-
-  // Theoretical chip-reported SNR in free-space at distKm
-  // = EIRP - FSPL(d) - noise_floor
-  // Same reference point as the radio's SNR output — directly comparable to actual
-  perfTheoChipSnr(distKm) {
-    if (distKm <= 0) return 0;
-    return this.perfEirpDbm() - this.perfFspl(distKm, this.perfFreqMHz()) - this.perfNoiseFloorDbm();
-  },
-
-  // Max range using log-distance model with path loss exponent n
-  // n=2 = free space, n=3 = rural outdoor, n=4 = suburban/urban
-  perfMaxRangeKm(n = 3) {
-    const lb      = this.perfEirpDbm() - this.perfRxSensitivityDbm();
-    const freqMhz = this.perfFreqMHz();
-    const fspl1km = 20 * Math.log10(freqMhz) + 32.45;
-    return Math.pow(10, (lb - fspl1km) / (10 * n));
-  },
-
-  // Excess path loss above free-space: how many dB worse than FSPL
-  // positive = real world has more loss than free space (always expected)
-  perfSnrGap(actualSnr, distKm) {
-    if (distKm == null || distKm <= 0 || actualSnr == null) return null;
-    return this.perfTheoChipSnr(distKm) - actualSnr;
-  },
-
-  perfMargin(actualSnr) {
-    if (actualSnr == null) return null;
-    return actualSnr - this.perfSfSnrLimitDb();
+  /** The served budget for the page's selected radio, or an empty object. */
+  perfBudget() {
+    const dev = this.perfDev();
+    const d = (this.availableDevices || []).find(x => x.addr === dev);
+    return d?.link_budget || {};
   },
 
   _perfMedian(values) {
@@ -286,8 +226,11 @@ export const perfMixin = {
     const snrRx   = direct
       ? (row.snr_back?.[0] ?? null)
       : (row.snr_back?.[row.snr_back.length - 1] ?? null);
-    const gapTx = this.perfSnrGap(snrTx, metricDistKm);
-    const marginTx = this.perfMargin(snrTx);
+    // SERVED, not computed — attributed to the row's own tx_device by the
+    // backend, which is more correct than the old behaviour of applying the
+    // page's currently-selected radio to every row.
+    const gapTx    = row.gap_tx_db    ?? null;
+    const marginTx = row.margin_tx_db ?? null;
     const validTx = snrTx != null && metricDistKm != null && metricDistKm > 0.1;
     const confidence = !validTx ? 'low' : direct ? 'high' : 'medium';
     const routeKind = direct ? 'direct' : 'first-hop';
@@ -606,15 +549,13 @@ export const perfMixin = {
     if (!this.perfExpert) return [];
     const rows = this.perfValidRows('all');
     if (!rows.length) return [];
-    const maxKm = Math.max(...rows.map(r => r.metricDistKm), 1);
-    const pts   = 80;
-    const ideal = [], rural = [];
-    for (let i = 1; i <= pts; i++) {
-      const km   = (i / pts) * maxKm * 1.1;
-      const base = this.perfTheoChipSnr(km) - this.perfSfSnrLimitDb();
-      ideal.push({ x: km, y: base });
-      rural.push({ x: km, y: base - 10 * Math.log10(km) });
-    }
+    // CLIPPED, not computed. The curve arrives from the server over a fixed
+    // 250 km domain; choosing how much of it to draw is the only display
+    // decision left here.
+    const maxKm = Math.max(...rows.map(r => r.metricDistKm), 1) * 1.1;
+    const curve = (this.perfBudget().reference_curve || []).filter(p => p.km <= maxKm);
+    const ideal = curve.map(p => ({ x: p.km, y: p.ideal_db }));
+    const rural = curve.map(p => ({ x: p.km, y: p.rural_db }));
     return [
       {
         label: 'Ideal (free space)',

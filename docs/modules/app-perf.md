@@ -1,8 +1,8 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: 9f2300323b3597629c004b0a22e398dc61d06eef9be249f570165a82c699141e
-updated: 2026-08-03
+source_hash: 303b712b5262fb3d109626177dbfdc6fed07d809b71c3b094c7f9fb703e864af
+updated: 2026-08-04
 ---
 
 # Module: app-perf
@@ -153,3 +153,38 @@ destroyed on leave and re-created on return. `_charts` is `let` (not `const`)
 so `destroyPerfCharts()` can reset it to `{}`; `app-nav.setNav` calls
 `destroyPerfCharts()` when leaving perf, and `initPerfCharts()` (already wired
 on enter) rebuilds them against the fresh canvases.
+
+
+## The RF physics has left this mixin (2026-08-04)
+
+Peter: *"the first thing I want to do is to bring us back into compliance with the
+UI rules."*
+
+`perfFreqMHz`, `perfRxSensitivityDbm`, `perfEirpDbm`, `perfFspl`,
+`perfNoiseFloorDbm`, `perfSfSnrLimitDb`, `perfTheoChipSnr`, `perfMaxRangeKm`,
+`perfSnrGap` and `perfMargin` are **deleted**, along with `REGION_FREQ_MHZ`,
+`SF_SNR_LIMIT` and `RX_NOISE_FIGURE_DB`. The Friis equation, free-space path
+loss, the thermal noise floor and EIRP now live in `src/link-budget.js`,
+backend-only.
+
+What the page reads instead:
+
+| | field |
+|---|---|
+| per row | `margin_tx_db`, `gap_tx_db`, `theo_snr_db`, `metric_dist_km`, `valid_tx` |
+| per radio | `link_budget { freq_mhz, sf_snr_limit_db, noise_floor_dbm, rx_sensitivity_dbm, eirp_dbm, max_range_km, reference_curve[] }` via `perfBudget()` |
+
+**More correct, not merely moved.** The backend attributes each row to its own
+`tx_device`; this mixin applied whichever radio was *selected* to every row, while
+this very spec claimed `marginTx` "measures the DISPATCHING radio's TX chain".
+
+`_perfScatterRefDatasets` no longer evaluates Friis 80 times — it **clips** the
+served `reference_curve` to its axis, which is the only display decision left.
+
+Verified after the strip: all five physics functions `undefined` on the mixin,
+budget served (EIRP 39 dBm, sensitivity −130.02 dBm, range 392 km, 80 curve
+points), and margins unchanged — `snrTx 5.75 → 23.25`, exactly as before.
+
+**Nothing in `public/` may compute a link budget again.** One instance remains
+elsewhere and is filed as B80: `app-range.js:93` still computes FSPL, with
+`32.4` where `link-budget.js` uses `32.45`.
