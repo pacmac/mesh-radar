@@ -102,6 +102,42 @@ opportunistic: it worked on one evening, and tomorrow it may not exist. A router
 is dedicated: it is infrastructure, and a corridor built on it survives. Both
 can carry a packet; only one can be planned around.
 
+### But they do the same job — and at the frontier they are equal
+
+Peter, 2026-08-04: *"DOORS and ROUTERS could be of equal value, they do the same
+thing, BUT we can probably assume that if someone has setup a router, that it is
+in a great location"*.
+
+Both halves are true, and the second is the **mechanism** behind the first.
+Measured over nodes observed relaying in completed traceroutes:
+
+```
+                    n   med alt  (n)   avg targets   avg hops   furthest behind
+declared ROUTER    19     266 m   13          28.7        387          189.1 km
+everything else    80      39 m   38           4.4         17          181.6 km
+```
+
+- **Siting: routers win, and that is the whole reason.** A median 266 m against
+  39 m — nearly 7× the height. Somebody who configures a router puts it
+  somewhere good, and height is the single biggest lever on range. **The role
+  declaration is a free signal about siting**, which we cannot otherwise measure.
+- **Breadth and load: routers win.** 6.5× the distinct targets, 23× the volume.
+- **Reach at the edge: they are equal.** The furthest node behind a plain door is
+  **181.6 km** — within 7.5 km of the furthest behind any declared router.
+
+So value depends on **what the path is being used for**, not on the class:
+
+| purpose | which is better |
+|---|---|
+| one shot at the frontier | **equal** — use whatever sits on the bearing |
+| standing infrastructure, "forever" | **router** — height, breadth and durability compound |
+
+A door on the right bearing is not a second-rate router. It is the same tool with
+no warranty.
+
+*Bounds: altitude is recorded for only 13 of 19 routers and 38 of 80 others, and
+it is self-reported by the node. Small samples on both sides.*
+
 So the two are used differently:
 
 - a **router** justifies standing investment — aim at it, map what lies behind
