@@ -1272,11 +1272,34 @@ export function boardVerdicts(days = 7) {
   }
 
   // ── FRONTIER ──────────────────────────────────────────────────────────────
-  const best = (a, b) => db.prepare(`
-    SELECT MAX(${KM}) km FROM traceroute_history t JOIN nodes n ON n.num = t.to_num
-     WHERE t.status='ok' AND n.lat IS NOT NULL AND n.lat <> 0 AND t.ts > @a AND t.ts <= @b`)
-    .get({ a, b, hlat: home?.lat ?? 0, hlon: home?.lon ?? 0 })?.km ?? null;
-  const curKm = best(from, now), prevKm = best(prevFrom, from);
+  // THE FRONTIER IS CONTACT. This computed MAX distance over ANSWERED
+  // TRACEROUTES and the card printed it as "Frontier" — 176.2 km, while we held
+  // guarded packet evidence at 444.2 km. Peter: "176 is NOT the frontier, our
+  // best is already 444km ... you are basing data on traceroute alone. that
+  // concept is not right is it." It is not. windowBestKm() now measures
+  // RECEPTIONS, per-hop guarded, and this is the same number the top-level
+  // window_best_km carries — one definition, not two.
+  const curKm  = windowBestKm(Number(days) > 0 ? Number(days) : 0).km;
+  const prevKm = (() => {
+    // Previous window of equal length, same basis, for the trend verdict.
+    const rows = db.prepare(`
+      SELECT ${KM} AS km,
+             MIN(CASE WHEN hop_start IS NOT NULL AND hop_limit IS NOT NULL
+                      THEN hop_start - hop_limit END) AS hops
+        FROM relay_observation r JOIN nodes n ON n.num = r.from_num
+       WHERE n.lat IS NOT NULL AND n.lat <> 0 AND r.ts > @a AND r.ts <= @b
+       GROUP BY r.from_num`)
+      .all({ a: prevFrom, b: from, hlat: home?.lat ?? 0, hlon: home?.lon ?? 0 });
+    let m = null;
+    for (const r of rows) {
+      if (r.hops == null) continue;                      // fails closed, as B81 requires
+      const h = Number(r.hops);
+      if (!Number.isFinite(h) || h < 0) continue;
+      if (h > 0 && r.km / h > 200) continue;
+      if (m == null || r.km > m) m = r.km;
+    }
+    return m;
+  })();
   const rec = db.prepare(`
     SELECT MAX(${KM}) km, MAX(t.ts) ts FROM traceroute_history t JOIN nodes n ON n.num = t.to_num
      WHERE t.status='ok' AND n.lat IS NOT NULL AND n.lat <> 0`)
@@ -1292,15 +1315,24 @@ export function boardVerdicts(days = 7) {
   // THE VERDICT ONLY. Each of these used to open with `curKm`, which the card
   // prints directly above as its value — so every frontier card said its own
   // number twice and had less room for the thing that was actually missing.
+  // THE FRONTIER JUDGES ITSELF ON CONTACT, and says where the ROUTE stands as a
+  // separate clause. Before this it printed "record 189.1 km unbeaten 30 days"
+  // underneath a contact figure of 444.2 km — a route fact judging a contact
+  // number, which is the same conflation the whole model carried.
   let fState = 'warn', fBasis;
+  const routeNote = (recordKm != null && flatDays != null)
+    ? ` · furthest verified ROUTE ${recordKm} km, unbeaten ${flatDays} days`
+    : '';
   if (curKm == null) {
-    fState = 'fault'; fBasis = 'nothing answered in this window';
+    fState = 'fault'; fBasis = 'no packet reached us in this window' + routeNote;
   } else if (prevKm != null && curKm > prevKm) {
-    fState = 'ok';    fBasis = `up from ${prevKm.toFixed(1)} km last period`;
-  } else if (flatDays != null && flatDays > 7) {
-    fState = 'fault'; fBasis = `record ${recordKm} km unbeaten ${flatDays} days`;
+    fState = 'ok';    fBasis = `up from ${prevKm.toFixed(1)} km last period` + routeNote;
+  } else if (prevKm != null && curKm < prevKm) {
+    fState = 'warn';  fBasis = `down from ${prevKm.toFixed(1)} km last period` + routeNote;
+  } else if (prevKm != null) {
+    fState = 'ok';    fBasis = `level with last period` + routeNote;
   } else {
-    fBasis = prevKm != null ? `previous period ${prevKm.toFixed(1)} km` : 'no previous period to compare';
+    fBasis = 'no previous period to compare' + routeNote;
   }
 
   // ── SPARKLINES ────────────────────────────────────────────────────────────
@@ -1680,30 +1712,76 @@ export function rateByBandByDay(days = 30) {
  *  Returns null when nothing was answered in the window — an honest empty, not a
  *  zero, because 0 km would draw as a data point.
  */
+// THE FRONTIER IS CONTACT, NOT A COMPLETED TRACEROUTE.
+//
+// Peter, 2026-08-04: "176 is NOT the frontier, our best is already 444km ... you
+// are basing data on traceroute alone. that concept is not right is it."
+//
+// He is right, and it was the root error rather than a label. This returned the
+// furthest node that ANSWERED a traceroute in the window — 176.2 km — and the
+// board printed it as "Frontier" while we held packet evidence at 444.2 km. A
+// traceroute is one KIND of evidence; reach is what has demonstrably reached us.
+//
+// Evidence is our own packet log, never nodeinfo (db.js:638 — a BLE nodedb
+// replay is not a reception). Guarded exactly as reach.heard is: hops measured
+// per reception, UNKNOWN HOPS REJECTED, and >200 km/hop rejected as laundered.
+// `answered` keeps its old meaning — completed traceroutes — so the caller can
+// still say how many round trips happened.
+const MAX_KM_PER_HOP_CONTACT = 200;
 export function windowBestKm(days = 0) {
-  const row = db.prepare(`
-    WITH home AS (
-      SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') AS lat,
-             (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') AS lon
-    )
-    SELECT MAX(
-             6371.0 * 2 * asin(min(1.0, sqrt(
-               power(sin((n.lat - home.lat) * 0.0174532925 / 2), 2) +
-               cos(home.lat * 0.0174532925) * cos(n.lat * 0.0174532925) *
-               power(sin((n.lon - home.lon) * 0.0174532925 / 2), 2)
-             )))
-           ) AS km,
-           COUNT(*) AS answered
-    FROM traceroute_history th
-    JOIN nodes n ON n.num = th.to_num
-    CROSS JOIN home
-    WHERE th.status = 'ok'
-      AND n.lat IS NOT NULL AND n.lat <> 0 AND home.lat IS NOT NULL
-      ${_windowSql(days, 'th.ts')}
-  `).get();
+  const home = db.prepare(`
+    SELECT (SELECT CAST(value AS REAL) FROM config WHERE key='home.lat') AS lat,
+           (SELECT CAST(value AS REAL) FROM config WHERE key='home.lon') AS lon`).get();
+  if (home?.lat == null) return { km: null, answered: 0, contacts: 0, rejected: 0, basis: 'no home position' };
+
+  const KM = `6371.0*2*asin(min(1.0,sqrt(
+      power(sin((n.lat-@hlat)*0.0174532925/2),2) +
+      cos(@hlat*0.0174532925)*cos(n.lat*0.0174532925)*
+      power(sin((n.lon-@hlon)*0.0174532925/2),2))))`;
+
+  // Three reception sources, each carrying a hop count. relay_observation has
+  // it per packet (hop_start - hop_limit); messages and signal_history store a
+  // single `hops`. UNION so a node counts once per source at its best evidence.
+  const rows = db.prepare(`
+    SELECT ${KM} AS km, e.hops AS hops FROM (
+      SELECT from_num AS num,
+             MIN(CASE WHEN hop_start IS NOT NULL AND hop_limit IS NOT NULL
+                      THEN hop_start - hop_limit END) AS hops
+        FROM relay_observation WHERE 1=1 ${_windowSql(days, 'ts')} GROUP BY from_num
+      UNION ALL
+      SELECT from_num, MIN(hops) FROM messages
+       WHERE from_num IS NOT NULL ${_windowSql(days, 'ts')} GROUP BY from_num
+      UNION ALL
+      SELECT num, MIN(hops) FROM signal_history
+       WHERE 1=1 ${_windowSql(days, 'ts')} GROUP BY num
+    ) e
+    JOIN nodes n ON n.num = e.num
+    WHERE n.lat IS NOT NULL AND n.lat <> 0
+  `).all({ hlat: home.lat, hlon: home.lon });
+
+  let best = null, contacts = 0, rejected = 0;
+  for (const r of rows) {
+    if (r.km == null || !Number.isFinite(r.km)) continue;
+    // FAILS CLOSED. Unknown hops is not zero hops; it is the case that must be
+    // rejected. This is the B81 defect and it must not be re-created here.
+    if (r.hops == null) { rejected++; continue; }
+    const hops = Number(r.hops);
+    if (!Number.isFinite(hops) || hops < 0) { rejected++; continue; }
+    if (hops > 0 && r.km / hops > MAX_KM_PER_HOP_CONTACT) { rejected++; continue; }
+    contacts++;
+    if (best == null || r.km > best) best = r.km;
+  }
+
+  const answered = db.prepare(`
+    SELECT COUNT(*) n FROM traceroute_history th
+     WHERE th.status = 'ok' ${_windowSql(days, 'th.ts')}`).get()?.n ?? 0;
+
   return {
-    km:       row?.km != null ? Math.round(row.km * 10) / 10 : null,
-    answered: row?.answered ?? 0,
+    km: best == null ? null : Math.round(best * 10) / 10,
+    answered,
+    contacts,
+    rejected,
+    basis: 'packets received — relay_observation, messages, signal_history; per-hop guarded',
   };
 }
 

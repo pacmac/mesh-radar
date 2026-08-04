@@ -1,7 +1,7 @@
 ---
 module: db
 source: src/db.js
-source_hash: 6107209159be30290027ab66b2388ecff581988c5a14969c42d55950cc151f46
+source_hash: 278dd5a4d5f028301c28aa343a325e900ba61c276e0f598bf53202316d0ef432
 updated: 2026-08-04
 ---
 
