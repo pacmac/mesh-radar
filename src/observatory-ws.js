@@ -457,6 +457,10 @@ function charts() {
   // degrades to an empty table, it does not take the board down.
   try { out.nodes = nodeTable(windowDays); }
   catch (e) { console.error(`[observatory-ws] node table failed: ${e.message}`); }
+  // 30 days regardless of the viewer's window: "have we gained ground" is a
+  // question about the campaign, not about the last few hours.
+  try { out.contribution = contribution(30); }
+  catch (e) { console.error(`[observatory-ws] contribution failed: ${e.message}`); }
   try {
     const w = windowBestKm(windowDays);
     out.window_best_km  = w.km;
@@ -680,6 +684,89 @@ function nodeTable(windowDays, limit = 15) {
     });
 
   return { rows, limit: Number(limit) || 15, window_days: Number(windowDays) || 0, record_km: record };
+}
+
+/** WHAT HAS THIS ENGINE ACTUALLY PRODUCED? — the CONTRIBUTION band.
+ *
+ *  Peter, 2026-08-04: "but is it actually doing anything ?!" and, when the
+ *  answer turned out to be a shell query I had run myself, "and why is all of
+ *  that ONLY visible to you ?"
+ *
+ *  That was the real defect. The board showed the engine was BUSY — loop
+ *  running, 46 attempts an hour, yield 8% — and nothing about whether it was
+ *  WORKING. "0 past the record in 30 days" is the most important fact about
+ *  this app and it existed nowhere on screen.
+ *
+ *  docs/APP_ROLE.md already says "finding nothing is a result". That rule was
+ *  applied to the workers and the board itself left exempt.
+ *
+ *  NOTHING HERE NEEDS THE ATTRIBUTION LEDGER. traceroute_history has held all
+ *  of it the whole time; I over-scoped by drawing all four mockup cards as
+ *  AWAITING LEDGER. Only the "did we cause it, or did it arrive anyway" tiers
+ *  genuinely need new capture. */
+function contribution(windowDays) {
+  const now  = Math.floor(Date.now() / 1000);
+  const win  = Number(windowDays) > 0 ? Number(windowDays) : 30;
+  const from = now - win * 86400;
+
+  const record = Number(facts('reach.ladder')[0]?.value?.record_km) || null;
+  const pos = new Map(db.prepare(
+    'SELECT num, lat, lon, short_name FROM nodes WHERE lat IS NOT NULL AND lat <> 0').all()
+    .map(r => [r.num, r]));
+
+  // A node's FIRST-EVER completed route is the only thing that is genuinely new
+  // ground. Re-verifying a node we already knew proves the mesh still works; it
+  // does not extend anything.
+  const firstOk = db.prepare(
+    `SELECT to_num n, MIN(ts) t FROM traceroute_history WHERE status='ok' GROUP BY to_num`).all();
+  const fresh = firstOk.filter(r => r.t > from);
+  const placed = fresh.map(r => {
+    const p = pos.get(r.n);
+    return p ? { km: haversine(HOME.lat, HOME.lon, p.lat, p.lon), nm: p.short_name, t: r.t } : null;
+  }).filter(Boolean).sort((a, b) => b.km - a.km);
+
+  const att = db.prepare(
+    `SELECT COUNT(*) n, SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) ok
+       FROM traceroute_history WHERE ts > ?`).get(from);
+
+  const beyond = record != null ? placed.filter(r => r.km > record).length : null;
+  const furthest = placed[0] ?? null;
+  const median = placed.length ? placed[Math.floor(placed.length / 2)].km : null;
+
+  // WHY NOT FURTHER — served as the selector's own numbers, so the board can
+  // say what is capping it instead of leaving the reader to ask.
+  const m = facts('reach.mission').find(f => f.entity === 'global')?.value ?? {};
+
+  return {
+    window_days: win,
+    record_km: record,
+    attempts: att.n,
+    answered: att.ok || 0,
+    new_routes: fresh.length,
+    new_routes_placed: placed.length,
+    // Stated because the distance figures are drawn only from the placed ones.
+    new_routes_unplaced: fresh.length - placed.length,
+    beyond_record: beyond,
+    furthest_km: furthest ? +furthest.km.toFixed(1) : null,
+    furthest_label: furthest?.nm ?? null,
+    furthest_short_by: (furthest && record != null) ? +(record - furthest.km).toFixed(1) : null,
+    median_km: median != null ? +median.toFixed(1) : null,
+    cost_per_new_route: fresh.length ? Math.round(att.n / fresh.length) : null,
+    // The verdict, written here. The page must not decide what this means.
+    gaining: beyond != null && beyond > 0,
+    verdict: beyond === 0
+      ? `${att.n.toLocaleString()} attempts, ${fresh.length} nodes reached for the first time — but NONE past the ${record} km record`
+      : `${beyond} new route${beyond === 1 ? '' : 's'} past the ${record} km record`,
+    caps: {
+      window_km: m.window_km ?? null,
+      bar_km: m.bar_km ?? null,
+      ceiling_km: m.ceiling_km ?? null,
+      skipped_beyond_window: m.skipped_beyond_window ?? null,
+      skipped_silent: m.skipped_silent ?? null,
+      max_silence_days: m.max_silence_days ?? null,
+      strategy: m.strategy ?? null,
+    },
+  };
 }
 
 // Declared relay roles, for the role TONE only — never as a door filter. Measured

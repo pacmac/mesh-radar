@@ -56,6 +56,48 @@
       <span class="ml-auto text-xs text-base-content/40">SOURCE: NODE-DASH · CONTEXT, NOT SCORE</span>
     </div>
 
+    <!-- ARE WE GAINING GROUND? Every value served by contribution(); the page
+         decides nothing, including the verdict sentence and whether it is bad
+         news. Peter: "why is all of that ONLY visible to you ?" -->
+    <template x-if="charts?.contribution">
+      <div class="shrink-0 rounded-box border p-3"
+           :class="charts.contribution.gaining ? 'border-success/40 bg-success/5' : 'border-error/40 bg-error/5'">
+        <div class="flex items-baseline gap-2 flex-wrap">
+          <span class="font-display text-xs tracking-widest uppercase"
+                :class="charts.contribution.gaining ? 'text-success' : 'text-error'"
+                x-text="charts.contribution.gaining ? 'Gaining ground' : 'Not gaining ground'"></span>
+          <span class="text-xs" x-text="charts.contribution.verdict"></span>
+          <span class="ml-auto text-[10px] text-base-content/40"
+                x-text="'last ' + charts.contribution.window_days + ' days'"></span>
+        </div>
+        <div class="flex gap-6 flex-wrap mt-2 text-xs">
+          <span><span class="text-base-content/50">furthest new route</span>
+            <b x-text="charts.contribution.furthest_km + ' km'"></b>
+            <span class="text-base-content/50" x-text="'(' + charts.contribution.furthest_label + ')'"></span>
+            <span class="text-error" x-show="charts.contribution.furthest_short_by > 0"
+                  x-text="'— ' + charts.contribution.furthest_short_by + ' km short'"></span></span>
+          <span><span class="text-base-content/50">median new route</span>
+            <b x-text="charts.contribution.median_km + ' km'"></b></span>
+          <span><span class="text-base-content/50">cost</span>
+            <b x-text="charts.contribution.cost_per_new_route"></b>
+            <span class="text-base-content/50">attempts per new node</span></span>
+          <span><span class="text-base-content/50">new nodes</span>
+            <b x-text="charts.contribution.new_routes"></b>
+            <span class="text-base-content/40"
+                  x-text="charts.contribution.new_routes_unplaced ? '(' + charts.contribution.new_routes_unplaced + ' unplaceable)' : ''"></span></span>
+        </div>
+        <div class="mt-2 pt-2 border-t border-base-content/10 text-[11px] text-base-content/60"
+             x-show="!charts.contribution.gaining">
+          <span class="text-base-content/40">why not further —</span>
+          <span x-text="'strategy ' + charts.contribution.caps.strategy"></span> ·
+          <span x-text="'window ' + charts.contribution.caps.window_km + ' km above a ' + charts.contribution.caps.bar_km + ' km bar'"></span> ·
+          <span x-text="'ceiling ' + charts.contribution.caps.ceiling_km + ' km'"></span> ·
+          <span class="text-warning" x-text="charts.contribution.caps.skipped_beyond_window + ' skipped beyond window'"></span> ·
+          <span class="text-warning" x-text="charts.contribution.caps.skipped_silent + ' skipped as silent (' + charts.contribution.caps.max_silence_days + 'd)'"></span>
+        </div>
+      </div>
+    </template>
+
     <div class="overflow-auto flex-1 min-h-0 rounded-box border border-base-300/60">
       <table class="table table-xs table-pin-rows">
         <thead><tr>

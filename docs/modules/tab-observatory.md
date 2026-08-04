@@ -1,7 +1,7 @@
 ---
 module: tab-observatory
 source: public/partials/tab-observatory.html
-source_hash: a67ea6c82137e442588fe7bfe9b7b8f9076cee63aa24f96833f14d26b35dc330
+source_hash: 49df93a331fefff2cdf3ed834bbf2b1ba850d3ff8e1bf8446af21d6822c8902b
 updated: 2026-08-04
 ---
 
