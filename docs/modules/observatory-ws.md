@@ -1,7 +1,7 @@
 ---
 module: observatory-ws
 source: src/observatory-ws.js
-source_hash: 75bcfd797b42dc7655121802c52abaf6b3f4016d031abc3e955b93719ac3c9f2
+source_hash: 1260ec00ed79b3469c2b3fdefb62944cf558586c188cbc67f80a825188616a10
 updated: 2026-08-04
 ---
 
@@ -320,3 +320,113 @@ That module judges how good a **link** is. An answer rate is a different kind of
 fact with a different owner, and this chart builder is its only consumer. One
 owner each is what SSOT requires; a single module holding every band table in
 the app would just be a dumping ground.
+
+## The board's node table (task `board-node-table`, 2026-08-04)
+
+Peter, 2026-08-04:
+
+> we should still summarise / use the data from nodes in node-dash as a quick way
+> to see what nodes we have so we dont have to switch screens ... show the top n
+> nodes in a table, which consumes less space than node cards would
+
+> what you are doing via code is exactly what's needed on the new top n nodes
+> table, the ability to analyse, traceroute it etc
+
+`nodeTable()` sits beside `relayUsage()`, `reachModel()` and `missions()` — the
+same shape, the same rules — and is served as `charts.nodes`.
+
+### What it is for
+
+The STATE band of `docs/APP_ROLE.md`: node-dash's own data, summarised, as
+**context** — explicitly not a score. It exists so the operator does not switch
+screens, and so a lead can be acted on where it is seen.
+
+### Rows
+
+Live **and** placed — `last_heard` within the window and a usable position —
+sorted **furthest first**, limited to `limit` (default 15).
+
+Furthest-first, not lead-ranked, is a deliberate first cut: the eye reads the
+edge, which is where the work is. Lead-ranking (a router past the envelope
+outranking a plain node further out) is a later option and is noted as unsettled.
+
+### Every field decided here
+
+`BROWSER_CONTRACT`, and the session that removed every threshold from `public/`
+finished hours before this was written — it must not regress.
+
+| field | notes |
+|---|---|
+| `num`, `label` | `resolveNodeLabel`, falling back to `!hhhh` |
+| `km`, `az` | from home; the browser computes neither |
+| `place` | `shortPlace(getCachedGeocode(...))`, null when not yet geocoded |
+| `role`, `role_tone` | raw role plus its tone. `CLIENT_MUTE` is called out — it can never be a door |
+| `hops` | `hops_display` — verified relay count preferred over reported |
+| `heard_sec`, `heard`, `heard_tone` | age, formatted string, and tone — all served |
+| `snr`, `snr_tone` | quarter-dB already decoded at ingest (`src/snr.js`) |
+| `probes`, `answered` | traceroute attempts and successes, all time |
+| `evidence` | `packet` when `relay_observation`/`messages`/`signal_history` holds a row; `nodedb` when the position is all we have |
+| `lead`, `lead_reason` | **the judgement** — see below |
+
+### What makes a row a LEAD
+
+A node is a lead when it is **past the envelope, alive, and unworked**:
+
+- `km` > the current record, and
+- heard within the window, and
+- `probes` is 0 or small
+
+`lead_reason` is a **server-written sentence**. The page must never assemble an
+explanation out of numbers — the same rule the mission table already follows.
+
+`CLIENT_MUTE` is never a lead in the door sense; it can still be a destination,
+so it is shown, tagged, and excluded from door reasoning.
+
+### Actions the row offers, and what already exists
+
+| action | endpoint | status |
+|---|---|---|
+| `pin` | `PUT /config/discovery {pinned}` | **exists** — bypasses ceiling, silence and window (`inferences.js:768/786/819`), keeps the cooldown |
+| `star` | `PUT /nodes/:num/obs_target` | **exists** — same three bypasses |
+| `probe` | dispatch now | Domain 1, later task |
+| `analyse` | the dossier | Domain 1, later task — read-only |
+
+Serving the rows is this task. The actions are Domain 2 plus the two endpoints
+that already exist; `probe` and `analyse` are separate and come after.
+
+### Out of scope
+
+- Rendering (Domain 2).
+- The CONTRIBUTION band — it needs the attribution ledger, which does not exist.
+- Any change to targeting. The table exposes the selector's behaviour; it does
+  not alter it.
+
+### Verified
+
+Live over WS after restart, 2026-08-04:
+
+```
+rows 15 | limit 15 | window 7d | record 189.1 km
+?7A8  308.6  26h  muted    dim   packet   0 probes  LEAD
+?47C  285.8   4h  success  dim   packet   0 probes  LEAD
+JRSY  218.6  13h  success  gold  packet   4 probes
+f3ed  206.8       muted    muted can_be_door=false  lead=false
+```
+
+10 leads found. Bearings 15/15, places 15/15, `CLIENT_MUTE` correctly
+non-door and non-lead. Other `charts` keys unaffected — board verdicts,
+silence (4), distance (10), ladder (8) all still served.
+
+Example served `lead_reason`, written server-side as a sentence:
+
+> 308.6 km is 119 km past the record, heard 26h ago, and has never been probed
+> — we hold real packets from it
+
+**A defect caught in Phase 4 and fixed before commit.** The first cut used
+`heardTone()`, whose 30-minute / 1-hour bands answer *"is this node active right
+now"* for the node list. Here the window is 7 days and the question is *"is it
+alive at all"*, so **every row past an hour came back `error`** — an all-red
+column carrying no information. Switched to `sinceTone()`, the same scale the
+mission and relay tables already use for the same question. One concept, one
+table — which is the rule the verdict work spent the day establishing, breached
+within an hour of finishing it.

@@ -453,6 +453,10 @@ function charts() {
   catch (e) { console.error(`[observatory-ws] interventions failed: ${e.message}`); }
   try { out.board = boardVerdicts(windowDays); }
   catch (e) { console.error(`[observatory-ws] board verdicts failed: ${e.message}`); }
+  // The STATE band's table. Wrapped like every other series: a failure here
+  // degrades to an empty table, it does not take the board down.
+  try { out.nodes = nodeTable(windowDays); }
+  catch (e) { console.error(`[observatory-ws] node table failed: ${e.message}`); }
   try {
     const w = windowBestKm(windowDays);
     out.window_best_km  = w.km;
@@ -578,6 +582,110 @@ function sinceStr(sec) {
   if (h < 48) return `${Math.round(h)}h`;
   return `${Math.round(h / 24)}d`;
 }
+
+/** THE BOARD'S NODE TABLE — the STATE band of docs/APP_ROLE.md.
+ *
+ *  Peter, 2026-08-04: "we should still summarise / use the data from nodes in
+ *  node-dash as a quick way to see what nodes we have so we dont have to switch
+ *  screens ... show the top n nodes in a table, which consumes less space than
+ *  node cards would."
+ *
+ *  CONTEXT, NOT SCORE. This is node-dash's own data, summarised. It measures
+ *  nothing about this app — that is the CONTRIBUTION band's job, and conflating
+ *  them is the error APP_ROLE.md exists to prevent.
+ *
+ *  Live AND placed, furthest first. Furthest-first rather than lead-ranked is a
+ *  deliberate first cut: the eye reads the edge, which is where the work is.
+ *
+ *  EVERY DISPLAY DECISION IS MADE HERE. The session that stripped the last
+ *  threshold out of public/ finished hours before this was written; a table that
+ *  shipped `km > record ? 'lead' : ''` in a template would undo it on day one. */
+function nodeTable(windowDays, limit = 15) {
+  const now  = Math.floor(Date.now() / 1000);
+  const win  = Number(windowDays) > 0 ? Number(windowDays) : 3650;
+  const from = now - win * 86400;
+
+  // Contact evidence: OUR OWN receptions. nodeinfo is excluded on purpose — it
+  // is a BLE nodedb replay (db.js:638), not proof a packet reached us.
+  const heardRows = new Set();
+  for (const q of ['SELECT DISTINCT from_num n FROM relay_observation',
+                   'SELECT DISTINCT from_num n FROM messages WHERE from_num IS NOT NULL',
+                   'SELECT DISTINCT num n FROM signal_history']) {
+    try { for (const r of db.prepare(q).all()) if (r.n) heardRows.add(r.n); }
+    catch { /* table may be absent on a fresh install — absence is not an error */ }
+  }
+  const probes = new Map();
+  for (const r of db.prepare(
+    `SELECT to_num n, COUNT(*) c, SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) ok
+       FROM traceroute_history GROUP BY n`).all()) probes.set(r.n, r);
+
+  const record = Number(facts('reach.ladder')[0]?.value?.record_km) || null;
+
+  const rows = db.prepare(
+    `SELECT num, short_name, role, lat, lon, alt, last_heard, hops, snr
+       FROM nodes
+      WHERE lat IS NOT NULL AND lat <> 0 AND last_heard > ?`).all(from)
+    .map(n => ({ n, km: haversine(HOME.lat, HOME.lon, n.lat, n.lon) }))
+    // >400 km is laundered MQTT traffic, not radio-earned. §12.
+    .filter(x => x.km != null && x.km <= 400)
+    .sort((a, b) => b.km - a.km)
+    .slice(0, Math.max(1, Number(limit) || 15))
+    .map(({ n, km }) => {
+      const p    = probes.get(n.num);
+      const tries = p?.c ?? 0;
+      const hasPacket = heardRows.has(n.num);
+      const age  = n.last_heard ? now - n.last_heard : null;
+      const mute = n.role === 'CLIENT_MUTE';
+      // THE JUDGEMENT: past the envelope, alive, and unworked. Written as a
+      // sentence here — the page must never assemble an explanation out of
+      // numbers, the same rule the mission table already follows.
+      const past = record != null && km > record;
+      const lead = past && tries <= 2;
+      let lead_reason = null;
+      if (lead) {
+        lead_reason = `${km.toFixed(1)} km is ${Math.round(km - record)} km past the record, `
+          + `heard ${sinceStr(age)} ago, and `
+          + (tries === 0 ? 'has never been probed' : `has been probed only ${tries}×`)
+          + (hasPacket ? ' — we hold real packets from it' : ' — position only, no packet yet');
+      }
+      return {
+        num: n.num,
+        label: resolveNodeLabel(n.num) || '!' + (n.num >>> 0).toString(16).slice(-4),
+        km: +km.toFixed(1),
+        az: bearingFromHome(n.lat, n.lon),
+        place: shortPlace(getCachedGeocode(n.num)),
+        alt: n.alt ?? null,
+        role: n.role || null,
+        // CLIENT_MUTE is called out because it can never be a door, however
+        // close or loud — it does not rebroadcast, by declaration.
+        role_tone: mute ? 'muted' : (RELAY_ROLE_SET.has(n.role) ? 'gold' : 'dim'),
+        can_be_door: !mute,
+        hops: n.hops ?? null,
+        heard_sec: age,
+        heard: sinceStr(age),
+        // sinceTone, NOT heardTone: heardTone's 30-min/1-h bands answer "is this
+        // node active right now" for the node list. Here the window is 7 days and
+        // the question is "is it alive at all", so every row past an hour came
+        // back `error` and the column said nothing. Same scale as the mission and
+        // relay tables, which ask the same question — one concept, one table.
+        heard_tone: sinceTone(age),
+        snr: n.snr ?? null,
+        probes: tries,
+        answered: p?.ok ?? 0,
+        // `packet` = a reception WE logged. `nodedb` = we only have a position.
+        evidence: hasPacket ? 'packet' : 'nodedb',
+        lead,
+        lead_reason,
+      };
+    });
+
+  return { rows, limit: Number(limit) || 15, window_days: Number(windowDays) || 0, record_km: record };
+}
+
+// Declared relay roles, for the role TONE only — never as a door filter. Measured
+// 2026-08-04: this set captures 19 of the 99 nodes that have actually relayed for
+// us, so filtering doors on it discards 80.8% of them. See docs/APP_ROLE.md.
+const RELAY_ROLE_SET = new Set(['ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'REPEATER']);
 
 /** Bearing FROM us, degrees. Duplicated from the catalogue for the same reason
  *  haversine is: this layer must not import domain calculations. */
