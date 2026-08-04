@@ -12,7 +12,7 @@ import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.j
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { snrDbList } from './snr.js';
-import { signalVerdict, marginHealth, hopsTone, blePctTone } from './signal-verdict.js';
+import { signalVerdict, marginHealth, hopsTone, blePctTone, verdictBands } from './signal-verdict.js';
 import { signalQuality as sigQualityPct } from './utils.js';
 import { budget as linkBudget, marginDb, snrGapDb, theoreticalSnrDb,
          expectedRssiDbm, excessLossDb } from './link-budget.js';
@@ -1108,6 +1108,15 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       })).map(r => withLinkBudget(r, mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null));
       ws.send(JSON.stringify({ type: 'traceroute_history', rows: traceRows,
                                failure_epoch: getConfig('perf.failure_epoch', null) }));
+      // The band tables themselves. Per-row `health` covers rows; the perf
+      // page's HEADLINE figures are client-side medians (perfSummary ->
+      // _perfMedian over the user's selected radio/kind) and so have no row to
+      // carry a verdict. Serving the table lets the browser look up without
+      // owning a single threshold — docs/modules/verdict-bands.md, same shape
+      // as SPLIT_READINESS §4's recommendation for the radar scale.
+      //
+      // Static config, so once on connect rather than on every broadcast.
+      ws.send(JSON.stringify({ type: 'verdict_bands', ...verdictBands() }));
     } catch (e) {
       console.error('[ws-relay] history push failed:', e.message);
     }

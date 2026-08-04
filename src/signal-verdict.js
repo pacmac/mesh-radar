@@ -69,12 +69,26 @@ export function marginHealth(marginDb) {
   return { label: b.label, desc: b.desc, tone: b.tone, bars: b.bars, none: false };
 }
 
+// Ordered, strongest first — same shape as MARGIN_BANDS so one lookup rule
+// serves both. Exported because the browser's perf SUMMARY is a client-side
+// median with no row to carry a verdict; see docs/modules/verdict-bands.md.
+const CONFIDENCE_BANDS = [
+  { min: 40, level: 'high'   },
+  { min: 12, level: 'medium' },
+  { min: 1,  level: 'low'    },
+  { min: 0,  level: 'none'   },
+];
+
 /** How much a sample count is worth. Was app-perf.js:357-363. */
 export function sampleConfidence(n) {
   const c = Number(n) || 0;
-  const level = c >= 40 ? 'high' : c >= 12 ? 'medium' : c > 0 ? 'low' : 'none';
-  return { level, n: c };
+  const band = CONFIDENCE_BANDS.find(b => c >= b.min) ?? CONFIDENCE_BANDS[CONFIDENCE_BANDS.length - 1];
+  return { level: band.level, n: c };
 }
+
+// A change smaller than this is noise, not a trend. The browser's rule,
+// preserved and now owned here.
+const TREND_DEAD_BAND_DB = 1;
 
 /** Direction of travel for median margin, with the 1 dB dead-band preserved
  *  from app-perf.js:373-386 — a change under 1 dB is noise, not a trend.
@@ -86,7 +100,7 @@ export function trendVerdict(deltaDb) {
   }
   const sign = deltaDb > 0 ? '+' : '';
   const db   = `${sign}${deltaDb.toFixed(1)} dB`;
-  if (Math.abs(deltaDb) < 1) {
+  if (Math.abs(deltaDb) < TREND_DEAD_BAND_DB) {
     return { direction: 'flat', label: `${db} · little change`, tone: 'warning', delta: deltaDb };
   }
   const better = deltaDb > 0;
@@ -119,4 +133,25 @@ export function blePctTone(pct) {
   return p >= 50 ? 'success' : p >= 25 ? 'warning' : 'error';
 }
 
-export { MARGIN_BANDS };
+export { MARGIN_BANDS, CONFIDENCE_BANDS, TREND_DEAD_BAND_DB };
+
+/** The band tables, wire-safe, for the browser to look up against.
+ *
+ *  THE SAME CONSTANTS the functions above use — there is no second copy, which
+ *  is the whole point: a served table that could drift from marginHealth()
+ *  would re-create the 76/51/26-vs-75/50/25 defect this module exists to kill.
+ *
+ *  -Infinity does not survive JSON.stringify (it serialises as null), so the
+ *  catch-all band's `min` is emitted as an explicit null and the browser's
+ *  lookup treats null as "always matches". */
+export function verdictBands() {
+  return {
+    margin: MARGIN_BANDS.map(b => ({
+      min: Number.isFinite(b.min) ? b.min : null,
+      label: b.label, desc: b.desc, tone: b.tone, bars: b.bars,
+    })),
+    margin_none: marginHealth(null),
+    confidence: CONFIDENCE_BANDS.map(b => ({ min: b.min, level: b.level })),
+    trend_dead_band_db: TREND_DEAD_BAND_DB,
+  };
+}

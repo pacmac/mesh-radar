@@ -1,7 +1,7 @@
 ---
 module: signal-verdict
 source: src/signal-verdict.js
-source_hash: 421b7acbb94ef1834c55e2e35ea66e9e067b9084257cf4a797353a7ef258fca6
+source_hash: a566f0e5b1edff53701a13a845b331e27c860143ab233e0999caefa62f29a4e3
 updated: 2026-08-04
 ---
 
@@ -224,3 +224,82 @@ does, a band is wrong.
 | observatory `charts` | silence `direct RF 9%/warning … silent 7d+ 0.7%/error`; distance `0 18.8%/success … 150 0%/error` |
 
 **Domain separation:** `git status public/` empty — no browser file touched.
+
+---
+
+## Serving the band tables (task `serve-verdict-bands`, 2026-08-04)
+
+Starting the Domain 2 deletion exposed a gap the per-row `health` field does not
+close.
+
+`public/app-perf.js:276-296` computes the page's headline figures **client-side**:
+`perfSummary()` runs `_perfMedian()` over the served rows, filtered by the radio
+and kind the user has selected in the browser, and `perfScore()` is the median of
+those. That median exists **only in the browser** — there is no row to carry a
+served verdict for it, so deleting `perfHealth()` would leave the lead statistic
+with no band at all.
+
+### Why the median may stay in the browser
+
+A median is **arithmetic over served values**, not a decision. It introduces no
+threshold and no judgement — the same class as the auto-range computation
+`docs/modules/app-radar.md` already sanctions. The filtering it does reads
+**served** `direct` / `valid_tx` / `route_kind`; the browser does not decide what
+"direct" means.
+
+What the browser may not do is decide that 12 dB is "Good". That is the
+threshold, and thresholds are what has to leave.
+
+### The fix, and its precedent
+
+`verdictBands()` serves the band table itself. The browser performs a mechanical
+lookup — *first band whose `min` I am at or above* — and holds no numbers.
+
+`docs/SPLIT_READINESS.md` §4 recommends exactly this shape for the radar scale:
+
+> the backend emit the control points and the browser interpolate — small
+> change, removes the ambiguity.
+
+The server owns where the lines fall; the browser owns pixels.
+
+### The event
+
+`verdict_bands`, sent once on connect beside `traceroute_history` — static
+config, not live state:
+
+```jsonc
+{ "type": "verdict_bands",
+  "margin":      [ { "min": 20, "label": "Excellent", "desc": "…", "tone": "success", "bars": 4 }, … ],
+  "margin_none": { "label": "No data", "tone": "muted", "bars": 0, "none": true },
+  "confidence":  [ { "min": 40, "level": "high" }, … ],
+  "trend_dead_band_db": 1 }
+```
+
+**`min: null` is the catch-all band.** `-Infinity` does not survive
+`JSON.stringify` — it serialises as `null` — so the sentinel is explicit rather
+than accidental, and the browser treats `min == null` as "always matches".
+
+### The drift risk this creates, and how it is closed
+
+A served table and `marginHealth()` could disagree. They cannot here: **both read
+the same exported constants** — `MARGIN_BANDS`, `CONFIDENCE_BANDS`,
+`TREND_DEAD_BAND_DB`. The functions use them, `verdictBands()` serialises them,
+and there is no second copy to fall out of step.
+
+Re-introducing a second copy while fixing the `76/51/26`-vs-`75/50/25` defect
+would have been absurd, so the constants are the SSOT and the wire format is a
+projection of them.
+
+### Verified
+
+The served table, applied by the browser's lookup rule, reproduces
+`marginHealth()` / `sampleConfidence()` / `trendVerdict()` at every boundary
+including the nulls and the ±1.0 trend edge:
+
+```
+served table reproduces the server: 54/54
+catch-all band min -> null (must be null, not -Infinity)
+```
+
+Live on WS `/events` after restart: 5 margin bands, `margin_none` No data/muted,
+confidence `40→high 12→medium 1→low 0→none`, `trend_dead_band_db: 1`.
