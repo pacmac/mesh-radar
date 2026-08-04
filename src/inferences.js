@@ -642,6 +642,13 @@ registerInference({
            COALESCE((SELECT CAST(value ->> '$.heard_km' AS REAL) FROM obs_fact
                       WHERE key = 'reach.heard' AND entity = 'global'
                       ORDER BY ts DESC LIMIT 1), 0)                   AS s_proven_km,
+           -- HAVE WE ACTUALLY RECEIVED PACKETS FROM THIS NODE? Peter,
+           -- 2026-08-04: "we are supposed to treat ANY packet received from a
+           -- node as contact verified." A node whose packets reach us but which
+           -- has never completed a route is the single best lead the app can
+           -- hold: contact proven, route unproven — exactly the gap it exists to
+           -- close. This was nowhere in the selector.
+           (SELECT COUNT(*) FROM relay_observation ro WHERE ro.from_num = n.num) AS packets,
            -- The Observatory's OWN target flag. Not nodeinfo.favourite, which
            -- means "pin to my sidebar" and is set on our own local units.
            COALESCE(ni.obs_target, 0)                                 AS obs_target,
@@ -861,7 +868,21 @@ registerInference({
         skipped.beyond_window++; continue;
       }
 
+      // SMALLEST-STEP-FIRST WAS THE WRONG OBJECTIVE FOR THIS APP. It maximises
+      // the chance of a reply, which walks the queue toward near, chatty nodes —
+      // measured over 30 days: 21,202 attempts, 51 first-ever routes, ZERO past
+      // the record, median 68 km. docs/APP_ROLE.md: the app exists to push the
+      // envelope, and a step score of max(0, 300 - step*2) is zero for anything
+      // more than 150 km past proven ground, so the furthest leads always lost.
+      //
+      // Step is kept as a TIEBREAK — a shorter leap is still likelier — but it
+      // no longer decides. What decides is how far past the bar the node is, and
+      // whether its packets already reach us.
       const stepScore = Math.max(0, 300 - step * 2);
+      // How far past the bar, capped so one absurd position cannot dominate.
+      const pastScore = Math.max(0, Math.min(400, km - bar)) * 2;
+      // CONTACT PROVEN, ROUTE UNPROVEN — the best lead there is.
+      const contactScore = Number(r.packets) > 0 ? 400 : 0;
 
       if (isPinned) {
         cls = 'pinned';
@@ -888,7 +909,7 @@ registerInference({
       } else if (attempts === 0 && km > bar) {
         cls = 'unknown-record';
         reason = `never attempted — ${Math.round(step)} km past the nearest node we have reached, heard ${fmtSilence(silentFor)}, and would beat the ${Math.round(bar)} km best for this period`;
-        rank = 1000 + stepScore + liveScore;
+        rank = 1000 + pastScore + contactScore + liveScore + stepScore * 0.2;
       } else if (attempts === 0) {
         cls = 'unknown';
         reason = 'never attempted — one try tells us more than a repeat anywhere';
@@ -898,7 +919,8 @@ registerInference({
         reason = `${attempts} attempt${attempts === 1 ? '' : 's'}, no reply yet — ${Math.round(step)} km past the nearest node we have reached, heard ${fmtSilence(silentFor)}, would beat the ${Math.round(bar)} km best for this period`;
         // Diminishing: the twentieth silent attempt is worth less than the
         // second. §4 says silence proves nothing, not that it is free.
-        rank = 1000 + stepScore + liveScore - Math.min(120, attempts * 6);
+        rank = 1000 + pastScore + contactScore + liveScore + stepScore * 0.2
+             - Math.min(120, attempts * 6);
       } else if (hits > 0 && km > 100 && ageDays != null && ageDays >= 7) {
         cls = 'reconfirm';
         reason = `verified ${hits}/${attempts}, untried for ${ageDays} days — is the corridor still open?`;
@@ -1004,7 +1026,9 @@ registerInference({
         ? { pinned: 1, target: 12, new: 2, 'unknown-record': 3, record: 3, reconfirm: 2, unknown: 1, retry: 2 }
         // `retry` last and generous: it is the class that stops the queue
         // emptying, and it can only ever fill slots the record classes did not.
-        : { pinned: 1, target: 4,  new: 3, 'unknown-record': 6, record: 6, reconfirm: 4, unknown: 4, retry: 6 };
+        // The record classes carry the app's whole purpose, so they get the
+        // slots. Previously 6 each, and the six nearest always took them.
+        : { pinned: 1, target: 4,  new: 2, 'unknown-record': 12, record: 12, reconfirm: 2, unknown: 3, retry: 3 };
     const used = {};
     const top = [];
     for (const m of scored) {
