@@ -3,7 +3,7 @@ import { broadcastSettings, pokeDeviceList } from './ws-relay.js';
 import { getConfig, setConfig } from './db.js';
 import { logEvent } from './hooks.js';
 import { nodeList } from './node-list.js';
-import { modeConfigAll, isValidRole, MODE_KEYS } from './dash-mode.js';
+import { modeConfigAll, isValidRole, isValidAim, isValidRadio, modeVocabulary, MODE_KEYS } from './dash-mode.js';
 import { calloutConfig, renderTemplate } from './callout.js';
 
 const router = Router();
@@ -367,6 +367,18 @@ router.get('/modes', (req, res) => {
   res.json(modeConfigAll());
 });
 
+// THE VOCABULARY THE MODES PAGE OFFERS. Separate endpoint, not folded into
+// /modes: that response is bound directly as `modesCfg.pasv.rx` and PUT back
+// wholesale, so an extra key would round-trip as though it were config.
+//
+// Derived from the same constants the validators below test against, so the list
+// offered and the list accepted cannot disagree. The browser held its own
+// retyped copy of this (app.js:251-262) with its own labels — Peter,
+// 2026-08-04: "do NOT break the UI golden rule."
+router.get('/mode-vocabulary', (req, res) => {
+  res.json(modeVocabulary());
+});
+
 router.put('/modes', (req, res) => {
   const body = req.body || {};
   const current = getConfig('mode_config', {});
@@ -381,6 +393,22 @@ router.put('/modes', (req, res) => {
     if (upd.tx !== undefined) {
       if (!isValidRole(upd.tx, 'tx')) return res.status(400).json({ error: `invalid tx role for ${mode}: ${upd.tx}` });
       cur.tx = upd.tx;
+    }
+    // aim and radio were NOT copied here, so the fields existed in
+    // MODE_DEFAULTS with no way to edit them — the Modes page could not have
+    // saved them even once it offered them. Validated against the same
+    // constants the vocabulary is built from.
+    //
+    // `passive` stays deliberately absent: it gates whether the passive tracer
+    // acts at all, and the comment above MODE_DEFAULTS explains why that is not
+    // a user knob.
+    if (upd.aim !== undefined) {
+      if (!isValidAim(upd.aim)) return res.status(400).json({ error: `invalid aim for ${mode}: ${upd.aim}` });
+      cur.aim = upd.aim;
+    }
+    if (upd.radio !== undefined) {
+      if (!isValidRadio(upd.radio)) return res.status(400).json({ error: `invalid radio for ${mode}: ${upd.radio}` });
+      cur.radio = upd.radio;
     }
     current[mode] = cur;
   }

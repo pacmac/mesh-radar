@@ -120,6 +120,43 @@ export function isTransmitterForMode(mode, mac) {
 export const MODE_KEYS = ['pasv', 'actv', 'scan', 'disc'];
 export const RX_ROLES  = ['rotator', 'non-rotator', 'primary', 'all'];
 export const TX_ROLES  = ['rotator', 'primary', 'non-rotator', 'all', 'rx'];
+export const AIM_MODES   = ['door', 'endpoint', 'none'];
+export const RADIO_MODES = ['auto', 'omni', 'yagi'];
+
+// LABELS LIVE HERE TOO. Naming a thing is a decision, and the browser does not
+// make decisions — it had its own retyped copy of the role lists AND its own
+// labels for them (app.js:251-262), free to drift from what isValidRole accepts.
+// Peter, 2026-08-04: "do NOT break the UI golden rule."
+const LABELS = {
+  rotator:      'Rotator',
+  'non-rotator':'Any non-rotator',
+  primary:      'Primary',
+  all:          'All radios',
+  rx:           'Whichever heard it',
+  door:         'The door it routes through',
+  endpoint:     'The node itself',
+  none:         'Do not aim',
+  auto:         "Whatever the mode's TX resolves to",
+  omni:         'Omni',
+  yagi:         'Yagi (rotator)',
+};
+const opt = (v) => ({ value: v, label: LABELS[v] ?? v });
+
+/** The vocabulary the Modes page offers, derived from the SAME constants the
+ *  validators test against — so what is offered and what is accepted cannot
+ *  disagree. */
+export function modeVocabulary() {
+  return {
+    rx:    RX_ROLES.map(opt),
+    tx:    TX_ROLES.map(opt),
+    aim:   AIM_MODES.map(opt),
+    radio: RADIO_MODES.map(opt),
+    modes: [...MODE_KEYS],
+  };
+}
+
+export function isValidAim(v)   { return typeof v === 'string' && AIM_MODES.includes(v); }
+export function isValidRadio(v) { return typeof v === 'string' && RADIO_MODES.includes(v); }
 const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i;
 
 // Validate a role string for a given kind ('rx' | 'tx'): a known keyword or a MAC.

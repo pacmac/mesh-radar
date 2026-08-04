@@ -1,7 +1,7 @@
 ---
 module: dash-mode
 source: src/dash-mode.js
-source_hash: 226ff68776e016ca7f3b6ba32816f9e73cc64841d9c466affce86b3fb4b5edb0
+source_hash: 038e569137f65b88678d981fa2f8910441fecbb30d9c91366be43115f4cdc1ba
 updated: 2026-08-03
 ---
 
@@ -229,3 +229,67 @@ not an oversight to be quietly corrected.
 - Mode transition side-effects — callers own those (index.js starts/stops activeTracker, scanner, passiveTracer on `'change'`)
 - Validating mode values — callers are responsible for passing valid integers
 - Broadcasting mode to browser — ws-relay.js listens to `'change'` and sends `rotator` WebSocket messages
+
+## The mode vocabulary is SERVED (task `serve-mode-vocabulary`, 2026-08-04)
+
+Peter, 2026-08-04: *"do NOT break the UI golden rule."*
+
+### What was wrong
+
+`public/app.js:251-262` held its own hardcoded copy of the role vocabulary:
+
+```js
+rxRoleOptions: [ 'rotator', 'non-rotator', 'primary', 'all' ]        + labels
+txRoleOptions: [ 'rotator', 'primary', 'non-rotator', 'all', 'rx' ]  + labels
+```
+
+This module already owns those as `RX_ROLES` / `TX_ROLES` and validates against
+them in `isValidRole()`. Nothing exposed them over an endpoint, so the browser
+copy was a **retyped duplicate**, free to drift: add a role here and the Modes
+page silently cannot offer it; remove one and the page offers a value the PUT
+rejects. Same defect class as the `76/51/26` vs `75/50/25` signal bands.
+
+Discovered while trying to add `aim` and `radio` selects to the Modes page —
+copying the pattern would have created two MORE duplicated vocabularies.
+
+### What is served
+
+`GET /config/mode-vocabulary` returns the lists **with their labels**, because a
+label is a naming decision and the browser does not get to name things either:
+
+```jsonc
+{
+  "rx":    [ { "value": "rotator", "label": "Rotator" }, … ],
+  "tx":    [ … ],
+  "aim":   [ { "value": "door",     "label": "The door it routes through" },
+             { "value": "endpoint", "label": "The node itself" },
+             { "value": "none",     "label": "Do not aim" } ],
+  "radio": [ { "value": "auto",  "label": "Whatever the mode's TX resolves to" },
+             { "value": "omni",  "label": "Omni" },
+             { "value": "yagi",  "label": "Yagi (rotator)" } ],
+  "modes": [ "pasv", "actv", "scan", "disc" ]
+}
+```
+
+Derived from `RX_ROLES` / `TX_ROLES` / `AIM_MODES` / `RADIO_MODES` — the same
+constants `isValidRole` / `isValidAim` / `isValidRadio` test against, so the list
+offered and the list accepted cannot disagree.
+
+A separate endpoint rather than folding it into `GET /config/modes`: that
+response is bound directly as `modesCfg.pasv.rx` and is PUT back wholesale, so an
+extra key would be round-tripped as though it were config.
+
+### PUT now accepts aim and radio
+
+`PUT /config/modes` copied only `rx` and `tx`, so `aim` and `radio` could not be
+edited at all — the fields existed in `MODE_DEFAULTS` with no way to change them.
+Both are now accepted and validated.
+
+`passive` remains deliberately non-editable, as before: it gates whether the
+passive tracer acts, and the comment above `MODE_DEFAULTS` explains why that is
+not a user knob.
+
+## Out of scope
+
+- Deleting `app.js:251-262` and rendering the served lists — Domain 2.
+- The header TRACE switch and the radar animation — Domain 2.
