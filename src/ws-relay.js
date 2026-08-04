@@ -12,6 +12,8 @@ import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.j
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { snrDbList } from './snr.js';
+import { signalVerdict } from './signal-verdict.js';
+import { signalQuality as sigQualityPct } from './utils.js';
 import { budget as linkBudget, marginDb, snrGapDb, theoreticalSnrDb,
          expectedRssiDbm, excessLossDb } from './link-budget.js';
 import { getDeviceCfg as lbDeviceCfg } from './device-config.js';
@@ -417,6 +419,13 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         // Hops-away DISPLAY decision (backend-owned; UI is presentation only).
         // Verified (traceroute relay count; 0 = direct) takes priority over
         // reported (live packet hops). See ws-relay.md "hops-display".
+        // SIGNAL VERDICT, decided here. The browser turned a percentage into
+        // "Excellent / Good / Fair / Poor" using >=76/51/26 while the colour ramp
+        // beside it used >=75/50/25 — a node at 75% read "Good" in the excellent
+        // colour. One set of bands now, in src/signal-verdict.js.
+        const hasSig = n.rssi != null || n.snr != null;
+        const signal = signalVerdict(hasSig ? sigQualityPct(n.rssi, n.snr) : null,
+                                     { hasReading: hasSig });
         const route = n.last_traceroute?.route;
         const hops_verified = Array.isArray(route) ? route.length : null;
         const hops_display = hops_verified ?? (n.hops_away ?? n.hops ?? null);
@@ -427,7 +436,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         const staleMs = (getConfig('pasv_config', {}).stale_sec ?? 1800) * 1000;
         const traceTs = n.last_traceroute?.ts;
         const hops_fresh = hops_verified != null && traceTs != null && (Date.now() - traceTs) <= staleMs;
-        return { ...n, display_name: resolveNodeLabel(n.num), via, hops_verified, hops_display, hops_fresh };
+        return { ...n, display_name: resolveNodeLabel(n.num), via, hops_verified, hops_display, hops_fresh, signal };
       }) };
     }
     if (ev.type === 'device_list') {

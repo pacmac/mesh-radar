@@ -15,7 +15,7 @@ export const nodesMixin = {
         case 'short_name': return n.user?.short_name || '';
         case 'id':         return n.user?.id || String(n.num ?? 0);
         case 'battery':    return n.device_metrics?.battery_level ?? -1;
-        case 'snr':        return this.signalQuality(n.rssi, n.snr).pct;
+        case 'snr':        return this.signalQuality(n.rssi, n.snr, n).pct;
         case 'rssi':       return rssiPercent(n.rssi ?? -999);
         case 'km':         return this.nodeKm(n) ?? 9999;
         case 'az':         return this.nodeAz(n) ?? -1;
@@ -90,7 +90,7 @@ export const nodesMixin = {
         return 'Older';
       }
       case 'snr': {
-        const sq = this.signalQuality(n.rssi, n.snr);
+        const sq = this.signalQuality(n.rssi, n.snr, n);
         return sq.none ? 'No signal' : sq.label;
       }
       case 'hops': {
@@ -240,13 +240,34 @@ export const nodesMixin = {
     }
   },
 
-  signalQuality(rssi, snr) {
-    const pct = window.signalQuality(rssi, snr);
-    if (pct === 0 && rssi == null && snr == null) return { pct: 0, label: 'No signal', cls: 'text-base-content/30', badgeCls: 'badge-ghost', none: true };
-    const label    = pct >= 76 ? 'Excellent' : pct >= 51 ? 'Good' : pct >= 26 ? 'Fair' : 'Poor';
-    const cls      = pct >= 76 ? 'text-success' : pct >= 51 ? 'text-success' : pct >= 26 ? 'text-warning' : 'text-error';
-    const badgeCls = pct >= 76 ? 'badge-success' : pct >= 51 ? 'badge-success' : pct >= 26 ? 'badge-warning' : 'badge-error';
-    return { pct, label, cls, badgeCls, none: false };
+  // RENDERS A SERVED VERDICT. This applied >=76/51/26 to produce
+  // "Excellent / Good / Fair / Poor" while sigQualColor beside it used
+  // >=75/50/25 — a node at 75% read "Good" in the excellent colour. Two
+  // threshold sets on one screen, both live.
+  //
+  // The bands now live in src/signal-verdict.js and arrive on the node as
+  // `signal { pct, label, tone, none }`. Mapping a tone to CSS is this file's
+  // job; deciding what counts as "Good" is not (BROWSER_CONTRACT: "if a display
+  // differs based on a condition, that condition is evaluated in Node.js").
+  //
+  // The rssi/snr arguments are kept so every call site is unchanged; the node's
+  // served verdict is preferred and they are the fallback for a node that has
+  // not been enriched yet.
+  signalQuality(rssi, snr, node = null) {
+    const TONE = {
+      success: { cls: 'text-success',           badgeCls: 'badge-success' },
+      warning: { cls: 'text-warning',           badgeCls: 'badge-warning' },
+      error:   { cls: 'text-error',             badgeCls: 'badge-error'   },
+      muted:   { cls: 'text-base-content/30',   badgeCls: 'badge-ghost'   },
+    };
+    const v = node?.signal;
+    if (v) {
+      const t = TONE[v.tone] ?? TONE.muted;
+      return { pct: v.pct ?? 0, label: v.label, cls: t.cls, badgeCls: t.badgeCls, none: !!v.none };
+    }
+    // Not yet enriched — say so rather than inventing a band.
+    const t = TONE.muted;
+    return { pct: 0, label: 'No signal', cls: t.cls, badgeCls: t.badgeCls, none: true };
   },
 
   sigQualColor(pct) {
