@@ -511,7 +511,10 @@ export const observatoryMixin = {
       bottom: +Math.max(0, Math.min(100, (p.km / yMax) * 100)).toFixed(3),
       direct: p.direct,
       // Server-decided class; the browser only maps it to a colour.
-      kind: p.kind || (p.direct ? 'direct' : 'relay'),
+      // Served since 283f556 — the fallback classified here, which is the
+      // browser deciding. If `kind` is ever missing that is a payload bug and
+      // should be visible, not silently papered over.
+      kind: p.kind ?? null,
       // Signal opacity across the LoRa demod range, -20 to +12 dB. Normalising a
       // server-supplied number, not deciding what counts as strong.
       opacity: p.snr_db == null ? null : Math.max(0.4, Math.min(1, (p.snr_db + 20) / 32)),
