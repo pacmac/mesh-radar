@@ -1,5 +1,6 @@
 // Performance mixin: link budget calculator, traceroute history, RF analytics.
 // Chart instances live outside Alpine's reactive scope to prevent proxy recursion.
+import { bandFor, toneCls, toneBadge } from './app-helpers.js';
 let _charts = {}; // reassigned by destroyPerfCharts() on tab-leave (lazy tabs)
 
 
@@ -156,6 +157,22 @@ export const perfMixin = {
     return { n: rows.length, ok, rate: Math.round((ok / rows.length) * 100) };
   },
 
+  // SERVED BANDS. tab-perf.html:42-43 held >=90/>=60 in a :class attribute,
+  // which is why the first sweep of app-*.js did not see it.
+  perfSuccessRateClass() {
+    const r = this.perfSuccessRate();
+    return toneCls(bandFor(r?.rate, this.verdictBands?.success_rate)?.tone ?? 'muted');
+  },
+
+  // Was `perfTrendChange() >= 0 ? success : error` in the template — which
+  // disagreed with the badge beside it, since that uses the 1 dB dead-band and
+  // this did not. A change of +0.3 dB read "flat" on the badge and green here.
+  // Both now come from the one served rule.
+  perfTrendChangeClass() {
+    const TONE_OF = { better: 'success', worse: 'error', flat: 'warning', baseline: 'muted' };
+    return toneCls(TONE_OF[this.perfTrendDirection()]);
+  },
+
   // Distance (km) from home to a lat/lon pair using Haversine
   _haversineKm(lat, lon) {
     if (lat == null || lon == null || !this.homePos?.lat || !this.homePos?.lon) return null;
@@ -305,13 +322,19 @@ export const perfMixin = {
     this.updatePerfCharts();
   },
 
+  // RENDERS A SERVED VERDICT. This held five thresholds (20/10/3/0) producing
+  // the label, the description and two CSS classes — the browser deciding what
+  // a link-budget margin MEANS. The bands now live in src/signal-verdict.js and
+  // arrive as `verdict_bands.margin`; this looks up and paints.
+  //
+  // It also carried the bug this whole exercise exists to kill: perfHealthBars
+  // below picked the bar count from 20/10/3/0 and the colour from 10/0 — two
+  // band tables in one widget. One table now, and the tone carries the colour.
   perfHealth(margin) {
-    if (margin == null) return { label: 'No data', desc: 'Need valid traceroute samples', cls: 'text-base-content/40', badge: 'badge-ghost' };
-    if (margin >= 20) return { label: 'Excellent', desc: 'Plenty of signal headroom', cls: 'text-success', badge: 'badge-success' };
-    if (margin >= 10) return { label: 'Good', desc: 'Comfortable margin', cls: 'text-success', badge: 'badge-success' };
-    if (margin >= 3)  return { label: 'Usable', desc: 'Works, but not much spare margin', cls: 'text-warning', badge: 'badge-warning' };
-    if (margin >= 0)  return { label: 'Fragile', desc: 'Close to the decode limit', cls: 'text-warning', badge: 'badge-warning' };
-    return { label: 'Failing', desc: 'Below the reliable decode limit', cls: 'text-error', badge: 'badge-error' };
+    const B = this.verdictBands;
+    const band = bandFor(margin, B?.margin);
+    const v = band ?? B?.margin_none ?? { label: 'No data', desc: 'Need valid traceroute samples', tone: 'muted', bars: 0 };
+    return { label: v.label, desc: v.desc, cls: toneCls(v.tone), badge: toneBadge(v.tone), bars: v.bars ?? 0 };
   },
 
   perfHealthLabel(margin) {
@@ -331,17 +354,10 @@ export const perfMixin = {
   },
 
   perfHealthBars(margin, scale = 1.6) {
+    // bars and cls both come from the ONE served band — see perfHealth above.
     const health = this.perfHealth(margin);
-    const bars = margin == null ? 0
-      : margin >= 20 ? 4
-      : margin >= 10 ? 3
-      : margin >= 3  ? 2
-      : margin >= 0  ? 1
-      : 0;
-    const cls = margin == null ? 'text-base-content/30'
-      : margin >= 10 ? 'text-success'
-      : margin >= 0  ? 'text-warning'
-      : 'text-error';
+    const bars = health.bars;
+    const cls  = health.cls;
     const html = [3, 6, 9, 12].map((h, i) =>
       `<i style="height:${Math.round(h * scale)}px;opacity:${bars > i ? 1 : 0.16}"></i>`
     ).join('');
@@ -354,12 +370,12 @@ export const perfMixin = {
     return `${sign}${v.toFixed(digits)}${compact ? '' : ' '}dB`;
   },
 
+  // SERVED BANDS. Held 40/12 — how many samples make a figure trustworthy is a
+  // judgement, not a rendering choice. `n` is a count of served rows, which is
+  // arithmetic and may stay here; the bands are not.
   perfConfidence(kind = 'all') {
     const n = this.perfSummary(kind).n;
-    if (n >= 40) return 'high';
-    if (n >= 12) return 'medium';
-    if (n > 0) return 'low';
-    return 'none';
+    return bandFor(n, this.verdictBands?.confidence)?.level ?? 'none';
   },
 
   perfTrendChange() {
@@ -370,27 +386,29 @@ export const perfMixin = {
     return last - first;
   },
 
-  perfTrendChangeLabel() {
-    const delta = this.perfTrendChange();
-    if (delta == null) return 'No baseline yet';
-    const sign = delta > 0 ? '+' : '';
-    if (Math.abs(delta) < 1) return `${sign}${delta.toFixed(1)} dB · little change`;
-    return `${sign}${delta.toFixed(1)} dB · ${delta > 0 ? 'better' : 'worse'}`;
-  },
-
+  // The 1 dB dead-band — "a change this small is noise, not a trend" — is a
+  // judgement and is now SERVED as verdict_bands.trend_dead_band_db. The words
+  // are presentation: they map 1:1 onto the direction, they are not a threshold.
   perfTrendDirection() {
     const delta = this.perfTrendChange();
     if (delta == null) return 'baseline';
-    if (Math.abs(delta) < 1) return 'flat';
-    return delta > 0 ? 'better' : 'worse';
+    const dead = this.verdictBands?.trend_dead_band_db;
+    if (dead == null) return 'baseline';          // no table yet — claim nothing
+    return Math.abs(delta) < dead ? 'flat' : delta > 0 ? 'better' : 'worse';
+  },
+
+  perfTrendChangeLabel() {
+    const delta = this.perfTrendChange();
+    if (delta == null) return 'No baseline yet';
+    const dir = this.perfTrendDirection();
+    if (dir === 'baseline') return 'No baseline yet';
+    const WORD = { flat: 'little change', better: 'better', worse: 'worse' };
+    return `${delta > 0 ? '+' : ''}${delta.toFixed(1)} dB · ${WORD[dir]}`;
   },
 
   perfTrendDirectionBadge() {
-    const d = this.perfTrendDirection();
-    if (d === 'better') return 'badge-success';
-    if (d === 'worse') return 'badge-error';
-    if (d === 'flat') return 'badge-warning';
-    return 'badge-ghost';
+    const TONE_OF = { better: 'success', worse: 'error', flat: 'warning' };
+    return toneBadge(TONE_OF[this.perfTrendDirection()]);
   },
 
   perfHistoryTime(ts) {

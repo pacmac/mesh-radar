@@ -7,6 +7,39 @@ export const signalQuality = (...a) => window.signalQuality(...a);
 export const numToNodeId   = (...a) => window.numToNodeId(...a);
 export const nodeIdToNum   = (...a) => window.nodeIdToNum(...a);
 
+// ── Tones and bands ────────────────────────────────────────────────────────
+//
+// The ONE thing this layer is allowed to decide: how a semantic tone looks.
+// Mapping `success` to a CSS class is presentation. Deciding that 12 dB is
+// "Good" is not, and no longer happens anywhere in public/ — the server serves
+// either a per-row verdict or the band table itself.
+//
+// BROWSER_CONTRACT: "if a display differs based on a condition, that condition
+// is evaluated in Node.js."
+export const TONE = {
+  success: { cls: 'text-success',         badge: 'badge-success', colour: 'oklch(var(--su))' },
+  info:    { cls: 'text-info',            badge: 'badge-info',    colour: 'oklch(var(--in))' },
+  warning: { cls: 'text-warning',         badge: 'badge-warning', colour: 'oklch(var(--wa))' },
+  error:   { cls: 'text-error',           badge: 'badge-error',   colour: 'oklch(var(--er))' },
+  muted:   { cls: 'text-base-content/30', badge: 'badge-ghost',   colour: 'oklch(var(--bc)/0.15)' },
+};
+export const toneCls    = t => (TONE[t] ?? TONE.muted).cls;
+export const toneBadge  = t => (TONE[t] ?? TONE.muted).badge;
+export const toneColour = t => (TONE[t] ?? TONE.muted).colour;
+
+/** Look a value up in a SERVED band table. The bands and their order come from
+ *  the server; this walks them. `min: null` is the catch-all — JSON cannot
+ *  carry -Infinity, so the server emits null and it always matches.
+ *
+ *  Returns null when the table has not arrived yet, so callers render a muted
+ *  placeholder rather than inventing a band. */
+export function bandFor(value, bands) {
+  if (!Array.isArray(bands) || !bands.length) return null;
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  const v = Number(value);
+  return bands.find(b => b.min == null || v >= b.min) ?? bands[bands.length - 1];
+}
+
 export async function fetchJSON(url, method = 'GET', body) {
   const opts = { method, headers: {} };
   if (body !== undefined) {

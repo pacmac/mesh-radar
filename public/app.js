@@ -57,6 +57,9 @@ function dashboard() {
     radioTab:      'device',
     availableDevices: [],
     deviceBleStates:  {},
+    // Served band tables (WS `verdict_bands`). Null until connect — callers
+    // render a muted placeholder rather than inventing a band.
+    verdictBands:     null,
     deviceConfigs:    {},
     deviceNodes:      {},
     autoPurge:        {},

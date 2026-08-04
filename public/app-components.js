@@ -3,8 +3,15 @@
 // Use x-html="componentName(...)" in Alpine templates.
 
 import { FF } from './feature-flags.js';
+import { toneCls, toneBadge, toneColour } from './app-helpers.js';
 
 export const componentsMixin = {
+  // Exposed to templates so a :class can render a SERVED tone without the
+  // markup restating a threshold. This is the tone->CSS map and nothing else.
+  toneCls(t)    { return toneCls(t); },
+  toneBadge(t)  { return toneBadge(t); },
+  toneColour(t) { return toneColour(t); },
+
 
   // ── Active overlay card descriptor ──────────────────────────────────────
   // SSOT: returns { node, mode, label, border, accent, nameclr, divider } or null.
@@ -38,12 +45,12 @@ export const componentsMixin = {
   },
 
   // ── Hops circle ─────────────────────────────────────────────────────────
-  hopsBadge(hops, verified = false, fresh = false) {
+  // `tone` is SERVED (node.hops_tone / message.hops_tone) — the 0/1/2 threshold
+  // moved to src/signal-verdict.js. The TEXT below is display composition and
+  // stays here: "Direct" vs "n hops", and the verified/reported suffix.
+  hopsBadge(hops, verified = false, fresh = false, tone = null) {
     if (hops == null) return '';
-    const cls = hops === 0 ? 'text-success'
-              : hops === 1 ? 'text-info'
-              : hops === 2 ? 'text-warning'
-              :              'text-error';
+    const cls = toneCls(tone ?? 'muted');
     const tip = (hops === 0 ? 'Direct' : `${hops} ${hops === 1 ? 'hop' : 'hops'}`)
               + (verified ? (fresh ? ' · traceroute-verified (fresh)' : ' · traceroute-verified (stale)') : ' · reported');
     // Same small circle either way (number stays fully legible; hop count is the
@@ -75,9 +82,11 @@ export const componentsMixin = {
 
   // BLE link-quality bars from the gw V2 signal_pct field (0–100; raw BLE
   // dBm is not exposed in V2). Same markup/classes as sigBars.
-  pctBars(pct, scale = 1) {
+  // `tone` is SERVED as device.signal_pct_tone — the >=50/25 bands moved to
+  // src/signal-verdict.js (blePctTone). BLE is not LoRa and keeps its own bands.
+  pctBars(pct, tone = null, scale = 1) {
     if (pct == null) return '';
-    const cls = pct >= 50 ? 'text-success' : pct >= 25 ? 'text-warning' : 'text-error';
+    const cls = toneCls(tone ?? 'muted');
     const bars = [3, 6, 9, 12].map((h, i) =>
       `<i style="height:${Math.round(h * scale)}px;opacity:${pct > i * 25 ? 1 : 0.15}"></i>`
     ).join('');

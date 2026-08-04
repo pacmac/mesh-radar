@@ -129,7 +129,7 @@
                         <span x-show="m.isReply" class="text-base-content/40" title="Reply">↩</span>
                         <span class="font-semibold text-base-content" x-text="m.fromLongName || nodeLongName(m.fromNum)"></span>
                         <span class="badge badge-xs" :class="m.broadcast ? 'badge-ghost' : 'badge-info'" x-text="m.broadcast ? 'BC' : 'DM'"></span>
-                        <span x-show="m.hops != null" x-html="hopsBadge(m.hops)"></span>
+                        <span x-show="m.hops != null" x-html="hopsBadge(m.hops, false, false, m.hops_tone)"></span>
                         <template x-for="d in (Array.isArray(m.src) ? m.src : (m.src ? [m.src] : []))" :key="d">
                           <span class="badge badge-xs badge-outline font-mono opacity-60" :title="d" x-text="deviceLabel(d)"></span>
                         </template>

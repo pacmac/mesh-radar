@@ -1,5 +1,5 @@
 // Node list management mixin: sorting, filtering, grouping, node helpers.
-import { fetchJSON, rssiPercent } from './app-helpers.js';
+import { fetchJSON, rssiPercent, bandFor, toneColour, toneCls, toneBadge } from './app-helpers.js';
 import { FILTER_CFG_KEY } from './app-forms.js';
 
 export const nodesMixin = {
@@ -254,28 +254,27 @@ export const nodesMixin = {
   // served verdict is preferred and they are the fallback for a node that has
   // not been enriched yet.
   signalQuality(rssi, snr, node = null) {
-    const TONE = {
-      success: { cls: 'text-success',           badgeCls: 'badge-success' },
-      warning: { cls: 'text-warning',           badgeCls: 'badge-warning' },
-      error:   { cls: 'text-error',             badgeCls: 'badge-error'   },
-      muted:   { cls: 'text-base-content/30',   badgeCls: 'badge-ghost'   },
-    };
     const v = node?.signal;
     if (v) {
-      const t = TONE[v.tone] ?? TONE.muted;
-      return { pct: v.pct ?? 0, label: v.label, cls: t.cls, badgeCls: t.badgeCls, none: !!v.none };
+      return { pct: v.pct ?? 0, label: v.label, cls: toneCls(v.tone), badgeCls: toneBadge(v.tone), none: !!v.none };
     }
     // Not yet enriched — say so rather than inventing a band.
-    const t = TONE.muted;
-    return { pct: 0, label: 'No signal', cls: t.cls, badgeCls: t.badgeCls, none: true };
+    return { pct: 0, label: 'No signal', cls: toneCls('muted'), badgeCls: toneBadge('muted'), none: true };
   },
 
+  // THE OTHER HALF OF THE BUG DESCRIBED TWELVE LINES ABOVE. signalQuality was
+  // fixed to render the served verdict; this ramp kept the OLD divergent
+  // 75/50/25 while the labels moved to 76/51/26 — so a node at 75 still read
+  // "Good" in the excellent colour, in the function that comment names.
+  //
+  // It cannot read node.signal.tone: tab-radar.html:336 derives its percentage
+  // from a LIVE yagi reading that may not be the node's stored value. The
+  // server therefore serves the BAND TABLE (verdict_bands.signal) and this
+  // looks the live percentage up against the same numbers the server uses.
   sigQualColor(pct) {
-    if (pct >= 75) return 'oklch(0.72 0.20 145)';
-    if (pct >= 50) return 'oklch(0.80 0.18 115)';
-    if (pct >= 25) return 'oklch(0.78 0.17 65)';
-    if (pct > 0)   return 'oklch(0.68 0.20 38)';
-    return 'rgba(255,255,255,0.08)';
+    if (pct == null || pct <= 0) return 'rgba(255,255,255,0.08)';
+    const band = bandFor(pct, this.verdictBands?.signal);
+    return band ? toneColour(band.tone) : 'rgba(255,255,255,0.08)';
   },
 
   nodeKm(n) { return n._km ?? null; },

@@ -501,6 +501,15 @@ export const wsMixin = {
       return;
     }
 
+    if (ev.type === 'verdict_bands') {
+      // The band tables. Static config, sent once on connect. The page looks
+      // values up against these instead of holding thresholds of its own —
+      // BROWSER_CONTRACT, and docs/modules/signal-verdict.md.
+      const { type: _t, ...bands } = ev;
+      this.verdictBands = bands;
+      return;
+    }
+
     if (ev.type === 'traceroute_history') {
       // Sole transport for perf-page history (C1: page data is WS-only).
       // All-device rows are stored; the page shows the perfDev() slice —

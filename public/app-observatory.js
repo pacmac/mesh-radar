@@ -15,6 +15,7 @@
 // a clock time. When the server starts pushing a formatted age, it can replace
 // this without the page changing shape.
 import { persistSet } from './app-persist.js';
+import { toneColour } from './app-helpers.js';
 
 // Enough to fill a tall screen and scroll a while, small enough that an idle tab
 // cannot grow without bound. The server replays 200 on connect.
@@ -273,7 +274,9 @@ export const observatoryMixin = {
   _obsRateBars(rows, labelOf, colourOf) {
     if (!rows?.length) return '';
     const W = 520, H = 190, L = 42, B = 34;
-    const rate = x => x.attempts ? (100 * x.answers / x.attempts) : 0;
+    // SERVED. The browser used to divide answers/attempts itself; rate_pct now
+    // arrives computed, and null means "no attempts" — which is not 0%.
+    const rate = x => x.rate_pct ?? 0;
     const max = Math.max(5, ...rows.map(rate));
     const bw = (W - L - 10) / rows.length;
     const Y = v => (H - B) - (v / max) * (H - B - 14);
@@ -286,6 +289,7 @@ export const observatoryMixin = {
     rows.forEach((x, i) => {
       const bx = L + i * bw, v = rate(x), y = Y(v);
       p.push(`<rect x="${(bx + 3).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, bw - 6).toFixed(1)}" height="${((H - B) - y).toFixed(1)}" fill="${colourOf(x, v)}"><title>${labelOf(x)}: ${x.answers}/${x.attempts} = ${v.toFixed(1)}%</title></rect>`);
+
       p.push(`<text x="${(bx + bw / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" fill="oklch(var(--bc)/0.7)" font-size="10" font-family="JetBrains Mono">${v.toFixed(1)}</text>`);
       p.push(`<text x="${(bx + bw / 2).toFixed(1)}" y="${(H - 18)}" text-anchor="middle" fill="oklch(var(--bc)/0.5)" font-size="9" font-family="JetBrains Mono">${labelOf(x)}</text>`);
       p.push(`<text x="${(bx + bw / 2).toFixed(1)}" y="${(H - 6)}" text-anchor="middle" fill="oklch(var(--bc)/0.3)" font-size="9" font-family="JetBrains Mono">n=${x.attempts}</text>`);
@@ -295,16 +299,19 @@ export const observatoryMixin = {
 
   /** ANSWER RATE BY SILENCE — the strongest predictor measured, and the whole
    *  justification for max_silence_days. On screen it can be argued with. */
+  // SERVED TONE. The >=15/>=5 bands and the answers/attempts division are both
+  // decided in src/observatory-ws.js (withRateVerdict) — a judgement about
+  // discovery yield does not belong in the presentation layer.
   obsChartSilence() {
     return this._obsRateBars(this.charts?.silence || [], x => x.bucket,
-      (x, v) => v >= 15 ? 'oklch(var(--su))' : v >= 5 ? 'oklch(var(--wa))' : 'oklch(var(--er))');
+      x => toneColour(x.tone));
   },
 
   /** ANSWER RATE BY DISTANCE — the chart that settles whether a run of silence
    *  is the targets or the setup. */
   obsChartDistance() {
     return this._obsRateBars(this.charts?.distance || [], x => x.band + '+',
-      (x, v) => v >= 15 ? 'oklch(var(--su))' : v >= 5 ? 'oklch(var(--wa))' : 'oklch(var(--er))');
+      x => toneColour(x.tone));
   },
 
   /** RATE BY BAND, BY DAY — four lines, one per distance band.

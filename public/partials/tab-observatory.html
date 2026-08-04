@@ -521,7 +521,7 @@
                              attempt is an extension or a leap. Blank for the
                              classes where the target is itself proven ground. -->
                         <td class="text-right pr-2"
-                            :class="m.step_km > 50 ? 'text-warning' : 'text-success'"
+                            :class="toneCls(m.step_tone)"
                             x-text="m.step_km ? '+' + Math.round(m.step_km) : ''"></td>
                         <!-- The reason is a server-written string. The page must
                              never assemble an explanation out of numbers. -->
@@ -591,10 +591,10 @@
                       <!-- A door that has gone quiet is the thing you most want
                            to notice: everything behind it goes with it. -->
                       <td class="text-right pr-2"
-                          :class="r.since_sec == null ? 'text-base-content/25' : r.since_sec < 86400 ? 'text-success' : r.since_sec < 604800 ? 'text-base-content/50' : 'text-warning'"
+                          :class="toneCls(r.since_tone)"
                           x-text="r.since"></td>
                       <td class="text-right pr-2" x-text="r.targets"></td>
-                      <td class="text-right pr-2" :class="r.furthest_km > 150 ? 'text-primary font-semibold' : 'text-base-content/60'"
+                      <td class="text-right pr-2" :class="r.furthest_tone === 'primary' ? 'text-primary font-semibold' : 'text-base-content/60'"
                           x-text="r.furthest_km ? r.furthest_km + ' km' : '—'"></td>
                       <td class="text-right pr-2 text-base-content/60" x-text="r.uses"></td>
                       <td>

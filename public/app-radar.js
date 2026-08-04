@@ -430,13 +430,13 @@ export const radarMixin = {
       if (!ctx) {
         if (node.num === pointTarget && isActv) {
           this.appendCrosshair(g, x, y);
-          if (this.yagiSignal.num === node.num && this.signalAge() != null && this.signalAge() < 30) {
+          if (this.yagiSignal.num === node.num && this.signalIsFresh()) {
             this.appendPulseRing(g, x, y);
           }
           if (this.yagiSignal.num === node.num && (this.yagiSignal.rssi != null || this.yagiSignal.snr != null)) {
             const sig = this.yagiSignal;
             const age = this.signalAge();
-            const stale = age != null && age >= 30;
+            const stale = !this.signalIsFresh();
             const col = stale ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)';
             const parts = [];
             if (sig.rssi != null) parts.push(`${sig.rssi} dBm`);
@@ -454,13 +454,13 @@ export const radarMixin = {
         const xhColor = ctxCardMode === 'actv' ? undefined : 'rgba(0,255,80,0.80)';
         this.appendCrosshair(g, x, y, xhColor);
         if (ctxCardMode === 'actv') {
-          if (this.yagiSignal.num === node.num && this.signalAge() != null && this.signalAge() < 30) {
+          if (this.yagiSignal.num === node.num && this.signalIsFresh()) {
             this.appendPulseRing(g, x, y);
           }
           if (this.yagiSignal.num === node.num && (this.yagiSignal.rssi != null || this.yagiSignal.snr != null)) {
             const sig = this.yagiSignal;
             const age = this.signalAge();
-            const stale = age != null && age >= 30;
+            const stale = !this.signalIsFresh();
             const col = stale ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)';
             const parts = [];
             if (sig.rssi != null) parts.push(`${sig.rssi} dBm`);
@@ -595,6 +595,19 @@ export const radarMixin = {
     void this._sigTick;
     if (!this.yagiSignal.ts) return null;
     return Math.round((Date.now() - this.yagiSignal.ts) / 1000);
+  },
+
+  // SERVED WINDOW. "30 seconds" was hardcoded four times — here (x2, as `< 30`
+  // and `>= 30`) and in tab-radar.html:278 — so the pulse ring and the reading
+  // beside it could disagree about whether the same signal was current. One
+  // rule now: verdict_bands.live_signal_fresh_sec.
+  //
+  // Unknown age is NOT fresh: no reading is not a current reading.
+  signalIsFresh() {
+    const age = this.signalAge();
+    const win = this.verdictBands?.live_signal_fresh_sec;
+    if (age == null || win == null) return false;
+    return age < win;
   },
 
   _pingSignal() {

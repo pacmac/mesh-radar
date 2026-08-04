@@ -38,9 +38,7 @@
             <div class="stat bg-base-100 shadow">
               <div class="stat-title">Success Rate</div>
               <div class="stat-value"
-                   :class="perfSuccessRate() == null ? 'text-base-content/30'
-                           : perfSuccessRate().rate >= 90 ? 'text-success'
-                           : perfSuccessRate().rate >= 60 ? 'text-warning' : 'text-error'"
+                   :class="perfSuccessRateClass()"
                    x-text="perfSuccessRate() != null ? perfSuccessRate().rate + '%' : 'n/a'"></div>
               <div class="stat-desc"
                    x-text="perfSuccessRate() != null
@@ -82,7 +80,7 @@
             <div class="stat bg-base-100 shadow">
               <div class="stat-title">Recent Change</div>
               <div class="stat-value"
-                   :class="perfTrendChange() == null ? 'text-base-content/40' : perfTrendChange() >= 0 ? 'text-success' : 'text-error'"
+                   :class="perfTrendChangeClass()"
                    x-text="perfTrendChange() == null ? '–' : perfSignedDb(perfTrendChange())"></div>
               <div class="stat-desc inline-flex items-center gap-1.5">
                 <span class="badge badge-xs" :class="perfTrendDirectionBadge()" x-text="perfTrendDirection()"></span>

@@ -1,7 +1,7 @@
 ---
 module: tab-perf
 source: public/partials/tab-perf.html
-source_hash: db9002abd9d85a1b6224e2279944d793c04f488df6fb80a52b5f14ae74508d7c
+source_hash: d2cb63e881387d6ef112d3ea308ca6b5985bc2b760b0bf736cf237ebc67dc8cf
 updated: 2026-08-04
 ---
 

@@ -157,7 +157,7 @@
                   <span x-show="deviceBleStates[dev.node_id]?.signal_pct != null"
                         class="hidden md:inline-flex items-center gap-1 text-sm font-mono tabular-nums text-base-content/70 whitespace-nowrap shrink-0"
                         title="BLE link quality">
-                    <span x-html="pctBars(deviceBleStates[dev.node_id]?.signal_pct)"></span>
+                    <span x-html="pctBars(deviceBleStates[dev.node_id]?.signal_pct, deviceBleStates[dev.node_id]?.signal_pct_tone)"></span>
                     <span x-text="deviceBleStates[dev.node_id]?.signal_pct + '%'"></span>
                   </span>
                   <span class="shrink-0" x-html="devStateBadge(dev.node_id)"></span>

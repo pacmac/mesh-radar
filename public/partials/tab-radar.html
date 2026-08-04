@@ -275,7 +275,7 @@
                         x-text="(nodeHops(n)??0)+'h'"></span>
                   <template x-if="n.num === yagiPointTarget && yagiSignal.num === n.num">
                     <span style="flex:1;font-family:monospace;font-size:10px;font-weight:600;white-space:nowrap"
-                          :style="{ color: signalAge()!=null && signalAge()>=30 ? 'rgba(120,100,60,0.7)' : 'rgba(255,140,0,0.95)' }">
+                          :style="{ color: signalIsFresh() ? 'rgba(255,140,0,0.95)' : 'rgba(120,100,60,0.7)' }">
                       <span x-text="yagiSignal.rssi != null ? yagiSignal.rssi+'dBm' : ''"></span>
                       <span x-text="yagiSignal.snr != null ? ' / '+(yagiSignal.snr>=0?'+':'')+yagiSignal.snr.toFixed(1) : ''"></span>
                     </span>

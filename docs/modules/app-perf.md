@@ -1,7 +1,7 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: c16cdaac0714472573898509f5c5eafb286c157b07c5cf7a5eaf4d7928a8d4e9
+source_hash: ac07c87644b514390c96f8b450eff9701ddf4e76e96cc7eb7bdec317d5fedf56
 updated: 2026-08-04
 ---
 
@@ -213,3 +213,35 @@ rows. Headroom renders +16.1 dB, 0 console errors.
 A first measurement reported 190 mismatches; the test was wrong, not the code. It
 compared enriched output against served fields on failure rows, which never reach
 that code path.
+
+## Verdicts removed (task `strip-browser-verdicts`, 2026-08-04)
+
+Every threshold that decided what a number MEANS is gone. What remains is
+arithmetic over served values (medians, filtering on served `direct`/`valid_tx`)
+and the tone→CSS map, which is this layer's job.
+
+| was | now |
+|---|---|
+| `perfHealth` — 5 bands (20/10/3/0) → label, desc, 2 classes | `bandFor(margin, verdictBands.margin)` |
+| `perfHealthBars` — bar count from 20/10/3/0, **colour from 10/0** | both from the one band |
+| `perfConfidence` — 40/12 | `verdictBands.confidence` |
+| `perfTrendDirection` — `\|d\|<1` | `verdictBands.trend_dead_band_db` |
+| `tab-perf.html:42-43` — 90/60 | `perfSuccessRateClass()` |
+| `tab-perf.html:85` — `delta >= 0` | `perfTrendChangeClass()` |
+
+### One real behaviour change, and it is a fix
+
+`tab-perf.html:85` coloured Recent Change on `delta >= 0`, while the badge
+beside it used the 1 dB dead-band. **A change of +0.3 dB read "flat" on the
+badge and green on the number.** Both now come from the one served rule, so a
+sub-1 dB change is amber in both places.
+
+`perfHealth`'s no-data class was `text-base-content/40` while `perfHealthBars`
+used `/30`. Unified to `/30`.
+
+### Verified in the browser
+
+1600×1000, `business` and `corporate`, 0 console errors:
+`perfScore 24.25 → Excellent / text-success / 4 bars`; success rate `8% →
+text-error` (correct, <60); `+1.5 dB → BETTER`, confidence `low`;
+traceroute table 201 rows with served HEALTH bars.
