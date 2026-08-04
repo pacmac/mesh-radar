@@ -12,6 +12,13 @@ import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.j
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { snrDbList } from './snr.js';
+import { budget as linkBudget, marginDb, snrGapDb, theoreticalSnrDb } from './link-budget.js';
+import { getDeviceCfg as lbDeviceCfg } from './device-config.js';
+import { haversine as lbHaversine } from './utils.js';
+import lbDb from './db.js';
+
+const lbPosStmt = lbDb.prepare('SELECT lat, lon FROM nodes WHERE num = ?');
+const lbNodePos = (num) => { try { return lbPosStmt.get(num) || null; } catch { return null; } };
 
 import { ensureDeviceCfgMac, getDeviceCfg } from './device-config.js';
 import { DEFAULTS as CONFIG_DEFAULTS } from './config-api.js';
@@ -28,6 +35,50 @@ import { fmtAgo } from './format.js';
 const withSnrDb = (o) => (o && typeof o === 'object')
   ? { ...o, snr_towards: snrDbList(o.snr_towards), snr_back: snrDbList(o.snr_back) }
   : o;
+
+// THE LINK BUDGET IS COMPUTED HERE, NOT IN THE BROWSER. Friis, FSPL, thermal
+// noise floor and EIRP moved to src/link-budget.js (task perf-maths-to-backend);
+// public/ no longer carries radio physics.
+//
+// Attributed to the row's OWN tx_device, which is more correct than what the
+// browser did: it applied whichever radio the user had selected to every row.
+// docs/modules/app-perf.md already says marginTx "measures the DISPATCHING
+// radio's TX chain" — now it actually does.
+function withLinkBudget(row, loraFor) {
+  if (!row || typeof row !== 'object') return row;
+  const lora = loraFor(row.tx_device);
+  if (!lora) return row;                       // no config for that radio yet
+  const dev  = row.tx_device ? lbDeviceCfg(row.tx_device) : null;
+  const home = { lat: getConfig('home.lat'), lon: getConfig('home.lon') };
+
+  // Distance to the FIRST HOP where there is one, else the target — the same
+  // metric distance the perf page has always used, decided here now.
+  const route  = Array.isArray(row.route) ? row.route.filter(n => n != null && n !== 0xffffffff) : [];
+  const hopNum = route.length ? route[0] : row.to_num;
+  // From the STORE, not nodeList._cache: the cache is a display projection and
+  // was returning entries without lat, so every distance came back null and
+  // valid_tx was false for all 500 rows.
+  const pos    = hopNum != null ? lbNodePos(hopNum) : null;
+  const distKm = (pos?.lat && pos.lat !== 0 && Number.isFinite(home.lat) && home.lat !== 0)
+    ? lbHaversine(home.lat, home.lon, pos.lat, pos.lon) : null;
+
+  const snrTx = Array.isArray(row.snr_towards) && row.snr_towards.length ? row.snr_towards[0] : null;
+  const back  = Array.isArray(row.snr_back) ? row.snr_back : [];
+  const snrRx = back.length ? (route.length ? back[back.length - 1] : back[0]) : null;
+  const r2 = (v) => v == null ? null : +v.toFixed(2);
+
+  return {
+    ...row,
+    snr_tx_db:      r2(snrTx),
+    snr_rx_db:      r2(snrRx),
+    margin_tx_db:   r2(marginDb(snrTx, lora)),
+    gap_tx_db:      r2(snrGapDb(snrTx, distKm, lora, dev)),
+    theo_snr_db:    r2(theoreticalSnrDb(distKm, lora, dev)),
+    metric_dist_km: distKm == null ? null : +distKm.toFixed(1),
+    // Enough evidence to plot: a reading, a real distance, and not on our doorstep.
+    valid_tx:       snrTx != null && distKm != null && distKm > 0.1,
+  };
+}
 
 function makeRotatorThrottle(sendFn) {
   let lastMs    = 0;
@@ -432,6 +483,11 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       ...d,
       cfg:  d.addr ? getDeviceCfg(d.addr) : null,
       lora: d.addr ? (lastDeviceLora[d.addr.toUpperCase()] ?? null) : null,
+      // The theory for THIS radio, computed server-side. The browser showed
+      // sensitivity/EIRP/max-range by running Friis itself; now it renders them.
+      link_budget: d.addr && lastDeviceLora[d.addr.toUpperCase()]
+        ? linkBudget(lastDeviceLora[d.addr.toUpperCase()], lbDeviceCfg(d.addr))
+        : null,
       channels: d.addr ? (lastDeviceChannels[d.addr.toUpperCase()] ?? null) : null,
       auto_purge: getAutoPurgeCfg(d.node_id ?? d.addr),
       // Per-radio role for the CURRENT mode — the browser renders RX/TX badges
@@ -678,10 +734,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   passiveTracer.on('tracing', (data) => broadcast({ type: 'passive_trace_start', ...data }));
   // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────────
   if (!FF.SSOT_TRACEROUTE) {
-    passiveTracer.on('traced', (data) => broadcast({ type: 'route_discovered', ...withSnrDb(data) }));
+    passiveTracer.on('traced', (data) => broadcast({ type: 'route_discovered', ...withLinkBudget(withSnrDb(data), mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null) }));
   // ── [V2] SSOT — all traceroute results emit route_discovered, not PASV only
   } else {
-    traceroute.on('result', (data) => broadcast({ type: 'route_discovered', ...withSnrDb(data) }));
+    traceroute.on('result', (data) => broadcast({ type: 'route_discovered', ...withLinkBudget(withSnrDb(data), mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null) }));
   }
   // ──────────────────────────────────────────────────────────────────────────
   nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
@@ -756,7 +812,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       _rcActive = false;
       broadcastRadarContext();
       // Failed attempts reach the perf page live — same channel as results
-      if (row) broadcast({ type: 'traceroute_failed', row: withSnrDb(row) });
+      if (row) broadcast({ type: 'traceroute_failed', row: withLinkBudget(withSnrDb(row), mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null) });
     });
     passiveTracer.on('tracing', (data) => {
       _rcPassiveTracingNode = data.from;
@@ -939,7 +995,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         snr_towards:     snrDbList(JSON.parse(r.snr_towards || '[]')),
         snr_back:        snrDbList(JSON.parse(r.snr_back    || '[]')),
         relay_positions: JSON.parse(r.relay_positions || '{}'),
-      }));
+      })).map(r => withLinkBudget(r, mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null));
       ws.send(JSON.stringify({ type: 'traceroute_history', rows: traceRows,
                                failure_epoch: getConfig('perf.failure_epoch', null) }));
     } catch (e) {
