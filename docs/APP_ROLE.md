@@ -136,6 +136,82 @@ Rules that follow:
 - Losing a **router** is a bigger event than losing a door, which is a bigger
   event than losing an endpoint. The board should reflect that ordering.
 
+### Is the role enum a valid classifier? Measured, 2026-08-04
+
+Peter: *"it's basically defined by the Device Role CLASS i.e CLIENT, ROUTER etc,
+but that may not be a 1:1 comparison or valid classifications"*. Correct — and
+the shape of the error is worth knowing exactly.
+
+Counting nodes seen relaying inside completed traceroutes:
+
+| | declared relay-role | everything else |
+|---|---|---|
+| nodes that ever relayed | 19 (19.2%) | **80 (80.8%)** |
+| hops actually carried | **11,170 (88.2%)** | 1,491 (11.8%) |
+
+**Role is a good classifier for LOAD and a bad one for MEMBERSHIP.** Ask *who
+carries the mesh* and it is 88% right. Ask *who are our doors* and it misses four
+out of five.
+
+Per-role relay rate, against an 8.0% baseline:
+
+```
+ROUTER         28 nodes   60.7%    7.6x lift; 6 of them carry the bulk
+CLIENT_BASE    85 nodes   20.0%    17 relays — same COUNT as ROUTER, and not in RELAY_ROLES
+(no role)     741 nodes    8.0%    59 relays — the largest single block of real doors
+CLIENT_MUTE    69 nodes    0.0%    0 of 69. The enum's one perfect signal.
+ROUTER_CLIENT   4 nodes    0.0%    in RELAY_ROLES on faith; has never relayed for us
+REPEATER        1 node     0.0%    same
+200.0           3 nodes            corrupt role value (ledger B77)
+```
+
+So the valid rules are narrower than `RELAY_ROLES` assumes:
+
+1. **`CLIENT_MUTE` → never a door.** Hard, reliable, perfectly predictive.
+2. **`ROUTER` → load-bearing.** A strong prior on *capacity*, not a definition of
+   doorhood.
+3. **Everything else → a door only when OBSERVED.** 80 of our 99 real relays.
+4. **No role ≠ not a relay.** 741 nodes carry no role at all and hold the largest
+   block of observed doors.
+
+`RELAY_ROLES` used as *the* door filter discards 80% of our actual doors.
+
+**Bounds on this conclusion:** it counts relaying seen inside *completed
+traceroutes*, so it is biased toward corridors we chose to probe. It shows what
+has carried for us — not what could.
+
+---
+
+## Why the classification matters: it selects the probe
+
+Peter, 2026-08-04:
+
+> to node dash this kind of thing is irrelevant, but to us when we are probing it
+> is key to our probes and the different things we try and do to discover and get
+> contact from a remote endpoint
+
+**This is the separation of concerns, stated exactly.** node-dash lists nodes and
+shows state; a role is a column and nothing depends on it. This app cannot
+function without the classification, because **the class decides what we try.**
+
+And probing is not one action. It is a repertoire, and picking the wrong
+technique wastes the scarcest thing we have:
+
+| what we know | what to try | status |
+|---|---|---|
+| target is behind a known **router** | aim the beam at the **first hop**, not the destination — 88% of relays fall outside the beam when we aim at the target | task `aim-at-the-first-hop` |
+| target has an observed **door** on its bearing | aim at the door; re-confirm the door before relying on it | doors.js `doorAim` |
+| target is **silent and distant**, no door | this is the lead the app exists for — and the current selector excludes it | **inverted today** |
+| target **transmits but never answers** | stop probing it; capture passively — a reply is not the only evidence of contact | `passive-tracer`, worker `explorers` |
+| target is a **declared router** | do **not** probe it for a reply. Probe *through* it | rule in this document |
+| target is `CLIENT_MUTE` | never a door; only ever a destination | doors.js |
+| target **sleeps** (wakes ~30 s per cycle) | timing, not repetition — a `no_ack` proves sleep, not routing | recorded, not built |
+| we want proof of delivery without PKI | `want_ack` on a broadcast — implicit ack via the flooding router | **not built**; mesh-gw item #14 open |
+
+The table is the app's operating model. A node's class does not just describe it
+— it **routes it to a technique**, and choosing the technique is the judgement
+this app exists to make.
+
 ### The gap this naming exposes
 
 `doorKind()` returns three values — `router`, `relay`, `never` — and there is no
@@ -289,8 +365,11 @@ reusable is not.
 
 ## What this document does not settle
 
-- The **repo split** (`docs/OBSERVATORY_REPO_SPEC.md`). This definition makes the
-  case sharper — mining, probing and opening is a different job from displaying
-  state — but the decision, and the database question inside it, is still open.
+- The **repo split** (`docs/OBSERVATORY_REPO_SPEC.md`). The classification
+  section above is the strongest argument yet: *"to node dash this kind of thing
+  is irrelevant, but to us when we are probing it is key"*. node-dash needs no
+  concept of a door, a router-as-infrastructure, or a probe technique; this app
+  is built entirely on them. That is a real boundary, not a size complaint. The
+  decision — and the database question inside it — is still open.
 - **How the airtime budget is divided** between corridor work and the existing
   liveness-ranked probing. That is a number, and it is Peter's.
