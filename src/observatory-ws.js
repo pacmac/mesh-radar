@@ -33,6 +33,7 @@ const timing = () => ({ ...TIMING_DEFAULTS, ...(getConfig('observatory_timing', 
 import db, { getConfig, getCachedGeocode, recentAimedTraceroutes, lastHeardMap, positionMap, listObsTargets,
          attemptsByDay, answerRateBySilence, answerRateByDistance,
          rateByBandByDay, windowBestKm, boardVerdicts, recentEventLog, interventions } from './db.js';
+import { discoveryConfig } from './config-api.js';
 
 // Read once: the map marks where we are, and the reach model already computes
 // every distance from it. A page load must not re-read config.
@@ -919,7 +920,7 @@ registerWsWiring(({ broadcast }) => {
   // changes what the operator sees, so it needs a bounded knob like the rest.
   // Read once at wiring — a live re-read would need the interval torn down and
   // rebuilt, which is not worth it for a value nobody changes mid-session.
-  const recomputeMin = Number((getConfig('discovery', {}) || {}).recompute_min) || 15;
+  const recomputeMin = Number(discoveryConfig().recompute_min) || 15;
   setInterval(() => recompute(broadcast), recomputeMin * 60_000);
 
   // Live activity: every state change, pushed. This is the panel Peter asked

@@ -1,7 +1,7 @@
 ---
 module: standing-tasks
 source: src/standing-tasks.js
-source_hash: cc6b1ddda7668045d056032b4a0a32fb3f0f7d17559d69613b193a66c63a7eb4
+source_hash: f6f595b2e12b7bb18ccdb6be8acd4e1476c54e1798bb464c776daa9a9cba111f
 updated: 2026-08-03
 ---
 

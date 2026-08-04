@@ -19,7 +19,7 @@ import { EventEmitter } from 'events';
 import { bridge }       from './bridge.js';
 import { nodeList }     from './node-list.js';
 import { stmts, getConfig, radioAirtime } from './db.js';
-import { pasvConfig } from './config-api.js';
+import { pasvConfig, discoveryConfig } from './config-api.js';
 import { getRotatorAddress } from './device-config.js';
 import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 import { rotator } from './rotator.js';
@@ -286,10 +286,10 @@ class TracerouteManager extends EventEmitter {
       //
       // Anything unset falls through to the caller's opts, and only then to the
       // rotator's own defaults. Nothing here is a literal.
-      const d = getConfig('discovery', {});
+      const d = discoveryConfig();
       const holdMs = opts.hold_ms ?? (Number(d.hold_sec) > 0 ? Number(d.hold_sec) * 1000 : undefined);
       const aimMs  = opts.settle_ms ?? (Number(d.aim_timeout_sec) > 0 ? Number(d.aim_timeout_sec) * 1000 : undefined);
-      const r = await rotator.point(az, {
+      let r = await rotator.point(az, {
         by: 'traceroute',
         ...(holdMs !== undefined ? { hold: holdMs } : {}),
         ...(aimMs  !== undefined ? { timeoutMs: aimMs } : {}),
@@ -312,13 +312,28 @@ class TracerouteManager extends EventEmitter {
       // One retry, never a loop: mission-runner already settled on that rule.
       const half = beam_deg != null ? beam_deg / 2 : null;
       const errOf = (got) => Math.abs(((Number(got) - az + 540) % 360) - 180);
-      if (half != null && r && r.az != null && !r.busy && errOf(r.az) > half) {
-        const r2 = await rotator.point(az, {
+      // ONE RE-ISSUE IS USUALLY ENOUGH, AND SOMETIMES IT IS NOT. Measured
+      // 2026-08-04 over seven aims with deliberately long slews:
+      //
+      //   first attempt inside the 35 deg beam:  2/7   (29%)
+      //   after one re-issue:                    6/7   (86%)
+      //
+      // The one that still missed was a 121->351 slew: it stopped at 276, and the
+      // re-issue overshot to 59. Both outside the beam, so that shot went out
+      // pointed at nothing — worse than not aiming, because the gain is real.
+      //
+      // So the count is a KNOB, not a literal, and its default has the numbers
+      // above as its basis (`discovery.aim_retries`). It stops the moment the aim
+      // is inside the half-beam, so a good first move costs nothing extra.
+      const maxRetries = Number.isFinite(Number(d.aim_retries)) ? Number(d.aim_retries) : 0;
+      for (let i = 0; i < maxRetries; i++) {
+        if (half == null || !r || r.az == null || r.busy || errOf(r.az) <= half) break;
+        r = await rotator.point(az, {
           by: 'traceroute',
           ...(holdMs !== undefined ? { hold: holdMs } : {}),
           ...(aimMs  !== undefined ? { timeoutMs: aimMs } : {}),
         });
-        if (r2 && r2.az != null) { settled = !!(r2.ok && !r2.busy) && errOf(r2.az) <= half; azActual = Number(r2.az); }
+        if (r && r.az != null) { settled = !!(r.ok && !r.busy) && errOf(r.az) <= half; azActual = Number(r.az); }
       }
       // WHERE IT SAYS IT GOT TO. Peter, 2026-08-04: "the yagi rotates at about
       // 60rpm, point and settle should never take more than about 1.5 seconds,

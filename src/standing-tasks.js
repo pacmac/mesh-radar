@@ -17,6 +17,7 @@ import db, { getConfig } from './db.js';
 import { beamWorthItKm } from './doors.js';
 import { defineHook } from './hooks.js';
 import { ownDeviceNums } from './node-filter.js';
+import { discoveryConfig } from './config-api.js';
 
 // first_run_ms — the miners sweep whole tables, so they wait for boot traffic
 // to settle rather than competing with it. Basis: same settle window as the
@@ -161,7 +162,7 @@ function haversineKm(a, b, c, d) {
  *  never asked. 58 such nodes on 2026-08-03.
  */
 function runUnknownNodes() {
-  const days = Number((getConfig('discovery', {}) || {}).max_silence_days) || 14;
+  const days = Number(discoveryConfig().max_silence_days) || 14;
   const rows = db.prepare(`
     SELECT n.num, n.lat, n.lon, n.last_heard
       FROM nodes n
@@ -240,7 +241,7 @@ function runAsymmetricPaths() {
  *  find out.
  */
 function runStrandedPositions() {
-  const days = Number((getConfig('discovery', {}) || {}).max_silence_days) || 14;
+  const days = Number(discoveryConfig().max_silence_days) || 14;
   const rows = db.prepare(`
     SELECT n.num, i.lat, i.lon
       FROM nodes n
@@ -281,7 +282,7 @@ function runStrandedPositions() {
  *  clothes, which is the one thing the board exists to prevent.
  */
 function runAnchorableNodes() {
-  const days = Number((getConfig('discovery', {}) || {}).max_silence_days) || 14;
+  const days = Number(discoveryConfig().max_silence_days) || 14;
   const home = homeLatLon();
 
   const unpos = db.prepare(`
@@ -369,7 +370,7 @@ function runAnchorableNodes() {
  *  number someone can act on.
  */
 function runBlockedCorridors() {
-  const d       = getConfig('discovery', {}) || {};
+  const d       = discoveryConfig();
   const days    = Number(d.max_silence_days) || 14;
   const windowKm = Number(d.window_km) || 25;
   const CEILING = 250;   // matches inferences.js — beyond this a position is not evidence
@@ -586,7 +587,7 @@ function runProbingStalled() {
   const tx = db.prepare('SELECT COUNT(*) n FROM traceroute_history WHERE ts > ?').get(now - 6 * 3600).n;
   // Judged against the configured cadence, not a guessed number: interval_sec
   // implies a rate, and a tenth of it is unambiguously broken rather than slow.
-  const interval = Number((getConfig('discovery', {}) || {}).interval_sec) || 180;
+  const interval = Number(discoveryConfig().interval_sec) || 180;
   const expected = Math.floor((6 * 3600) / interval);
   const floor = Math.max(1, Math.floor(expected / 10));
 

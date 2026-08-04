@@ -81,6 +81,22 @@ export const DEFAULTS = {
     // longer patience would queue behind the alarm rather than yield to it,
     // and 0 restores the old behaviour of deferring the whole 180 s tick.
     aim_patience_sec:    5,
+    // HOW MANY TIMES WE RE-ISSUE AN AIM THE V4 DID NOT REACH. Not a guess —
+    // measured 2026-08-04 over 7 aims with deliberately long slews:
+    //
+    //   first attempt inside the 35 deg beam:   2/7  (29%)
+    //   after ONE re-issue:                     6/7  (86%)
+    //
+    // The v4 stops 70-98 deg short on a long arc and reports ok:false honestly,
+    // then usually lands on the second, shorter move. One re-issue is therefore
+    // what makes the yagi usable at all. It is not always enough: a 121->351
+    // slew stopped at 276, and the re-issue overshot to 59 — both outside the
+    // beam, so that shot was wasted airtime pointed at nothing.
+    //
+    // 2 allows the case that one attempt cannot fix while still bounding the
+    // cost at three commands (~1.5 s each at 60 rpm). 0 disables re-aiming.
+    // The v5 is closed-loop on an encoder and should need none of this.
+    aim_retries:         2,
     // WAS HARDCODED IN mission-runner, and it underpins every rate conclusion:
     // timeout_sec decides what counts as a miss AND dominates the real cadence,
     // because a 90 s wait inside a 180 s interval means the configured rate is
@@ -138,6 +154,21 @@ router.get('/', (req, res) => {
  */
 export function pasvConfig() { return { ...PASV_DEFAULTS, ...getConfig('pasv_config', {}) }; }
 
+/** MERGED discovery settings — DEFAULTS under whatever is stored.
+ *
+ *  `getConfig('discovery')` returns ONLY the stored object. A key added to
+ *  DEFAULTS but never written by the settings form is simply ABSENT from it, so
+ *  every consumer that read it raw had to carry its own literal fallback — and
+ *  seven of them did, each a private copy of a number this block is supposed to
+ *  own. A knob added here was therefore invisible to the engine until someone
+ *  saved the form.
+ *
+ *  Caught 2026-08-04 when `aim_retries` read as undefined and silently disabled
+ *  re-aiming altogether — worse than the unconditional single retry it replaced.
+ *
+ *  Use this, never getConfig('discovery') directly. */
+export function discoveryConfig() { return { ...DEFAULTS.discovery, ...getConfig('discovery', {}) }; }
+
 const PASV_DEFAULTS = { stale_sec: 1800, stale_fail_sec: 600, timeout_sec: 60,
   // Targets with zero lifetime successes drop to the slow lane after this many
   // attempts — a BACKOFF, not a cap. 26.6% of 30 days of attempts went to nodes
@@ -173,6 +204,7 @@ const DISCOVERY_LIMITS = {
   mission_timeout_sec: [10, 300],
   aim_timeout_sec:     [10, 300],
   aim_patience_sec:    [0, 60],
+  aim_retries:         [0, 5],
   recompute_min:       [1, 240],
   max_attempts_per_day: [1, 5000],
   channel_util_pause:   [1, 100],
@@ -258,12 +290,12 @@ router.put('/radar', (req, res) => {
 // Discovery strategy — same shape as /radar above: GET returns the effective
 // settings (defaults merged with the stored override), PUT allowlists and clamps.
 router.get('/discovery', (req, res) => {
-  res.json({ ...DEFAULTS.discovery, ...getConfig('discovery', {}) });
+  res.json(discoveryConfig());
 });
 
 router.put('/discovery', (req, res) => {
   const body = req.body?.values ?? req.body ?? {};
-  const cur  = { ...DEFAULTS.discovery, ...getConfig('discovery', {}) };
+  const cur  = discoveryConfig();
 
   if (body.strategy !== undefined) {
     if (!DISCOVERY_STRATEGIES.includes(body.strategy)) {

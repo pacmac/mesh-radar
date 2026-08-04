@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 23373b2ba0b599fd81f4a93bdcda7c44edff4c5455f276ebdb2f18fe17a5db97
+source_hash: 471f2bacb47072ea972c9902d9377ee6b5413665273b04eace110b6c5216ece6
 updated: 2026-08-03
 ---
 
@@ -606,3 +606,72 @@ into `run()` would put mission scheduling inside a dispatch function.
 The aim context supplied must carry the same shape `_resolveAim` returns —
 `{ mode, target, az, az_actual, beam_deg, settled }` — so the row records identical
 provenance either way, and a reader cannot tell which path produced it.
+
+## What the v4 actually does, measured (2026-08-04)
+
+Seven aimed traceroutes over deliberately long slews, plus six bare moves, read
+from the rotator's own `started`/`done` handshakes rather than from sampled status.
+
+### Aiming, end to end
+
+```
+target  1st attempt   err   re-issue   err   outcome
+   22   az 120 fail    98   az  18      4    IN BEAM
+  202   az 131 fail    71   az 200      2    IN BEAM
+   62   az  62 ok       0   —           —    IN BEAM  (short arc)
+  274   az 178 fail    96   az 276      2    IN BEAM
+  119   az 121 ok       2   —           —    IN BEAM  (short arc)
+  351   az 276 fail    75   az  59     68    OUTSIDE
+  242   az 154 fail    88   az 242      0    IN BEAM
+```
+
+First attempt inside the 35 degree beam: **2/7 (29%)**. After one re-issue:
+**6/7 (86%)**. The re-issue is not a refinement — it is what makes the yagi
+usable at all.
+
+### The limitation is ARC LENGTH, not the compass wrap
+
+```
+from   target   arc    arrived   err   ok
+ 274 ->   330    56       33      63   false
+  33 ->   351   -42      340      11   false
+ 340 ->    10    30       16       6   false
+  16 ->   351    25      349       2   TRUE
+ 349 ->    20    31       20       0   TRUE
+  20 ->   200   180      129      71   false
+```
+
+Arc <= 31 degrees: 3 of 4 landed within 6 degrees. Arc >= 56 degrees: 0 of 3
+landed, each stopping 63-71 degrees short.
+
+**351 across north succeeded on a 25 degree approach.** The repeated failures to
+reach 351 earlier were therefore NOT a 0/360 wrap defect, which was the obvious
+theory and the wrong one. Every failure observed was a long arc, and the re-issue
+works precisely because the second move is a short one.
+
+This is why `discovery.aim_retries` exists and why its default is 2: a long arc
+needs more than one correction, and each correction is itself a short arc, which
+the v4 handles well.
+
+### Two methodology notes, because both nearly produced false findings
+
+- `/rotator/move` is fire-and-forget. Polling `busy` after it returns reads the
+  azimuth BEFORE the move starts, which produced a set of nonsense errors
+  (a "175 degree miss" on a move that had not begun). The `done` handshake is the
+  only trustworthy source, and it carries the arrived azimuth.
+- The re-issue count read `getConfig('discovery')` directly, which returns only
+  the STORED object — `aim_retries` was absent, so it evaluated to 0 and silently
+  disabled re-aiming entirely, worse than the unconditional single retry it
+  replaced. Fixed by `discoveryConfig()`; see below.
+
+## `discoveryConfig()` — DEFAULTS were never the SSOT
+
+Seven call sites read `getConfig('discovery', {})` raw, each carrying its own
+literal fallback (`|| 15`, `|| 14`, `|| 180`). A key added to the DEFAULTS block
+but never written by the settings form is ABSENT from the stored object, so the
+engine could not see it until someone saved the form — and each consumer's private
+literal could disagree with the declared default.
+
+`discoveryConfig()` merges DEFAULTS under the stored value. All seven converted
+except `db.js:1254`, which is left alone deliberately: `config-api` imports `db`,
+so importing back would be circular. Recorded rather than worked around.

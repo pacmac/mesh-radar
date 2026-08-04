@@ -51,6 +51,7 @@ import { rotator } from './rotator.js';
 import { doorAim } from './doors.js';
 import { ownDeviceNums } from './node-filter.js';
 import { defineHook, newProbeId } from './hooks.js';
+import { discoveryConfig } from './config-api.js';
 
 // THE PROBE, NARRATED. Task `hooks-discovery-path`. Peter, 2026-08-03: "what I
 // expect to see is a log for each probe, showing the steps that we are cycling
@@ -121,7 +122,7 @@ const DEFAULTS = {
  *  Read per tick, so a change from the dashboard takes effect on the next
  *  mission with no restart. */
 function cfg() {
-  const d = getConfig('discovery', {}) || {};
+  const d = discoveryConfig();
   return {
     ...DEFAULTS,
     ...(getConfig('mission_runner', {}) || {}),
