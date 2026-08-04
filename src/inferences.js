@@ -382,19 +382,30 @@ registerInference({
   key:  'reach.heard',
   deps: [],
   mode: 'batch',
+  // OUR OWN PACKET LOG, not the radio's nodedb. This read nodes.last_heard and
+  // nodes.hops — and db.js:638 states plainly that node_info/node_update is "a
+  // BLE nodedb replay, NOT reception evidence". The inference that exists to
+  // measure receptions was sourced from the one table documented as not being
+  // evidence of one. Ledger B82.
+  //
+  // relay_observation carries PER-PACKET hop_start/hop_limit, so hops_used is
+  // measured per reception instead of guessed from a single nodedb scalar.
   evidence: `
-    SELECT n.num                                                      AS num,
+    SELECT r.from_num                                                 AS num,
            n.lat                                                      AS lat,
            n.lon                                                      AS lon,
-           n.last_heard                                               AS last_heard,
-           n.hops                                                     AS hops,
+           MAX(r.ts)                                                  AS last_heard,
+           MIN(CASE WHEN r.hop_start IS NOT NULL AND r.hop_limit IS NOT NULL
+                    THEN r.hop_start - r.hop_limit END)               AS hops,
+           COUNT(*)                                                   AS packets,
            (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lat') AS home_lat,
            (SELECT CAST(value AS REAL) FROM config WHERE key = 'home.lon') AS home_lon,
            COALESCE((SELECT CAST(value AS INTEGER) FROM config WHERE key = 'observatory.window_days'), 30) AS s_window_days,
            (SELECT MAX(strftime('%s','now')))                         AS now_ts
-    FROM nodes n
+    FROM relay_observation r
+    JOIN nodes n ON n.num = r.from_num
     WHERE n.lat IS NOT NULL AND n.lon IS NOT NULL AND n.lat <> 0
-      AND n.last_heard IS NOT NULL
+    GROUP BY r.from_num
   `,
   /** Pure. Furthest node heard, all time and inside the window. */
   run(rows) {
@@ -404,17 +415,26 @@ registerInference({
     const cut  = days > 0 ? now - days * 86400 : 0;
 
     let allKm = null, allNum = null, winKm = null, winNum = null, winAt = null;
+    let directKm = null, directNum = null;
     let heardAll = 0, heardWin = 0, rejected = 0;
 
     for (const r of rows) {
       if (r.home_lat == null || r.home_lon == null) continue;
       const km = Math.round(greatCircleKm(r.home_lat, r.home_lon, r.lat, r.lon) * 10) / 10;
       if (!Number.isFinite(km)) continue;
-      // A hop count of 0 or null is a DIRECT reception — nothing to launder, so
-      // no guard applies. Otherwise the distance must be achievable per hop.
-      const hops = Number(r.hops) || 0;
+      // FAILS CLOSED. This was `Number(r.hops) || 0` then `hops > 0 && ...`, so
+      // an UNKNOWN hop count skipped the guard entirely — and nodes.hops was
+      // null for most nodes, so it rejected 19 of 616 and published 1050.9 km.
+      // Unknown is not zero; unknown is exactly the case that must be rejected.
+      // "A guard that fails open is worse than no guard." Ledger B81.
+      if (r.hops == null) { rejected++; continue; }
+      const hops = Number(r.hops);
+      if (!Number.isFinite(hops) || hops < 0) { rejected++; continue; }
+      // hops === 0 is a genuine DIRECT reception: nothing relayed it, so there
+      // is nothing to launder and no per-hop test applies.
       if (hops > 0 && km / hops > MAX_KM_PER_HOP) { rejected++; continue; }
       heardAll++;
+      if (hops === 0 && (directKm == null || km > directKm)) { directKm = km; directNum = r.num; }
       if (allKm == null || km > allKm) { allKm = km; allNum = r.num; }
       if (r.last_heard >= cut) {
         heardWin++;
@@ -426,6 +446,13 @@ registerInference({
       value: {
         heard_km:        allKm,
         heard_num:       allNum,
+        // DIRECT RF — 0 relays, our own radio. A different fact from `heard_km`
+        // (which may have crossed five hops) and from the verified-route record.
+        // docs/APP_ROLE.md keeps the three apart; conflating them is how a
+        // relayed 308 km contact gets read as a 308 km radio path.
+        direct_km:       directKm,
+        direct_num:      directNum,
+        basis:           'relay_observation packet log; per-packet hop_start-hop_limit',
         window_days:     days,
         window_heard_km: winKm,
         window_heard_num: winNum,
@@ -607,6 +634,14 @@ registerInference({
            ni.first_heard                                             AS first_heard,
            COALESCE((SELECT value ->> '$.mode'                FROM config WHERE key = 'discovery'), 'auto') AS s_mode,
            (SELECT value ->> '$.pinned'                       FROM config WHERE key = 'discovery')        AS s_pinned,
+           -- PROVEN CONTACT, as evidence. The ceiling was a hardcoded 250 and
+           -- so excluded the furthest node we have actually received packets
+           -- from — Peter: "you are not even using the node with the know proven
+           -- distance in the nodes list". A distance we have DEMONSTRATED is not
+           -- implausible by definition, so the ceiling must follow it.
+           COALESCE((SELECT CAST(value ->> '$.heard_km' AS REAL) FROM obs_fact
+                      WHERE key = 'reach.heard' AND entity = 'global'
+                      ORDER BY ts DESC LIMIT 1), 0)                   AS s_proven_km,
            -- The Observatory's OWN target flag. Not nodeinfo.favourite, which
            -- means "pin to my sidebar" and is set on our own local units.
            COALESCE(ni.obs_target, 0)                                 AS obs_target,
@@ -668,7 +703,13 @@ registerInference({
     // claim. 250 rather than the record's 200 because a MISSION may legitimately
     // aim past the current frontier — the point is to beat it — but a node
     // claiming 1,681 km is not a target, it is a bad coordinate.
-    const CEILING_KM = 250;
+    // 250 was a hardcoded guess at "beyond this a position is laundered". It
+    // also silently excluded every node we have PROVEN contact with beyond it —
+    // the app held proof of a 308.6 km reception and would never once have
+    // looked at that node. reach.heard's heard_km is itself guarded (per-packet
+    // hops, fails closed), so it is a demonstrated distance, not a claim.
+    const PROVEN_KM  = Number(rows[0]?.s_proven_km) || 0;
+    const CEILING_KM = Math.max(250, Math.ceil(PROVEN_KM));
 
     const scored = [];
     const skipped = { cooling: 0, suspect: 0, exhausted: 0, beyond_window: 0, silent: 0, unclassified: 0 };
