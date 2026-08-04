@@ -188,12 +188,20 @@ class RotatorClient extends EventEmitter {
     return true;
   }
 
-  // Absolute closed-loop seek. v4 is driven with seek2az (live-verified on
-  // .186); v5 with move2az. NOTE, from the v4's own @help() on 2026-08-02:
-  // BOTH commands exist on v4 — @seek2az() and @move2az() are both listed. The
-  // split here is which one we chose, not which one the firmware has.
+  // Absolute closed-loop seek. THE COMMAND COMES FROM CAPS — that table is the
+  // single declaration of what each variant speaks, and until 2026-08-04 it was
+  // declared there and read nowhere, while move() hardcoded its own ternary.
+  // The two agreed, so nothing was broken; the hazard was the next edit, made in
+  // the table that reads like the source of truth, having no effect.
+  //
+  // v4 -> seek2az (live-verified on .186; 1031 sent, 0 move2az).
+  // v5 -> move2az. Confirmed by Peter 2026-08-04: "move2az on v5 is fine. all
+  // these issues dont exist in v5". The move2az being retired is the V4's.
+  //
+  // From the v4's own @help() on 2026-08-02 BOTH commands exist on v4 — so this
+  // is which one we chose, not which one the firmware has.
   move(az, { by = 'unattributed' } = {}) {
-    const cmd = (this._variant === 'v5') ? 'move2az' : 'seek2az';
+    const cmd = (CAPS[this._variant] ?? CAPS.v4).moveCmd;
     const target = Number(az);
 
     // Latched: a material change of aim, or a different subsystem taking the

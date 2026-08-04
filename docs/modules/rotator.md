@@ -1,7 +1,7 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: 26759257af8674b61dd7afd3f4fb97e663517bfa7257e31e8ef20d99ed02acd8
+source_hash: 053bada83050298866dabd32d193866e8e6ac2e27b8fdb6ba7f530deeeff98f0
 updated: 2026-08-03
 ---
 
@@ -384,3 +384,19 @@ kind of thing — **an act on the world, announced at that actuator's own single
 chokepoint**. It replaced a narrower `transmit` scope added earlier the same day;
 two names for one idea is exactly the non-uniformity Peter was pointing at, and
 folding them cost nothing because `event_log` held 0 rows of the old kind.
+
+## `CAPS.moveCmd` is the command, and now it is actually read (task `rotator-movecmd-ssot`)
+
+`CAPS` declared the move command per variant — `v4: seek2az`, `v5: move2az` — and
+`move()` ignored it, hardcoding `(variant === 'v5') ? 'move2az' : 'seek2az'`. Two
+declarations, zero reads of the authoritative-looking one.
+
+Behaviour was correct by coincidence: the ternary happened to agree with CAPS. The
+risk is the next change, which would be made in the table that reads like the
+source of truth and have no effect.
+
+Confirmed with Peter 2026-08-04: **v5 keeps `move2az`** ("move2az on v5 is fine,
+all these issues dont exist in v5"), and the v4's `move2az` is the one being
+retired — which node-dash has never sent to a v4. The out log holds 1031
+`seek2az` and 0 `move2az`. So the mapping needed no change; only the duplication
+did.
