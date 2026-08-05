@@ -1,7 +1,7 @@
 ---
 module: tab-snapshot
 source: public/partials/tab-snapshot.html
-source_hash: 9095ec800575a6736a12805e7642b572fd2c23abe6a40ae4aa9d38abbecf718c
+source_hash: 60d6c9208647fad2c61d0844a6b522478428b85a0bf3b82d3a80b2828d0b00c5
 updated: 2026-08-05
 ---
 

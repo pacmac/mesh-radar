@@ -231,10 +231,12 @@ export function newGround(days = windowDays()) {
     first_contacts: firstContacts,
     furthest_new_km: furthestNew == null ? null : Math.round(furthestNew * 10) / 10,
     furthest_new_node: furthestNewNode,
-    // Clusters are anchor rows with no created_at, so "new clusters" cannot be
-    // derived. Served as null — NOT as 0, which would read as "none appeared".
-    new_clusters: null,
-    new_clusters_reason: 'cluster anchors carry no creation timestamp',
+    // `clusters.created_at` EXISTS. This previously served null with the reason
+    // "cluster anchors carry no creation timestamp" — I asserted an absence
+    // without reading the schema, the same error as claiming `nodes` had no
+    // first_heard when nodeinfo has 1104 rows of it. Twice in one session.
+    new_clusters: one('SELECT COUNT(*) n FROM clusters WHERE created_at > ?', since),
+    clusters_total: one('SELECT COUNT(*) n FROM clusters'),
   };
 }
 
