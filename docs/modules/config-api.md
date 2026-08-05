@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 493e1013f61f9ffc141dbbe1697edd684c9ef7625450dd26ba544483bfe51870
+source_hash: 5d1c792b114c6828673aff34ca5742fb02eabf3dcd9e031b704b6f7849cdc5fc
 updated: 2026-08-04
 ---
 
@@ -291,3 +291,21 @@ without a deploy.
 Read and clamped at the use site (`persist.js`, minimum 1) rather than trusted
 from config — MESH_REACH_SPEC §8: enforcement lives in the path that acts, not in
 a validator.
+
+## Read path is not optional
+
+`DEFAULTS` gates BOTH read and write: `GET` and `PUT /config/:key` each 404 on
+anything not declared. A key that a backend module reads, that is wired in the
+browser, and that is NOT declared here is therefore **invisible and unsaveable** —
+it works server-side and silently reverts on every reload.
+
+That is not hypothetical. `node_filters.msg_only` is read at `node-filter.js:70`
+and wired in `app-forms.js`, `app-nodes.js` and `app-ws.js`, and was undeclared —
+so the "messages only" toggle could never save. `node_filters.hide_mqtt_only` had
+the identical defect one line away.
+
+`scripts/check_contract.mjs` now fails the build on any dotted key read in `src/`
+that is neither declared here nor covered by a prefix with its own route
+(`home.*`, `tilt.*`, `alerts.*`, `rotator.*`, `callout.*`, `migrations.*`).
+Those prefixes are excluded deliberately: forcing migration flags and SMTP
+credentials into the generic allowlist would expose them to a settings form.

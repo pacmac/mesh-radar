@@ -21,6 +21,12 @@ export const DEFAULTS = {
   // nodes.rf_last_heard; hide_mqtt above tests a via_mqtt column that does not
   // exist and has always been dead.
   'node_filters.hide_mqtt_only': true,
+  // Read by node-filter.js:70 and wired in app-forms/app-nodes/app-ws — but it
+  // was never declared, and DEFAULTS gates BOTH read and write. So the "messages
+  // only" toggle 404'd on save and silently reverted on every reload. Found by
+  // the read-path contract check, one line from hide_mqtt_only which had the
+  // identical defect.
+  'node_filters.msg_only':    false,
   'node_filters.has_signal':  false,
   'node_filters.has_telem':   false,
   'node_filters.roles':       [],

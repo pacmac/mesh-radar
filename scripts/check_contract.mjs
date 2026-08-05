@@ -11,6 +11,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import WebSocket from 'ws';
+import { DEFAULTS as DEFAULTS_FOR_CHECK } from '../src/config-api.js';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const R = (p) => readFileSync(ROOT + p, 'utf8');
@@ -149,6 +150,42 @@ await new Promise((resolve) => {
   });
 });
 
+
+// ── Config keys must have SOME read path ─────────────────────────────────────
+//
+// config-api DEFAULTS is a hard allowlist for BOTH read and write: GET and PUT
+// /config/:key each return 404 for anything not declared. So a key read by a
+// consumer, never declared, and with no dedicated route is INVISIBLE to the
+// browser — it works server-side and cannot be seen or edited.
+//
+// That is not hypothetical. node_filters.hide_mqtt_only shipped read-but-
+// undeclared on 2026-08-05 and would have stayed invisible to the settings form.
+//
+// NOT every key belongs in DEFAULTS. These prefixes have their own read paths or
+// are internal, and forcing them into the generic allowlist would expose
+// migration flags and secrets to a settings UI:
+//
+//   home.*        GET /home_pos          tilt.*     GET /tilt_cal
+//   alerts.*      alerts-api             rotator.*  rotator-api
+//   callout.*     GET /config/callout    migrations.*  internal, never user-facing
+//
+// Anything OUTSIDE those and outside DEFAULTS is the defect this catches.
+{
+  const OWN_ROUTE = /^(home|tilt|alerts|rotator|callout|migrations)\./;
+  const declared = new Set(Object.keys(DEFAULTS_FOR_CHECK));
+  const read = new Set();
+  for (const f of readdirSync('src').filter(f => f.endsWith('.js'))) {
+    const t = readFileSync(`src/${f}`, 'utf8');
+    for (const m of t.matchAll(/getConfig\(\s*'([^']+)'/g)) read.add(m[1]);
+  }
+  const orphans = [...read].filter(k => k.includes('.') && !declared.has(k) && !OWN_ROUTE.test(k));
+  if (orphans.length) {
+    fail('config keys read but with no read path',
+         `${orphans.join(', ')} — declare in config-api DEFAULTS or give it a route`);
+  } else {
+    pass(`every dotted config key read in src/ has a read path (${read.size} keys)`);
+  }
+}
 
 // ── Browser persistence: the class convention must not rot ───────────────────
 //
