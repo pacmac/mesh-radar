@@ -1,7 +1,7 @@
 ---
 module: snapshot-api
 source: src/snapshot-api.js
-source_hash: fa0fb2ee72615de3c0036f2676437ad4dc8308539a2454881ff60afe74c0eaec
+source_hash: 5365c40a1c101d10cc0880fb213d3cd8ffbb180bb46b9c7ec81e994822c74d93
 updated: 2026-08-05
 ---
 

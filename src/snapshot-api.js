@@ -21,6 +21,7 @@
 import { Router } from 'express';
 import db, { getConfig } from './db.js';
 import { getAllDeviceCfgs } from './device-config.js';
+import { rotator } from './rotator.js';
 
 const router = Router();
 
@@ -285,7 +286,13 @@ export function health() {
   const variant = getConfig('rotator_active', null);
   add('Rotator', variant ? String(variant).replace(/"/g, '') : null,
       variant ? null : 'no rotator selected');
-  add('Live azimuth', null, 'not exposed to this endpoint — use /rotator/status');
+  // rotator.status IS reachable here (rotator.js:138) — the previous "not
+  // exposed to this endpoint" was another absence asserted without looking.
+  try {
+    const st = rotator?.status ?? {};
+    add('Live azimuth', st.az != null ? `${Math.round(st.az)}°${st.busy ? ' · moving' : ''}` : null,
+        st.az == null ? 'rotator not reporting' : null);
+  } catch { add('Live azimuth', null, 'rotator unavailable'); }
 
   // Callout transmitter: a real, checkable safety state.
   const co = getConfig('callout', {}) || {};
@@ -296,7 +303,14 @@ export function health() {
   const smtp = getConfig('alerts.smtp_host', '');
   add('Alert email', smtp ? `configured · port ${getConfig('alerts.smtp_port', '?')}` : null,
       smtp ? null : 'no SMTP host set');
-  add('Last alert sent', null, 'no send log is stored');
+  // alert_rules.last_sent EXISTS. "no send log is stored" was wrong — the third
+  // absence I asserted in one session without reading the schema.
+  const last = db.prepare('SELECT MAX(last_sent) t FROM alert_rules').get()?.t;
+  const lastType = last ? db.prepare('SELECT type FROM alert_rules WHERE last_sent = ?').get(last)?.type : null;
+  add('Last alert sent', last
+        ? `${new Date(last * 1000).toISOString().slice(11,16)} · ${lastType}`
+        : null,
+      last ? null : 'no alert has ever been sent');
 
   const total = db.prepare('SELECT COUNT(*) n FROM nodes').get()?.n ?? 0;
   add('Nodes known', String(total));
