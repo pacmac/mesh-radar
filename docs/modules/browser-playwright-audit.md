@@ -31,7 +31,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 32ef7ebf10ef5910144d87b75cbc08381ecd41d9db4e066ae25de75d973fdac0
+source_hash: dbf04fcdebc79ecd5d4037abe0e8c2b4a2c03ccbe3f4daea09c53e8b9ea5fac3
 updated: 2026-08-03
 ---
 

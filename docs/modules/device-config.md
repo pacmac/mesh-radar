@@ -1,7 +1,7 @@
 ---
 module: device-config
 source: src/device-config.js
-source_hash: 3b640f303c65341e8714756573d01fd61ec124df651e6311194767675758ac15
+source_hash: 9efcad0a3c87d8f9379e3feda52fbe40c745206a965c5cfe59551aada6fafbd3
 updated: 2026-07-16
 ---
 
