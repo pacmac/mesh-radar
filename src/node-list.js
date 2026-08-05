@@ -346,6 +346,72 @@ class NodeList extends EventEmitter {
 
   // Bulk seed from bridge REST (call on bridge connect or scan start)
   // forceDevice: if true, device tag overwrites any existing _device (used for scan reseed)
+  // ── hydrateFromStore ───────────────────────────────────────────────────────
+  //
+  // Peter, 2026-08-05: "it is irrelevant how many times the engine is restarted.
+  // if nodes were discovered or contacted within our window (i.e 6 days) then we
+  // should use them."
+  //
+  // THE WINDOW DEFINES RELEVANCE, NOT PROCESS UPTIME. Before this, the live cache
+  // began empty on every boot and refilled only from packets heard since, so the
+  // dashboard showed a fraction of what we knew and the fraction depended on how
+  // long the process had been up — 59 of 311 positioned nodes at 19 minutes.
+  //
+  // THIS IS NOT THE RADIO'S NODEDB. node-dash deliberately does not use the
+  // device nodedb: it holds less than we do and cannot be managed. Every row here
+  // is our OWN observation, out of our own SQLite.
+  //
+  // AND IT IS NOT THE PHANTOM-TARGET BUG. That guard (see handleNodeUpdate) exists
+  // because node_info replays the RADIO's whole nodedb, which contains nodes the
+  // radio was told about and never heard — putting never-heard nodes on the radar
+  // and in the ACTV rotator queue. The discriminator that was missing is now
+  // present: `rf_last_heard` is stamped only when a packet arrived OVER THE AIR,
+  // so every hydrated entry is a node we personally received by radio, inside the
+  // window. Gossip cannot enter through here.
+  hydrateFromStore() {
+    if (this._scanActive) return 0;                  // scan owns the cache
+    // THE WINDOW IS A NODE FILTER VARIABLE, not a literal and not an
+    // observatory setting. Peter, 2026-08-05: "7 should not be hard-coded, that
+    // is a node filter variable."
+    //
+    // node_filters.max_age already governs how old a node may be and still be
+    // shown on ANY page, so hydration honours the same number. Loading rows the
+    // filter would immediately hide would be pointless, and keeping a second
+    // window here would be one more thing to disagree with the first.
+    // 0 means no age limit — hydrate everything we have RF evidence for.
+    const maxAge = Number(getConfig('node_filters.max_age', 0)) || 0;
+    const since = maxAge > 0 ? Math.floor(Date.now() / 1000) - maxAge : 0;
+    let n = 0;
+    for (const r of stmts.rfHeardSince.all(since)) {
+      if (r.num == null || this._cache.has(r.num)) continue;   // live data always wins
+      const hasPos = r.lat != null && r.lon != null && r.lat !== 0
+                     && Math.abs(r.lat) <= 90 && Math.abs(r.lon) <= 180;
+      this._cache.set(r.num, {
+        num: r.num,
+        user: { id: r.node_id, short_name: r.short_name, long_name: r.long_name,
+                hw_model: r.hw_model ?? null, role: r.role ?? null },
+        ...(hasPos ? { position: { latitude_i: Math.round(r.lat * 1e7),
+                                   longitude_i: Math.round(r.lon * 1e7),
+                                   altitude: r.alt ?? 0 } } : {}),
+        last_heard: r.rf_last_heard ?? r.last_heard,
+        snr: r.snr ?? null, rssi: r.rssi ?? null,
+        hops: r.hops_away ?? r.hops ?? null,
+        _device: r.device ?? null,
+        _devices: r.device ? [r.device] : [],
+        // Provenance, so a consumer that must act only on this-session evidence
+        // can still tell the difference. Display does not care; the rotator might.
+        _hydrated: true,
+      });
+      n++;
+    }
+    if (n) {
+      const w = maxAge > 0 ? `${Math.round(maxAge / 3600)}h (node_filters.max_age)` : 'no age limit';
+      console.log(`[node-list] hydrated ${n} nodes heard by RF within ${w} — our store, not the radio nodedb`);
+      this._scheduleEmit();
+    }
+    return n;
+  }
+
   seed(nodes, device, forceDevice = false) {
     for (const rawN of nodes) {
       if (rawN.num == null) continue;

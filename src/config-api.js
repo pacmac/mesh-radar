@@ -14,6 +14,11 @@ export const DEFAULTS = {
   'node_filters.named_only':  false,
   'node_filters.has_pos':     false,
   'node_filters.hide_mqtt':   false,
+  // MQTT-only nodes hidden by default — Peter, 2026-08-05: reaching a node over
+  // MQTT "is cheating and does not use radio for the whole path". Tests
+  // nodes.rf_last_heard; hide_mqtt above tests a via_mqtt column that does not
+  // exist and has always been dead.
+  'node_filters.hide_mqtt_only': true,
   'node_filters.has_signal':  false,
   'node_filters.has_telem':   false,
   'node_filters.roles':       [],

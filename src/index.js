@@ -412,6 +412,19 @@ server.listen(PORT, () => {
   // Inert until `callout.enabled` is true — the switch is Peter's (spec §10).
   startCalloutRunner();
   startImapReceiver();
+  // HYDRATE THE LIVE CACHE FROM OUR OWN STORE, before any scan resume.
+  //
+  // Peter, 2026-08-05: "it is irrelevant how many times the engine is restarted.
+  // if nodes were discovered or contacted within our window (i.e 6 days) then we
+  // should use them."
+  //
+  // Not the radio's nodedb — that is deliberately unused. Our SQLite, gated on
+  // rf_last_heard so only nodes we personally received over the air are restored,
+  // and bounded by node_filters.max_age so it agrees with what the filter would
+  // show anyway.
+  try { nodeList.hydrateFromStore(); }
+  catch (e) { console.error(`[node-dash] node hydration failed: ${e.message}`); }
+
   // Resume scan if it was active before restart
   const savedScan = getConfig('scan_state', {});
   if (savedScan.active) {

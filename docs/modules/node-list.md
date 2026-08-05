@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 4165552348c8b8186d9d9b3acff2b36b77bfe5bb26cba650b74898cd3c298f3f
+source_hash: d7130d2e02d9e70c13ef0e3e05e09bef0356937085e3858538e3dd38e3c28ce9
 updated: 2026-08-03
 ---
 
@@ -366,3 +366,56 @@ Only the getters `homePos`, `nodes`, `ownDeviceNodes`. `traceroute.js` called
 every call, disabling `aim: 'endpoint'` entirely. If a caller needs one node by
 num, read `stmts.getNodeByNum` — do not add a `get()` here without also finding
 the callers that assumed it already existed.
+
+## `hydrateFromStore()` — the window defines relevance, not uptime (2026-08-05)
+
+Peter:
+
+> it is irrelevant how many times the engine is restarted. if nodes were
+> discovered or contacted within our window (i.e 6 days) then we should use them.
+
+Before this, the live cache started **empty** on every boot and refilled only from
+packets heard since. The dashboard therefore showed a fraction of what we already
+knew, and the size of that fraction depended on process uptime — 59 of 311
+positioned nodes at 19 minutes, 19 at one minute. A restart made the display
+wrong, which is precisely when you most want to look at it.
+
+### This is NOT the radio's nodedb
+
+node-dash deliberately does not use the device nodedb: it holds less than our
+store does and cannot be managed. Hydration reads **our own SQLite**.
+
+### …and it is not the phantom-target bug returning
+
+The guard in `handleNodeUpdate` exists because `node_info` replays the RADIO's
+whole nodedb, which contains nodes the radio was *told about* and never heard —
+putting never-heard nodes on the radar and in the ACTV rotator queue.
+
+The discriminator that was missing now exists. `rf_last_heard` is stamped only
+when a packet arrived **over the air**, so every hydrated row is a node we
+personally received by radio. Gossip cannot enter through this path.
+
+Entries carry `_hydrated: true`, so a consumer that must act only on
+this-session evidence can still tell the difference. Live data always wins —
+hydration never overwrites an entry already in the cache.
+
+### The window is a node filter variable
+
+`node_filters.max_age` — not a literal, and not an observatory setting. It already
+governs how old a node may be and still appear on **any** page, so hydration
+honours the same number: loading rows the filter would immediately hide is
+pointless, and a second window here would be one more thing to disagree with the
+first. `0` means no age limit.
+
+What the current setting yields, measured 2026-08-05:
+
+| `node_filters.max_age` | nodes hydrated |
+|---|---|
+| 21600 s (6 h, current) | **103** |
+| 6 days | 343 |
+| 0 (no limit) | 890 |
+
+Verified: boot log reads `hydrated 103 nodes heard by RF within 6h
+(node_filters.max_age) — our store, not the radio nodedb`, and the live list is
+36 immediately after boot against 19–20 at the same age previously. 103 → 36 is
+the remaining node filters (`roles`, `node_source`) doing their normal work.

@@ -942,6 +942,19 @@ export const stmts = {
   // node_filters.hide_mqtt_only removes.
   rfHeardNums: db.prepare(`SELECT num FROM nodes WHERE rf_last_heard IS NOT NULL`),
 
+  // NODES WE HEARD BY RADIO INSIDE THE WINDOW — the boot hydration set.
+  //
+  // NOT the radio's nodedb. That is a deliberate exclusion: node-dash does not
+  // use the device nodedb because it holds less than we do and cannot be managed.
+  // Every row here is our OWN observation, and rf_last_heard proves the packet
+  // arrived over the air rather than over MQTT.
+  rfHeardSince: db.prepare(`
+    SELECT n.num, n.node_id, n.short_name, n.long_name, n.hw_model, n.role,
+           n.lat, n.lon, n.alt, n.last_heard, n.rf_last_heard, n.snr, n.rssi,
+           n.hops, n.device, i.hops_away
+      FROM nodes n LEFT JOIN nodeinfo i ON i.num = n.num
+     WHERE n.rf_last_heard IS NOT NULL AND n.rf_last_heard > ?`),
+
   // The door a given endpoint most often leaves through — the per-node input to
   // a cluster's door purity (CLUSTERS_SPEC §3.1).
   dominantDoorFor: db.prepare(`
