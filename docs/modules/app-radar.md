@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: baa19d40dea390b7ab0c43ecac7a881997e2abdbef5ddf2b3dfe94b3b7224092
+source_hash: f140233c0321bec719f26365517b8b75ae141ece9cc03e8f2bbd2ba5f2cfd5de
 updated: 2026-08-04
 ---
 
@@ -174,3 +174,74 @@ Two mistakes on the way, both caught by checking the served payload rather than
 assuming: the first version read `n.lat`, which nodes do not carry (they hold
 `position` and a precomputed `_km`), so every scale came back null; and the
 browser property is `radarCtx`, not `radarContext`.
+
+## Node marks by kind, and the endpoint fade (task `radar-node-icons`, 2026-08-05)
+
+Peter, 2026-08-04:
+
+> the current dash is saturated with every node plotted the same with no
+> indication of whether it is a target, a relay / router
+
+> with endpoints we should either be able to hide close ones or have a dimming /
+> opacity that starts in the ctr barely visible and the further out they go they
+> get more prominent, that will still show all nodes but will focus the eye on the
+> distant nodes
+
+### A glyph per kind
+
+`node_kind` is **served** (`src/node-kind.js`, stamped on every `node_list` row).
+This file maps the token to a shape and does not work the kind out for itself —
+a presentation mapping of a served value, exactly like the TONE map.
+
+| kind | glyph | why |
+|---|---|---|
+| `endpoint` | crosshair — dot with four gapped ticks | a destination, not a way through |
+| `door` | diamond **outline** with a filled core | a way through; distinct from a dot at 8 px |
+| `router` | filled dot, dashed orbit, two panel ticks | a declared relay — a dish |
+| `own` | small square | our own radios |
+
+An absent or unknown `node_kind` falls back to `endpoint`, so an older payload
+degrades to the previous behaviour rather than drawing nothing.
+
+**The door glyph must not assume the backdrop.** The first cut punched a hole in
+the diamond with `fill:var(--radar-bg, #000)`. That variable does not exist, so it
+resolved to black — fine on the dark radar, a black blob anywhere else. It is now
+an outline plus a filled core, drawn only in the node's own colour. Nothing in a
+glyph may reference the background.
+
+### The endpoint fade
+
+`markOpacity(kind, norm)` ramps opacity from `ENDPOINT_FADE.near` (0.22) at the
+centre to `1.0` at the rim.
+
+Two deliberate constraints:
+
+- **Endpoints only.** Doors and routers stay at full opacity regardless of
+  distance. A door 5 km away is the single most important mark on the display —
+  66% of everything we transmit leaves through T4 at 5.3 km — so fading it by
+  distance would hide the thing the engine depends on. Distance is a proxy for
+  "interesting" only among destinations.
+- **It follows `norm`, not raw km.** `norm` is the already-computed radial
+  position, so the fade uses the same compressive ring scale as the rings
+  themselves. Against raw km the entire dense inner band would vanish at once.
+
+`norm` is carried through on the `npos` entries (which the label collision solver
+mutates in place, so it survives).
+
+`ENDPOINT_FADE` is a named constant with its rationale at the declaration rather
+than an inline literal. If it wants tuning it should become a served knob, not a
+browser-side edit.
+
+### Verified 2026-08-05
+
+Rendered at 1600x1000 and looked at, not merely queried:
+
+- crosshairs visible on MOHS, FYU, 7mrb, exw1, SR#9, GZG/WEI/OVEA
+- door diamonds confirmed in the DOM for the two `door` nodes (BNCH, TA2m)
+- opacities ramp across the set: 0.23, 0.45, 0.52, 0.62, 0.67, 0.76, 0.91, 1.0
+- 0 console errors
+
+**Known:** the radar surface renders dark under both DaisyUI themes — it carries
+its own styling and does not follow `data-theme`. Setting `data-theme=corporate`
+changed the attribute and left the radar unchanged. Not altered here; recorded so
+the next reader does not think the theme switch is broken.

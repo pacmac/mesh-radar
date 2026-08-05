@@ -4,6 +4,75 @@
 //   ACTV (1): nodes, route overlay for targeted node (animated dots), red crosshairs, target arm
 //   SCAN (2): nodes only, NO route overlays, target arm shows scan position
 import {fetchJSON, svgElem, ageColor, themeColor,  haversine, bearing } from './app-helpers.js';
+
+// ── Node marks: a shape per KIND, and distance-based emphasis ────────────────
+//
+// Peter, 2026-08-04: "the current dash is saturated with every node plotted the
+// same with no indication of whether it is a target, a relay / router ... and in
+// many cases I may only want to see a target node and see the cluster, router and
+// doors only without the clutter."
+//
+// The KIND is decided in Domain 1 (`node_kind`, see src/node-kind.js). This file
+// only chooses a glyph for it — a presentation mapping of a served token, exactly
+// like the TONE map. It must never work the kind out for itself.
+//
+// ENDPOINT FADE. Peter, same conversation: "have a dimming / opacity that starts
+// in the ctr barely visible and the further out they go they get more prominent,
+// that will still show all nodes but will focus the eye on the distant nodes."
+//
+// Applied to ENDPOINTS ONLY. Doors and routers are infrastructure: a door 5 km
+// away is the single most important mark on the display — 66% of everything we
+// send leaves through T4 at 5.3 km — so fading it by distance would hide the
+// thing the whole engine depends on. Distance is only a proxy for "interesting"
+// among destinations.
+const ENDPOINT_FADE = { near: 0.22, far: 1.0 };
+
+/** Opacity for a node mark. `norm` is the already-computed 0..1 radial position,
+ *  so the fade follows the SAME compressive scale as the rings rather than
+ *  raw km — otherwise everything inside the dense inner band would vanish. */
+function markOpacity(kind, norm) {
+  if (kind !== 'endpoint') return 1;
+  const t = Math.max(0, Math.min(1, Number(norm) || 0));
+  return ENDPOINT_FADE.near + (ENDPOINT_FADE.far - ENDPOINT_FADE.near) * t;
+}
+
+/** The glyph for a kind, as SVG children appended to the node's group.
+ *  Deliberately built from primitives: legible at 8 px, no external assets, and
+ *  it inherits the node's existing colour so age/device colouring still reads. */
+function kindGlyph(kind, x, y, r, colour, opacity) {
+  const out = [];
+  const st = (extra) => `stroke:${colour};fill:none;opacity:${opacity};${extra || ''}`;
+  if (kind === 'door') {
+    // A way THROUGH: a diamond, open at the sides. Reads as a gateway rather
+    // than as another dot, and stays distinct at small sizes.
+    // OUTLINE + CORE, not a filled shape with a background-coloured hole punched
+    // in it. The first cut used `fill:var(--radar-bg, #000)` for the hole and
+    // that variable does not exist — so on the light theme it would have drawn a
+    // black dot on a pale background. Nothing here may assume the backdrop.
+    const d = r + 2.5;
+    out.push(svgElem('path', { d: `M${x} ${y - d} L${x + d} ${y} L${x} ${y + d} L${x - d} ${y} Z`,
+                               style: `fill:none;stroke:${colour};stroke-width:1.6;opacity:${opacity};filter:url(#blipGlow)` }));
+    out.push(svgElem('circle', { cx: x, cy: y, r: Math.max(1.2, r - 2),
+                                 style: `fill:${colour};opacity:${opacity}` }));
+  } else if (kind === 'router') {
+    // Declared relay: a dish. Body plus two panels.
+    out.push(svgElem('circle', { cx: x, cy: y, r: r - 0.5, style: `fill:${colour};opacity:${opacity}` }));
+    out.push(svgElem('path', { d: `M${x - r - 3} ${y - r - 1} L${x - r + 1} ${y - r - 1}`, style: st('stroke-width:1.6') }));
+    out.push(svgElem('path', { d: `M${x + r - 1} ${y + r + 1} L${x + r + 3} ${y + r + 1}`, style: st('stroke-width:1.6') }));
+    out.push(svgElem('circle', { cx: x, cy: y, r: r + 3, style: st('stroke-width:0.8;stroke-dasharray:2 2') }));
+  } else if (kind === 'own') {
+    out.push(svgElem('rect', { x: x - r, y: y - r, width: r * 2, height: r * 2,
+                               style: `fill:${colour};opacity:${opacity}` }));
+  } else {
+    // ENDPOINT — a crosshair, as asked for. A destination, not a way through.
+    const g = r + 3;
+    out.push(svgElem('circle', { cx: x, cy: y, r: r - 1.2, style: `fill:${colour};opacity:${opacity}` }));
+    out.push(svgElem('path', { d: `M${x - g} ${y} L${x - r + 0.5} ${y} M${x + r - 0.5} ${y} L${x + g} ${y}`
+                                + ` M${x} ${y - g} L${x} ${y - r + 0.5} M${x} ${y + r - 0.5} L${x} ${y + g}`,
+                               style: st('stroke-width:1') }));
+  }
+  return out;
+}
 import { FF } from './feature-flags.js';
 
 export const radarMixin = {
@@ -349,7 +418,9 @@ export const radarMixin = {
       if (node._az == null) return null;
       const az = node._az * Math.PI / 180;
       const normKm = node._km != null ? this._radarNorm(node._km, maxKm) : 0.92;
-      return { x: CX + Math.sin(az) * normKm * R, y: CY - Math.cos(az) * normKm * R, diagLen: BASE_DIAG, armAngle: 45 };
+      // `norm` rides along so the endpoint fade follows the compressive ring
+      // scale, not raw km — otherwise the dense inner band would all vanish.
+      return { x: CX + Math.sin(az) * normKm * R, y: CY - Math.cos(az) * normKm * R, norm: normKm, diagLen: BASE_DIAG, armAngle: 45 };
     });
 
     // ── Iterative label placement: constant arm length, rotating angle ──────
@@ -477,9 +548,14 @@ export const radarMixin = {
       if (isSelected)
         g.appendChild(svgElem('circle', { cx: x, cy: y, r: 8, style: `fill:none;stroke:${G4};stroke-width:1.5;stroke-dasharray:4 3` }));
       const r = isSelected ? 6 : 4;
+      // KIND-AWARE MARK. `node_kind` is served (src/node-kind.js); this only maps
+      // it to a shape. Unknown/absent kind falls back to 'endpoint', so an older
+      // payload degrades to today's behaviour rather than drawing nothing.
+      const kind = node.node_kind || 'endpoint';
+      const op   = isSelected ? 1 : markOpacity(kind, npos[ni].norm ?? 1);
       if (ringColor)
-        g.appendChild(svgElem('circle', { cx: x, cy: y, r: r + 2, style: `fill:${ringColor};opacity:0.85` }));
-      g.appendChild(svgElem('circle', { cx: x, cy: y, r, style: `fill:${dotColor};filter:url(#blipGlow)` }));
+        g.appendChild(svgElem('circle', { cx: x, cy: y, r: r + 2, style: `fill:${ringColor};opacity:${0.85 * op}` }));
+      for (const el of kindGlyph(kind, x, y, r, dotColor, op)) g.appendChild(el);
       const title = svgElem('title');
       title.textContent = node.user?.long_name || node.display_name || '';
       g.appendChild(title);
