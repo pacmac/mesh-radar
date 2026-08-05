@@ -6,9 +6,16 @@
 // elevation service, and a restart must not decide by itself to go and do that.
 
 import { Router } from 'express';
-import { grid, sample, isSampling, isStale, meta, terrainConfig } from './terrain.js';
+import { grid, sample, isSampling, isStale, meta, terrainConfig, visibility } from './terrain.js';
 
 const router = Router();
+
+// The VISIBILITY mask is what the radar draws — see terrain.js. The raw relief
+// grid stays available for anything that wants the elevations themselves.
+router.get('/terrain/visibility', (req, res) => {
+  try { res.json(visibility()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 router.get('/terrain', (req, res) => {
   try { res.json(grid()); }

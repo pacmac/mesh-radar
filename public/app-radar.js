@@ -157,15 +157,19 @@ export const radarMixin = {
   // comparison the layer exists to support.
   async _loadTerrain() {
     try {
-      const d = await fetchJSON('/terrain');
+      // The VISIBILITY MASK, not the relief. Peter, 2026-08-05: "invert it so
+      // that I see an outline and anything outside that outline should be
+      // shaded, maybe according to the severity."
+      const d = await fetchJSON('/terrain/visibility');
       this.terrainData = d?.ready ? d : null;
     } catch { this.terrainData = null; }
   },
 
   _drawRadarTerrain(maxKm) {
     const img = document.getElementById('radar-terrain-img');
+    const path = document.getElementById('radar-horizon-path');
     if (!img) return;
-    if (!this.layerOn('terrain')) { img.setAttribute('href', ''); return; }
+    if (!this.layerOn('terrain')) { img.setAttribute('href', ''); path?.setAttribute('d', ''); return; }
     const d = this.terrainData;
     if (d == null) {
       if (!this._terrainLoading) {
@@ -174,9 +178,7 @@ export const radarMixin = {
       }
       return;
     }
-    // Repaint only when the projection actually changed — the terrain itself is
-    // static, so redrawing it on every node update would be pure waste.
-    const key = `${maxKm}|${this.radarLogScale}|${d.meta?.sampled_at}`;
+    const key = `${maxKm}|${this.radarLogScale}|${d.observer_asl_m}`;
     if (this._terrainKey === key && img.getAttribute('href')) return;
     this._terrainKey = key;
 
@@ -184,71 +186,72 @@ export const radarMixin = {
     const cv = document.createElement('canvas');
     cv.width = S; cv.height = S;
     const ctx = cv.getContext('2d');
-    const B = d.bearings_deg, RAD = d.radii_km, E = d.elev_m;
-    const lo = d.min_m ?? 0, hi = d.max_m ?? 1;
-    const span = Math.max(1, hi - lo);
-    const step = (B.length > 1 ? (B[1] - B[0]) : 2);
+    const B = d.bearings_deg, RAD = d.radii_km, SH = d.shadow_deg, DEEP = d.deepest_deg;
+    const step = B.length > 1 ? (B[1] - B[0]) : 2;
+    const maxSev = Math.max(0.001, d.max_shadow_deg);
 
-    // HYPSOMETRIC RAMP — elevation reads as COLOUR, not as faintness.
+    // SHADE WHAT WE CANNOT SEE, leave what we can. The inverse of the first
+    // attempt, which painted the ground itself and produced a starburst centred
+    // on the observer — an artefact of polar sampling, not of the landscape.
     //
-    // The first cut used a single warm hue with alpha 0.05 + 0.55*t^2 at 55%
-    // layer opacity. Peak alpha was 0.33 and the SQUARE crushed the mid-range,
-    // which is where all the terrain here actually lives (30-300 m of a -1..484 m
-    // span). Hills rendered at ~0.1 alpha. Peter: "I cannot even see it, I can
-    // see a very very feint outline". It was filled all along — just invisible.
-    //
-    // Now a conventional relief ramp: green lowland -> olive -> brown -> pale
-    // upland, at an alpha that can actually be read. Height is carried by hue, so
-    // it survives at any opacity, and the eye reads a map rather than a haze.
-    const RAMP = [
-      [0.00, [ 26,  72,  40]],   // valley floor
-      [0.20, [ 58, 104,  44]],   // low ground
-      [0.40, [122, 130,  52]],   // rising
-      [0.60, [150, 112,  52]],   // hill
-      [0.80, [156,  92,  60]],   // ridge
-      [1.00, [206, 178, 150]],   // summit
-    ];
-    const lerp = (a, b, u) => Math.round(a + (b - a) * u);
-    const colour = (m) => {
-      if (m == null) return null;                       // no data: draw nothing
-      const t = Math.max(0, Math.min(1, (m - lo) / span));
-      let i = 0;
-      while (i < RAMP.length - 2 && t > RAMP[i + 1][0]) i++;
-      const [t0, c0] = RAMP[i], [t1, c1] = RAMP[i + 1];
-      const u = t1 === t0 ? 0 : (t - t0) / (t1 - t0);
-      return `rgba(${lerp(c0[0], c1[0], u)},${lerp(c0[1], c1[1], u)},${lerp(c0[2], c1[2], u)},0.85)`;
+    // Severity is degrees below the skyline. Deeper shadow = darker, so the eye
+    // reads "how badly blocked" rather than "how high".
+    const shade = (sev) => {
+      if (sev == null || sev <= 0) return null;                 // visible: draw nothing
+      const t = Math.min(1, sev / maxSev);
+      // Peter, 2026-08-05: "do not try and pay too much attention to fading down
+      // layers ... the order that I select a layer should determine its
+      // brightness". So this is drawn to be READ, not to politely coexist —
+      // contention between layers is the focus-order feature's job, not a reason
+      // to render everything at 10% alpha as the first two attempts did.
+      return `rgba(6,12,18,${(0.42 + 0.48 * t).toFixed(3)})`;
     };
 
-    // Overlap the wedges by a hair so no seam shows between bearings, and
-    // sub-divide each ring radially. The ring radii are quadratic, so the outer
-    // cells are enormous — drawn flat they streak. Interpolating elevation across
-    // each cell costs nothing and removes the banding.
-    const SUB = 4;
+    const SUB = 3;
     for (let i = 0; i < B.length; i++) {
       const a0 = (B[i] - step / 2 - 90) * Math.PI / 180 - 0.006;
       const a1 = (B[i] + step / 2 - 90) * Math.PI / 180 + 0.006;
       let prev = 0;
       for (let k = 0; k < RAD.length; k++) {
-        const e0 = E[i]?.[k - 1] ?? E[i]?.[k];
-        const e1 = E[i]?.[k];
-        const rIn = prev, rOut = this._radarNorm(RAD[k], maxKm) * R;
-        if (e1 != null && rOut > rIn) {
-          for (let sdiv = 0; sdiv < SUB; sdiv++) {
-            const u0 = sdiv / SUB, u1 = (sdiv + 1) / SUB;
-            const col = colour(e0 == null ? e1 : e0 + (e1 - e0) * ((u0 + u1) / 2));
-            if (!col) continue;
+        const rOut = this._radarNorm(RAD[k], maxKm) * R;
+        const col = shade(SH[i]?.[k]);
+        if (col && rOut > prev) {
+          for (let q = 0; q < SUB; q++) {
             ctx.beginPath();
-            ctx.arc(C, C, rIn + (rOut - rIn) * u1, a0, a1);
-            ctx.arc(C, C, rIn + (rOut - rIn) * u0, a1, a0, true);
-            ctx.closePath();
-            ctx.fillStyle = col;
-            ctx.fill();
+            ctx.arc(C, C, prev + (rOut - prev) * (q + 1) / SUB, a0, a1);
+            ctx.arc(C, C, prev + (rOut - prev) * q / SUB, a1, a0, true);
+            ctx.closePath(); ctx.fillStyle = col; ctx.fill();
           }
         }
         prev = rOut;
       }
+      // BEYOND THE SAMPLED LIMIT we have no data. Once behind a ridge you stay
+      // behind it, so carry the outermost measured shadow to the rim rather than
+      // leaving a misleadingly clear edge at 60 km. Extrapolated, and it is the
+      // honest choice between a false clear and a false blank.
+      const col = shade(DEEP[i]);
+      if (col && prev < R) {
+        ctx.beginPath();
+        ctx.arc(C, C, R, a0, a1);
+        ctx.arc(C, C, prev, a1, a0, true);
+        ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+      }
     }
     img.setAttribute('href', cv.toDataURL('image/png'));
+
+    // THE HORIZON OUTLINE, as an SVG path so it stays crisp at any zoom — this
+    // is the line Peter asked for, and it is the only part legible at a 200 km
+    // ring where the visible region is a few pixels across.
+    if (path) {
+      const CX = 300, CY = 300, RR = 256;
+      const pts = B.map((b, i) => {
+        const hz = d.horizon_km[i] ?? d.sampled_to_km;
+        const n = this._radarNorm(hz, maxKm) * RR;
+        const a = (b - 90) * Math.PI / 180;
+        return [CX + Math.cos(a) * n, CY + Math.sin(a) * n];
+      });
+      path.setAttribute('d', 'M' + pts.map(p => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('L') + 'Z');
+    }
   },
 
   async _loadClusters() {

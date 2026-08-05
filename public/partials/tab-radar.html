@@ -244,7 +244,12 @@
                    background and below everything else — it is the ground the
                    whole display stands on. -->
               <image id="radar-terrain-img" x-ignore x="44" y="44" width="512" height="512"
-                     clip-path="url(#radarClip)" style="opacity:0.9" href=""></image>
+                     clip-path="url(#radarClip)" style="opacity:0.85" href=""></image>
+              <!-- The horizon outline: where line of sight ends. SVG so it stays
+                   crisp at any zoom — at a 200 km ring the visible region is only
+                   a few pixels across and a raster would vanish. -->
+              <path id="radar-horizon-path" x-ignore d="" clip-path="url(#radarClip)"
+                    style="fill:none;stroke:rgba(255,180,60,0.85);stroke-width:1.2;stroke-dasharray:3 2"></path>
               <g id="radar-beam-g" x-ignore style="transform-box:view-box;transform-origin:300px 300px;transition:transform 1.2s ease"></g>
               <g id="radar-scan-arm-g" x-ignore clip-path="url(#radarClip)"></g>
               <g id="radar-traceroute-g" x-ignore clip-path="url(#radarClip)"></g>

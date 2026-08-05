@@ -3,7 +3,7 @@ module: terrain
 source:
   - src/terrain.js
   - src/terrain-api.js
-source_hash: 3ba7bbafdbc2a519c60a03c20264c569b9bd9d03c7aed22deb6619e4d4ee031b
+source_hash: 59c0d0d3dacb840f8325987a8e01320157ff6f87e257260b875b25581a2e368b
 updated: 2026-08-05
 ---
 

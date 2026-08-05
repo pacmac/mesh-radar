@@ -133,6 +133,109 @@ export function grid() {
   };
 }
 
+// ── visibility ───────────────────────────────────────────────────────────────
+//
+// Peter, 2026-08-05, on the first attempt at rendering this:
+//
+//   "it's perfectly symmetric meaning that I am spack in the centre of every
+//    terrain obstacle around me, that is not right"
+//   "only legible when I zoom in to say 25km, at 100 and 200 km it is so small
+//    and insignificant that it cannot be resolved"
+//   "invert it so that I see an outline and anything outside that outline should
+//    be shaded, maybe according to the severity"
+//
+// He is right on all three. Painting the relief as radial wedges produced a
+// starburst centred on the observer — an artefact of the sampling geometry, not
+// of the landscape. And a relief that only exists out to 60 km vanishes at a
+// 200 km ring.
+//
+// What actually matters for radio is not how high the ground is, it is WHERE WE
+// CAN SEE. So this computes the visible region and the shadow beyond it:
+//
+//   horizon_km[b]     first range on bearing b where the ground stops being visible
+//   shadow_m[b][r]    metres that ground lies BELOW our line of sight; 0 = visible
+//
+// A point is visible when the angle from our antenna to it is at least the
+// greatest angle to anything between — the standard skyline walk. Earth curvature
+// is included at k=4/3.
+//
+// SEVERITY IS AN ANGLE, NOT A DEPTH IN METRES.
+//
+// The first cut reported metres below the sight line and produced 2636 m against
+// terrain whose highest point is 484 m — nonsense. The reason: once a close ridge
+// sets the skyline, the projected sight line rises without limit
+// (tan(maxAngle) * distance), so at 60 km it sat kilometres in the air and every
+// real hill was "thousands of metres below" it. Arithmetically true, physically
+// meaningless.
+//
+// Degrees below the skyline is bounded, is what diffraction loss actually scales
+// with, and cannot run away with distance.
+
+/** Observer height above sea level: ground + the tallest antenna we have. */
+export function observerAsl() {
+  const h = homeSite();
+  if (!h || h.alt == null) return null;
+  let mast = 0;
+  try {
+    const rows = db.prepare(`SELECT value FROM config WHERE key LIKE 'device_cfg.%'`).all();
+    for (const r of rows) {
+      const v = JSON.parse(r.value)?.antenna_height_m;
+      if (Number.isFinite(Number(v))) mast = Math.max(mast, Number(v));
+    }
+  } catch { /* no device config: ground only */ }
+  return h.alt + mast;
+}
+
+export function visibility() {
+  const g = grid();
+  if (!g.ready) return { ready: false, reason: g.reason };
+  const asl = observerAsl();
+  if (asl == null) return { ready: false, reason: 'no home.alt — set the ground elevation first' };
+
+  const radii = g.radii_km;
+  const horizon = [], shadow = [], deepest = [];
+  for (const row of g.elev_m) {
+    let maxAng = -Infinity, hz = null;
+    const sh = [];
+    for (let k = 0; k < radii.length; k++) {
+      const d = radii[k], e = row[k];
+      if (e == null || d <= 0) { sh.push(null); continue; }
+      // k = 4/3 effective earth radius, in metres of drop at range d
+      const bulge = (d * d) / (2 * 8495) * 1000;
+      const ang = Math.atan2(e - asl - bulge, d * 1000);
+      if (ang >= maxAng) {
+        maxAng = ang;
+        sh.push(0);                                   // on the skyline: visible
+      } else {
+        // Degrees below the established skyline. Bounded, and it is what
+        // diffraction loss scales with.
+        sh.push(Math.round((maxAng - ang) * 180 / Math.PI * 100) / 100);
+        if (hz == null) hz = d;
+      }
+    }
+    horizon.push(hz);                                  // null = visible all the way out
+    shadow.push(sh);
+    const last = [...sh].reverse().find(v => v != null);
+    deepest.push(last ?? 0);
+  }
+  return {
+    ready: true,
+    observer_asl_m: asl,
+    radii_km: radii,
+    bearings_deg: g.bearings_deg,
+    horizon_km: horizon,
+    // degrees below the skyline; 0 = visible, null = no elevation data
+    shadow_deg: shadow,
+    // Beyond the sampled limit we have no data. Once behind a ridge you stay
+    // behind it, so the browser shades the far field at the shadow measured at
+    // the OUTERMOST sampled point on that bearing, rather than leaving a
+    // misleadingly clear rim. Extrapolation, and labelled as such.
+    deepest_deg: deepest,
+    max_shadow_deg: Math.max(0, ...deepest),
+    sampled_to_km: radii[radii.length - 1],
+  };
+}
+
 // ── sampling ─────────────────────────────────────────────────────────────────
 
 const API = 'https://api.opentopodata.org/v1/';

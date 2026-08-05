@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: b45ed03e11d24c1854f4cfa30f70fb1619269f5a4cf85a031acd4c77141c3f9e
+source_hash: 6d98aaf3639c1b1379c17fb4266314d9a0a6581bb4693077b44656b616b276fa
 updated: 2026-08-04
 ---
 
@@ -322,7 +322,80 @@ dense south-west and northern regions. The node labels solve this with a
 collision solver (`_solveLabel`); the cluster labels do not use it yet. That is
 the obvious next step and it is not done.
 
-## Terrain relief layer (2026-08-05)
+## Terrain layer — a VISIBILITY MASK, not a relief map (2026-08-05)
+
+Two earlier attempts got this wrong, and both failures are worth keeping.
+
+**Attempt 1 — invisible.** Painted the relief with `alpha = 0.05 + 0.55·t²` at 55%
+layer opacity: peak 0.33, and the square crushed the mid-range where all the
+terrain here lives. Hills rendered at ~0.1 alpha.
+
+**Attempt 2 — the wrong thing, legibly.** A hypsometric relief map. Peter:
+
+> it's perfectly symmetric meaning that I am spack in the centre of every terrain
+> obstacle around me, that is not right
+
+> only legible when I zoom in to say 25km, at 100 and 200 km it is so small and
+> insignificant that it cannot be resolved
+
+> invert it so that I see an outline and anything outside that outline should be
+> shaded, maybe according to the severity
+
+He was right on all three. Radial wedges of *ground height* produce a starburst
+centred on the observer — an artefact of polar sampling, not of the landscape. And
+a relief that stops at 60 km vanishes at a 200 km ring.
+
+### What it draws now
+
+| element | meaning |
+|---|---|
+| **outline** (SVG path, dashed amber) | where line of sight ends on each bearing |
+| **shading beyond it** | how far *below* the skyline that ground sits, in degrees |
+
+Severity is **degrees below the skyline**, not metres. The first cut reported
+metres and produced **2636 m** against terrain whose highest point is 484 m —
+once a close ridge sets the skyline, the projected sight line rises without limit
+(`tan(maxAngle) × distance`), so at 60 km it sat kilometres in the air. Degrees are
+bounded and are what diffraction loss actually scales with.
+
+The outline is **SVG, not canvas**, so it stays crisp at any zoom — at a 200 km
+ring the visible region is a few pixels across and a raster would vanish.
+
+Beyond the sampled 60 km the shading carries the outermost measured shadow to the
+rim. Extrapolation, and labelled as such: the honest choice between a false clear
+edge and a false blank.
+
+### Brightness
+
+Peter, 2026-08-05: *"do not try and pay too much attention to fading down layers
+... the order that I select a layer should determine its brightness"*. So this is
+drawn to be **read**, not to politely coexist. Layer contention is the
+focus-order feature's job — not a reason to render everything at 10% alpha, which
+is what the first two attempts did.
+
+### Measured 2026-08-05
+
+Observer 35 m ASL (30 m ground + 5 m mast). LOS horizon **0.74–8.56 km**, median
+1.45 km — we are in a bowl and every link is a diffraction path. Obstruction
+severity by bearing spans **0.07°–2.52°**, a 36× range: clearest due east
+(0.07–0.30°), worst due north (2.03–2.45°).
+
+**It does NOT explain the dead zones**, and the layer should not be read as
+though it does. Tested over 31 ten-degree sectors: obstruction vs node count
+`r = +0.18`, vs furthest contact `r = +0.10`, vs fraction beyond 60 km `r = −0.06`
+— near zero, and slightly the *wrong* way. We reach 199 km through a 1.74° shadow
+and 198 km through an essentially clear 0.07° path; our largest node population
+sits in one of the more obstructed sectors, and our clearest bearing has six nodes
+on it.
+
+The reason is structural: our reach is mediated by relays 5–13 km out, so our own
+line of sight to a node at 100 km is close to irrelevant — the mesh hops around
+terrain. Terrain governs the **first hop**, and after that it is someone else's
+geometry.
+
+What the layer is genuinely for: **where a directional beam is worth spending.**
+
+## Terrain relief layer — superseded, kept for the reasoning (2026-08-05)
 
 Peter: *"what I am looking at is the terrain, i.e the hills and valleys that
 surround me"*, and *"I can already see by looking at the node distribution that we
