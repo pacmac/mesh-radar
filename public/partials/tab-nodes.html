@@ -1,3 +1,7 @@
+<!-- Per-viewer VIEW STATE only: sort order, display choices. Nothing here
+     writes server config, so it all belongs in ui_prefs. Peter, 2026-08-05:
+     "if I select a sort order those do not persist". -->
+<div class="pref-user contents">
         <!-- ===================== NODES ===================== -->
         <div x-show="tab==='nodes'" class="flex-1 min-h-0 card bg-base-100 shadow flex flex-col overflow-hidden">
           <div class="card-body flex flex-col flex-1 min-h-0">
@@ -7,7 +11,10 @@
                 <span class="badge badge-neutral" x-text="nodeCount"></span>
                 <span class="text-xs font-normal opacity-50" x-show="nodeCount !== nodeTotal" x-text="'of ' + nodeTotal"></span>
               </h2>
-              <select class="select select-sm select-bordered ml-auto"
+              <!-- name= is the persist KEY. Without it app-persist bails at
+                   `if (!key) return` — which is why the sort order never survived
+                   a reload. An inline @change handler carries no key of its own. -->
+              <select name="nodeSortKey" class="select select-sm select-bordered ml-auto"
                       @change="nodeSort.dir = parseInt($event.target.selectedOptions[0].dataset.dir); sortNodes($event.target.value, true)">
                 <option value="last_heard" data-dir="-1">Most recent</option>
                 <option value="snr"        data-dir="-1">Best signal</option>
@@ -36,7 +43,7 @@
                   <!-- Max hops -->
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-sm opacity-60">Max hops</span>
-                    <select class="select select-xs select-bordered" :value="nodeFilters.maxHops" @change="saveNodeFilter('maxHops', parseInt($event.target.value))">
+                    <select class="pref-backend select select-xs select-bordered" :value="nodeFilters.maxHops" @change="saveNodeFilter('maxHops', parseInt($event.target.value))">
                       <option value="99">Any</option>
                       <option value="0">Direct (0)</option>
                       <option value="1">≤ 1</option>
@@ -46,7 +53,7 @@
                   <!-- Last heard -->
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-sm opacity-60">Last heard</span>
-                    <select class="select select-xs select-bordered" :value="nodeFilters.maxAge" @change="saveNodeFilter('maxAge', parseInt($event.target.value))">
+                    <select class="pref-backend select select-xs select-bordered" :value="nodeFilters.maxAge" @change="saveNodeFilter('maxAge', parseInt($event.target.value))">
                       <option value="0">Any</option>
                       <option value="1800">30 m</option>
                       <option value="3600">1 h</option>
@@ -56,27 +63,27 @@
                   </div>
                   <!-- Checkboxes -->
                   <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.namedOnly" @change="saveNodeFilter('namedOnly', $event.target.checked)">
+                    <input type="checkbox" class="pref-backend checkbox checkbox-xs" :checked="nodeFilters.namedOnly" @change="saveNodeFilter('namedOnly', $event.target.checked)">
                     <span class="text-sm">Named only</span>
                   </label>
                   <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasPos" @change="saveNodeFilter('hasPos', $event.target.checked)">
+                    <input type="checkbox" class="pref-backend checkbox checkbox-xs" :checked="nodeFilters.hasPos" @change="saveNodeFilter('hasPos', $event.target.checked)">
                     <span class="text-sm">Has position</span>
                   </label>
                   <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" class="checkbox checkbox-xs checkbox-error" :checked="nodeFilters.hideMqtt" @change="saveNodeFilter('hideMqtt', $event.target.checked)">
+                    <input type="checkbox" class="pref-backend checkbox checkbox-xs checkbox-error" :checked="nodeFilters.hideMqtt" @change="saveNodeFilter('hideMqtt', $event.target.checked)">
                     <span class="text-sm">Hide MQTT</span>
                   </label>
                   <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasSignal" @change="saveNodeFilter('hasSignal', $event.target.checked)">
+                    <input type="checkbox" class="pref-backend checkbox checkbox-xs" :checked="nodeFilters.hasSignal" @change="saveNodeFilter('hasSignal', $event.target.checked)">
                     <span class="text-sm">RF signal</span>
                   </label>
                   <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.hasTelem" @change="saveNodeFilter('hasTelem', $event.target.checked)">
+                    <input type="checkbox" class="pref-backend checkbox checkbox-xs" :checked="nodeFilters.hasTelem" @change="saveNodeFilter('hasTelem', $event.target.checked)">
                     <span class="text-sm">Telemetry</span>
                   </label>
                   <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" class="checkbox checkbox-xs" :checked="nodeFilters.msgOnly" @change="saveNodeFilter('msgOnly', $event.target.checked)">
+                    <input type="checkbox" class="pref-backend checkbox checkbox-xs" :checked="nodeFilters.msgOnly" @change="saveNodeFilter('msgOnly', $event.target.checked)">
                     <span class="text-sm">Messagable only</span>
                   </label>
                   <!-- Role sub-dropdown -->
@@ -89,7 +96,7 @@
                       <template x-for="role in ['CLIENT','CLIENT_BASE','CLIENT_MUTE','ROUTER','ROUTER_CLIENT','ROUTER_LATE','TRACKER','SENSOR','REPEATER']" :key="role">
                         <li>
                           <label class="flex items-center gap-2 cursor-pointer py-1">
-                            <input type="checkbox" class="checkbox checkbox-xs"
+                            <input type="checkbox" class="pref-backend checkbox checkbox-xs"
                                    :checked="!nodeFilters.nodeRoles?.length || nodeFilters.nodeRoles.includes(role)"
                                    @change="toggleNodeRole(role, $event.target.checked)">
                             <span x-text="role.replace(/_/g,' ')"></span>
@@ -186,3 +193,5 @@
           </div>
         </div>
 
+
+</div>

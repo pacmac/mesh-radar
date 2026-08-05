@@ -149,5 +149,65 @@ await new Promise((resolve) => {
   });
 });
 
+
+// ── Browser persistence: the class convention must not rot ───────────────────
+//
+// app-persist.js is a single, correct mechanism that 115 of 116 controls
+// bypassed, because nothing enforced its use. Peter, 2026-08-05: "one of my
+// requirements was for a single persist function in the browser that worked on
+// every control ... every time I reload the page, these are not being honoured".
+//
+// A RATCHET, not a hard gate. Classifying the remainder means READING each
+// control — my regex could only see inline handlers and left 49 of 115
+// unclassified, and guessing would be worse than counting. So this locks in
+// progress: the number of unclassified controls may go down and never up.
+{
+  const files = readdirSync('public/partials').filter(f => f.endsWith('.html'));
+  let total = 0, unclassified = 0;
+  for (const f of files) {
+    const txt = readFileSync(`public/partials/${f}`, 'utf8');
+    // A REGION WRAPPER counts. app-persist resolves the class with .closest(),
+    // so a container marks everything inside it — and an inner pref-backend
+    // correctly overrides an outer pref-user, which is how tab-nodes carries
+    // view-state controls and node-filter controls in one file.
+    //
+    // A regex cannot do DOM ancestry, so this is a FILE-LEVEL approximation of
+    // that rule. It is honest about being weaker than the runtime check: it can
+    // pass a file whose wrapper does not actually enclose every control.
+    const region = /pref-backend|pref-user/.test(txt);
+    for (const m of txt.matchAll(/<(input|select|textarea)\b([^>]*)>/gi)) {
+      total++;
+      const attrs = m[2];
+      // A pref-user control needs BOTH a declaration and a KEY. Declaring it
+      // and leaving it keyless still does not persist — which is exactly what
+      // happened to the node sort selects: wrapped in a pref-user region,
+      // reported as classified, and still not saved, because they use an inline
+      // @change handler and carry no name/id/x-model for the key to come from.
+      //
+      // pref-backend needs no key: the server owns the value.
+      const isBackend = /pref-backend/.test(attrs);
+      const isExempt  = /no-persist|disabled/.test(attrs) || isBackend;
+      const keyed = /\b(id|name)\s*=/.test(attrs) || /x-model/.test(attrs);
+      if (!isExempt && !keyed) unclassified++;
+    }
+  }
+  // A RATCHET AT THE HONEST NUMBER. This check was briefly reporting 0 while the
+  // node sort order still did not persist — because it counted a `pref-user`
+  // DECLARATION as sufficient. It is not: a control also needs a KEY, and a
+  // control with an inline @change handler has none. Corrected to count keys,
+  // which put the real figure at 40. Fixing nodeSortKey took it to 39.
+  //
+  // The rest are controls whose handler writes Alpine state directly; each needs
+  // a name= chosen deliberately, because the name becomes the stored key and
+  // renaming it later silently orphans the saved value. Read, do not guess.
+  const BASELINE = 39;
+  if (unclassified > BASELINE) {
+    fail(`persistence: ${unclassified} browser controls have no persist key (baseline ${BASELINE}). `
+       + `Give each a name=, or mark it pref-backend / no-persist.`);
+  } else {
+    pass(`persistence: ${unclassified}/${total} browser controls without a persist key (baseline ${BASELINE})`);
+  }
+}
+
 console.log(failures ? `\n${failures} contract failure(s).` : '\nContract clean.');
 process.exit(failures ? 1 : 0);

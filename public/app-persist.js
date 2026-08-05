@@ -19,6 +19,18 @@ function dump(prefs) {
   try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch {}
 }
 
+/** Derive a stable key from the Alpine binding when no name/id is present.
+ *  53% of controls have an x-model and no key, so this covers the majority with
+ *  zero markup changes — and the expression is a stable, meaningful name. */
+function modelKey(el) {
+  for (const a of el.attributes || []) {
+    if (a.name === 'x-model' || a.name.startsWith('x-model.')) {
+      return a.value.trim().replace(/[^\w.$\[\]]/g, '') || null;
+    }
+  }
+  return null;
+}
+
 function skip(el) {
   return !el || !!el.closest?.('.no-persist');
 }
@@ -91,13 +103,27 @@ function fire(el, ...events) {
   for (const name of events) el.dispatchEvent(new Event(name, { bubbles: true }));
 }
 
+/** A control declares what it is. Peter, 2026-08-05: "dont get confused between
+ *  backend controls which should persist at the backend and load the saved value,
+ *  and browser / user prefs."
+ *
+ *    pref-user     per-viewer view state -> ui_prefs
+ *    pref-backend  a real config key     -> the server owns it; never ui_prefs
+ *    no-persist    excluded
+ *
+ *  Backend controls are EXCLUDED here rather than double-stored. Two homes for
+ *  one setting is the failure this whole session has been unpicking. */
+function isBackendControl(el) {
+  return !!el?.closest?.('.pref-backend');
+}
+
 function onchange(e) {
   const el = e.target;
-  if (!isFormEl(el) || skip(el)) return;
+  if (!isFormEl(el) || skip(el) || isBackendControl(el)) return;
   const name = el.name?.trim();
   const id   = el.id?.trim();
   const isGrp = name && groupCount(name) > 1;
-  const key  = isGrp ? name : (name || id);
+  const key  = isGrp ? name : (name || id || modelKey(el));
   if (!key) return;
   const prefs = load();
   prefs[key] = isGrp ? readGroup(name) : readEl(el);
@@ -110,7 +136,7 @@ function restore() {
   const seen = new Set();
 
   document.querySelectorAll('input, select, textarea').forEach(el => {
-    if (!isFormEl(el) || skip(el)) return;
+    if (!isFormEl(el) || skip(el) || isBackendControl(el)) return;
     const name = el.name?.trim();
     const id   = el.id?.trim();
 
@@ -119,7 +145,7 @@ function restore() {
       seen.add(name);
       applyGroup(name, prefs[name]);
     } else {
-      const key = name || id;
+      const key = name || id || modelKey(el);
       if (!key || !(key in prefs)) return;
       applyEl(el, prefs[key]);
     }
@@ -129,6 +155,31 @@ function restore() {
 export function initPersist() {
   document.addEventListener('change', onchange, true);
   document.addEventListener('alpine:initialized', restore);
+
+  // RESTORE AGAIN WHEN PARTIALS MOUNT.
+  //
+  // Tab partials are separate HTML loaded on demand. A control inside one that
+  // is not in the DOM at `alpine:initialized` never gets restored — even when it
+  // DOES carry a key. That is half the reason Peter sees settings not survive a
+  // reload: the mechanism ran once, before most of the controls existed.
+  //
+  // Debounced, because a partial mount inserts many nodes at once and restoring
+  // per node would be O(n) passes over the whole document.
+  let pending = null;
+  const observer = new MutationObserver((records) => {
+    let added = false;
+    for (const r of records) {
+      for (const n of r.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (isFormEl(n) || n.querySelector?.('input, select, textarea')) { added = true; break; }
+      }
+      if (added) break;
+    }
+    if (!added) return;
+    clearTimeout(pending);
+    pending = setTimeout(restore, 60);
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 // For non-form state: buttons, calculated values, programmatic updates.

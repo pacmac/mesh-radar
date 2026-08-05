@@ -1,7 +1,7 @@
 ---
 module: tab-nodes
 source: public/partials/tab-nodes.html
-source_hash: 0418c92a14ceda80c1de5a5468a0114b6be3ac5a0489bb1ce14db6a3562ee122
+source_hash: 71f2e016a00850bb432bc0968a991e9c40018a342a086994c7312fd71d855d58
 updated: 2026-07-08
 ---
 

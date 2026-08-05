@@ -1,3 +1,8 @@
+<!-- EVERY control on this page writes REAL device or discovery config.
+     pref-backend excludes the whole region from ui_prefs: the server owns
+     these values and loads them on mount. Two homes for one setting is the
+     failure this session has been unpicking. -->
+<div class="pref-backend contents">
         <!-- ===================== CONFIG ===================== -->
         <div x-show="tab==='cfg'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
           <div class="tabs tabs-bordered grid grid-cols-4 sm:grid-cols-7 w-full sm:w-fit shrink-0">
@@ -754,3 +759,5 @@
           </div>
 
         </div>
+
+</div>

@@ -332,7 +332,12 @@ function dashboard() {
     try { this.restoreRadarLayers(); } catch (e) { console.warn('restoreRadarLayers', e); }
       this.feedVisible = (window.feedFilterOptions || []).map(o => o.id);
 
-      // One-time migration: move tilt calibration from localStorage to server DB
+      // One-time migration: move tilt calibration from localStorage to server DB.
+      //
+      // These two reads MUST stay on raw localStorage. A migration reads the
+      // LEGACY location by definition — pointing them at ui_prefs (as a
+      // find-and-replace briefly did) makes the migration find nothing and
+      // strands the old values forever.
       const lsZero  = localStorage.getItem('tiltZero');
       const lsNorth = localStorage.getItem('tiltNorthAngle');
       if (lsZero !== null || lsNorth !== null) {

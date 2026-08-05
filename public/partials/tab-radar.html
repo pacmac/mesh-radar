@@ -18,7 +18,10 @@
               </summary>
               <ul class="dropdown-content z-20 p-3 shadow-lg rounded-box text-xs flex flex-col gap-3"
                   style="background:#0d1f0d;border:1px solid rgba(0,255,80,0.18);min-width:11rem;margin-top:0.25rem">
-                <li class="flex items-center justify-between gap-3">
+                <!-- Range / Scale / XHair are SERVER-persisted (radar.max_range_km,
+                     radar.log_scale, radar.crosshair) and load from config on mount.
+                     Backend, not ui_prefs — one home per setting. -->
+                <li class="flex items-center justify-between gap-3 pref-backend">
                   <span class="font-mono opacity-60 uppercase tracking-wider">Range</span>
                   <select class="select select-bordered select-xs font-mono" x-model="radarRange" @change="saveRadarPref('max_range_km', Number(radarRange)); drawRadar()">
                     <option value="25">25 km</option>
@@ -28,14 +31,14 @@
                     <option value="0">Auto</option>
                   </select>
                 </li>
-                <li class="flex items-center justify-between gap-3">
+                <li class="flex items-center justify-between gap-3 pref-backend">
                   <span class="font-mono opacity-60 uppercase tracking-wider">Scale</span>
                   <button class="btn btn-xs font-mono tracking-widest"
                           :class="radarLogScale ? 'btn-outline btn-success' : 'btn-ghost opacity-40'"
                           @click="radarLogScale = !radarLogScale; saveRadarPref('log_scale', radarLogScale); drawRadar()"
                           x-text="radarLogScale ? 'PWR' : 'LIN'"></button>
                 </li>
-                <li class="flex items-center justify-between gap-3">
+                <li class="flex items-center justify-between gap-3 pref-backend">
                   <span class="font-mono opacity-60 uppercase tracking-wider">XHair</span>
                   <input type="checkbox" class="toggle toggle-xs toggle-success" :checked="radarCrosshair" @change="toggleRadarCrosshair()">
                 </li>
