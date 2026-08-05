@@ -12,7 +12,7 @@ import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.j
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { snrDbList } from './snr.js';
-import { nodeKind, provenDoors } from './node-kind.js';
+import { nodeKind, provenDoors, rolesByNum } from './node-kind.js';
 import { ownDeviceNums } from './node-filter.js';
 import { signalVerdict, marginHealth, hopsTone, blePctTone, verdictBands,
          gapTone, excessLossTone, heardTone } from './signal-verdict.js';
@@ -436,6 +436,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       // rows and both of these are set lookups behind a query.
       const _doorSet = provenDoors();
       const _ownNums = ownDeviceNums();
+      const _roleMap = rolesByNum();
       return { ...ev, favourites: listFavourites(), nodes: (ev.nodes || []).map(n => {
         // First-hop relay bundle (IDENTITY.md §3) — a traceroute-context
         // fact the browser renders without resolving (task radar-list-via)
@@ -474,7 +475,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
                  // `router` because a relay we have PROVEN we can transmit
                  // through beats one that merely declares the role — 8 of our
                  // 13 doors declare no router role at all. See node-kind.js.
-                 node_kind: nodeKind(n.num, n.role, { doors: _doorSet, own: _ownNums }),
+                 node_kind: nodeKind(n.num, n.role, { doors: _doorSet, own: _ownNums, roles: _roleMap }),
                  // tab-nodes.html:163-164 did its own Date.now() arithmetic AND
                  // set the bands. Age is server-side; the row renders a tone.
                  heard_tone: heardTone(n.last_heard == null ? null : (Date.now() / 1000) - n.last_heard) };

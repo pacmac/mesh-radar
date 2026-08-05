@@ -86,35 +86,62 @@ export function provenDoors({ force = false } = {}) {
 
 /** Drop the cache — call when a traceroute completes, so a NEW door shows up
  *  on the radar immediately rather than up to ttl_sec later. */
-export function invalidateDoors() { _doorsAt = 0; }
+export function invalidateDoors() { _doorsAt = 0; _rolesAt = 0; }
+
+// ── roles ────────────────────────────────────────────────────────────────────
+//
+// THE LIVE NODE CACHE CARRIES NO ROLE. nodeinfo writes the role to the `nodes`
+// table; the in-memory row that reaches node_list does not have it. Measured
+// 2026-08-05: all 73 rows in a live node_list had role null, while the store held
+// roles for 214 nodes — so `router` was unreachable and Peter saw no router icons
+// at all, which is exactly what he reported.
+//
+// Resolved from the store, cached on the same TTL as the door set.
+let _roles = null, _rolesAt = 0;
+
+export function rolesByNum({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && _roles && (now - _rolesAt) < doorTtlMs()) return _roles;
+  const m = new Map();
+  try {
+    for (const r of stmts.allNodeRoles.all()) m.set(Number(r.num), r.role);
+  } catch (err) {
+    if (_roles) return _roles;
+    console.error(`[node-kind] role lookup failed: ${err.message}`);
+  }
+  _roles = m;
+  _rolesAt = now;
+  return m;
+}
 
 // ── classification ───────────────────────────────────────────────────────────
 
 /** `own` | `door` | `router` | `endpoint`. Precedence in that order. */
-export function nodeKind(num, role, { doors = null, own = null } = {}) {
+export function nodeKind(num, role, { doors = null, own = null, roles = null } = {}) {
   const n = Number(num);
   const o = own ?? ownDeviceNums();
   if (o.has(n)) return 'own';
   const d = doors ?? provenDoors();
   if (d.has(n)) return 'door';
-  if (isRelayRole(role)) return 'router';
+  // Fall back to the STORE when the caller's row has no role. The live cache
+  // never carries one, so without this the router branch is dead code.
+  const r = role || (roles ?? rolesByNum()).get(n);
+  if (isRelayRole(r)) return 'router';
   return 'endpoint';
 }
 
 /** Classify a whole list in one pass — resolves the door set and our own nums
  *  ONCE rather than per node. node_list carries hundreds of rows. */
 export function classifyAll(nodes) {
-  const doors = provenDoors();
-  const own = ownDeviceNums();
-  return nodes.map(n => ({ ...n, node_kind: nodeKind(n.num, n.role, { doors, own }) }));
+  const doors = provenDoors(), own = ownDeviceNums(), roles = rolesByNum();
+  return nodes.map(n => ({ ...n, node_kind: nodeKind(n.num, n.role, { doors, own, roles }) }));
 }
 
 /** Counts per kind — for the layer toggles to show what each one holds, and so
  *  an empty layer reads as "none of these" rather than as a broken filter. */
 export function kindCounts(nodes) {
   const out = { own: 0, door: 0, router: 0, endpoint: 0 };
-  const doors = provenDoors();
-  const own = ownDeviceNums();
-  for (const n of nodes) out[nodeKind(n.num, n.role, { doors, own })]++;
+  const doors = provenDoors(), own = ownDeviceNums(), roles = rolesByNum();
+  for (const n of nodes) out[nodeKind(n.num, n.role, { doors, own, roles })]++;
   return out;
 }

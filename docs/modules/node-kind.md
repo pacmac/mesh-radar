@@ -1,7 +1,7 @@
 ---
 module: node-kind
 source: src/node-kind.js
-source_hash: 36b9420bc9ba142b4da6d8105bd21c8a261ebe7b32b904e87cd4fb3fa9385165
+source_hash: 4bc5d55fb291bef61169c6daaf1cd596a263c3d52ee86c90f3c453cdb5484bfc
 updated: 2026-08-05
 ---
 
@@ -92,3 +92,41 @@ own device markers, the cluster stats) needs the precedence to be correct.
 
 Verified 2026-08-05 over the whole 14-day store: `door` 14, `router` 31,
 `endpoint` 495.
+
+## The role never reached the classifier (2026-08-05)
+
+Peter: *"Routers dont show at all that I can see, was expecting to see little
+radar icons."*
+
+He was right, and the cause was upstream of the glyph. **The live node cache
+carries no `role`.** nodeinfo writes the role to the `nodes` table; the in-memory
+row that reaches `node_list` does not have it. Measured: all 73 rows in a live
+`node_list` had `role: null`, while the store held roles for 214 nodes. So
+`isRelayRole(null)` was always false and the `router` branch was dead code.
+
+Fixed with `rolesByNum()` — a num→role map from the store, cached on the same TTL
+as the door set, resolved **once per emission** and passed through
+`nodeKind(..., { roles })`. `nodeKind` prefers the caller's role when it has one
+and falls back to the store otherwise.
+
+### …and that exposed the real reason the radar looks empty
+
+With the fix in, still no routers — because **none of the 19 nodes in the live
+list has a relay role**. The store holds 48.
+
+The live node cache only contains what has been heard **since the last restart**.
+`load_nodes_on_boot` is `false` on both radios (deliberately — the comment at
+`device-config.js` says "slow; disable for dev"), so nothing is pre-loaded.
+
+Measured 2026-08-05: 19 nodes in the live list at 1.1 minutes uptime, against
+**369** positioned nodes heard within 14 days in the store. Earlier the same
+evening, on a longer-lived process, the radar showed 53.
+
+**So the radar's population is a function of process uptime, not of the mesh.**
+That is not a node-kind defect and is not fixed here — it changes what the whole
+dashboard shows and is an operator decision:
+
+- flip `load_nodes_on_boot` (costs a slow boot), or
+- have the radar draw from the store's positioned set rather than the live cache.
+
+Recorded rather than chosen.

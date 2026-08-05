@@ -901,6 +901,11 @@ export const stmts = {
   // UPLINK; hearing a node proves only the downlink, and asymmetric paths are
   // real. Consumed by node-kind.js. Measured 2026-08-04: 13 such nodes, of which
   // T4 and fir carry 89.7% of all our traffic.
+  // Roles as the mesh last reported them. The LIVE node cache does not carry a
+  // role — nodeinfo populates the store, not the in-memory row — so without this
+  // every node classified as `endpoint` and `router` was unreachable.
+  allNodeRoles: db.prepare(`SELECT num, role FROM nodes WHERE role IS NOT NULL AND role != ''`),
+
   // The door a given endpoint most often leaves through — the per-node input to
   // a cluster's door purity (CLUSTERS_SPEC §3.1).
   dominantDoorFor: db.prepare(`
