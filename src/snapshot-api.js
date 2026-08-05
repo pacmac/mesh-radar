@@ -131,6 +131,140 @@ export function frontier(days = windowDays()) {
   };
 }
 
+/** Distance bands + the doors carrying us, both from the SAME window.
+ *  Bands come from receptions (the record); doors are the first hop of completed
+ *  traceroutes, which is the only place door identity exists. */
+export function distribution(days = windowDays()) {
+  const h = home();
+  const maxKm = Number(getConfig('reach', {})?.max_plausible_km ?? 500);
+  if (!h) return { ready: false, reason: 'no home position', window_days: days };
+  const since = sinceTs(days);
+
+  const EDGES = [10, 25, 50, 100, Infinity];
+  const LABEL = ['0-10 km', '10-25', '25-50', '50-100', '100+'];
+  const bands = LABEL.map(label => ({ label, count: 0 }));
+
+  for (const n of db.prepare(`
+      SELECT lat, lon FROM nodes
+       WHERE lat IS NOT NULL AND lat != 0 AND last_heard IS NOT NULL AND last_heard > ?`).all(since)) {
+    const d = km(h, n.lat, n.lon);
+    if (!(d <= maxKm)) continue;
+    bands[EDGES.findIndex(e => d < e)].count++;
+  }
+
+  // Every door, not a truncated list — an earlier version of the CARD dropped
+  // rows to fix a layout problem, which is deleting data to fix a CSS bug.
+  const doors = db.prepare(`
+    SELECT json_extract(t.route,'$[0]') num, COUNT(*) uses,
+           COALESCE(n.short_name, '?') name
+      FROM traceroute_history t
+      LEFT JOIN nodes n ON n.num = json_extract(t.route,'$[0]')
+     WHERE t.status = 'ok' AND json_array_length(t.route) > 0 AND t.ts > ?
+     GROUP BY 1 ORDER BY uses DESC`).all(since).filter(d => d.num != null);
+
+  const maxBand = Math.max(1, ...bands.map(b => b.count));
+  const maxUses = Math.max(1, ...doors.map(d => d.uses));
+  return {
+    ready: true, window_days: days,
+    bands: bands.map(b => ({ ...b, pct: Math.round(100 * b.count / maxBand) })),
+    doors: doors.map(d => ({ ...d, pct: Math.round(100 * d.uses / maxUses) })),
+    doors_total: doors.length,
+  };
+}
+
+/** New ground: what this window discovered that we did not have before it.
+ *
+ *  first_heard lives on **nodeinfo**, not `nodes`. The board previously rendered
+ *  "no first_heard column" because I checked one table and declared an absence —
+ *  there are 1104 rows of it. */
+export function newGround(days = windowDays()) {
+  const h = home();
+  const maxKm = Number(getConfig('reach', {})?.max_plausible_km ?? 500);
+  const since = sinceTs(days);
+  const one = (sql, ...a) => db.prepare(sql).get(...a)?.n ?? 0;
+
+  const firstHeard = days > 0
+    ? one('SELECT COUNT(*) n FROM nodeinfo WHERE first_heard > ?', since)
+    : one('SELECT COUNT(*) n FROM nodeinfo WHERE first_heard IS NOT NULL');
+
+  // A door is "new" when its FIRST EVER appearance falls inside the window.
+  const newDoors = one(`
+    WITH d AS (SELECT json_extract(route,'$[0]') num, MIN(ts) first_seen
+                 FROM traceroute_history
+                WHERE status='ok' AND json_array_length(route)>0 GROUP BY 1)
+    SELECT COUNT(*) n FROM d WHERE num IS NOT NULL AND first_seen > ?`, since);
+
+  // Same rule for contacts: first ever completed traceroute to that node.
+  const firstContacts = one(`
+    WITH c AS (SELECT to_num, MIN(ts) first_ok FROM traceroute_history
+                WHERE status='ok' GROUP BY 1)
+    SELECT COUNT(*) n FROM c WHERE first_ok > ?`, since);
+
+  // Furthest node whose FIRST reception is inside the window — new ground, not
+  // simply the furthest thing heard again.
+  let furthestNew = null, furthestNewNode = null;
+  if (h) {
+    for (const r of db.prepare(`
+        SELECT i.first_heard, n.short_name, n.lat, n.lon
+          FROM nodeinfo i JOIN nodes n ON n.num = i.num
+         WHERE i.first_heard > ? AND n.lat IS NOT NULL AND n.lat != 0`).all(since)) {
+      const d = km(h, r.lat, r.lon);
+      if (d <= maxKm && (furthestNew == null || d > furthestNew)) {
+        furthestNew = d; furthestNewNode = r.short_name;
+      }
+    }
+  }
+
+  return {
+    ready: true, window_days: days,
+    first_heard: firstHeard,
+    new_doors: newDoors,
+    first_contacts: firstContacts,
+    furthest_new_km: furthestNew == null ? null : Math.round(furthestNew * 10) / 10,
+    furthest_new_node: furthestNewNode,
+    // Clusters are anchor rows with no created_at, so "new clusters" cannot be
+    // derived. Served as null — NOT as 0, which would read as "none appeared".
+    new_clusters: null,
+    new_clusters_reason: 'cluster anchors carry no creation timestamp',
+  };
+}
+
+/** Are we productive: attempts, answers, and the daily series behind them. */
+export function productivity(days = windowDays()) {
+  const since = sinceTs(days);
+  const tot = db.prepare(`
+    SELECT COUNT(*) attempts, SUM(status='ok') ok, COUNT(DISTINCT to_num) targets
+      FROM traceroute_history WHERE ts > ?`).get(since);
+  const daily = db.prepare(`
+    SELECT date(ts,'unixepoch') day, COUNT(*) attempts, SUM(status='ok') ok
+      FROM traceroute_history WHERE ts > ? GROUP BY 1 ORDER BY 1`)
+    .all(days > 0 ? since : Math.floor(Date.now() / 1000) - 30 * 86400);
+  const rate = tot.attempts ? Math.round(1000 * tot.ok / tot.attempts) / 10 : null;
+  return {
+    ready: true, window_days: days,
+    attempts: tot.attempts, answered: tot.ok ?? 0, targets: tot.targets, rate_pct: rate,
+    daily: daily.map(d => ({ ...d, rate_pct: d.attempts ? Math.round(1000 * d.ok / d.attempts) / 10 : null })),
+  };
+}
+
+router.get('/snapshot/distribution', (req, res) => {
+  const d = req.query.days != null ? Number(req.query.days) : windowDays();
+  try { res.json(distribution(Number.isFinite(d) && d >= 0 ? d : windowDays())); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/snapshot/new-ground', (req, res) => {
+  const d = req.query.days != null ? Number(req.query.days) : windowDays();
+  try { res.json(newGround(Number.isFinite(d) && d >= 0 ? d : windowDays())); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/snapshot/productivity', (req, res) => {
+  const d = req.query.days != null ? Number(req.query.days) : windowDays();
+  try { res.json(productivity(Number.isFinite(d) && d >= 0 ? d : windowDays())); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/snapshot/frontier', (req, res) => {
   try {
     const d = req.query.days != null ? Number(req.query.days) : windowDays();

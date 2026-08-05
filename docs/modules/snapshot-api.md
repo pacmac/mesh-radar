@@ -1,7 +1,7 @@
 ---
 module: snapshot-api
 source: src/snapshot-api.js
-source_hash: f9bfd5b182c7ead4ed8bdaedecf2a3572d09a703e16b4b56f84556c396433e23
+source_hash: 908422721fda9cf2ab038b3404d0aedb6769c06fc11ebe2e81ab835baa08e0d5
 updated: 2026-08-05
 ---
 
@@ -131,3 +131,24 @@ FAIL  reach is below the passive floor
 
 so a regression to transmit-derived reach fails the build rather than quietly
 shrinking the frontier.
+
+## Every band, one window
+
+`distribution` (bands + **every** door, not a truncated list — the card once
+dropped rows to fix a layout problem, which is deleting data to fix CSS),
+`new-ground`, and `productivity` all take the same `days`, and the browser loads
+them together. The board previously mixed all-time, 30-day and today in one view.
+
+`first_heard` lives on **nodeinfo**, not `nodes` — 1104 rows. The board rendered
+"no first_heard column" because I checked one table and declared an absence.
+
+`new_clusters` is served **null**, not 0, with `new_clusters_reason`: cluster
+anchors carry no creation timestamp. Null says "cannot measure"; 0 would claim
+"none appeared".
+
+Verified on `all`: 115 first-ever contacts · 16 new doors · 1104 first heard ·
+471.8 km furthest new contact (B14) · 25093 attempts at 14.7%.
+
+**The check that was missing:** vary the window, assert the render changes. Six
+windows produced six distinct renders. A value identical across every window is
+not window-derived, which is how five hard-coded zeros survived review.

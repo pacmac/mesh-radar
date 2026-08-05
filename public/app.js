@@ -8,6 +8,7 @@ import { nodesMixin }     from './app-nodes.js';
 import { rotatorMixin }   from './app-rotator.js';
 import { radarMixin }     from './app-radar.js';
 import { observatoryMixin } from './app-observatory.js';
+import { snapshotMixin } from './app-snapshot.js';
 import { messagesMixin }  from './app-messages.js';
 import { rangeMixin }     from './app-range.js';
 import { perfMixin }      from './app-perf.js?v=20260627rewrite';
@@ -440,7 +441,7 @@ window.dashboard = function() {
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
     rotatorMixin, radarMixin, observatoryMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
-    componentsMixin, perfMixin, nodeStatusMixin,
+    componentsMixin, perfMixin, nodeStatusMixin, snapshotMixin,
     // Plugin-contributed mixins. Core does not know what any of them are; a
     // plugin registers itself in window.__dashPlugins from a script emitted
     // BEFORE this file (src/browser-plugins.js). With no plugins this is [].

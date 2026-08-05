@@ -27,7 +27,8 @@
      bar — so h-full overflowed the viewport by exactly the header height (48px
      at 1000px tall) and cropped the bottom row. Measure against the VIEWPORT,
      not the container: a container that fits itself can still hang off screen. -->
-<div class="h-[calc(100vh-5.2rem)] flex flex-col gap-3 p-3 overflow-hidden">
+<div class="h-[calc(100vh-5.2rem)] flex flex-col gap-3 p-3 overflow-hidden"
+             x-init="loadSnapshot()">
 
           <!-- ── header ────────────────────────────────────────────────── -->
           <div class="flex items-center gap-3 shrink-0">
@@ -39,15 +40,20 @@
             <div class="badge badge-sm badge-ghost font-mono">ACTV</div>
             <div class="badge badge-sm badge-ghost font-mono">rotator 20°</div>
 
-            <!-- Global window. Server-side SSOT (observatory.window_days) — one
-                 stored value, every viewer sees the same board. -->
+            <!-- Global window. LIVE — it refetches the hero band from
+                 GET /snapshot/frontier?days=N.
+                 It was static markup first, which is the callout-toggle mistake
+                 again: a control that looks live and does nothing is worse than
+                 no control, because it is trusted. Bands not yet wired
+                 (increments 2-5) are marked in the UI as not following it. -->
             <div class="join ml-auto">
-              <button class="btn btn-xs join-item btn-primary font-mono">1d</button>
-              <button class="btn btn-xs join-item font-mono">2d</button>
-              <button class="btn btn-xs join-item font-mono">7d</button>
-              <button class="btn btn-xs join-item font-mono">14d</button>
-              <button class="btn btn-xs join-item font-mono">30d</button>
-              <button class="btn btn-xs join-item font-mono">all</button>
+              <template x-for="w in [{d:1,l:'1d'},{d:2,l:'2d'},{d:7,l:'7d'},
+                                     {d:14,l:'14d'},{d:30,l:'30d'},{d:0,l:'all'}]" :key="w.d">
+                <button class="btn btn-xs join-item font-mono"
+                        :class="snapWindow === w.d && 'btn-primary'"
+                        :disabled="snapLoading"
+                        @click="setSnapWindow(w.d)" x-text="w.l"></button>
+              </template>
             </div>
           </div>
 
@@ -57,20 +63,40 @@
               <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
                 <div class="flex items-baseline gap-6 shrink-0">
                   <div>
+                    <!-- x-text goes on a SPAN, not the parent — on the parent it
+                         replaces all children and eats the "km" suffix. -->
                     <div class="text-6xl font-display font-bold text-primary leading-none tracking-tight">
-                      95.2<span class="text-xl font-normal opacity-50 ml-1">km</span>
+                      <span x-text="snapKm(snapFrontier?.furthest_km)">—</span><span
+                            class="text-xl font-normal opacity-50 ml-1">km</span>
                     </div>
-                    <div class="text-sm opacity-60 mt-2">furthest contact · 24h, through the mesh</div>
+                    <div class="text-sm opacity-60 mt-2">
+                      furthest heard · <span x-text="snapWindowLabel"></span> ·
+                      <span x-text="snapFrontier?.furthest_node || 'unnamed'"></span>
+                    </div>
                   </div>
                   <div>
+                    <!-- Quality, not a second distance. 100 km direct beats 100 km
+                         through seven relays, so distance-per-leg is the ranking. -->
                     <div class="text-6xl font-display font-bold leading-none tracking-tight opacity-85">
-                      5.3<span class="text-xl font-normal opacity-50 ml-1">km</span>
+                      <span x-text="snapKm(snapFrontier?.best_quality_km_per_hop)">—</span><span
+                            class="text-xl font-normal opacity-50 ml-1">km/hop</span>
                     </div>
-                    <div class="text-sm opacity-60 mt-2">furthest direct · 24h, no relay</div>
+                    <div class="text-sm opacity-60 mt-2">
+                      best reach per leg ·
+                      <span x-text="snapFrontier?.best_quality_node || 'unnamed'"></span>
+                    </div>
                   </div>
                   <div class="ml-auto text-right">
-                    <div class="text-5xl font-display font-bold leading-none tracking-tight opacity-85">33</div>
-                    <div class="text-sm opacity-60 mt-2">contacted · 2 direct · 7 doors</div>
+                    <div class="text-5xl font-display font-bold leading-none tracking-tight opacity-85"
+                         x-text="snapFrontier?.heard ?? '—'">—</div>
+                    <div class="text-sm opacity-60 mt-2">
+                      heard · <span x-text="snapFrontier?.confirmed ?? '—'"></span> round-tripped
+                    </div>
+                    <div class="text-xs font-mono opacity-40 mt-1"
+                         x-show="snapFrontier?.beyond_scale">
+                      <span x-text="snapFrontier?.beyond_scale"></span> beyond
+                      <span x-text="snapFrontier?.scale_max_km"></span>km scale
+                    </div>
                   </div>
                 </div>
 
@@ -106,7 +132,7 @@
                 </div>
 
                 <div class="text-sm opacity-60">
-                  Last 24 h. Nothing direct past 5.3 km — everything beyond was relayed.
+                  <span class="opacity-70">Ruler geometry is illustrative and not yet served — see snapshot-board step 6.</span>
                 </div>
               </div>
             </div>
@@ -114,34 +140,41 @@
             <!-- ladder + doors -->
             <div class="card bg-base-100 border border-base-300 overflow-hidden">
               <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
-                <h2 class="text-base font-display font-semibold tracking-wide opacity-70">Where the mesh lives</h2>
-                <template x-for="r in [
-                  {k:'0–10 km',n:3,w:14,hot:false},{k:'10–25',n:5,w:24,hot:false},
-                  {k:'25–50',n:21,w:100,hot:true},{k:'50–100',n:4,w:19,hot:false},
-                  {k:'100+',n:0,w:0,hot:false}]">
+                <h2 class="text-base font-display font-semibold tracking-wide opacity-70">Where the mesh lives
+                  <span class="text-xs font-mono opacity-50 ml-1" x-text="snapWindowLabel"></span></h2>
+                <template x-for="r in (snapDist?.bands || [])" :key="r.label">
                   <div class="flex items-center gap-2.5">
-                    <span class="text-sm font-mono opacity-60 w-20 shrink-0" x-text="r.k"></span>
+                    <span class="text-sm font-mono opacity-60 w-20 shrink-0" x-text="r.label"></span>
                     <div class="flex-1 h-3 bg-base-300 rounded-sm overflow-hidden">
-                      <div class="h-full rounded-sm" :class="r.hot ? 'bg-primary' : 'bg-base-content/30'"
-                           :style="`width:${r.w}%`"></div>
+                      <div class="h-full rounded-sm"
+                           :class="r.pct === 100 ? 'bg-primary' : 'bg-base-content/30'"
+                           :style="`width:${r.pct}%`"></div>
                     </div>
-                    <span class="text-base font-mono w-10 text-right" x-text="r.n"></span>
+                    <span class="text-base font-mono w-10 text-right" x-text="r.count"></span>
                   </div>
                 </template>
 
-                <h2 class="text-base font-display font-semibold tracking-wide opacity-70 mt-1">Doors carrying us</h2>
-                <template x-for="r in [
-                  {k:'T4',n:2094,w:100,hot:true},{k:'fir',n:781,w:37,hot:false},
-                  {k:'TA2o',n:83,w:4,hot:false}]">
-                  <div class="flex items-center gap-2.5">
-                    <span class="text-sm font-mono opacity-60 w-20 shrink-0" x-text="r.k"></span>
-                    <div class="flex-1 h-3 bg-base-300 rounded-sm overflow-hidden">
-                      <div class="h-full rounded-sm" :class="r.hot ? 'bg-primary' : 'bg-base-content/30'"
-                           :style="`width:${r.w}%`"></div>
+                <h2 class="text-base font-display font-semibold tracking-wide opacity-70 mt-1">Doors carrying us
+                  <span class="text-xs font-mono opacity-50 ml-1"><span x-text="snapDist?.doors_total ?? 0"></span> total</span></h2>
+                <!-- Every door the window holds, scrollable INSIDE the card. The
+                     previous version deleted rows to stop the card clipping,
+                     which is fixing a CSS bug by discarding data. -->
+                <div class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-1">
+                  <template x-for="r in (snapDist?.doors || [])" :key="r.num">
+                    <div class="flex items-center gap-2.5">
+                      <span class="text-sm font-mono opacity-60 w-20 shrink-0 truncate" x-text="r.name"></span>
+                      <div class="flex-1 h-3 bg-base-300 rounded-sm overflow-hidden">
+                        <div class="h-full rounded-sm"
+                             :class="r.pct === 100 ? 'bg-primary' : 'bg-base-content/30'"
+                             :style="`width:${r.pct}%`"></div>
+                      </div>
+                      <span class="text-base font-mono w-14 text-right" x-text="r.uses"></span>
                     </div>
-                    <span class="text-base font-mono w-14 text-right" x-text="r.n"></span>
+                  </template>
+                  <div class="text-sm opacity-50" x-show="!(snapDist?.doors || []).length">
+                    No completed routes in this window.
                   </div>
-                </template>
+                </div>
               </div>
             </div>
           </div>
@@ -150,20 +183,25 @@
           <!-- Zero is deliberately unaccented. A day that found nothing new must
                look inert, so any colour here means real new ground. -->
           <div class="grid grid-cols-5 gap-3 shrink-0 basis-[13%] min-h-0">
+            <!-- Zero is unaccented: a window that found nothing must look inert,
+                 so any colour here means real new ground. A NULL is not a zero —
+                 it says we cannot measure it, and says why. -->
             <template x-for="c in [
-              {v:'0',k:'first-ever contacts',s:'none today',live:false},
-              {v:'0',k:'new doors',s:'16 standing',live:false},
-              {v:'0',k:'new clusters',s:'51 known',live:false},
-              {v:'—',k:'nodes first heard',s:'no first_heard column',live:false},
-              {v:'0',k:'furthest new contact',s:'km today',live:false}]">
+              {v: snapNew?.first_contacts, k:'first-ever contacts', s:'completed a round trip'},
+              {v: snapNew?.new_doors,      k:'new doors',           s:'first time as a first hop'},
+              {v: snapNew?.new_clusters,   k:'new clusters',        s: snapNew?.new_clusters_reason || ''},
+              {v: snapNew?.first_heard,    k:'nodes first heard',   s:'never seen before'},
+              {v: snapNew?.furthest_new_km,k:'furthest new contact',s: (snapNew?.furthest_new_node || '') + (snapNew?.furthest_new_km ? ' km' : '')}]" :key="c.k">
               <div class="card bg-base-100 border overflow-hidden"
-                   :class="c.live ? 'border-primary/40' : 'border-base-300'">
+                   :class="(c.v > 0) ? 'border-primary/40' : 'border-base-300'">
                 <div class="card-body !p-4 flex-row items-center gap-3">
                   <div class="text-4xl font-display font-bold leading-none tracking-tight"
-                       :class="c.live ? 'text-primary' : 'opacity-40'" x-text="c.v"></div>
+                       :class="(c.v > 0) ? 'text-primary' : 'opacity-40'"
+                       x-text="c.v == null ? '–' : c.v"></div>
                   <div class="min-w-0">
                     <div class="text-sm leading-tight" x-text="c.k"></div>
-                    <div class="text-xs font-mono opacity-50 leading-tight mt-0.5" x-text="c.s"></div>
+                    <div class="text-xs font-mono opacity-50 leading-tight mt-0.5"
+                         x-text="c.v == null ? c.s : (c.v === 0 ? 'none in ' + snapWindowLabel : c.s)"></div>
                   </div>
                 </div>
               </div>
@@ -176,26 +214,25 @@
               <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
                 <div class="flex items-baseline gap-4">
                   <h2 class="text-base font-display font-semibold tracking-wide opacity-70">Are we productive</h2>
-                  <span class="text-4xl font-display font-bold leading-none tracking-tight ml-auto">15.9<span class="text-xl opacity-50">%</span></span>
-                  <span class="text-sm font-mono text-success">▲ 6.5 pts vs 7-day mean</span>
+                  <span class="text-4xl font-display font-bold leading-none tracking-tight ml-auto"><span x-text="snapProd?.rate_pct ?? '—'"></span><span class="text-xl opacity-50">%</span></span>
+                  <span class="text-sm font-mono opacity-60"><span x-text="snapProd?.targets ?? '—'"></span> targets</span>
                 </div>
-                <div class="text-sm font-mono opacity-60">540 attempts · 86 answered · 174 targets</div>
+                <div class="text-sm font-mono opacity-60"><span x-text="snapProd?.attempts ?? '—'"></span> attempts · <span x-text="snapProd?.answered ?? '—'"></span> answered · <span x-text="snapWindowLabel"></span></div>
                 <!-- meet, not none: the sparkline keeps its aspect at any width -->
                 <div class="flex-1 min-h-0">
                   <svg viewBox="0 0 560 120" preserveAspectRatio="xMidYMid meet"
                        class="w-full h-full" aria-label="Answer rate, 14 days">
                     <line x1="0" y1="100" x2="560" y2="100" stroke="currentColor" stroke-opacity=".12"/>
-                    <line x1="235" y1="8" x2="235" y2="100" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="3 3"/>
-                    <text x="228" y="18" text-anchor="end" font-size="13" fill="currentColor" fill-opacity=".45"
-                          font-family="ui-monospace,monospace">← beam misaligned</text>
+                    
+                    
                     <polyline fill="none" stroke="currentColor" stroke-width="2.5"
                               stroke-linejoin="round" stroke-linecap="round" class="text-primary"
-                              points="10,90 50,83 90,82 130,64 170,60 210,83 250,97 290,95 330,97 370,100 410,85 450,78 490,74 530,48"/>
-                    <circle cx="530" cy="48" r="4" class="fill-primary"/>
+                              :points="snapSparkPoints"/>
+                    
                     <g font-size="13" fill="currentColor" fill-opacity=".45" font-family="ui-monospace,monospace">
-                      <text x="8" y="116">22 Jul</text>
-                      <text x="250" y="116">29 Jul</text>
-                      <text x="500" y="116">today</text>
+                      <text x="8" y="116" x-text="snapSparkLabels?.first || ''"></text>
+                      
+                      <text x="500" y="116" x-text="snapSparkLabels?.last || ''"></text>
                     </g>
                   </svg>
                 </div>
