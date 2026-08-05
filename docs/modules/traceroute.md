@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 68442d0857d342d39d049e40de146718e1c550daad357009025d02bb04f8c8b3
+source_hash: 0f328220524ffa95bfbb1c32a3550317a480c2243b4e611ffc6c55d98fb23f88
 updated: 2026-08-03
 ---
 
@@ -745,3 +745,55 @@ declines to spend the beam instead of pointing it at destinations.
 `_resolveAim` returns "radio is not on the rotator" and the yagi never moves —
 last 200 attempts, `aim_mode = none` 199 times. Branches 1–3 change nothing
 visible until `disc.tx = 'rotator'`. That is an operator decision, not a code one.
+
+## Rule 3 after the flip: "do not rotate" stopped being free
+
+That operator decision was taken on 2026-08-05 (`disc.tx = rotator`, event_log
+4242), and it invalidated rule 3's reasoning.
+
+Rule 3 said: door close, no bypass worth taking → `none`, *"do not rotate. The
+door is inside omni reach and the beam is theatre."* Sound while the OMNI
+transmits — declining to move costs nothing when the pattern is omnidirectional
+either way. Once the **rotator** is the transmitter it means something else
+entirely: transmit through a 35° beam pointed wherever somebody else last left it.
+
+Measured over the 24 h after the flip:
+
+```
+YAGI, aim_mode=none    303 attempts    24 ok    7.9%
+OMNI, same window      236 @ 12.3% · 169 @ 9.5%
+unaimed YAGI shots     246 DISTINCT azimuths spanning 0.85°–359.98°
+```
+
+The last line is the finding. The beam is not stale-but-constant — it is scattered
+across the whole circle, because the active tracker and the scanner move it for
+their own purposes and traceroute never reclaims it.
+
+**Aim at the door, not the endpoint.** When rule 3 fires we know exactly who
+receives the transmission: the door. That is the entire basis of rules 1–2. So the
+fallback points at the door even when the beam is not strictly *needed* — "not
+needed" was an argument for saving movement, never an argument for pointing
+somewhere arbitrary. The endpoint bearing is used only when no door bearing
+resolves, matching rule 4.
+
+Recorded as `aim_mode = 'door_near'`, distinct from rule 1's `'door'`, so the
+branches stay separable in the data. `aim_mode` is free text with no write-side
+validation, so a new value costs nothing.
+
+**Gated on the transmitting radio.** If the TX device is not the rotator, rule 3
+still returns `none` — moving an antenna we are not transmitting through is the
+theatre the original rule correctly refused.
+
+### The hold, which was the other half
+
+`_aim()` returned early on `az == null`, *before* the rotator-identity check and
+before `rotator.point()`. An unaimed trace therefore never called `point()`, and so
+never took the **hold** — leaving the antenna free to slew mid-transmission, during
+the very trace being measured. Aiming deliberately closes this too, because the
+hold arrives with the point.
+
+**Not claimed:** that this raises the answer rate. The OMNI currently beats the
+unaimed YAGI, which is *consistent* with a mispointed beam, but the two radios do
+not draw from the same target population. A suspected physical misalignment between
+boom and compass is under separate investigation; aiming is a precondition for that
+to matter, not a substitute for fixing it.

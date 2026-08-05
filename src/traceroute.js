@@ -259,7 +259,25 @@ class TracerouteManager extends EventEmitter {
   //                                    that creates a new door.
   //
   // Every branch records its own mode, so the row says which rule fired.
-  _decideAim(to) {
+  //   3b. Known route, door close,
+  //       NO bypass, but WE TRANSMIT   -> aim at the door anyway.
+  //       ON THE ROTATOR
+  //
+  // Rule 3 said "do not rotate, the beam is theatre". That was true while the
+  // OMNI transmitted. Once disc.tx became the rotator (2026-08-05, event_log
+  // 4242) it stopped meaning "we radiate omnidirectionally anyway" and started
+  // meaning "fire a 35 degree beam wherever somebody else left the antenna".
+  //
+  // Measured over the 24 h after the flip: 303 YAGI attempts at aim_mode=none,
+  // 7.9% answered, and those shots covered 246 DISTINCT azimuths spanning
+  // 0.85-359.98 degrees. The beam was not stale-but-constant, it was scattered
+  // across the whole circle — the active tracker and the scanner move it for
+  // their own reasons and traceroute never reclaimed it.
+  //
+  // The door is who actually receives the transmission, which is the entire
+  // basis of rules 1-2, so that is what we point at. "Beam not needed" was an
+  // argument for saving movement, never one for pointing somewhere arbitrary.
+  _decideAim(to, device) {
     const none = { az: null, aimTarget: null, mode: 'none' };
     let route = null;
     try { route = JSON.parse(stmts.latestRouteTo.get(to)?.route ?? 'null'); } catch { /* no route */ }
@@ -288,8 +306,31 @@ class TracerouteManager extends EventEmitter {
         }
       }
     }
-    // 3. Close door, no bypass worth taking: do not spend the beam.
+    // 3b. Close door, no bypass — but if WE are the ones radiating through the
+    // yagi, "don't rotate" points a 35 degree beam at nothing. Aim at the door.
+    // Gated on the transmitting radio: moving an antenna we are not transmitting
+    // through is exactly the theatre rule 3 correctly refused.
+    if (this._txIsRotator(device)) {
+      if (d && d.az != null) return { az: d.az, aimTarget: d.door, mode: 'door_near' };
+      // No door bearing resolves — fall back to the endpoint for the same reason
+      // rule 4 does: a deliberate bearing beats an arbitrary one.
+      const b = bearingToNode(to);
+      if (b != null) return { az: b, aimTarget: to, mode: 'endpoint_near' };
+    }
+
+    // 3. Close door, no bypass, and we are not on the rotator: do not spend the beam.
     return none;
+  }
+
+  /** Is the radio we are about to transmit on the one bolted to the rotator?
+   *
+   *  BOTH SIDES IN MAC SPACE — a node_id-vs-MAC compare is always false, which is
+   *  the bug toMac() exists to prevent (it once reported "not on the rotator"
+   *  about the rotator itself). */
+  _txIsRotator(device) {
+    const rot = getRotatorAddress();
+    const mac = toMac(device);
+    return !!(rot && mac && mac.toUpperCase() === rot.toUpperCase());
   }
 
   /** Where to point, and WAIT FOR IT TO GET THERE.
@@ -305,7 +346,7 @@ class TracerouteManager extends EventEmitter {
 
     let az = null, aimTarget = null, mode = 'none';
     if (typeof want === 'number') { az = want; mode = 'endpoint'; }
-    else if (want === 'auto')     ({ az, aimTarget, mode } = this._decideAim(to));
+    else if (want === 'auto')     ({ az, aimTarget, mode } = this._decideAim(to, device));
     else if (want === 'door') {
       const d = doorAim(to);
       if (d && d.az != null) { az = d.az; aimTarget = d.door; mode = 'door'; }
