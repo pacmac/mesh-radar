@@ -266,6 +266,8 @@ class NodeList extends EventEmitter {
       // to). Task `aim-provenance-requested-az` — the pair is the measurement,
       // neither alone is.
       aim_az_req:      data.aim_az_req ?? null,
+      plan_class:      data.plan_class ?? null,
+      step_index:      data.step_index ?? null,
     });
     const historyId = info.lastInsertRowid;
     const existing = this._cache.get(num) ?? this._pending.get(num);

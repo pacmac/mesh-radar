@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { broadcastSettings, pokeDeviceList } from './ws-relay.js';
 import { getConfig, setConfig } from './db.js';
+import { plans as probePlans, validatePlan as validateProbePlan,
+         VERBS as PROBE_VERBS, STEP_KEYS as PROBE_STEP_KEYS } from './probe-plan.js';
 import { logEvent } from './hooks.js';
 import { nodeList } from './node-list.js';
 import { modeConfigAll, isValidRole, isValidAim, isValidRadio, modeVocabulary, MODE_KEYS } from './dash-mode.js';
@@ -412,6 +414,31 @@ router.get('/modes', (req, res) => {
 // offered and the list accepted cannot disagree. The browser held its own
 // retyped copy of this (app.js:251-262) with its own labels — Peter,
 // 2026-08-04: "do NOT break the UI golden rule."
+// ── probe plans ─────────────────────────────────────────────────────────────
+// The tunable sequences. Validated on write because a config that can express
+// nonsense will eventually contain nonsense, and a silently-ignored step is the
+// worst outcome — it looks like it ran.
+router.get('/probe-plans', (req, res) => {
+  res.json({ plans: probePlans(), verbs: PROBE_VERBS, step_keys: PROBE_STEP_KEYS });
+});
+
+router.put('/probe-plans', (req, res) => {
+  const incoming = req.body?.plans;
+  if (!incoming || typeof incoming !== 'object')
+    return res.status(400).json({ error: 'plans object required' });
+  const errors = {};
+  for (const [cls, steps] of Object.entries(incoming)) {
+    const e = validateProbePlan(steps);
+    if (e.length) errors[cls] = e;
+  }
+  if (Object.keys(errors).length) return res.status(400).json({ error: 'invalid plan', errors });
+  setConfig('probe_plans', incoming);
+  logEvent({ kind: 'config', source: 'config-api', severity: 'notice',
+             summary: `probe plans updated (${Object.keys(incoming).join(', ')})`,
+             detail: JSON.stringify(incoming).slice(0, 900) });
+  res.json({ plans: probePlans() });
+});
+
 router.get('/mode-vocabulary', (req, res) => {
   res.json(modeVocabulary());
 });

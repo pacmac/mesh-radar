@@ -202,6 +202,9 @@ class TracerouteManager extends EventEmitter {
       cooldownKey: opts.cooldownKey,
       manual:      opts.manual ?? false,
       aimCtx:      aim,
+      // Which probe-plan step produced this attempt, carried onto the row.
+      planClass:   opts.planClass ?? null,
+      stepIndex:   opts.stepIndex ?? null,
     });
   }
 
@@ -425,7 +428,8 @@ class TracerouteManager extends EventEmitter {
   // Returns a Promise that resolves with the result or rejects on timeout/error.
   // cooldownKey + cooldownMs: skip dispatch if key was dispatched within cooldownMs.
   // manual: a user-initiated request. Never gated by the master switch.
-  dispatch({ to, device, timeoutMs, cooldownMs, cooldownKey, manual = false, aimCtx = null } = {}) {
+  dispatch({ to, device, timeoutMs, cooldownMs, cooldownKey, manual = false, aimCtx = null,
+             planClass = null, stepIndex = null } = {}) {
     if (!to || !device) return Promise.reject(new Error('to and device are required'));
 
     // Master switch (task `traceroute-manual-enable`). Before this existed there
@@ -469,7 +473,8 @@ class TracerouteManager extends EventEmitter {
                       // say what it was pointed at. Set by run(); a bare
                       // dispatch() leaves it null, which is honest — unknown, not
                       // 'none'. Task `traceroute-rework`.
-                      aim: aimCtx ?? null };
+                      aim: aimCtx ?? null,
+                      plan: { plan_class: planClass ?? null, step_index: stepIndex ?? null } };
 
       entry.timer = setTimeout(() => {
         if (this._pending.get(to) === entry) {
@@ -477,7 +482,7 @@ class TracerouteManager extends EventEmitter {
           const err = new Error(`timeout !${to.toString(16)}`);
           log.warn(err.message);
           for (const cb of entry.callbacks) cb.reject(err);
-          this._recordFailure(to, device, 'timeout', entry.startedAt, entry.aim);
+          this._recordFailure(to, device, 'timeout', entry.startedAt, entry.aim, entry.plan);
         }
       }, effectiveMs);
 
@@ -495,7 +500,7 @@ class TracerouteManager extends EventEmitter {
           this._pending.delete(to);
           log.warn(`send failed !${to.toString(16)}: ${err.message}`);
           for (const cb of entry.callbacks) cb.reject(err);
-          this._recordFailure(to, device, 'send_failed', entry.startedAt, entry.aim);
+          this._recordFailure(to, device, 'send_failed', entry.startedAt, entry.aim, entry.plan);
         }
       });
     });
@@ -505,7 +510,7 @@ class TracerouteManager extends EventEmitter {
   // Failed attempts get a traceroute_history row (status='timeout'|'send_failed',
   // payload columns NULL) — without them every stat is survivorship-biased.
   // One pending entry = one row, regardless of joined callers.
-  _recordFailure(to, device, reason, startedAt = null, aim = null) {
+  _recordFailure(to, device, reason, startedAt = null, aim = null, opts = null) {
     const aimMode   = aim?.mode   ?? null;
     const aimTarget = aim?.target ?? null;
     const beamDeg   = aim?.beam_deg ?? null;
@@ -552,6 +557,10 @@ class TracerouteManager extends EventEmitter {
       // it" are the same row — and six door aims at one door recorded arrivals
       // 111-139 degrees apart. Never derived from rotator_az.
       aim_az_req: aim?.az ?? null,
+      // Which step of which plan fired. An escalating sequence is unattributable
+      // without it — the same hole that made aiming unevaluable for months.
+      plan_class: opts?.plan_class ?? null,
+      step_index: opts?.step_index ?? null,
       ...(() => {
         const n = devId ? (parseInt(String(devId).replace('!', ''), 16) >>> 0) : 0;
         return radioAirtime(n);
@@ -629,6 +638,8 @@ class TracerouteManager extends EventEmitter {
       aim_target:      aim?.target ?? null,
       beam_deg:        aim?.beam_deg ?? null,
       aim_az_req:      aim?.az     ?? null,
+      plan_class:      pendingEntry?.plan?.plan_class ?? null,
+      step_index:      pendingEntry?.plan?.step_index ?? null,
       ...(txDevice
         ? radioAirtime(parseInt(String(getLiveNodeIdByMac(txDevice) ?? '').replace('!', ''), 16) >>> 0)
         : { channel_util: null, air_util_tx: null }),

@@ -52,6 +52,7 @@ import { doorAim } from './doors.js';
 import { ownDeviceNums } from './node-filter.js';
 import { defineHook, newProbeId } from './hooks.js';
 import { discoveryConfig } from './config-api.js';
+import { nextStep, recordAttempt, clearState } from './probe-plan.js';
 
 // THE PROBE, NARRATED. Task `hooks-discovery-path`. Peter, 2026-08-03: "what I
 // expect to see is a log for each probe, showing the steps that we are cycling
@@ -447,6 +448,25 @@ class MissionRunner extends EventEmitter {
     //
     // Only when the mode's transmitter IS the rotator — which in DISC it is by
     // definition, but the config is editable and this must not assume.
+    // WHICH STEP OF THE PLAN IS THIS TARGET ON? Durable, so a restart resumes
+    // rather than restarting the sequence. A null step means the plan says WAIT
+    // (or is exhausted) — that is the schedule working, not a failure, and the
+    // right response is to leave this target alone rather than hammer it.
+    const planClass = m.cls || m.value?.cls || 'default';
+    const nx = nextStep(to, planClass);
+    const step = nx.step;
+    const stepIndex = nx.index;
+    if (!step) {
+      this._holding = null;
+      H.idle?.emit?.({ severity: 'info',
+        summary: `${this._current?.label ?? to}: plan ${planClass} says ${nx.reason}`
+               + (nx.ready_in_sec ? ` — ready in ${Math.round(nx.ready_in_sec / 60)} min` : ''),
+        detail: { to: String(to), plan_class: planClass, reason: nx.reason, index: nx.index },
+      });
+      return;
+    }
+    recordAttempt(to, planClass, stepIndex);
+
     const aim = await this._aim(m.bearing, c, m.target);
     this._current.az = aim.az;
     this._current.aim = aim.note;
@@ -525,8 +545,20 @@ class MissionRunner extends EventEmitter {
       // beam for the hold/negotiation, and run() re-resolves and waits — the
       // rotator is idempotent on an azimuth it is already at.
       const result = await traceroute.run(to, {
-        radio:     'auto',                  // the mode's tx; changing it is a config edit
-        timeoutMs: c.timeout_sec * 1000,
+        // THE PROBE PLAN DECIDES, not a fixed call. Peter, 2026-08-05: the
+        // traceroute config should be "a route table array with key-verbs as a
+        // list of sequential actions ... tweak them without needing to touch the
+        // source code".
+        //
+        // 21,395 attempts across 443 targets were the same experiment repeated,
+        // because the aim came from (target, mode) with no attempt index. The
+        // plan gives each attempt a different question to ask, and its position
+        // is durable so a restart does not send it back to step 0.
+        radio:     step?.radio  ?? 'auto',
+        aim:       step?.aim    ?? undefined,
+        timeoutMs: (step?.timeout_sec ?? c.timeout_sec) * 1000,
+        planClass: planClass,
+        stepIndex: stepIndex,
         reason:    'mission',
         // WE ALREADY AIMED. Handing the context over stops run() issuing a second
         // point() to a shared rotator, and stops it overriding the "door is inside
@@ -535,6 +567,9 @@ class MissionRunner extends EventEmitter {
       });
       outcome = this._analyse(result);
       this._discovered.replies++;
+      // A REPLY ENDS THE PLAN. Nothing further is learned by probing something
+      // that just answered, and the state must not persist into the next round.
+      clearState(to);
       // A REPLY ENDS THE RUN. The budget exists to find out whether a path is
       // there; once it has answered there is nothing further to learn from
       // hitting it again, and the airtime is better spent on the next target.
