@@ -154,14 +154,16 @@ function dashboard() {
     // depth-ordered, and pretending otherwise would be a lie in the UI.
     radarLayers: [
       { key: 'terrain',   label: 'Terrain',   on: true, order: 1, draws: true  },
-      { key: 'clusters',  label: 'Clusters',  on: true, order: 2, draws: true  },
-      { key: 'nodes',     label: 'Nodes',     on: true, order: 3, draws: true  },
+      { key: 'reach',     label: 'Reach',     on: true, order: 2, draws: true  },
+      { key: 'clusters',  label: 'Clusters',  on: true, order: 3, draws: true  },
+      { key: 'nodes',     label: 'Nodes',     on: true, order: 4, draws: true  },
       { key: 'doors',     label: '· Doors',     on: true, order: 0, draws: false },
       { key: 'routers',   label: '· Routers',   on: true, order: 0, draws: false },
       { key: 'endpoints', label: '· Endpoints', on: true, order: 0, draws: false },
     ],
     clusterData:    null,
     terrainData:    null,
+    reachData:      null,
     clusterCard:    null,   // hovered cluster detail; null = hidden
     radarNodes:     [],
     radarSelected:  null,

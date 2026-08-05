@@ -126,6 +126,7 @@ export const radarMixin = {
     this._drawRadarBeam();
     this._drawRadarTraceroute(maxKm, ctx);
     this._drawRadarTerrain(maxKm);
+    this._drawRadarReach(maxKm);
     this._drawRadarClusters(maxKm);
     this._drawRadarNodes(maxKm, ctx);
     this._applyLayerOrder();
@@ -255,6 +256,71 @@ export const radarMixin = {
     }
   },
 
+  // ── Achieved reach ─────────────────────────────────────────────────────────
+  //
+  // Peter, 2026-08-05: "the antenna beam / reach arc should be based on what has
+  // actually been CONTACTED or heard", and "the reality is that I can only tell
+  // when I see it."
+  //
+  // Two series, SERVED (src/reach.js), never merged here:
+  //   PROVEN  furthest node we have a proven direct RF link to in that sector
+  //   HEARD   downlink-only evidence, weaker, and its hops=0 gate is unverified
+  //
+  // A sector with no evidence draws NOTHING. Not a zero-radius wedge — nothing.
+  // Unknown is not unreachable, and a shoreline where we have never looked would
+  // be a lie in the same class as the 400 km theoretical circle this replaced.
+  async _loadReach() {
+    try {
+      const d = await fetchJSON('/reach');
+      this.reachData = d?.achieved?.ready ? d : null;
+    } catch { this.reachData = null; }
+  },
+
+  _drawRadarReach(maxKm) {
+    const g = document.getElementById('radar-reach-g');
+    if (!g) return;
+    g.innerHTML = '';
+    if (!this.layerOn('reach')) return;
+    if (this.reachData == null) {
+      if (!this._reachLoading) {
+        this._reachLoading = true;
+        this._loadReach().finally(() => { this._reachLoading = false; this.drawRadar(); });
+      }
+      return;
+    }
+    const CX = 300, CY = 300, R = 256;
+    const arc = (from, to, rad, style) => {
+      const a0 = (from - 90) * Math.PI / 180, a1 = (to - 90) * Math.PI / 180;
+      const x0 = CX + Math.cos(a0) * rad, y0 = CY + Math.sin(a0) * rad;
+      const x1 = CX + Math.cos(a1) * rad, y1 = CY + Math.sin(a1) * rad;
+      return svgElem('path', {
+        d: `M${CX} ${CY} L${x0.toFixed(1)} ${y0.toFixed(1)} A${rad.toFixed(1)} ${rad.toFixed(1)} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)} Z`,
+        style,
+      });
+    };
+    for (const s of this.reachData.achieved.sectors) {
+      if (s.heard_km != null) {
+        const r = this._radarNorm(s.heard_km, maxKm) * R;
+        if (r > 1) g.appendChild(arc(s.from_deg, s.to_deg, r,
+          'fill:rgba(120,190,255,0.07);stroke:rgba(120,190,255,0.30);stroke-width:0.8;stroke-dasharray:2 3'));
+      }
+      if (s.furthest_km == null) continue;            // no evidence: draw nothing
+      const r = this._radarNorm(s.furthest_km, maxKm) * R;
+      if (r <= 1) continue;
+      g.appendChild(arc(s.from_deg, s.to_deg, r,
+        'fill:rgba(0,255,140,0.13);stroke:rgba(0,255,140,0.65);stroke-width:1.4'));
+      const mid = (s.mid_deg - 90) * Math.PI / 180;
+      const t = svgElem('text', {
+        x: CX + Math.cos(mid) * (r + 9), y: CY + Math.sin(mid) * (r + 9),
+        'text-anchor': 'middle',
+        style: 'fill:rgba(0,255,140,0.9);font-size:8px;font-family:ui-monospace,monospace;'
+             + 'paint-order:stroke;stroke:rgba(0,0,0,0.75);stroke-width:2.5px;pointer-events:none',
+      });
+      t.textContent = `${s.furthest_km}km ${s.node || ''}`.trim();
+      g.appendChild(t);
+    }
+  },
+
   async _loadClusters() {
     try {
       const d = await fetchJSON('/clusters');
@@ -367,7 +433,8 @@ export const radarMixin = {
 
   /** Apply depth + brightness to the real SVG groups. */
   _applyLayerOrder() {
-    const G = { terrain: 'radar-terrain-img', clusters: 'radar-clusters-g', nodes: 'radar-nodes-g' };
+    const G = { terrain: 'radar-terrain-img', reach: 'radar-reach-g',
+                clusters: 'radar-clusters-g', nodes: 'radar-nodes-g' };
     const horizon = document.getElementById('radar-horizon-path');
     for (const l of this.orderedDrawLayers) {
       const el = document.getElementById(G[l.key]);
