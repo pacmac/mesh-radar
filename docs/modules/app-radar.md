@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: b75e1864583875170d91d9e22360198a5463fb1d825ddeae947bca8e85fec792
+source_hash: f510b807d164febaf1c01f7cc776333be10e37cbcadaba1b4e1dc8f6cce5abf4
 updated: 2026-08-04
 ---
 
@@ -516,3 +516,22 @@ order      1:clusters  2:nodes  3:terrain     (preserved)
 routers    off                                (preserved)
 opacity    terrain 1 · nodes 0.72 · clusters 0.44   (applied to the SVG)
 ```
+
+
+## Auto-range ignores implausible positions (2026-08-05)
+
+One node — `MLBR` — reports **1681 km**, which drove auto-range to a **2000 km**
+ring and crushed every real node, the terrain and the reach shape into a smudge at
+the centre. A single bad GPS fix decided what the whole display showed.
+
+`clusters.js` has applied a **500 km** ceiling since it was written — the same
+1681 km row is why — and the radar never did. Same constant, same reasoning:
+beyond it is bad data rather than a contact.
+
+**Excluded nodes are still drawn.** They clamp to the rim via `_radarNorm` like
+any over-range node; the ceiling only stops them *setting the scale*. Hiding them
+would be a different and worse lie — we did hear something, we just don't believe
+where it says it is.
+
+Verified: auto-range picks **150 km** (rings 5 / 25 / 75 / 150) against a real
+furthest node of 193 km, with MLBR still on the display.

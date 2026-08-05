@@ -112,10 +112,26 @@ export const radarMixin = {
   drawRadar() {
     if (!this.homePos) return;
     const NICE_KM = [1, 2, 5, 10, 25, 50, 100, 200, 500, 1000, 2000];
+    // AUTO-RANGE IGNORES IMPLAUSIBLE POSITIONS.
+    //
+    // One node — MLBR — reports 1681 km, which drove auto-range to a 2000 km ring
+    // and crushed every real node, the terrain and the reach shape into a smudge
+    // at the centre. A single bad GPS fix should not decide what the whole
+    // display shows.
+    //
+    // clusters.js has applied a 500 km ceiling since it was written (the same
+    // 1681 km row is why); the radar never did. Same constant, same reasoning:
+    // anything beyond it is bad data rather than a contact, and treating it as
+    // real is how one row silently governs the view.
+    //
+    // Excluded nodes are still DRAWN — they are clamped to the rim by _radarNorm
+    // like any over-range node. This only stops them setting the scale.
+    const PLAUSIBLE_KM = 500;
     const maxKm = this.radarRange === '0'
       ? (() => {
-          const dataMax = this.radarNodes.length ? Math.max(...this.radarNodes.map(n => n._km ?? 0)) : 0;
-          return NICE_KM.find(n => n >= dataMax) ?? dataMax * 1.15;
+          const kms = this.radarNodes.map(n => n._km ?? 0).filter(k => k <= PLAUSIBLE_KM);
+          const dataMax = kms.length ? Math.max(...kms) : 0;
+          return NICE_KM.find(n => n >= dataMax) ?? Math.max(dataMax * 1.15, 25);
         })()
       : Number(this.radarRange);
     // ── [V2] SSOT_ROUTE_RENDER — build ctx from backend state, pass to draw fns
