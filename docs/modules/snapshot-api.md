@@ -1,7 +1,7 @@
 ---
 module: snapshot-api
 source: src/snapshot-api.js
-source_hash: 908422721fda9cf2ab038b3404d0aedb6769c06fc11ebe2e81ab835baa08e0d5
+source_hash: ce8c1a895508389bf1f6191d8cf5cf37485e3668b84c752f113df8c2c84d8984
 updated: 2026-08-05
 ---
 
@@ -152,3 +152,35 @@ Verified on `all`: 115 first-ever contacts · 16 new doors · 1104 first heard �
 **The check that was missing:** vary the window, assert the render changes. Six
 windows produced six distinct renders. A value identical across every window is
 not window-derived, which is how five hard-coded zeros survived review.
+
+## Health admits what it cannot measure
+
+The card previously showed six invented rows ("sent 11:38", "v4 · 20° · free",
+"within budget", "204 of 387").  now returns only observable
+state; anything else carries `value: null` and a `reason`, and the card renders
+the reason. A health panel that fabricates health is worse than none — its whole
+job is to be believed, and the alerts path was dead today while nothing said so.
+
+The four header badges (gw live / OMNI rx · YAGI tx / ACTV / rotator 20°) were
+also invented and are removed rather than left looking live.
+
+## scripts/check_snapshot.mjs
+
+54 assertions: 9 fields x 6 windows, endpoint vs SQL written independently of the
+endpoint code. Run it on every change to this module.
+
+## Health admits what it cannot measure
+
+The card previously showed six invented rows ("sent 11:38", "v4 · 20° · free",
+"within budget", "204 of 387"). The health route now returns only observable
+state; anything else carries a null value and a `reason`, and the card renders
+the reason. A health panel that fabricates health is worse than none — its whole
+job is to be believed, and the alerts path was dead today while nothing said so.
+
+The four header badges (gw live / OMNI rx · YAGI tx / ACTV / rotator 20°) were
+also invented, and are removed rather than left looking live.
+
+## scripts/check_snapshot.mjs
+
+54 assertions: 9 fields across 6 windows, endpoint vs SQL written independently
+of the endpoint code. Run on every change to this module.

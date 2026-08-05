@@ -33,12 +33,11 @@
           <!-- ── header ────────────────────────────────────────────────── -->
           <div class="flex items-center gap-3 shrink-0">
             <h1 class="text-2xl font-display font-bold tracking-wide">Snapshot</h1>
-            <div class="badge badge-sm badge-ghost font-mono gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-success inline-block"></span>gw live
-            </div>
-            <div class="badge badge-sm badge-ghost font-mono">OMNI rx · YAGI tx</div>
-            <div class="badge badge-sm badge-ghost font-mono">ACTV</div>
-            <div class="badge badge-sm badge-ghost font-mono">rotator 20°</div>
+            <!-- The four badges here were invented: "gw live", "OMNI rx · YAGI tx",
+                 "ACTV", "rotator 20°". None was wired. Removed rather than left
+                 looking live — the page already has a health card whose job this
+                 is, and which now admits what it cannot measure. -->
+            <span class="text-sm opacity-50" x-show="snapLoading">loading…</span>
 
             <!-- Global window. LIVE — it refetches the hero band from
                  GET /snapshot/frontier?days=N.
@@ -57,8 +56,20 @@
             </div>
           </div>
 
+          <!-- A FAILED LOAD MUST SAY SO. Without this every figure renders "—"
+               and a broken backend is indistinguishable from a quiet mesh —
+               the same silent-failure class as the callout switch that read
+               "off" while transmitting. -->
+          <div class="alert alert-error py-2 shrink-0" x-show="snapError" x-cloak>
+            <span class="text-sm font-mono">
+              Snapshot data unavailable — <span x-text="snapError"></span>.
+              Figures below are not current.
+            </span>
+            <button class="btn btn-xs" @click="loadSnapshot()">Retry</button>
+          </div>
+
           <!-- ── band 1: how far can we get ────────────────────────────── -->
-          <div class="grid grid-cols-3 gap-3 basis-[42%] shrink-0 min-h-0">
+          <div class="grid grid-cols-3 gap-3 flex-1 min-h-0 min-h-[15rem]">
             <div class="card bg-base-100 border border-base-300 col-span-2 overflow-hidden">
               <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
                 <div class="flex items-baseline gap-6 shrink-0">
@@ -139,8 +150,8 @@
 
             <!-- ladder + doors -->
             <div class="card bg-base-100 border border-base-300 overflow-hidden">
-              <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
-                <h2 class="text-base font-display font-semibold tracking-wide opacity-70">Where the mesh lives
+              <div class="card-body !p-4 gap-3 min-h-0 overflow-y-auto">
+                <h2 class="text-base font-display font-semibold tracking-wide opacity-70 shrink-0">Where the mesh lives
                   <span class="text-xs font-mono opacity-50 ml-1" x-text="snapWindowLabel"></span></h2>
                 <template x-for="r in (snapDist?.bands || [])" :key="r.label">
                   <div class="flex items-center gap-2.5">
@@ -159,7 +170,7 @@
                 <!-- Every door the window holds, scrollable INSIDE the card. The
                      previous version deleted rows to stop the card clipping,
                      which is fixing a CSS bug by discarding data. -->
-                <div class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-1">
+                <div class="flex flex-col gap-1 shrink-0">
                   <template x-for="r in (snapDist?.doors || [])" :key="r.num">
                     <div class="flex items-center gap-2.5">
                       <span class="text-sm font-mono opacity-60 w-20 shrink-0 truncate" x-text="r.name"></span>
@@ -182,7 +193,7 @@
           <!-- ── band 2: new ground ────────────────────────────────────── -->
           <!-- Zero is deliberately unaccented. A day that found nothing new must
                look inert, so any colour here means real new ground. -->
-          <div class="grid grid-cols-5 gap-3 shrink-0 basis-[13%] min-h-0">
+          <div class="grid grid-cols-5 gap-3 shrink-0 min-h-0">
             <!-- Zero is unaccented: a window that found nothing must look inert,
                  so any colour here means real new ground. A NULL is not a zero —
                  it says we cannot measure it, and says why. -->
@@ -209,7 +220,7 @@
           </div>
 
           <!-- ── band 3: productive + machine ──────────────────────────── -->
-          <div class="grid grid-cols-3 gap-3 basis-[42%] shrink-0 min-h-0">
+          <div class="grid grid-cols-3 gap-3 flex-1 min-h-0 min-h-[15rem]">
             <div class="card bg-base-100 border border-base-300 col-span-2 overflow-hidden">
               <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
                 <div class="flex items-baseline gap-4">
@@ -242,18 +253,18 @@
             <div class="card bg-base-100 border border-base-300 overflow-hidden">
               <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
                 <h2 class="text-base font-display font-semibold tracking-wide opacity-70">Is the machine working</h2>
-                <template x-for="r in [
-                  {l:'Alert email',v:'sent 11:38',t:''},
-                  {l:'Radios',v:'OMNI + YAGI ready',t:''},
-                  {l:'Rotator',v:'v4 · 20° · free',t:''},
-                  {l:'Beam alignment',v:'re-checking',t:'text-warning'},
-                  {l:'Channel use',v:'within budget',t:'opacity-50'},
-                  {l:'Nodes plotted',v:'204 of 387',t:''}]">
-                  <div class="flex items-center justify-between gap-2 py-1.5 border-b border-base-300/50 last:border-0">
-                    <span class="text-base opacity-70" x-text="r.l"></span>
-                    <span class="text-base font-mono" :class="r.t" x-text="r.v"></span>
-                  </div>
-                </template>
+                <div class="flex-1 min-h-0 overflow-y-auto pr-1">
+                  <template x-for="r in (snapHealth?.rows || [])" :key="r.label">
+                    <div class="flex items-center justify-between gap-2 py-1 border-b border-base-300/50 last:border-0 shrink-0">
+                      <span class="text-base opacity-70" x-text="r.label"></span>
+                      <!-- A row we cannot measure says so. It never shows a
+                           plausible-looking value it did not obtain. -->
+                      <span class="text-base font-mono text-right"
+                            :class="r.value == null ? 'opacity-40 text-sm' : (r.tone === 'warning' ? 'text-warning' : '')"
+                            x-text="r.value ?? ('unknown — ' + r.reason)"></span>
+                    </div>
+                  </template>
+                </div>
               </div>
             </div>
           </div>

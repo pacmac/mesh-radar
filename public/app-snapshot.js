@@ -25,6 +25,7 @@ export const snapshotMixin = {
   snapDist: null,           // distance bands + doors
   snapNew: null,            // new ground
   snapProd: null,           // attempts / answered / daily series
+  snapHealth: null,         // observable machine state, with gaps admitted
 
   /** Sparkline path from the served daily series — geometry only, no analysis.
    *  The previous chart was a hand-plotted polyline that looked like data. */
@@ -65,6 +66,7 @@ export const snapshotMixin = {
         fetchJSON(`/snapshot/new-ground?days=${w}`),
         fetchJSON(`/snapshot/productivity?days=${w}`),
       ]);
+      this.snapHealth = await fetchJSON('/snapshot/health');   // not window-scoped
       this.snapDist = dist; this.snapNew = ng; this.snapProd = prod;
       // The server owns the default; ?days only overrides for this call.
       this.snapFrontier = await fetchJSON(`/snapshot/frontier?days=${this.snapWindow}`);
@@ -76,7 +78,7 @@ export const snapshotMixin = {
     } catch (e) {
       this.snapError = e.message || 'Could not load the snapshot';
       this.snapFrontier = null; this.snapDist = null;
-      this.snapNew = null; this.snapProd = null;   // a gap, never stale numbers under a new window
+      this.snapNew = null; this.snapProd = null; this.snapHealth = null;
     } finally {
       this.snapLoading = false;
     }

@@ -20,6 +20,7 @@
 
 import { Router } from 'express';
 import db, { getConfig } from './db.js';
+import { getAllDeviceCfgs } from './device-config.js';
 
 const router = Router();
 
@@ -246,6 +247,58 @@ export function productivity(days = windowDays()) {
     daily: daily.map(d => ({ ...d, rate_pct: d.attempts ? Math.round(1000 * d.ok / d.attempts) / 10 : null })),
   };
 }
+
+/** Is the machine working — ONLY what we can actually observe.
+ *
+ *  The card previously showed six invented rows: "sent 11:38", "v4 · 20° · free",
+ *  "within budget", "204 of 387". Every one was typed. A health panel that
+ *  fabricates health is worse than no panel, because its whole job is to be
+ *  believed — and the alerts path was dead for an unknown period today while
+ *  nothing on any screen said so.
+ *
+ *  Anything not measurable is returned with `value: null` and a `reason`. The
+ *  card renders the reason rather than inventing a reassuring string. */
+export function health() {
+  const rows = [];
+  const add = (label, value, reason = null, tone = null) => rows.push({ label, value, reason, tone });
+
+  // Radios: from stored device config — label, and whether a fixed position is set.
+  try {
+    const cfgs = getAllDeviceCfgs?.() ?? {};
+    const names = Object.values(cfgs).map(c => c?.label).filter(Boolean);
+    add('Radios', names.length ? names.join(' + ') : null,
+        names.length ? null : 'no devices configured');
+  } catch { add('Radios', null, 'device config unavailable'); }
+
+  // Rotator: which variant is selected. Live azimuth lives on the rotator WS,
+  // which this REST handler does not hold — so it is NOT claimed here.
+  const variant = getConfig('rotator_active', null);
+  add('Rotator', variant ? String(variant).replace(/"/g, '') : null,
+      variant ? null : 'no rotator selected');
+  add('Live azimuth', null, 'not exposed to this endpoint — use /rotator/status');
+
+  // Callout transmitter: a real, checkable safety state.
+  const co = getConfig('callout', {}) || {};
+  add('Public callouts', co.enabled ? 'ENABLED' : 'off', null, co.enabled ? 'warning' : null);
+
+  // Alerts: we can prove configuration, not delivery. Saying "sent 11:38" without
+  // a stored send log is exactly the invention this endpoint exists to stop.
+  const smtp = getConfig('alerts.smtp_host', '');
+  add('Alert email', smtp ? `configured · port ${getConfig('alerts.smtp_port', '?')}` : null,
+      smtp ? null : 'no SMTP host set');
+  add('Last alert sent', null, 'no send log is stored');
+
+  const total = db.prepare('SELECT COUNT(*) n FROM nodes').get()?.n ?? 0;
+  add('Nodes known', String(total));
+
+  return { ready: true, rows,
+           caveat: 'Rows with a reason are NOT measurable today. They are reported as '
+                 + 'unknown rather than filled with a plausible value.' };
+}
+
+router.get('/snapshot/health', (req, res) => {
+  try { res.json(health()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 router.get('/snapshot/distribution', (req, res) => {
   const d = req.query.days != null ? Number(req.query.days) : windowDays();
