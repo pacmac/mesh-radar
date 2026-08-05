@@ -25,6 +25,9 @@ import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 import { rotator } from './rotator.js';
 import { dashMode, modeName, modeAim, transmitterForMode } from './dash-mode.js';
 import { doorAim } from './doors.js';
+// Proven direct-reach set — the bypass branch may only aim at a relay we have
+// actually transmitted to, never at one we merely know about.
+import { provenDoors } from './node-kind.js';
 import { getDeviceCfg } from './device-config.js';
 
 /** ONE DEVICE VOCABULARY FOR EVERY LOOKUP AND COMPARE. Task
@@ -217,6 +220,75 @@ class TracerouteManager extends EventEmitter {
     return radio;   // an explicit MAC or node id
   }
 
+  // ── _decideAim(to) ─────────────────────────────────────────────────────────
+  //
+  // THE DECISION THE REWORK WAS FOR. Peter, 2026-08-05: "right now traceroute
+  // still points at eps".
+  //
+  // Until now _resolveAim was a flat switch on a static per-mode setting —
+  // whatever the config said, every time, regardless of what we know about the
+  // target. That shipped the instrumentation and skipped the intelligence.
+  //
+  // WHY AIMING AT THE ENDPOINT IS WRONG. Measured over 2726 completed traces:
+  // the first hop is inside the endpoint's 35 degree beam only 12.9% of the
+  // time, and more than 135 degrees away — behind the antenna — 53.4% of the
+  // time. Mean separation 102.6 degrees. We transmit to the DOOR, not to the
+  // destination, so the destination's bearing is the wrong thing to point at.
+  //
+  // THE RULE, in evidence order:
+  //
+  //   1. Known route, door FAR      -> aim at the door. It is the node our
+  //                                    transmission actually has to reach, and
+  //                                    it is far enough for gain to matter.
+  //   2. Known route, door CLOSE    -> try to BYPASS it: aim at hop 2, if we
+  //                                    provably reach hop 2 directly and it is
+  //                                    better aligned to the endpoint. Reaching
+  //                                    it removes a hop permanently.
+  //                                    Measured: 155 such cases. PJ1 alone has
+  //                                    44 — endpoint 62deg/3km, hop1 T4 at
+  //                                    274deg, hop2 WLCD at 62deg/3km.
+  //   3. Known route, door close,
+  //      no bypass candidate        -> do not rotate. The door is inside omni
+  //                                    reach and the beam is theatre.
+  //   4. No known route             -> aim at the endpoint. NOT to follow a
+  //                                    route — there isn't one — but as a bet on
+  //                                    DIRECT contact, which is the only thing
+  //                                    that creates a new door.
+  //
+  // Every branch records its own mode, so the row says which rule fired.
+  _decideAim(to) {
+    const none = { az: null, aimTarget: null, mode: 'none' };
+    let route = null;
+    try { route = JSON.parse(stmts.latestRouteTo.get(to)?.route ?? 'null'); } catch { /* no route */ }
+
+    // 4. Nothing known: bet on a direct contact.
+    if (!Array.isArray(route) || !route.length) {
+      const b = bearingToNode(to);
+      return b == null ? none : { az: b, aimTarget: to, mode: 'endpoint' };
+    }
+
+    const d = doorAim(to);
+    // 1. The door is far enough that the beam buys something.
+    if (d && d.az != null && d.needsBeam) return { az: d.az, aimTarget: d.door, mode: 'door' };
+
+    // 2. The door is close. Can we skip it?
+    const hop2 = route[1];
+    if (hop2 != null && hop2 !== 0xffffffff && provenDoors().has(Number(hop2))) {
+      const b2 = bearingToNode(hop2), be = bearingToNode(to);
+      if (b2 != null && be != null) {
+        const sep = (x, y) => Math.abs(((x - y + 540) % 360) - 180);
+        const b1 = d?.az;
+        // Only worth it if hop2 points nearer the endpoint than the door does —
+        // otherwise we are just aiming somewhere else for no reason.
+        if (b1 == null || sep(b2, be) < sep(b1, be)) {
+          return { az: b2, aimTarget: hop2, mode: 'bypass' };
+        }
+      }
+    }
+    // 3. Close door, no bypass worth taking: do not spend the beam.
+    return none;
+  }
+
   /** Where to point, and WAIT FOR IT TO GET THERE.
    *
    *  Returns { mode, target, az, beam_deg, settled } — the provenance that goes
@@ -230,6 +302,7 @@ class TracerouteManager extends EventEmitter {
 
     let az = null, aimTarget = null, mode = 'none';
     if (typeof want === 'number') { az = want; mode = 'endpoint'; }
+    else if (want === 'auto')     ({ az, aimTarget, mode } = this._decideAim(to));
     else if (want === 'door') {
       const d = doorAim(to);
       if (d && d.az != null) { az = d.az; aimTarget = d.door; mode = 'door'; }

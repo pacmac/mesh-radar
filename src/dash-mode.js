@@ -38,11 +38,16 @@ export const dashMode = new DashMode();
 // mission-runner._aim(), which is how DISC came to compute a door bearing and
 // discard it — aim-at-the-door never once executed.
 //
-//   aim:   'door' | 'endpoint' | 'none'
+//   aim:   'auto' | 'door' | 'endpoint' | 'none'
+//
+//   'auto' is the one that thinks — see traceroute._decideAim. The static
+//   choices are explicit overrides for experiments. ACTV and DISC both defaulted
+//   to a static choice, and ACTV's was 'endpoint', which measurement says is
+//   wrong 87.1% of the time.
 //   radio: 'auto' | 'omni' | 'yagi'      'auto' defers to the tx role
 const MODE_DEFAULTS = {
   pasv: { rx: 'non-rotator', tx: 'rx',      passive: true,  aim: 'none',     radio: 'auto' }, // passive: hear on non-rotator radios, re-trace via the hearer
-  actv: { rx: 'rotator',     tx: 'rotator', passive: false, aim: 'endpoint', radio: 'auto' }, // active: the aimed YAGI hears and transmits
+  actv: { rx: 'rotator',     tx: 'rotator', passive: false, aim: 'auto',     radio: 'auto' }, // active: the aimed YAGI hears and transmits
   scan: { rx: 'rotator',     tx: 'rotator', passive: false, aim: 'none',     radio: 'auto' }, // scan: the sweeping YAGI hears and transmits
   // DISC — discovery. Peter, 2026-08-02: "well this is a new mode isnt it?"
   //
@@ -67,7 +72,7 @@ const MODE_DEFAULTS = {
   // mode, so it works the OMNI while missions work the YAGI. The one real
   // conflict is airtime, and passive already yields on missionRunner.dispatching
   // for the seconds a mission packet is actually in the air.
-  disc: { rx: 'all',         tx: 'rotator', passive: true,  aim: 'door',     radio: 'auto' },
+  disc: { rx: 'all',         tx: 'rotator', passive: true,  aim: 'auto',     radio: 'auto' },
 };
 const MODE_NAME = { 0: 'pasv', 1: 'actv', 2: 'scan', 3: 'disc' };
 
@@ -120,7 +125,14 @@ export function isTransmitterForMode(mode, mac) {
 export const MODE_KEYS = ['pasv', 'actv', 'scan', 'disc'];
 export const RX_ROLES  = ['rotator', 'non-rotator', 'primary', 'all'];
 export const TX_ROLES  = ['rotator', 'primary', 'non-rotator', 'all', 'rx'];
-export const AIM_MODES   = ['door', 'endpoint', 'none'];
+// 'auto' FIRST, because it is the one that thinks. The others are explicit
+// overrides — useful for experiments, wrong as a standing policy.
+//
+// The static choices are what Peter objected to: "right now traceroute still
+// points at eps". Aiming at the endpoint puts the actual first hop OUTSIDE the
+// 35 degree beam 87.1% of the time (n=2726), and more than 135 degrees out —
+// behind the antenna — 53.4% of the time.
+export const AIM_MODES   = ['auto', 'door', 'endpoint', 'none'];
 export const RADIO_MODES = ['auto', 'omni', 'yagi'];
 
 // LABELS LIVE HERE TOO. Naming a thing is a decision, and the browser does not

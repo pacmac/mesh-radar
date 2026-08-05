@@ -936,6 +936,15 @@ export const stmts = {
   // Roles as the mesh last reported them. The LIVE node cache does not carry a
   // role — nodeinfo populates the store, not the in-memory row — so without this
   // every node classified as `endpoint` and `router` was unreachable.
+  // The most recent COMPLETED route to a target — the evidence the aim decision
+  // rule reasons over. Most recent rather than modal: routes change, and the
+  // freshest one is the best guess at what the mesh will do next.
+  latestRouteTo: db.prepare(`
+    SELECT route FROM traceroute_history
+     WHERE to_num = ? AND status = 'ok' AND json_array_length(route) > 0
+     ORDER BY ts DESC LIMIT 1
+  `),
+
   allNodeRoles: db.prepare(`SELECT num, role FROM nodes WHERE role IS NOT NULL AND role != ''`),
 
   // Nodes we have EVER heard by radio. The complement is the MQTT-only set that

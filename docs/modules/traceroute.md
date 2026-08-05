@@ -1,7 +1,7 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: 471f2bacb47072ea972c9902d9377ee6b5413665273b04eace110b6c5216ece6
+source_hash: b7dc06f551217edf06ec8b8a1cf87497095445d26fb135194dba55f0fa2f8df5
 updated: 2026-08-03
 ---
 
@@ -675,3 +675,73 @@ literal could disagree with the declared default.
 `discoveryConfig()` merges DEFAULTS under the stored value. All seven converted
 except `db.js:1254`, which is left alone deliberately: `config-api` imports `db`,
 so importing back would be circular. Recorded rather than worked around.
+
+## The aim DECISION rule (task `finish-pending-phases` Phase 1, 2026-08-05)
+
+Peter: *"right now traceroute still points at eps"*.
+
+He was right, and it is the substance of the rework rather than a detail. Until
+this, `_resolveAim` was a **flat switch on a static per-mode setting** — whatever
+the config said, every time, regardless of what we know about the target. The
+earlier work shipped the *instrumentation* (provenance columns, the MAC fix that
+made aiming possible at all) and skipped the *intelligence*.
+
+### Why aiming at the endpoint is wrong
+
+Measured over **2,726** completed traces:
+
+| | |
+|---|---|
+| first hop inside the endpoint's 35° beam | **12.9%** |
+| first hop more than 135° away — behind the antenna | **53.4%** |
+| mean separation, endpoint bearing vs first-hop bearing | **102.6°** |
+
+We transmit to the **door**, not to the destination. The destination's bearing is
+the wrong thing to point at.
+
+### The rule — `aim: 'auto'`
+
+```
+1. known route, door FAR        -> aim at the DOOR
+2. known route, door CLOSE      -> aim at HOP 2, if we provably reach it directly
+                                   AND it is better aligned than the door
+3. known route, close, no bypass-> DO NOT ROTATE. The beam is theatre.
+4. no known route               -> aim at the ENDPOINT — not to follow a route,
+                                   there isn't one, but as a bet on DIRECT
+                                   contact, the only thing that creates a door.
+```
+
+Branch 2 is the one with a payoff: **155 cases** where hop1 points >90° away from
+the endpoint, hop2 is better aligned, and we provably reach hop2 directly. PJ1
+alone has 44 — endpoint 62°/3 km, hop1 T4 at 274°, hop2 WLCD at 62°/3 km.
+
+The bypass may only target a relay in `provenDoors()` — one we have actually
+transmitted to. Aiming at a relay we merely know about would be a guess dressed
+as evidence.
+
+Each branch records its own `aim_mode` (`door` / `bypass` / `endpoint` / `none`),
+so the stored row says which rule fired.
+
+### `'auto'` is now the default for ACTV and DISC
+
+ACTV was `aim: 'endpoint'` — the measurably wrong strategy, in the mode most
+likely to be pointing. Both now default to `auto`; the static modes remain as
+explicit overrides for experiments.
+
+### Verified 2026-08-05
+
+| target | route | decision |
+|---|---|---|
+| RAK1 11 km | known, door close | `none` |
+| WLCD 3 km | known, door close | `none` |
+| GZG 47 km | known, door close | `none` |
+| GARG 2.5 km | **none** | `endpoint`, az 121 |
+
+Most outcomes are `none`, and that is correct: T4 (5.3 km) and fir (13.1 km) carry
+89.7% of our traffic and both sit well inside `beamWorthItKm()`. The rule now
+declines to spend the beam instead of pointing it at destinations.
+
+**Still not observable in production:** DISC transmits on `primary` (the OMNI), so
+`_resolveAim` returns "radio is not on the rotator" and the yagi never moves —
+last 200 attempts, `aim_mode = none` 199 times. Branches 1–3 change nothing
+visible until `disc.tx = 'rotator'`. That is an operator decision, not a code one.
