@@ -1,7 +1,7 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: d7c5f2cc5a034e8b1f349744caaebbe7f64f7a01d5f95a3a626eba6e45a90201
+source_hash: 1a3be1abce248980a71f2fcb36697fbce0f1b06a79d570a9ebe88d57b8b21126
 updated: 2026-08-03
 ---
 

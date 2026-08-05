@@ -8,6 +8,9 @@ import { captureRelayObservation } from './relay-observation.js';
 import { noteInboundText } from './callout.js';
 import { defineHook } from './hooks.js';
 import { haversine } from './utils.js';
+// Roles arrive unvalidated — the gw sends the number 200 for three of our own
+// radios, which became the string '200.0' in a TEXT column and matched no role.
+import { normaliseRole } from './node-kind.js';
 
 // A TEXT FROM SOMEONE WE NEVER OR RARELY HEAR. Peter, 2026-08-03: "a text
 // message from a node we have never heard before or rarely hear?"
@@ -93,7 +96,7 @@ function _upsertCache(num, nodeId, u, pos, lastHeard) {
     short_name: u.short_name ?? null,
     long_name:  u.long_name  ?? null,
     hw_model:   u.hw_model   ?? null,
-    role:       u.role       ?? null,
+    role:       normaliseRole(u.role),
     lat:  validPos ? lat        : null,
     lon:  validPos ? lon        : null,
     alt:  validPos ? (pos?.altitude ?? null) : null,
@@ -229,7 +232,7 @@ export function handleEvent(event) {
       stmts.upsertNode.run({
         num: event.from_num, node_id: data.id ?? null,
         short_name: data.short_name ?? null, long_name: data.long_name ?? null,
-        hw_model: data.hw_model ?? null, role: data.role ?? null,
+        hw_model: data.hw_model ?? null, role: normaliseRole(data.role),
         last_heard: ts, snr: evSnr, rssi: evRssi,
         hops: event.hops ?? null, lat: null, lon: null, alt: null,
         battery: null, voltage: null, channel_util: null, air_util_tx: null, uptime_seconds: null,
@@ -541,7 +544,7 @@ function handlePacket(packet, device, ts, replay) {
       short_name:    u.short_name ?? null,
       long_name:     u.long_name  ?? null,
       hw_model:      u.hw_model   ?? null,
-      role:          u.role       ?? null,
+      role:          normaliseRole(u.role),
       last_heard:    nodeInfoTs,
       snr:           pktSnr,
       rssi:          pktRssi,
@@ -602,7 +605,7 @@ function handleNodeInfo(data, device) {
     short_name:    u.short_name  ?? null,
     long_name:     u.long_name   ?? null,
     hw_model:      u.hw_model    ?? null,
-    role:          u.role        ?? null,
+    role:          normaliseRole(u.role),
     last_heard:    node.last_heard ?? null,
     // NEVER the nodedb aggregate. RSSI_ATTRIBUTION_SPEC's invariant is that
     // nodes.rssi/snr hold the last DIRECT reception; every other write path here

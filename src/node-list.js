@@ -3,6 +3,7 @@ import { getConfig, setConfig, getMqttNode, listFavourites, listFavouriteNodes, 
 import { getRotatorAddress } from './device-config.js';
 import { passesFilter, ownDeviceNums, rfHeardNums } from './node-filter.js';
 import { haversine, bearing } from './utils.js';
+import { normaliseRole } from './node-kind.js';
 
 const NEW_NODE_TTL = 86400; // 24 hours
 
@@ -56,7 +57,10 @@ function enrichFromCache(node) {
       short_name: cached.short_name,
       long_name:  cached.long_name,
       hw_model:   cached.hw_model ?? node.user?.hw_model ?? null,
-      role:       cached.role     ?? node.user?.role      ?? null,
+      // Normalised on the way OUT too: the cache is populated from the live gw
+      // feed, not only from the DB, so an unvalidated role reaches the browser
+      // and node-filter without ever passing through a write path.
+      role:       normaliseRole(cached.role ?? node.user?.role),
     },
     position: (node.position?.latitude_i != null) ? node.position : (
       (cached.lat != null && Math.abs(cached.lat) <= 90 && Math.abs(cached.lon) <= 180) ? {
@@ -573,7 +577,24 @@ class NodeList extends EventEmitter {
       return { ...n, _km: haversine(hp.lat, hp.lon, lat, lon), _az: bearing(hp.lat, hp.lon, lat, lon) };
     });
 
-    return withGeo;
+    // ROLE IS NORMALISED ON THE WAY OUT, not only on the way into the DB.
+    //
+    // _filter() hands back live CACHE entries, whose `user` comes straight off
+    // the gw feed and never passes a write path. GET /nodes is `nodeList.nodes`,
+    // which is this — so an unvalidated role reached the browser and
+    // node-filter's whitelist test even after the DB was cleaned. Measured: the
+    // DB read 0 bad roles while /nodes was still serving `role: 200` for BNCH.
+    //
+    // Copy only when there is something to change, so the common case does not
+    // clone the whole cache on every emit, and never mutate the shared entry.
+    const normalised = withGeo.map(n => {
+      const raw = n.user?.role;
+      if (raw == null) return n;
+      const clean = normaliseRole(raw);
+      return clean === raw ? n : { ...n, user: { ...n.user, role: clean } };
+    });
+
+    return normalised;
   }
 
   _scheduleEmit() {

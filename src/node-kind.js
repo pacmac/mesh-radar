@@ -45,6 +45,52 @@ export function isRelayRole(role) {
   return RELAY_ROLES.has(String(role || '').toUpperCase());
 }
 
+// ── role normalisation ───────────────────────────────────────────────────────
+//
+// EVERY ROLE WE HAVE EVER OBSERVED, across firmware generations. This is not a
+// menu of roles to offer — it is the set we accept off the wire. ROUTER_CLIENT
+// and REPEATER are retired in current firmware but still arrive from old nodes,
+// and CLIENT_HIDDEN is current and was missing from the list in the comment at
+// the top of this file until two live nodes (KITE, d1b0) turned up holding it.
+export const KNOWN_ROLES = new Set([
+  'CLIENT', 'CLIENT_MUTE', 'CLIENT_BASE', 'CLIENT_HIDDEN',
+  'ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'REPEATER',
+  'TRACKER', 'TAK', 'TAK_TRACKER', 'SENSOR', 'LOST_AND_FOUND',
+]);
+
+const _warnedRoles = new Set();
+
+/** Coerce whatever arrived into a role name, or null.
+ *
+ *  WHY THIS EXISTS: the gw sends `user.role` as the NUMBER 200 for three of our
+ *  own radios. Bound straight into a TEXT-affinity column that becomes the
+ *  string '200.0' — the '.0' is ours, a JS float landing in SQLite. It then
+ *  matches no role, so node-filter's whitelist test excluded our own radios from
+ *  the radar.
+ *
+ *  NUMBERS ARE NOT MAPPED TO NAMES. The enum ordinals cannot be verified against
+ *  the device from here, and guessing them would mislabel nodes — worse than
+ *  admitting we do not know. Normal traffic already arrives as strings, so a
+ *  numeric role is the anomaly and null ("unknown") is the honest answer.
+ *  node-filter already defaults a null role to CLIENT, matching the protobuf
+ *  omit-the-default semantics it documents.
+ *
+ *  Unrecognised values are logged ONCE each, so a new firmware role shows up as
+ *  a line to act on rather than silently becoming null forever.
+ */
+export function normaliseRole(role) {
+  if (role == null || role === '') return null;
+  const s = String(role).trim().toUpperCase();
+  if (!s) return null;
+  if (KNOWN_ROLES.has(s)) return s;
+  if (!_warnedRoles.has(s)) {
+    _warnedRoles.add(s);
+    console.warn(`[node-kind] unrecognised role ${JSON.stringify(role)} -> null `
+               + `(add to KNOWN_ROLES if this is a real firmware role)`);
+  }
+  return null;
+}
+
 // ── proven doors ─────────────────────────────────────────────────────────────
 //
 // A door is a node that has been the FIRST HOP of a completed traceroute, which

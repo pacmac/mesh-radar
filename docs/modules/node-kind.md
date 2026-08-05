@@ -1,7 +1,7 @@
 ---
 module: node-kind
 source: src/node-kind.js
-source_hash: 4bc5d55fb291bef61169c6daaf1cd596a263c3d52ee86c90f3c453cdb5484bfc
+source_hash: 30a645067b9ff55d6bd88f5aab94c018068a6c80e2ce946c660ab92dc5c463e0
 updated: 2026-08-05
 ---
 
@@ -156,3 +156,42 @@ per-viewer view preferences and change nothing about what a page may see.
 The pre-existing `node_filters.hide_mqtt` tests a per-node `via_mqtt` flag that
 is **never populated** — the `nodes` table has no such column — so it has always
 been dead. Left in place rather than removed, but it is not the working filter.
+
+## Role normalisation
+
+`role` arrived unvalidated. The gw sends `user.role` as the **number 200** for
+three of our own radios (BNCH, GARG, SOAK); bound into a TEXT-affinity column
+that became the string `'200.0'` — the `.0` is ours, a JS float landing in
+SQLite. It then matched no role, so `node-filter.js:92`'s whitelist test excluded
+our own radios from the radar.
+
+What 200 means is a **mesh-gw question and is not answered here.**
+
+`normaliseRole(v)` uppercases and trims, returns a member of `KNOWN_ROLES`, and
+returns `null` for anything else — logging each unrecognised value **once**, so a
+genuinely new firmware role surfaces as a line to act on instead of silently
+becoming null forever.
+
+**Numbers are deliberately NOT mapped to enum names.** The ordinals cannot be
+verified against the device from here, and guessing them would mislabel nodes —
+the failure the "ask the device, don't trust the docs" rule exists to prevent.
+Normal traffic already arrives as strings, so a numeric role is the anomaly and
+`null` ("unknown") is the honest answer. `node-filter` already defaults a null
+role to `CLIENT`, matching the protobuf omit-the-default semantics it documents.
+
+`KNOWN_ROLES` spans firmware generations, because we observe several at once.
+`ROUTER_CLIENT` and `REPEATER` are retired but still arrive from old nodes;
+`CLIENT_HIDDEN` is current and was **missing** from the canonical list in this
+module's own header comment until two live nodes (KITE, d1b0) turned up holding
+it. It is what we accept off the wire, not a menu of roles to offer.
+
+### Normalised on the way out as well as in
+
+Applied at four write sites in `persist.js` — and then in `node-list._filter()`,
+which is the one that mattered. `_filter()` hands back live **cache** entries
+whose `user` comes straight off the gw feed and never passes a write path, and
+`GET /nodes` is exactly that. Measured after the write-path fix: the DB read 0
+bad roles while `/nodes` was still serving `role: 200` for BNCH.
+
+The out-bound pass copies only when a value actually changes, so the common case
+does not clone the whole cache on every emit and never mutates the shared entry.
