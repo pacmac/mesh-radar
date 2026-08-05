@@ -180,7 +180,10 @@ export const configMixin = {
 
   async saveSection(sec) {
     const el = document.getElementById('sec_' + sec.name);
-    const formValues = collectForm(el, sec.schema.fields);
+    // Pass what the READ returned, so fields the gw omitted are not invented.
+    // See collectForm's note — this is what stopped a radio's fixed_position
+    // being cleared by an unrelated edit in the same section.
+    const formValues = collectForm(el, sec.schema.fields, sec.data ?? {});
     const target = this.cfgRadioId || this.activeNodeId;
     await submitOp('radio_config_section', target, { section: sec.name, values: formValues });
     // Refresh the form UI with the verified server state

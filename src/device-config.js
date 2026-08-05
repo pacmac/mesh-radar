@@ -164,6 +164,13 @@ router.put('/:address', (req, res) => {
   if (ble_pin !== undefined)             updated.ble_pin             = ble_pin || null;
 
   const homePosChanged = (fixed_lat !== undefined || fixed_lon !== undefined);
+  // ABSENT IS NOT CLEARED — the `!== undefined` guard already gets that right, so
+  // a partial PATCH is safe. What is NOT safe is a form that always submits every
+  // field: a blank input arrives as '' and wipes a stored position. That is the
+  // shape that emptied fixed_lat/fixed_lon on all four devices.
+  //
+  // An explicit '' or null still clears, because an operator must be able to
+  // unset one. The protection is that a caller who says nothing changes nothing.
   if (fixed_lat !== undefined) updated.fixed_lat = fixed_lat != null && fixed_lat !== '' ? Number(fixed_lat) : null;
   if (fixed_lon !== undefined) updated.fixed_lon = fixed_lon != null && fixed_lon !== '' ? Number(fixed_lon) : null;
   if (color !== undefined)     updated.color     = color || null;

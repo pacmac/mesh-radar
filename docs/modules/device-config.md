@@ -1,7 +1,7 @@
 ---
 module: device-config
 source: src/device-config.js
-source_hash: 1caf8a959e858fec7755edb2e23506606bc944f1f94977a62fa693a3ff2950c5
+source_hash: 3b640f303c65341e8714756573d01fd61ec124df651e6311194767675758ac15
 updated: 2026-07-16
 ---
 
@@ -175,3 +175,57 @@ GET /device-config remains for tooling but the browser no longer calls it.
   legacy `!hexid` key (as stored). Called by `device-remove.js`.
 - One-time idempotent purge at module load deletes any malformed
   `device_cfg.*` rows, logging each purged key.
+
+## Absent is not cleared, and a sparse read must not become a write (2026-08-05)
+
+Peter: *"I have set that several times, something wiped it out"* — home elevation
+and the OMNI/YAGI fixed positions.
+
+Three paths conflated **"not supplied"** with **"set to nothing"**. All three are
+fixed; the third is the one that reached the radios.
+
+| path | was | now |
+|---|---|---|
+| `PUT /home_pos` (`index.js`) | any field absent from the body was written as `null` — a PUT carrying only `lon` erased the latitude, and `op-manager`'s `home_position` op declares `example_payload {lat: null, lon: null}` | a key absent from the body leaves the stored value alone; an explicit `''`/`null` still clears |
+| `device-config` `fixed_lat/lon` | already guarded with `!== undefined`, but a form submitting a blank input sends `''`, which clears | unchanged in behaviour, now documented — the protection is that a caller who says nothing changes nothing |
+| `collectForm` → radio section PUT | submitted **every** field in the schema on every save | submits only fields the READ returned, or that the user actually touched |
+
+### The third one is how a radio lost `fixed_position`
+
+`mesh-gw`'s `GET /{node_id}/config/{section}` returns **only non-default fields**.
+`collectForm` submitted every field in the schema. So a boolean the read omitted
+rendered as an unchecked box and went back on the wire as an explicit `false` —
+an unrelated edit anywhere in the section silently cleared it.
+
+Evidence: OMNI held `fixed_position: true`, YAGI did not have the key at all —
+same schema, same form. Both have `gps_mode: NOT_PRESENT`, so neither can
+re-acquire a position on its own, which is why YAGI could not recover.
+
+The gw's own rejection message names the fields its read returned as the
+**required** ones, so omitting the rest is accepted and leaves them untouched.
+That is what makes the fix safe rather than merely quieter.
+
+It also closes a worse race: if the read had not returned, the form was blank and
+that blank form could be submitted as real values. Now nothing is submitted and
+the write is rejected loudly instead of clobbering the radio.
+
+`collectForm(container, fields)` without the third argument behaves exactly as
+before, so the other four callers are unaffected.
+
+### `home.alt`
+
+New. It never existed — zero references in `src/` or `public/` before this — which
+is why setting it never persisted. Metres above sea level at the mast base.
+Nothing else in the system had an elevation to work from, including the link
+budget.
+
+### Restored 2026-08-05
+
+- `home.lat/lon` `51.0263296, -3.1588352` (were intact), `home.alt` **30 m**
+  (SRTM bare-earth at the mast base — revise once the mast height is known).
+- `device_cfg.fixed_lat/lon` set to the same on both OMNI and YAGI. Peter:
+  *"the radios should be identical to our real home position."*
+- Pushed to both radios (`PUT /{id}/fixed_position`, `verified:true`), and
+  YAGI's `fixed_position` flag re-enabled — a position packet does not set it,
+  it is a separate field in the position section.
+- Both radios now report `fixed_position = True`.

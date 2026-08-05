@@ -16,11 +16,36 @@ export const FILTER_CFG_KEY = {
   nodeSource: 'node_filters.node_source',
 };
 
+// SEED FROM THE SCHEMA DEFAULT WHEN THE READ OMITTED THE FIELD.
+//
+// This is the bug that turned a radio's fixed_position off. mesh-gw's
+// GET /{node_id}/config/{section} returns ONLY non-default fields, and
+// collectForm() submits EVERY field in the section on every save. So a boolean
+// the gw omitted rendered as an unchecked box and went back on the wire as an
+// explicit `false` — an unrelated edit in the same section silently cleared it.
+//
+// Evidence: OMNI still has fixed_position:true, YAGI does not have the key at
+// all, same schema and same form. Both have gps_mode NOT_PRESENT, so neither can
+// re-acquire a position on its own.
+//
+// `field.default` (from the gw's schema) is used when the data object has no
+// entry for the field, so an omitted field renders at its TRUE default rather
+// than at the widget's default. Where the schema declares no default we fall
+// through to the previous behaviour, which is the best available.
+//
+// This does not fix the underlying asymmetry — a GET that cannot say "unchanged"
+// means a whole-section PUT can never be perfectly safe. That is open with
+// mesh-gw as #18/#19. This removes the damage we can remove on our side.
+function _seed(field, data) {
+  if (data && Object.prototype.hasOwnProperty.call(data, field.name)) return data[field.name];
+  return field.default !== undefined ? field.default : undefined;
+}
+
 export function buildForm(fields, data, path, opts = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'grid grid-cols-1 sm:grid-cols-2 gap-3';
   for (const field of fields)
-    wrap.appendChild(buildField(field, data?.[field.name], path.concat(field.name), opts));
+    wrap.appendChild(buildField(field, _seed(field, data), path.concat(field.name), opts));
   return wrap;
 }
 
@@ -129,8 +154,11 @@ export function buildField(field, value, path, opts = {}) {
 
   input.addEventListener('focus',  () => { ctl.classList.add('field-focused'); });
   input.addEventListener('blur',   () => { ctl.classList.remove('field-focused'); });
-  input.addEventListener('input',  () => { _formRoot(input)?.setAttribute('data-dirty', '1'); });
-  input.addEventListener('change', () => { _formRoot(input)?.setAttribute('data-dirty', '1'); });
+  // PER-INPUT dirty, as well as per-form. The form-level flag says "something
+  // changed"; only the per-input flag says WHICH, and collectForm needs that to
+  // avoid submitting values the user never touched.
+  input.addEventListener('input',  () => { input.dataset.dirty = '1'; _formRoot(input)?.setAttribute('data-dirty', '1'); });
+  input.addEventListener('change', () => { input.dataset.dirty = '1'; _formRoot(input)?.setAttribute('data-dirty', '1'); });
 
   ctl.appendChild(input);
   if (field.hint) {
@@ -145,17 +173,48 @@ export function buildField(field, value, path, opts = {}) {
   return ctl;
 }
 
-export function collectForm(container, fields) {
-  return _collectFromInputs(container, fields, []);
+/** Collect a section's values for submission.
+ *
+ *  `loaded` is the object the READ returned. When supplied, a field is included
+ *  only if the read carried it, or the user actually touched the input.
+ *
+ *  WHY: mesh-gw's GET returns only NON-DEFAULT fields, while this used to submit
+ *  every field in the schema. A boolean the read omitted rendered as an unchecked
+ *  box and was written back as an explicit `false` — which is how a radio's
+ *  fixed_position got turned off by an unrelated edit in the same section.
+ *
+ *  The gw's own rejection message names the fields the read returned as the
+ *  REQUIRED ones, so omitting the rest is accepted and leaves them untouched.
+ *
+ *  It also fixes the worse race: if the read has not returned yet the form is
+ *  blank, and previously that blank form could be submitted as real values.
+ *  Now nothing is submitted, and the gw rejects the write loudly instead of
+ *  silently clobbering the radio.
+ *
+ *  Called without `loaded` the behaviour is unchanged, so the other four callers
+ *  keep working exactly as before. */
+export function collectForm(container, fields, loaded = undefined) {
+  return _collectFromInputs(container, fields, [], loaded);
 }
 
-function _collectFromInputs(container, fields, path) {
+function _collectFromInputs(container, fields, path, loaded = undefined) {
   const out = {};
   for (const field of fields) {
     const p = path.concat(field.name);
-    if (field.type === 'object') { out[field.name] = _collectFromInputs(container, field.fields, p); continue; }
+    if (field.type === 'object') {
+      out[field.name] = _collectFromInputs(container, field.fields, p, loaded?.[field.name]);
+      continue;
+    }
+    // A field the form never rendered must not be invented as a value. Without
+    // this, a section whose schema is wider than the rendered form submits
+    // defaults for the gaps — the same clobber in a different disguise.
     const input = container.querySelector(`[data-field="${p.join('.')}"]`);
     if (!input || input.disabled) continue;
+    if (loaded !== undefined) {
+      const wasRead = loaded && Object.prototype.hasOwnProperty.call(loaded, field.name);
+      const touched = input.dataset.dirty === '1';
+      if (!wasRead && !touched) continue;      // never read, never touched -> do not write
+    }
     out[field.name] = _readFieldValue(input, field);
   }
   return out;

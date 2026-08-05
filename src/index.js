@@ -247,16 +247,40 @@ app.use('/device-config', deviceConfigRouter);
 app.use('/device', deviceRemoveRouter);
 
 app.get('/home_pos', (_req, res) => {
-  res.json({ lat: getConfig('home.lat', null), lon: getConfig('home.lon', null) });
+  res.json({ lat: getConfig('home.lat', null), lon: getConfig('home.lon', null),
+             alt: getConfig('home.alt', null) });
 });
 
+// ABSENT IS NOT THE SAME AS CLEARED.
+//
+// This wrote null for any field the request did not carry, so a PUT with only
+// `lon` erased the latitude — and op-manager's `home_position` operation declares
+// example_payload {lat: null, lon: null}, which would erase both. Peter, 2026-08-05:
+// "I have set that several times, something wiped it out."
+//
+//   key absent from the body  -> leave the stored value alone
+//   key present and empty ('' or null) -> the caller means CLEAR, honour it
+//
+// Same distinction now applied in device-config.js for fixed_lat/fixed_lon.
+// The home position is the origin every distance, bearing and cluster in this
+// system is measured from; silently nulling it on a partial write is the most
+// destructive thing this endpoint could do.
 app.put('/home_pos', (req, res) => {
-  const lat = req.body.lat != null && req.body.lat !== '' ? Number(req.body.lat) : null;
-  const lon = req.body.lon != null && req.body.lon !== '' ? Number(req.body.lon) : null;
-  setConfig('home.lat', lat);
-  setConfig('home.lon', lon);
+  const upd = (key, field) => {
+    if (!(field in req.body)) return;                       // absent: unchanged
+    const v = req.body[field];
+    setConfig(key, (v === '' || v == null) ? null : Number(v));
+  };
+  upd('home.lat', 'lat');
+  upd('home.lon', 'lon');
+  // HOME ELEVATION — metres above sea level, ground at the mast base.
+  // Never existed before 2026-08-05, which is why "I set it several times" never
+  // persisted: there was no field. Needed by any link-budget or terrain maths,
+  // none of which currently has an elevation to work from.
+  upd('home.alt', 'alt');
   nodeList.refilter();
-  res.json({ lat, lon });
+  res.json({ lat: getConfig('home.lat', null), lon: getConfig('home.lon', null),
+             alt: getConfig('home.alt', null) });
 });
 
 app.use('/rotator', rotatorRouter);
