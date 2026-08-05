@@ -1,7 +1,7 @@
 ---
 module: app-config
 source: public/app-config.js
-source_hash: 61aa57ed1897bf818de21a0b7c5b2e4ece93334c984a32fe1dff4cf603f99021
+source_hash: 8ad69b816022d4e6c0b95d15ccd6a2770817a58282e299a8c26fe521338c762a
 updated: 2026-08-03
 ---
 
@@ -165,3 +165,33 @@ mounts; ops verify via `submitOp` (op-client.js).
   (`browser-page-playwright-audit`, 2026-07-23).
 - Regression: sections (lora form) and owner form still load — their
   endpoints are unaffected.
+
+## The callout transmit switch applies immediately
+
+Peter, 2026-08-05: *"I switched off callout broadcasts but it's still
+broadcasting."*
+
+The toggle was `x-model="calloutCfg.enabled"` and nothing else. The server was
+written **solely** by the Save button, so flipping the switch changed local Alpine
+state and left the transmitter running: the UI read "off" while callouts went out
+on the **public mesh** three times in the following two hours (last 17:23).
+
+A UI that displays "off" over a live transmitter is worse than one with no switch
+at all, and a kill switch that needs a second click on a different control is not
+a kill switch.
+
+`setCalloutEnabled(on)` therefore writes on `@change`:
+
+- **sends only `enabled`.** The route treats absent keys as unchanged, so hitting
+  the kill switch cannot commit a half-edited template or an in-progress number
+  field as a side effect. Verified: an `enabled`-only write left all 5 templates
+  and `min_km 50` intact.
+- **re-reads** afterwards rather than trusting the click, and
+- **reverts the toggle** if the write failed, so the switch can never disagree
+  with the transmitter.
+
+Everything else on the callout form still requires Save — the label says so,
+because the two behaviours now differ and the difference matters.
+
+Verified with a real browser click (not curl): server `false → true`, templates
+intact, then back to `false`.

@@ -1,7 +1,7 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: 738d25264f1f8626fae553a641d8b1453d952677fa4e11ba6064de2ea7923a85
+source_hash: 6ea6ff7bf763b9858fef451f676edac9728cee23d4ceea2c9d6f861e871246ee
 updated: 2026-08-03
 ---
 
@@ -263,3 +263,15 @@ Verified after: all four inputs at top **305**, spread **0**.
 
 The Discovery tab was checked for the same fault and is clean — 12 number inputs,
 zero wrapped labels — so this was specific to the new four-across grid.
+
+## The callout switch is not a form field
+
+"Send public callouts" carries `@change="setCalloutEnabled($event.target.checked)"`
+and applies on the spot, unlike every other control on the page, which waits for
+Save. That asymmetry is deliberate: it transmits on the **public mesh**, and it
+was previously `x-model` only — so it showed "off" while broadcasting (see
+`app-config.md`). The helper text states the difference so the inconsistency is
+explained rather than surprising.
+
+Any future transmit-affecting control on this page follows the same rule: it
+takes effect when clicked, or it is not a switch.

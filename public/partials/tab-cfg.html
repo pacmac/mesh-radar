@@ -428,8 +428,11 @@
                   <div class="label py-1">
                     <span class="label-text text-sm font-semibold">Send public callouts</span>
                   </div>
-                  <input type="checkbox" class="toggle toggle-sm" x-model="calloutCfg.enabled">
-                  <div class="label py-0"><span class="label-text-alt text-xs opacity-70">Off by default. Nothing transmits until this is on.</span></div>
+                  <!-- Applies on the spot — a transmit switch must not wait for
+                       Save. See setCalloutEnabled() for what went wrong. -->
+                  <input type="checkbox" class="toggle toggle-sm" x-model="calloutCfg.enabled"
+                         @change="setCalloutEnabled($event.target.checked)">
+                  <div class="label py-0"><span class="label-text-alt text-xs opacity-70">Off by default. Nothing transmits until this is on. This switch applies immediately — the other settings need Save.</span></div>
                 </label>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">

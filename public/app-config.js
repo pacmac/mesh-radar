@@ -421,6 +421,37 @@ export const configMixin = {
     }
   },
 
+  /** The transmit switch acts IMMEDIATELY — it does not wait for Save.
+   *
+   *  Peter, 2026-08-05: "I switched off callout broadcasts but it's still
+   *  broadcasting". The toggle was x-model only, so the server was written
+   *  solely by the Save button: the switch read "off" while the radio kept
+   *  transmitting on the PUBLIC mesh, three times in the two hours after he
+   *  turned it off. A UI that shows "off" over a live transmitter is worse than
+   *  one with no switch at all.
+   *
+   *  Sends ONLY `enabled`, never the whole form — the route treats absent keys
+   *  as unchanged, so a half-edited template or an in-progress number field
+   *  cannot be committed as a side effect of hitting the kill switch.
+   *
+   *  Re-reads afterwards rather than trusting the click, and reverts the toggle
+   *  if the write failed, so the switch never disagrees with the transmitter. */
+  async setCalloutEnabled(on) {
+    const want = !!on;
+    this.calloutCfgError = '';
+    try {
+      await fetchJSON('/config/callout', 'PUT', { values: { enabled: want } });
+      await this.loadCalloutCfg();
+      if (this.calloutCfg.enabled !== want) {
+        this.calloutCfgError = 'The server did not accept that change.';
+      }
+    } catch (e) {
+      this.calloutCfg.enabled = !want;         // never show off while it transmits
+      this.calloutCfgError = `Could not turn callouts ${want ? 'on' : 'off'}: ${e.message}`;
+      setTimeout(() => { this.calloutCfgError = ''; }, 6000);
+    }
+  },
+
   async saveCalloutCfg() {
     this.calloutCfgSaving = true;
     this.calloutCfgSaved  = false;
