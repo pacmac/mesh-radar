@@ -69,7 +69,7 @@
           </div>
 
           <!-- ── band 1: how far can we get ────────────────────────────── -->
-          <div class="grid grid-cols-3 gap-3 flex-1 min-h-0 min-h-[15rem]">
+          <div class="grid grid-cols-3 gap-3 flex-1 min-h-[13rem]">
             <div class="card bg-base-100 border border-base-300 col-span-2 overflow-hidden">
               <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
                 <div class="flex items-baseline gap-6 shrink-0">
@@ -166,7 +166,7 @@
                      previous version deleted rows to stop the card clipping,
                      which is fixing a CSS bug by discarding data. -->
                 <div class="flex flex-col gap-1 shrink-0">
-                  <template x-for="r in (snapDist?.doors || [])" :key="r.num">
+                  <template x-for="r in (snapDist?.doors || []).slice(0, 5)" :key="r.num">
                     <div class="flex items-center gap-2.5">
                       <span class="text-sm font-mono opacity-60 w-20 shrink-0 truncate" x-text="r.name"></span>
                       <div class="flex-1 h-3 bg-base-300 rounded-sm overflow-hidden">
@@ -179,6 +179,14 @@
                   </template>
                   <div class="text-sm opacity-50" x-show="!(snapDist?.doors || []).length">
                     No completed routes in this window.
+                  </div>
+                  <!-- The remainder is STATED, not dropped. An earlier version
+                       deleted rows outright to make the card fit, and a later one
+                       hid them behind an in-card scrollbar; both lose the count. -->
+                  <div class="text-sm font-mono opacity-50"
+                       x-show="(snapDist?.doors || []).length > 5">
+                    + <span x-text="(snapDist?.doors || []).length - 5"></span> more
+                    carrying <span x-text="(snapDist?.doors || []).slice(5).reduce((s,d)=>s+d.uses,0)"></span> routes
                   </div>
                 </div>
               </div>
@@ -215,7 +223,7 @@
           </div>
 
           <!-- ── band 3: productive + machine ──────────────────────────── -->
-          <div class="grid grid-cols-3 gap-3 flex-1 min-h-0 min-h-[15rem]">
+          <div class="grid grid-cols-3 gap-3 flex-1 min-h-[13rem]">
             <div class="card bg-base-100 border border-base-300 col-span-2 overflow-hidden">
               <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
                 <div class="flex items-baseline gap-4">
