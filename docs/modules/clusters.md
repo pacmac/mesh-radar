@@ -3,7 +3,7 @@ module: clusters
 source:
   - src/clusters.js
   - src/clusters-api.js
-source_hash: 7989c3c578e09b12a4d394ad6b8bd7591a064826142d5e1c06dfe7250341c541
+source_hash: ae26f2790c83b39c7043764a46f5eb1dde2bd901491d28937aef9d0dadc1da07
 updated: 2026-08-05
 ---
 
@@ -120,3 +120,19 @@ The `unknown` rows are the immediately actionable finding: 11 nodes at 113 km on
 35°, and 7 at 178 km on 26°, that we have **never routed to at all**. `cluster-l`
 shows why purity needs its denominator read too — 100% on a single routed member
 out of 13.
+
+## Backend node filters apply here too (2026-08-05)
+
+Peter: *"node filters are backend filters that affect many pages and filter what
+any of them can see. the layers etc are user prefs and is different."*
+
+`candidateNodes()` therefore honours `node_filters.hide_mqtt_only` (default
+**true**). A node reached only over MQTT is absent from clusters as well as from
+the node list.
+
+It matters more here than anywhere else: the MQTT-only set is disproportionately
+**distant** — 193, 202, 245, 286, 291, 309 km. Leaving them in inflates cluster
+extents and our apparent reach with paths that never touched radio at all.
+
+Measured effect: loners 115 → 99, total clustered members 234, and 14 clusters
+still sit beyond 150 km on genuine RF evidence.

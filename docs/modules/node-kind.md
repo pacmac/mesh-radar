@@ -130,3 +130,29 @@ dashboard shows and is an operator decision:
 - have the radar draw from the store's positioned set rather than the live cache.
 
 Recorded rather than chosen.
+
+## MQTT-only nodes (`node_filters.hide_mqtt_only`, 2026-08-05)
+
+Peter: *"we are not really interested in that because that is cheating and does
+not use radio for the whole path, so that should be a node-filter with default
+to off."*
+
+`nodes.rf_last_heard` records when we last heard a node **over the air**.
+`last_heard` counts any arrival including MQTT; this counts RF only. Null means
+never heard by radio.
+
+- **Stamped forward** in `bridge-events.js`, only when `!ev.via_mqtt`.
+- **Backfilled at migration** from evidence already held: a local RSSI/SNR can
+  only come from our own radio, since an MQTT-delivered packet carries no local
+  signal reading. 958 rows backfilled; 887 nodes have RF evidence, 71 do not.
+- The backfilled timestamp is the best RF evidence we hold, **not necessarily the
+  true last RF reception** — older rows may have aged out of `signal_history`.
+  It is used as a has-ever-been-heard flag, which is what the filter needs.
+
+`node_filters.hide_mqtt_only` defaults to **true**. It is a BACKEND filter and so
+governs every page at once — distinct from the radar layer toggles, which are
+per-viewer view preferences and change nothing about what a page may see.
+
+The pre-existing `node_filters.hide_mqtt` tests a per-node `via_mqtt` flag that
+is **never populated** — the `nodes` table has no such column — so it has always
+been dead. Left in place rather than removed, but it is not the working filter.

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { getConfig, setConfig, getMqttNode, listFavourites, listFavouriteNodes, listObsTargets, stmts } from './db.js';
 import { getRotatorAddress } from './device-config.js';
-import { passesFilter, ownDeviceNums } from './node-filter.js';
+import { passesFilter, ownDeviceNums, rfHeardNums } from './node-filter.js';
 import { haversine, bearing } from './utils.js';
 
 const NEW_NODE_TTL = 86400; // 24 hours
@@ -465,8 +465,11 @@ class NodeList extends EventEmitter {
 
   _filter() {
     const ownNums = ownDeviceNums();
+    // Resolved ONCE per filter pass, not per node — it is a table scan behind a
+    // cache, and this runs over the whole cache on every emit.
+    const rfHeard = rfHeardNums();
     const filtered = Array.from(this._cache.values())
-      .filter(n => passesFilter(n, { scanActive: this._scanActive, ownNums }));
+      .filter(n => passesFilter(n, { scanActive: this._scanActive, ownNums, rfHeard }));
 
     // "Favourites are ALWAYS excluded from ALL filters" includes the implicit
     // filter of not having been heard yet: the live cache is in-memory, so a

@@ -570,12 +570,39 @@ if (!nodeinfoCols.includes('hops_away')) {
   db.exec(`ALTER TABLE nodeinfo ADD COLUMN hops_away INTEGER`);
 }
 
-const nodeCols = db.prepare(`PRAGMA table_info(nodes)`).all().map(r => r.name);
+const nodeCols = db.prepare(`PRAGMA table_xinfo(nodes)`).all().map(r => r.name);
 const envCols = ['temperature', 'relative_humidity', 'barometric_pressure'];
 for (const col of envCols) {
   if (!nodeCols.includes(col)) {
     db.exec(`ALTER TABLE nodes ADD COLUMN ${col} REAL`);
   }
+}
+
+// WHEN WE LAST HEARD THIS NODE OVER THE AIR. Peter, 2026-08-05, on nodes reached
+// via MQTT: "we are not really interested in that because that is cheating and
+// does not use radio for the whole path".
+//
+// `last_heard` counts any arrival including MQTT. This counts RF only, so a node
+// that has only ever reached us through the internet is distinguishable from one
+// we can actually hear. Null means never heard by radio.
+if (!nodeCols.includes('rf_last_heard')) {
+  db.exec(`ALTER TABLE nodes ADD COLUMN rf_last_heard INTEGER`);
+  // BACKFILL from evidence that already exists: a local RSSI/SNR can only come
+  // from our own radio receiving the packet — an MQTT-delivered packet carries
+  // no local signal reading. Measured at migration time: 336 of 369 positioned
+  // nodes had such evidence, 33 did not.
+  //
+  // The backfilled timestamp is the best RF evidence we hold, not necessarily
+  // the true last RF reception — older rows may have aged out of signal_history.
+  // It is used as a HAS-EVER-BEEN-HEARD flag, which is what the filter needs.
+  const n = db.prepare(`
+    UPDATE nodes SET rf_last_heard = COALESCE(
+      (SELECT MAX(s.ts) FROM signal_history s WHERE s.num = nodes.num),
+      (SELECT MAX(m.ts) FROM messages m WHERE m.from_num = nodes.num
+                                          AND (m.rssi IS NOT NULL OR m.snr IS NOT NULL)),
+      CASE WHEN nodes.rssi IS NOT NULL OR nodes.snr IS NOT NULL THEN nodes.last_heard END)
+     WHERE rf_last_heard IS NULL`).run().changes;
+  console.log(`[migrate] rf_last_heard backfilled from local signal evidence (${n} rows)`);
 }
 
 // Seed default alert rules (INSERT OR IGNORE preserves user customisations)
@@ -732,6 +759,11 @@ export const stmts = {
 
   // Persist the live-computed hops-away (getHopsAway). No-op if the node has no
   // nodeinfo row yet (same as upsertTraceroute) — reloaded via enrichFromCache.
+  // Stamped only when the packet did NOT arrive over MQTT.
+  touchRfHeard: db.prepare(`
+    UPDATE nodes SET rf_last_heard = MAX(COALESCE(rf_last_heard, 0), @ts) WHERE num = @num
+  `),
+
   upsertNodeHopsAway: db.prepare(`
     UPDATE nodeinfo SET hops_away = @hops, updated_at = unixepoch() WHERE num = @num
   `),
@@ -905,6 +937,10 @@ export const stmts = {
   // role — nodeinfo populates the store, not the in-memory row — so without this
   // every node classified as `endpoint` and `router` was unreachable.
   allNodeRoles: db.prepare(`SELECT num, role FROM nodes WHERE role IS NOT NULL AND role != ''`),
+
+  // Nodes we have EVER heard by radio. The complement is the MQTT-only set that
+  // node_filters.hide_mqtt_only removes.
+  rfHeardNums: db.prepare(`SELECT num FROM nodes WHERE rf_last_heard IS NOT NULL`),
 
   // The door a given endpoint most often leaves through — the per-node input to
   // a cluster's door purity (CLUSTERS_SPEC §3.1).
@@ -1838,6 +1874,12 @@ export function recentAimedTraceroutes(limit = 25) {
     WHERE tx_device IS NOT NULL AND rotator_az IS NOT NULL
     ORDER BY ts DESC LIMIT ?
   `).all(limit);
+}
+
+/** Record that we heard this node BY RADIO. Called only for non-MQTT packets. */
+export function touchRfHeard(num, ts) {
+  try { stmts.touchRfHeard.run({ num, ts: ts || Math.floor(Date.now() / 1000) }); }
+  catch { /* an unknown node has no row yet; nodeinfo will create it */ }
 }
 
 export function insertRangeTestEntry(entry) {

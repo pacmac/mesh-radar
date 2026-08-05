@@ -1,7 +1,7 @@
 ---
 module: node-filter
 source: src/node-filter.js
-source_hash: 3776d9cafca4d5629e47209ca629f54f71f8685244121006b24d0aeed106911d
+source_hash: 5ab6f3aeae0abe5e53f621aaa29de53bec0ca462974dc023e0ea3a189c55187b
 updated: 2026-07-03
 ---
 

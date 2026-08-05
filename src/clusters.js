@@ -82,13 +82,24 @@ function home() {
 // rather than a contact — and one such row would blow up every hull and extent.
 const MAX_PLAUSIBLE_KM = 500;
 
-/** Positioned nodes heard inside the window, with distance and bearing from home. */
+/** Positioned nodes heard inside the window, with distance and bearing from home.
+ *
+ *  HONOURS THE BACKEND NODE FILTER. Peter, 2026-08-05: "node filters are backend
+ *  filters that affect many pages and filter what any of them can see" — as
+ *  distinct from the radar layers, which are per-viewer view preferences.
+ *
+ *  So a node reached only over MQTT is absent from clusters as well as from the
+ *  node list. It matters here more than anywhere: the MQTT-only set is
+ *  disproportionately DISTANT (193-309 km), so leaving them in would inflate
+ *  cluster extents and our apparent reach with paths that never touched radio. */
 function candidateNodes(cfg, h) {
   const since = Math.floor(Date.now() / 1000) - cfg.window_days * 86400;
+  const hideMqttOnly = getConfig('node_filters.hide_mqtt_only', true);
   const rows = db.prepare(`
-    SELECT num, short_name, long_name, role, lat, lon, last_heard
+    SELECT num, short_name, long_name, role, lat, lon, last_heard, rf_last_heard
       FROM nodes
-     WHERE lat IS NOT NULL AND lat != 0 AND lon IS NOT NULL AND last_heard > ?`).all(since);
+     WHERE lat IS NOT NULL AND lat != 0 AND lon IS NOT NULL AND last_heard > ?
+       ${hideMqttOnly ? 'AND rf_last_heard IS NOT NULL' : ''}`).all(since);
   const out = [];
   for (const n of rows) {
     const km = haversineKm(h.lat, h.lon, n.lat, n.lon);

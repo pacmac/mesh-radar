@@ -3,7 +3,7 @@ import { nodeList, hopsAway } from './node-list.js';
 import { activeTracker } from './active-tracker.js';
 import { scanner } from './scanner.js';
 import { traceroute } from './traceroute.js';
-import { stmts, insertRangeTestEntry, insertEnvHistory } from './db.js';
+import { stmts, insertRangeTestEntry, insertEnvHistory, touchRfHeard } from './db.js';
 import { broadcastMessageHistory } from './ws-relay.js';
 import { ownDeviceNums } from './node-filter.js';
 import { isListenerForMode } from './dash-mode.js';
@@ -55,6 +55,10 @@ export function registerBridgeEvents(bridge) {
       const yagiOnly = scanner.active && !isListenerForMode('scan', rxDevice);
       if (pkt?.from && !yagiOnly) {
         nodeList.touchLastHeard(pkt.from, pkt.rx_time, rxDevice);
+        // RF ONLY. An MQTT-delivered packet did not travel the whole path by
+        // radio, so it must not count as having heard the node — that is the
+        // distinction node_filters.hide_mqtt_only rests on.
+        if (!ev.via_mqtt) touchRfHeard(pkt.from, pkt.rx_time);
         // Guarded hops-away, updated per packet (firmware NodeDB updateFrom analog)
         nodeList.setHopsAway(pkt.from, hopsAway(pkt.hop_start, pkt.hop_limit));
       }
