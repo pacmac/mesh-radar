@@ -349,6 +349,19 @@
               </div>
               <div class="px-2.5 pb-2 font-mono text-[9px] opacity-45"
                    x-text="clusterCard?.routed_members ? 'purity is of RESOLVED members only' : 'never reached — no route to any member'"></div>
+              <!-- NAME IT. The card is where you are already looking at the
+                   cluster, so it is where the name belongs — no separate admin
+                   page to go and find. pointer-events are re-enabled just for
+                   this row; the rest of the card stays click-through. -->
+              <div class="px-2.5 pb-2 flex gap-1" style="pointer-events:auto">
+                <input type="text" class="input input-xs flex-1 font-mono no-persist"
+                       placeholder="name this place…"
+                       :value="clusterCard?.friendly_name || ''"
+                       @keydown.enter="renameCluster(clusterCard.id, $event.target.value)"
+                       @click.stop>
+                <button class="btn btn-xs btn-ghost font-mono no-persist"
+                        @click.stop="renameCluster(clusterCard.id, $event.target.previousElementSibling.value)">set</button>
+              </div>
             </div>
 
             <!-- Node list overlay — top-left -->

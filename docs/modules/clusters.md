@@ -3,7 +3,7 @@ module: clusters
 source:
   - src/clusters.js
   - src/clusters-api.js
-source_hash: ae26f2790c83b39c7043764a46f5eb1dde2bd901491d28937aef9d0dadc1da07
+source_hash: 745f6a00ff886b22ac873a4ead303ad3a73ea8b6a0b00797a36fbcc84c7a2505
 updated: 2026-08-05
 ---
 
@@ -136,3 +136,42 @@ extents and our apparent reach with paths that never touched radio at all.
 
 Measured effect: loners 115 → 99, total clustered members 234, and 14 clusters
 still sit beyond 150 km on genuine RF evidence.
+
+
+## CRUD — you can finally name a place (2026-08-05)
+
+`createAnchor` / `updateAnchor` / `deleteAnchor` existed in `clusters.js` from the
+day the module was written and were **never wired to routes**. So you could see
+`cluster-f` on the radar and had no way to call it "Blackdowns" — which is what
+made the whole feature feel unfinished.
+
+| route | |
+|---|---|
+| `POST /clusters` | create a manual anchor |
+| `PATCH /clusters/:id` | rename, move, or change the radius |
+| `DELETE /clusters/:id` | remove the anchor |
+
+**The anchor is the identity.** Renaming never moves it; moving it never renames
+it. Membership is always derived, so neither operation touches a node — and
+deleting an anchor deletes a *place*, not any nodes: its members simply become
+loners on the next derivation.
+
+**`PATCH` treats absent as unchanged**, per field. Three config paths in this repo
+wiped stored values by treating "not supplied" as "set to nothing" (`8002efd`);
+this is not the fourth. Verified: patching only `radius_km` left `friendly_name`
+intact.
+
+### Naming happens where you are already looking
+
+The radar hover card carries the name field, rather than a separate admin page.
+The card is `pointer-events:none` so it never blocks the radar; the name row
+re-enables them, and the card pins while the pointer is over it so moving from
+the blob to the field does not dismiss it mid-edit.
+
+### Verified 2026-08-05
+
+```
+PATCH /clusters/6  {"friendly_name":"Blackdowns"}  -> label "Blackdowns-18/5"
+renameCluster() from the card                      -> label "Exe Valley-14/13"
+PATCH {"radius_km":6} alone                        -> friendly_name survives
+```

@@ -332,7 +332,17 @@ export const radarMixin = {
   // Holds the detail the one-line label deliberately drops. Every value shown is
   // SERVED (src/clusters.js) — verdict, purity, extents, drift, dominant door.
   // This positions a card and prints them.
+  _bindClusterCardHover() {
+    if (this._cardHoverBound) return;
+    this._cardHoverBound = true;
+    const el = document.querySelector('[x-show="clusterCard"]');
+    if (!el) { this._cardHoverBound = false; return; }
+    el.addEventListener('mouseenter', () => { this._clusterCardPinned = true; });
+    el.addEventListener('mouseleave', () => { this._clusterCardPinned = false; this.hideClusterCard(); });
+  },
+
   showClusterCard(c, ev) {
+    this._bindClusterCardHover();
     const host = document.getElementById('radar-wrap') || document.body;
     const r = host.getBoundingClientRect();
     this.clusterCard = {
@@ -341,7 +351,26 @@ export const radarMixin = {
       _y: Math.min(Math.max(ev.clientY - r.top + 14, 8), Math.max(8, r.height - 190)),
     };
   },
-  hideClusterCard() { this.clusterCard = null; },
+  // The card is pointer-events:none so it never blocks the radar; the name row
+  // re-enables them. Leaving the card open while typing means a mouseleave on the
+  // blob must not close it mid-edit, hence _clusterCardPinned.
+  hideClusterCard() { if (!this._clusterCardPinned) this.clusterCard = null; },
+
+  /** Rename a cluster from the card. The anchor is the identity, so this changes
+   *  the NAME and nothing else — not the position, not the membership. */
+  async renameCluster(id, name) {
+    if (id == null) return;
+    try {
+      await fetchJSON(`/clusters/${id}`, 'PATCH', { friendly_name: (name || '').trim() || null });
+      this.clusterData = null;            // force a re-fetch so the label updates
+      this._terrainKey = null;
+      await this._loadClusters();
+      this.drawRadar();
+      this.toast?.('Cluster renamed', 'success');
+    } catch (e) {
+      this.toast?.(`Rename failed: ${e}`, 'error');
+    }
+  },
 
   /** Is a layer on? Reads the browser-local view preference. */
   layerOn(key) {
@@ -573,7 +602,9 @@ export const radarMixin = {
                                style: 'fill:transparent;stroke:transparent;stroke-width:10;cursor:help' })
         : svgElem('circle', { cx: lx, cy: pts[0][1], r: 14, style: 'fill:transparent;cursor:help' });
       hit.addEventListener('mouseenter', (e) => this.showClusterCard(c, e));
-      hit.addEventListener('mouseleave', () => this.hideClusterCard());
+      // Pin while the pointer is over the card itself, so moving from the blob to
+      // the name field does not dismiss it.
+      hit.addEventListener('mouseleave', () => setTimeout(() => this.hideClusterCard(), 250));
       grp.appendChild(hit);
       g.appendChild(grp);
     }
