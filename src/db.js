@@ -901,6 +901,15 @@ export const stmts = {
   // UPLINK; hearing a node proves only the downlink, and asymmetric paths are
   // real. Consumed by node-kind.js. Measured 2026-08-04: 13 such nodes, of which
   // T4 and fir carry 89.7% of all our traffic.
+  // The door a given endpoint most often leaves through — the per-node input to
+  // a cluster's door purity (CLUSTERS_SPEC §3.1).
+  dominantDoorFor: db.prepare(`
+    SELECT json_extract(route, '$[0]') AS door, COUNT(*) n
+      FROM traceroute_history
+     WHERE to_num = ? AND status = 'ok' AND json_array_length(route) > 0
+     GROUP BY door ORDER BY n DESC LIMIT 1
+  `),
+
   provenDoorNums: db.prepare(`
     SELECT DISTINCT json_extract(route, '$[0]') AS num
       FROM traceroute_history

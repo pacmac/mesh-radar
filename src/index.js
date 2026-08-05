@@ -24,6 +24,7 @@ import { ROTATOR_CONFIG_SCHEMA } from './rotator-config-schema.js';
 import { startAlertPoller } from './alerts.js';
 import alertsRouter from './alerts-api.js';
 import rotatorRouter from './rotator-api.js';
+import clustersRouter from './clusters-api.js';
 import messagesRouter from './messages-api.js';
 import pacCommandRouter from './pac-command-api.js';
 import pacAlignRouter from './pac-align-api.js';
@@ -259,6 +260,9 @@ app.put('/home_pos', (req, res) => {
 });
 
 app.use('/rotator', rotatorRouter);
+// Mounted at root: the routes carry their own /clusters prefix, matching the
+// traceroute router's convention rather than inventing a second one.
+app.use('/', clustersRouter);
 
 app.get('/schema/rotator_config', (req, res) => res.json(ROTATOR_CONFIG_SCHEMA));
 
