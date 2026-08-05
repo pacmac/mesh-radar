@@ -12,6 +12,8 @@ import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.j
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { snrDbList } from './snr.js';
+import { nodeKind, provenDoors } from './node-kind.js';
+import { ownDeviceNums } from './node-filter.js';
 import { signalVerdict, marginHealth, hopsTone, blePctTone, verdictBands,
          gapTone, excessLossTone, heardTone } from './signal-verdict.js';
 import { signalQuality as sigQualityPct } from './utils.js';
@@ -430,6 +432,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       // Favourite nav entries are computed HERE, not derived in the browser:
       // BROWSER_CONTRACT — "if a display differs based on a condition, that
       // condition is evaluated in Node.js".
+      // Resolved ONCE per emission, not per node: node_list carries hundreds of
+      // rows and both of these are set lookups behind a query.
+      const _doorSet = provenDoors();
+      const _ownNums = ownDeviceNums();
       return { ...ev, favourites: listFavourites(), nodes: (ev.nodes || []).map(n => {
         // First-hop relay bundle (IDENTITY.md §3) — a traceroute-context
         // fact the browser renders without resolving (task radar-list-via)
@@ -462,6 +468,13 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         // verified/reported suffix) is display composition and stays there.
         return { ...n, display_name: resolveNodeLabel(n.num), via, hops_verified, hops_display, hops_fresh, signal,
                  hops_tone: hopsTone(hops_display),
+                 // WHAT THIS NODE IS TO US — own / door / router / endpoint.
+                 // Decided here so the radar can draw a different icon per kind
+                 // without deciding which; BROWSER_CONTRACT. `door` outranks
+                 // `router` because a relay we have PROVEN we can transmit
+                 // through beats one that merely declares the role — 8 of our
+                 // 13 doors declare no router role at all. See node-kind.js.
+                 node_kind: nodeKind(n.num, n.role, { doors: _doorSet, own: _ownNums }),
                  // tab-nodes.html:163-164 did its own Date.now() arithmetic AND
                  // set the bands. Age is server-side; the row renders a tone.
                  heard_tone: heardTone(n.last_heard == null ? null : (Date.now() / 1000) - n.last_heard) };

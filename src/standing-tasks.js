@@ -36,7 +36,8 @@ const BROADCAST = 4294967295;
 
 // Roles that relay for others, and therefore CAN be a door. CLIENT_MUTE is the
 // explicit opposite — it never rebroadcasts, so it can never be one.
-const RELAY_ROLES = new Set(['ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'REPEATER']);
+// Single home: node-kind.js — see the note there on why old firmware values stay.
+import { RELAY_ROLES } from './node-kind.js';
 
 const J = (s) => { try { const a = JSON.parse(s); return Array.isArray(a) ? a : []; } catch { return []; } };
 

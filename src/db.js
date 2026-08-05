@@ -896,6 +896,18 @@ export const stmts = {
 
   getNodeByNum: db.prepare(`SELECT * FROM nodes WHERE num = ? LIMIT 1`),
 
+  // PROVEN DOORS — nodes that have been the FIRST HOP of a completed traceroute,
+  // i.e. our transmission reached them with no relay in between. That proves the
+  // UPLINK; hearing a node proves only the downlink, and asymmetric paths are
+  // real. Consumed by node-kind.js. Measured 2026-08-04: 13 such nodes, of which
+  // T4 and fir carry 89.7% of all our traffic.
+  provenDoorNums: db.prepare(`
+    SELECT DISTINCT json_extract(route, '$[0]') AS num
+      FROM traceroute_history
+     WHERE status = 'ok' AND json_array_length(route) > 0
+       AND json_extract(route, '$[0]') IS NOT NULL
+  `),
+
   insertSignalHistory: db.prepare(`
     INSERT OR IGNORE INTO signal_history (ts, num, packet_id, rssi, snr, hops, rx_device)
     VALUES (@ts, @num, @packet_id, @rssi, @snr, @hops, @rx_device)

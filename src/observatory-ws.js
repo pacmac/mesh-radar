@@ -187,7 +187,8 @@ function placeName(address) {
 // observed relays carry 148 (4.9%), and 4 of those 11 are our own radios. The
 // distinction is the dominant fact about our routing, so the page must be able
 // to show it rather than lumping both under "Doors".
-const RELAY_ROLES = new Set(['ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'REPEATER']);
+// Single home: node-kind.js. Was declared here TWICE (also at the old :831).
+import { RELAY_ROLES } from './node-kind.js';
 
 function roleMap() {
   const m = new Map();
@@ -828,7 +829,7 @@ function contribution(windowDays) {
 // Declared relay roles, for the role TONE only — never as a door filter. Measured
 // 2026-08-04: this set captures 19 of the 99 nodes that have actually relayed for
 // us, so filtering doors on it discards 80.8% of them. See docs/APP_ROLE.md.
-const RELAY_ROLE_SET = new Set(['ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'REPEATER']);
+const RELAY_ROLE_SET = RELAY_ROLES;   // second copy in this same file — now an alias
 
 /** Bearing FROM us, degrees. Duplicated from the catalogue for the same reason
  *  haversine is: this layer must not import domain calculations. */

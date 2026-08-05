@@ -37,7 +37,9 @@ const BROADCAST = 4294967295;
 // touters, but we need to use them for what they are and not treat them as just
 // another endpoint which they are not." Role belongs HERE, in door selection —
 // not in the target ranking, where the first design wrongly put it.
-const RELAY_ROLES = new Set(['ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'REPEATER']);
+// Imported, not re-declared: this Set lived in four files and each copy could
+// drift from the others. Single home: node-kind.js.
+import { RELAY_ROLES } from './node-kind.js';
 
 // A RELAY AND A ROUTER ARE NOT THE SAME THING, and conflating them loses the
 // distinction that matters. Peter, 2026-08-04: "we have relays which can be any
