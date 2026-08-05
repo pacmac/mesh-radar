@@ -1,0 +1,224 @@
+        <!-- ===================== SNAPSHOT =====================
+             One screen: how far can we get · what is new · are we productive ·
+             is the machine working. No scrolling, either axis.
+
+             DATA IS HARD-CODED for the design pass. EVERY value below is from
+             ONE window — the last 24 h, measured 2026-08-05 — and carries the
+             query that produced it. A mockup's numbers become the spec for the
+             live queries, so a mixed-window placeholder ships as a defect with a
+             design review already passed.
+
+             The first pass got this wrong: it showed an ALL-TIME 189.1 km under
+             a 7D badge (true 7d figure: 176.2 km), with the ladder and doors
+             all-time and the answer rate from today. Three periods, one view.
+
+             Every distance query applies the 500 km plausibility gate that
+             clusters.js and the radar already use — one bad GPS fix (MLBR, 1681
+             km) is how a single row silently governs a whole display.
+
+             STYLE_GUIDE compliance: DaisyUI tokens only, no raw hex, no px font
+             sizes. Type comes from the Tailwind scale so it rides the 17px knob.
+
+             The reach ruler is CSS, not SVG, on purpose: a fluid-width SVG has
+             to either stretch (preserveAspectRatio="none" — which visibly
+             distorted the first pass) or letterbox. Percentage-positioned
+             elements scale correctly at any width. -->
+        <!-- h-full resolves to the PARENT's height, and the parent starts below the top
+     bar — so h-full overflowed the viewport by exactly the header height (48px
+     at 1000px tall) and cropped the bottom row. Measure against the VIEWPORT,
+     not the container: a container that fits itself can still hang off screen. -->
+<div class="h-[calc(100vh-5.2rem)] flex flex-col gap-3 p-3 overflow-hidden">
+
+          <!-- ── header ────────────────────────────────────────────────── -->
+          <div class="flex items-center gap-3 shrink-0">
+            <h1 class="text-2xl font-display font-bold tracking-wide">Snapshot</h1>
+            <div class="badge badge-sm badge-ghost font-mono gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-success inline-block"></span>gw live
+            </div>
+            <div class="badge badge-sm badge-ghost font-mono">OMNI rx · YAGI tx</div>
+            <div class="badge badge-sm badge-ghost font-mono">ACTV</div>
+            <div class="badge badge-sm badge-ghost font-mono">rotator 20°</div>
+
+            <!-- Global window. Server-side SSOT (observatory.window_days) — one
+                 stored value, every viewer sees the same board. -->
+            <div class="join ml-auto">
+              <button class="btn btn-xs join-item btn-primary font-mono">1d</button>
+              <button class="btn btn-xs join-item font-mono">2d</button>
+              <button class="btn btn-xs join-item font-mono">7d</button>
+              <button class="btn btn-xs join-item font-mono">14d</button>
+              <button class="btn btn-xs join-item font-mono">30d</button>
+              <button class="btn btn-xs join-item font-mono">all</button>
+            </div>
+          </div>
+
+          <!-- ── band 1: how far can we get ────────────────────────────── -->
+          <div class="grid grid-cols-3 gap-3 basis-[42%] shrink-0 min-h-0">
+            <div class="card bg-base-100 border border-base-300 col-span-2 overflow-hidden">
+              <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
+                <div class="flex items-baseline gap-6 shrink-0">
+                  <div>
+                    <div class="text-6xl font-display font-bold text-primary leading-none tracking-tight">
+                      95.2<span class="text-xl font-normal opacity-50 ml-1">km</span>
+                    </div>
+                    <div class="text-sm opacity-60 mt-2">furthest contact · 24h, through the mesh</div>
+                  </div>
+                  <div>
+                    <div class="text-6xl font-display font-bold leading-none tracking-tight opacity-85">
+                      5.3<span class="text-xl font-normal opacity-50 ml-1">km</span>
+                    </div>
+                    <div class="text-sm opacity-60 mt-2">furthest direct · 24h, no relay</div>
+                  </div>
+                  <div class="ml-auto text-right">
+                    <div class="text-5xl font-display font-bold leading-none tracking-tight opacity-85">33</div>
+                    <div class="text-sm opacity-60 mt-2">contacted · 2 direct · 7 doors</div>
+                  </div>
+                </div>
+
+                <!-- THE RULER. Every proven contact on one 0–200 km scale, so the
+                     dense band and the emptiness past it are visible rather than
+                     described. Ticks are positioned by percentage of 200 km. -->
+                <div class="relative flex-1 min-h-0 mt-2">
+                  <!-- direct-reach field -->
+                  <div class="absolute inset-y-4 left-0 bg-primary/10 rounded-l"
+                       style="width:24.2%"></div>
+                  <!-- ticks: 0–48 km (direct, accent) -->
+                  <div class="absolute inset-x-0 bottom-7 top-8">
+                    <template x-for="p in [4,7,10.5,13.5,16.5,20.5,24,27.5,31,35,39,47.5,52,56,60.5,64.5,70,73,76,79,82.5,85.5,89,92.5,96,98.5,101.5,104.5,108,111,114,117,120]">
+                      <div class="absolute bottom-0 w-0.5 bg-primary/70 rounded-sm"
+                           :style="`left:${p/2}%;height:${p<70?45:70}%`"></div>
+                    </template>
+                    <!-- relayed only, beyond 48 km -->
+                    <template x-for="p in [128,134,140,146,152,159,167,175,183,192,201,211,224,235,249,267,371,403,437,456,466,473]">
+                      <div class="absolute bottom-0 w-0.5 bg-base-content/25 rounded-sm"
+                           :style="`left:${p/2}%;height:30%`"></div>
+                    </template>
+                  </div>
+                  <!-- shorelines -->
+                  <div class="absolute inset-y-2 border-l-2 border-primary" style="left:24.2%"></div>
+                  <div class="absolute top-2 text-sm font-mono text-primary pl-2" style="left:24.2%">48.4 direct</div>
+                  <div class="absolute inset-y-2 border-l border-dashed border-base-content/40" style="left:94.6%"></div>
+                  <div class="absolute top-0 text-sm font-mono opacity-60 pr-2 text-right" style="right:6%">189.1 relayed</div>
+                  <!-- baseline + scale -->
+                  <div class="absolute bottom-7 inset-x-0 border-b border-base-content/15"></div>
+                  <div class="absolute bottom-0 inset-x-0 flex justify-between text-sm font-mono opacity-50">
+                    <span>0</span><span>50</span><span>100</span><span>150</span><span>200 km</span>
+                  </div>
+                </div>
+
+                <div class="text-sm opacity-60">
+                  Last 24 h. Nothing direct past 5.3 km — everything beyond was relayed.
+                </div>
+              </div>
+            </div>
+
+            <!-- ladder + doors -->
+            <div class="card bg-base-100 border border-base-300 overflow-hidden">
+              <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
+                <h2 class="text-base font-display font-semibold tracking-wide opacity-70">Where the mesh lives</h2>
+                <template x-for="r in [
+                  {k:'0–10 km',n:3,w:14,hot:false},{k:'10–25',n:5,w:24,hot:false},
+                  {k:'25–50',n:21,w:100,hot:true},{k:'50–100',n:4,w:19,hot:false},
+                  {k:'100+',n:0,w:0,hot:false}]">
+                  <div class="flex items-center gap-2.5">
+                    <span class="text-sm font-mono opacity-60 w-20 shrink-0" x-text="r.k"></span>
+                    <div class="flex-1 h-3 bg-base-300 rounded-sm overflow-hidden">
+                      <div class="h-full rounded-sm" :class="r.hot ? 'bg-primary' : 'bg-base-content/30'"
+                           :style="`width:${r.w}%`"></div>
+                    </div>
+                    <span class="text-base font-mono w-10 text-right" x-text="r.n"></span>
+                  </div>
+                </template>
+
+                <h2 class="text-base font-display font-semibold tracking-wide opacity-70 mt-1">Doors carrying us</h2>
+                <template x-for="r in [
+                  {k:'T4',n:2094,w:100,hot:true},{k:'fir',n:781,w:37,hot:false},
+                  {k:'TA2o',n:83,w:4,hot:false}]">
+                  <div class="flex items-center gap-2.5">
+                    <span class="text-sm font-mono opacity-60 w-20 shrink-0" x-text="r.k"></span>
+                    <div class="flex-1 h-3 bg-base-300 rounded-sm overflow-hidden">
+                      <div class="h-full rounded-sm" :class="r.hot ? 'bg-primary' : 'bg-base-content/30'"
+                           :style="`width:${r.w}%`"></div>
+                    </div>
+                    <span class="text-base font-mono w-14 text-right" x-text="r.n"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── band 2: new ground ────────────────────────────────────── -->
+          <!-- Zero is deliberately unaccented. A day that found nothing new must
+               look inert, so any colour here means real new ground. -->
+          <div class="grid grid-cols-5 gap-3 shrink-0 basis-[13%] min-h-0">
+            <template x-for="c in [
+              {v:'0',k:'first-ever contacts',s:'none today',live:false},
+              {v:'0',k:'new doors',s:'16 standing',live:false},
+              {v:'0',k:'new clusters',s:'51 known',live:false},
+              {v:'—',k:'nodes first heard',s:'no first_heard column',live:false},
+              {v:'0',k:'furthest new contact',s:'km today',live:false}]">
+              <div class="card bg-base-100 border overflow-hidden"
+                   :class="c.live ? 'border-primary/40' : 'border-base-300'">
+                <div class="card-body !p-4 flex-row items-center gap-3">
+                  <div class="text-4xl font-display font-bold leading-none tracking-tight"
+                       :class="c.live ? 'text-primary' : 'opacity-40'" x-text="c.v"></div>
+                  <div class="min-w-0">
+                    <div class="text-sm leading-tight" x-text="c.k"></div>
+                    <div class="text-xs font-mono opacity-50 leading-tight mt-0.5" x-text="c.s"></div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- ── band 3: productive + machine ──────────────────────────── -->
+          <div class="grid grid-cols-3 gap-3 basis-[42%] shrink-0 min-h-0">
+            <div class="card bg-base-100 border border-base-300 col-span-2 overflow-hidden">
+              <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
+                <div class="flex items-baseline gap-4">
+                  <h2 class="text-base font-display font-semibold tracking-wide opacity-70">Are we productive</h2>
+                  <span class="text-4xl font-display font-bold leading-none tracking-tight ml-auto">15.9<span class="text-xl opacity-50">%</span></span>
+                  <span class="text-sm font-mono text-success">▲ 6.5 pts vs 7-day mean</span>
+                </div>
+                <div class="text-sm font-mono opacity-60">540 attempts · 86 answered · 174 targets</div>
+                <!-- meet, not none: the sparkline keeps its aspect at any width -->
+                <div class="flex-1 min-h-0">
+                  <svg viewBox="0 0 560 120" preserveAspectRatio="xMidYMid meet"
+                       class="w-full h-full" aria-label="Answer rate, 14 days">
+                    <line x1="0" y1="100" x2="560" y2="100" stroke="currentColor" stroke-opacity=".12"/>
+                    <line x1="235" y1="8" x2="235" y2="100" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="3 3"/>
+                    <text x="228" y="18" text-anchor="end" font-size="13" fill="currentColor" fill-opacity=".45"
+                          font-family="ui-monospace,monospace">← beam misaligned</text>
+                    <polyline fill="none" stroke="currentColor" stroke-width="2.5"
+                              stroke-linejoin="round" stroke-linecap="round" class="text-primary"
+                              points="10,90 50,83 90,82 130,64 170,60 210,83 250,97 290,95 330,97 370,100 410,85 450,78 490,74 530,48"/>
+                    <circle cx="530" cy="48" r="4" class="fill-primary"/>
+                    <g font-size="13" fill="currentColor" fill-opacity=".45" font-family="ui-monospace,monospace">
+                      <text x="8" y="116">22 Jul</text>
+                      <text x="250" y="116">29 Jul</text>
+                      <text x="500" y="116">today</text>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="card bg-base-100 border border-base-300 overflow-hidden">
+              <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
+                <h2 class="text-base font-display font-semibold tracking-wide opacity-70">Is the machine working</h2>
+                <template x-for="r in [
+                  {l:'Alert email',v:'sent 11:38',t:''},
+                  {l:'Radios',v:'OMNI + YAGI ready',t:''},
+                  {l:'Rotator',v:'v4 · 20° · free',t:''},
+                  {l:'Beam alignment',v:'re-checking',t:'text-warning'},
+                  {l:'Channel use',v:'within budget',t:'opacity-50'},
+                  {l:'Nodes plotted',v:'204 of 387',t:''}]">
+                  <div class="flex items-center justify-between gap-2 py-1.5 border-b border-base-300/50 last:border-0">
+                    <span class="text-base opacity-70" x-text="r.l"></span>
+                    <span class="text-base font-mono" :class="r.t" x-text="r.v"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+        </div>
