@@ -765,9 +765,41 @@ OMNI, same window      236 @ 12.3% · 169 @ 9.5%
 unaimed YAGI shots     246 DISTINCT azimuths spanning 0.85°–359.98°
 ```
 
-The last line is the finding. The beam is not stale-but-constant — it is scattered
-across the whole circle, because the active tracker and the scanner move it for
-their own purposes and traceroute never reclaims it.
+**CORRECTION, measured the same day — the sentence that used to be here was
+wrong.** It read: *"the beam is scattered across the whole circle, because the
+active tracker and the scanner move it for their own purposes and traceroute never
+reclaims it."* That inferred "unaimed" from "no aim recorded". They are not the
+same thing.
+
+Checking where the beam actually pointed on those rows, against the bearing to the
+target:
+
+```
+YAGI, aim_mode=none, 24 h, n=286
+  |beam - endpoint bearing|      attempts   ok
+    0-30°                            258    18
+    30-60°                             3     1
+    60-90°                             4     0
+    90-120°                            9     0
+   120-150°                            5     0
+   150-180°                            7     0
+```
+
+258 of 286 were within 30° of the target. **The antenna was being aimed — by the
+active tracker — and `aim_mode='none'` is a RECORDING gap, not an aiming gap.**
+The 246 distinct azimuths were the beam following 246 different targets, which is
+the system working.
+
+So rule 3b below does not rescue an unaimed beam. What it actually changes is
+narrower: for targets that HAVE a completed route and a close door, traceroute now
+points at the door rather than leaving the tracker's endpoint aim in place — which
+is justified by the 12.9%-in-beam measurement above, not by anything being
+unaimed. Rule-4 targets (no route) were already aimed at the endpoint by the
+tracker and are unaffected.
+
+**Open consequence:** traceroute may now re-point a beam the caller already aimed,
+which is the double-aim that `mission-runner-single-aim` exists to prevent. Not
+resolved here.
 
 **Aim at the door, not the endpoint.** When rule 3 fires we know exactly who
 receives the transmission: the door. That is the entire basis of rules 1–2. So the
