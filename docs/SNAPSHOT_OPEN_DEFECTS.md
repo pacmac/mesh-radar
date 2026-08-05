@@ -47,20 +47,22 @@ everything" was unreliable all day.
 
 ## Open defects
 
-### 1. LAYOUT — CLOSED 2026-08-05
+### 1. LAYOUT — 1280×800 needs internal scrolling
 
-Fixed. At **1280x800 and 1600x1000**, both themes: `overflowing 0 · pastFold 0 ·
-leafBelowFold 0 · pageScroll false · unpopulated 0`, and 6 windows -> 6 distinct
-renders.
+At 1600×1000 the board fully satisfies *"no V or H scrolling, all there right
+where I can see it"*. At 1280×800 the doors list and health rows do not fit, and
+two cards scroll internally.
 
-What it took: the ladder card needed 306px in a 242px box, mostly `gap-3` between
-ten children (120px of pure gap). Tightened the card, and collapsed the doors
-LIST to one summary line — "16 doors · T4 carries 71% of 2158 routes". The card's
-question is DISTANCE; the full door list deserves its own card rather than being
-squeezed into this one.
+Verified: `pastFold 0 · cutNotScrollable 0 · unpopulated 0 · pageScroll false ·
+scrollsInCard 2`. **Nothing is lost or cut** — but the requirement is not met.
 
-Rejected on the way: deleting rows (loses data silently) and removing the scroll
-container (turned reachable content into a crop, which is unrecoverable).
+Three attempts, two worse:
+- deleting rows → data lost silently
+- removing the scroll container → content **cut** (unrecoverable; a scrollbar is not)
+- current: doors capped at 5 with the remainder STATED ("+11 more carrying N routes")
+
+**Needs Peter's call:** fewer health rows, a shorter hero, or accept internal
+scroll below 1000px. Guessing a fourth time is not appropriate.
 
 ### 2. AUDIT — every remaining "cannot measure" claim is suspect
 
