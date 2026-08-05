@@ -38,6 +38,21 @@ const DEFAULT = {
   beam_deg:            360,    // beam width in degrees (360 = omni)
   gain_dbi:            0,      // antenna gain in dBi
   cable_loss_db:       0,      // cable loss in dB
+  // HEIGHT OF THIS ANTENNA ABOVE THE GROUND AT THE MAST BASE, in metres.
+  //
+  // Sits beside the antenna's other physical properties rather than with the
+  // position, because it is a property of the ANTENNA, not of the site. Two
+  // radios on one mast can be at different heights.
+  //
+  // Absolute height above sea level = home.alt + this. They are deliberately
+  // separate numbers: home.alt is ground (30 m here, SRTM bare earth) and this is
+  // the mast. Folding them into one figure loses the ability to correct either.
+  //
+  // Peter, 2026-08-05: "antenna height is +5 meters from ground."
+  //
+  // Null means unknown — never assume zero, which would silently claim the
+  // antenna is lying on the ground.
+  antenna_height_m:    null,   // metres above ground at the mast base
   fixed_lat:           null,   // fallback home position latitude (decimal degrees)
   fixed_lon:           null,   // fallback home position longitude (decimal degrees)
   color:               null,   // DaisyUI theme color for badges/radar
@@ -151,7 +166,7 @@ router.put('/:address', (req, res) => {
   const {
     label, is_rotator, is_primary, load_nodes_on_boot,
     antenna_type, beam_deg, gain_dbi, cable_loss_db,
-    fixed_lat, fixed_lon, color, ble_pin,
+    fixed_lat, fixed_lon, color, ble_pin, antenna_height_m,
   } = req.body;
 
   if (label !== undefined)               updated.label               = label || null;
@@ -171,6 +186,9 @@ router.put('/:address', (req, res) => {
   //
   // An explicit '' or null still clears, because an operator must be able to
   // unset one. The protection is that a caller who says nothing changes nothing.
+  if (antenna_height_m !== undefined)
+    updated.antenna_height_m = antenna_height_m != null && antenna_height_m !== ''
+      ? Number(antenna_height_m) : null;
   if (fixed_lat !== undefined) updated.fixed_lat = fixed_lat != null && fixed_lat !== '' ? Number(fixed_lat) : null;
   if (fixed_lon !== undefined) updated.fixed_lon = fixed_lon != null && fixed_lon !== '' ? Number(fixed_lon) : null;
   if (color !== undefined)     updated.color     = color || null;
