@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: 4d98c371d4d63177e223443ee220e4f32bada6c859dbcfaa4848d4a43f88f87f
+source_hash: b45ed03e11d24c1854f4cfa30f70fb1619269f5a4cf85a031acd4c77141c3f9e
 updated: 2026-08-04
 ---
 
@@ -340,12 +340,26 @@ itself is static.
 compressive quantile scale would put a ridge in the wrong place relative to the
 nodes behind it — which is exactly the comparison the layer exists to support.
 
-Colour: low ground stays dark, height is a warm glow, alpha ramped on `t²` so flat
-ground stays flat. Deliberately quiet — the radar is a dark phosphor surface and
-the node marks must remain the brightest thing on it. Null elevations (sea, or
-outside coverage) draw nothing rather than as land.
+### Colour: a hypsometric ramp, not a haze
 
-Sits directly above the background and below everything else, at `opacity 0.55`.
+The first cut used one warm hue with `alpha = 0.05 + 0.55·t²` at 55% layer
+opacity. Peak alpha was **0.33**, and the square crushed the mid-range — which is
+where all the terrain here lives (30–300 m of a −1…484 m span). Hills rendered at
+about 0.1 alpha. Peter: *"I cannot even see it, I can see a very very feint
+outline"*, and asked whether it should be filled. **It was filled all along; it
+was just invisible.** Worth recording, because "too subtle to read" is a way for a
+visualisation to be wrong while every check passes.
+
+Now a conventional relief ramp — green lowland → olive → brown → pale upland — at
+alpha 0.85 with the layer at 0.9. Height is carried by **hue**, so it survives at
+any opacity and the eye reads a map rather than a wash. Null elevations (sea, or
+outside coverage) still draw nothing rather than as land.
+
+Each cell is sub-divided into 4 radial steps with the elevation interpolated
+across it, and wedges overlap by ~0.006 rad. Without both, the quadratic ring
+spacing streaks badly at range and seams show between bearings.
+
+Sits directly above the background and below everything else, at `opacity 0.9`.
 Toggled by the `terrain` layer.
 
 ### Verified 2026-08-05

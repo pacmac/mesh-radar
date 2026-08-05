@@ -189,31 +189,61 @@ export const radarMixin = {
     const span = Math.max(1, hi - lo);
     const step = (B.length > 1 ? (B[1] - B[0]) : 2);
 
-    // Low ground is left dark; height is drawn as a warm glow. The radar is a
-    // dark phosphor surface and the nodes must stay the brightest thing on it,
-    // so this is deliberately quiet — it is context, not the subject.
+    // HYPSOMETRIC RAMP — elevation reads as COLOUR, not as faintness.
+    //
+    // The first cut used a single warm hue with alpha 0.05 + 0.55*t^2 at 55%
+    // layer opacity. Peak alpha was 0.33 and the SQUARE crushed the mid-range,
+    // which is where all the terrain here actually lives (30-300 m of a -1..484 m
+    // span). Hills rendered at ~0.1 alpha. Peter: "I cannot even see it, I can
+    // see a very very feint outline". It was filled all along — just invisible.
+    //
+    // Now a conventional relief ramp: green lowland -> olive -> brown -> pale
+    // upland, at an alpha that can actually be read. Height is carried by hue, so
+    // it survives at any opacity, and the eye reads a map rather than a haze.
+    const RAMP = [
+      [0.00, [ 26,  72,  40]],   // valley floor
+      [0.20, [ 58, 104,  44]],   // low ground
+      [0.40, [122, 130,  52]],   // rising
+      [0.60, [150, 112,  52]],   // hill
+      [0.80, [156,  92,  60]],   // ridge
+      [1.00, [206, 178, 150]],   // summit
+    ];
+    const lerp = (a, b, u) => Math.round(a + (b - a) * u);
     const colour = (m) => {
       if (m == null) return null;                       // no data: draw nothing
       const t = Math.max(0, Math.min(1, (m - lo) / span));
-      const a = 0.05 + 0.55 * t * t;                    // squared: flat ground stays flat
-      const r = Math.round(90 + 165 * t), g = Math.round(70 + 120 * t), b = Math.round(40 + 30 * t);
-      return `rgba(${r},${g},${b},${a.toFixed(3)})`;
+      let i = 0;
+      while (i < RAMP.length - 2 && t > RAMP[i + 1][0]) i++;
+      const [t0, c0] = RAMP[i], [t1, c1] = RAMP[i + 1];
+      const u = t1 === t0 ? 0 : (t - t0) / (t1 - t0);
+      return `rgba(${lerp(c0[0], c1[0], u)},${lerp(c0[1], c1[1], u)},${lerp(c0[2], c1[2], u)},0.85)`;
     };
 
+    // Overlap the wedges by a hair so no seam shows between bearings, and
+    // sub-divide each ring radially. The ring radii are quadratic, so the outer
+    // cells are enormous — drawn flat they streak. Interpolating elevation across
+    // each cell costs nothing and removes the banding.
+    const SUB = 4;
     for (let i = 0; i < B.length; i++) {
-      const a0 = (B[i] - step / 2 - 90) * Math.PI / 180;
-      const a1 = (B[i] + step / 2 - 90) * Math.PI / 180;
+      const a0 = (B[i] - step / 2 - 90) * Math.PI / 180 - 0.006;
+      const a1 = (B[i] + step / 2 - 90) * Math.PI / 180 + 0.006;
       let prev = 0;
       for (let k = 0; k < RAD.length; k++) {
-        const col = colour(E[i]?.[k]);
-        const rOut = this._radarNorm(RAD[k], maxKm) * R;
-        if (col && rOut > prev) {
-          ctx.beginPath();
-          ctx.arc(C, C, rOut, a0, a1);
-          ctx.arc(C, C, prev, a1, a0, true);
-          ctx.closePath();
-          ctx.fillStyle = col;
-          ctx.fill();
+        const e0 = E[i]?.[k - 1] ?? E[i]?.[k];
+        const e1 = E[i]?.[k];
+        const rIn = prev, rOut = this._radarNorm(RAD[k], maxKm) * R;
+        if (e1 != null && rOut > rIn) {
+          for (let sdiv = 0; sdiv < SUB; sdiv++) {
+            const u0 = sdiv / SUB, u1 = (sdiv + 1) / SUB;
+            const col = colour(e0 == null ? e1 : e0 + (e1 - e0) * ((u0 + u1) / 2));
+            if (!col) continue;
+            ctx.beginPath();
+            ctx.arc(C, C, rIn + (rOut - rIn) * u1, a0, a1);
+            ctx.arc(C, C, rIn + (rOut - rIn) * u0, a1, a0, true);
+            ctx.closePath();
+            ctx.fillStyle = col;
+            ctx.fill();
+          }
         }
         prev = rOut;
       }
