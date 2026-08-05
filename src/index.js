@@ -6,6 +6,7 @@ import path from 'path';
 import { bridge } from './bridge.js';
 import * as pacHost from './pac-host.js';
 import configRouter from './config-api.js';
+import snapshotRouter from './snapshot-api.js';
 import { logEvent } from './hooks.js';
 import { startStandingTasks } from './standing-tasks.js';
 import { startCalloutRunner } from './callout-runner.js';
@@ -291,6 +292,7 @@ app.use('/rotator', rotatorRouter);
 app.use('/', clustersRouter);
 app.use('/', terrainRouter);
 app.use('/', reachRouter);
+app.use('/', snapshotRouter);
 
 app.get('/schema/rotator_config', (req, res) => res.json(ROTATOR_CONFIG_SCHEMA));
 
