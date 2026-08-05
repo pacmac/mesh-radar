@@ -95,6 +95,10 @@ export function frontier(days = windowDays()) {
 
   let far = null, farNode = null, best = null, bestNode = null;
   let heard = 0, confirmedHeard = 0, beyondScale = 0;
+  // THE RULER'S TICKS, one per heard node. Previously a typed array of
+  // positions, which meant the density — the entire point of the instrument —
+  // was invented. Served as distances; the browser only maps them to a scale.
+  const ticks = [];
 
   for (const r of rows) {
     const d = km(h, r.lat, r.lon);
@@ -102,6 +106,8 @@ export function frontier(days = windowDays()) {
     heard++;
     if (confirmed.has(r.num)) confirmedHeard++;
     if (far == null || d > far) { far = d; farNode = r.short_name; }
+    ticks.push({ km: Math.round(d * 10) / 10, hops: r.hops ?? null,
+                 direct: r.hops === 0, confirmed: confirmed.has(r.num) });
     // Quality: distance per leg. hops=0 means one leg (us -> them), so +1.
     if (r.hops != null && r.hops >= 0) {
       const q = d / (r.hops + 1);
@@ -122,6 +128,8 @@ export function frontier(days = windowDays()) {
     // and MLBR in Poland, which this file previously libelled as a bad GPS fix.
     // Random corrupt coordinates do not cluster geographically.
     scale_max_km: maxKm, beyond_scale: beyondScale,
+    // Sorted so the browser never re-orders served data.
+    ticks: ticks.sort((a, b) => a.km - b.km),
     caveat: 'Derived from receptions — every node here reached us, so it is alive and '
           + 'reachable. `confirmed` counts those a traceroute also round-tripped; that '
           + 'adds confidence, never distance. Hops rank quality (km_per_hop), they do '

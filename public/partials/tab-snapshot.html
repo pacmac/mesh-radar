@@ -111,39 +111,34 @@
                   </div>
                 </div>
 
-                <!-- THE RULER. Every proven contact on one 0–200 km scale, so the
-                     dense band and the emptiness past it are visible rather than
-                     described. Ticks are positioned by percentage of 200 km. -->
+                <!-- THE RULER — served ticks, one per heard node. The density IS the
+                     finding, so it must be real data: the previous version used a
+                     typed array of positions, which fabricated the very thing the
+                     instrument exists to show. The browser only maps km to a
+                     percentage of the scale. -->
                 <div class="relative flex-1 min-h-0 mt-2">
-                  <!-- direct-reach field -->
-                  <div class="absolute inset-y-4 left-0 bg-primary/10 rounded-l"
-                       style="width:24.2%"></div>
-                  <!-- ticks: 0–48 km (direct, accent) -->
-                  <div class="absolute inset-x-0 bottom-7 top-8">
-                    <template x-for="p in [4,7,10.5,13.5,16.5,20.5,24,27.5,31,35,39,47.5,52,56,60.5,64.5,70,73,76,79,82.5,85.5,89,92.5,96,98.5,101.5,104.5,108,111,114,117,120]">
-                      <div class="absolute bottom-0 w-0.5 bg-primary/70 rounded-sm"
-                           :style="`left:${p/2}%;height:${p<70?45:70}%`"></div>
-                    </template>
-                    <!-- relayed only, beyond 48 km -->
-                    <template x-for="p in [128,134,140,146,152,159,167,175,183,192,201,211,224,235,249,267,371,403,437,456,466,473]">
-                      <div class="absolute bottom-0 w-0.5 bg-base-content/25 rounded-sm"
-                           :style="`left:${p/2}%;height:30%`"></div>
+                  <div class="absolute inset-x-0 top-2 bottom-7">
+                    <template x-for="(t, i) in (snapFrontier?.ticks || [])" :key="i">
+                      <div class="absolute bottom-0 w-0.5 rounded-sm"
+                           :class="t.direct ? 'bg-primary' : 'bg-base-content/25'"
+                           :style="`left:${Math.min(100, 100 * t.km / (snapFrontier?.scale_max_km || 500))}%;`
+                                 + `height:${t.direct ? 100 : (t.confirmed ? 55 : 35)}%`"></div>
                     </template>
                   </div>
-                  <!-- shorelines -->
-                  <div class="absolute inset-y-2 border-l-2 border-primary" style="left:24.2%"></div>
-                  <div class="absolute top-2 text-sm font-mono text-primary pl-2" style="left:24.2%">48.4 direct</div>
-                  <div class="absolute inset-y-2 border-l border-dashed border-base-content/40" style="left:94.6%"></div>
-                  <div class="absolute top-0 text-sm font-mono opacity-60 pr-2 text-right" style="right:6%">189.1 relayed</div>
-                  <!-- baseline + scale -->
                   <div class="absolute bottom-7 inset-x-0 border-b border-base-content/15"></div>
                   <div class="absolute bottom-0 inset-x-0 flex justify-between text-sm font-mono opacity-50">
-                    <span>0</span><span>50</span><span>100</span><span>150</span><span>200 km</span>
+                    <span>0</span>
+                    <span x-text="Math.round((snapFrontier?.scale_max_km || 500) * 0.25)"></span>
+                    <span x-text="Math.round((snapFrontier?.scale_max_km || 500) * 0.5)"></span>
+                    <span x-text="Math.round((snapFrontier?.scale_max_km || 500) * 0.75)"></span>
+                    <span><span x-text="snapFrontier?.scale_max_km || 500"></span> km</span>
                   </div>
                 </div>
 
                 <div class="text-sm opacity-60">
-                  <span class="opacity-70">Ruler geometry is illustrative and not yet served — see snapshot-board step 6.</span>
+                  <span class="text-primary">Solid</span> = heard with no relay ·
+                  <span x-text="(snapFrontier?.ticks || []).length"></span> nodes ·
+                  <span x-text="snapWindowLabel"></span>
                 </div>
               </div>
             </div>
