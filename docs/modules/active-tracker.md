@@ -1,7 +1,7 @@
 ---
 module: active-tracker
 source: src/active-tracker.js
-source_hash: abcf3f4083ce032b501cb40597d3ce862b1c6afc4c0c1502c9e74e81a9d99933
+source_hash: 1c2c3bcac6d77cff6d4881c2a30415cdaa43a2936a35e2c8a4ded3f61aa41f97
 updated: 2026-08-03
 ---
 

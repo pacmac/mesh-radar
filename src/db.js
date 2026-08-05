@@ -1836,7 +1836,23 @@ export function recentAimedTraceroutes(limit = 25) {
 }
 
 export function insertRangeTestEntry(entry) {
-  stmts.insertRangeTest.run(entry);
+  // EVERY OPTIONAL FIELD DEFAULTED. better-sqlite3 throws on a missing NAMED
+  // parameter, so one caller omitting one field loses the row entirely — and
+  // silently, because the throw is caught and logged by the caller.
+  //
+  // That is not hypothetical: active-tracker.js omitted `via_mqtt` and lost
+  // 3803 contact records ("[active:e] contact record failed: Missing named
+  // parameter via_mqtt"). Same shape as insertSignalHistory, which already
+  // defaults for this reason.
+  //
+  // via_mqtt defaults to NULL, not 0. Null is "not stated"; 0 is the positive
+  // claim "this arrived by RF, not MQTT". A wrapper filling in blanks must not
+  // manufacture a fact the caller never asserted — a caller that knows the
+  // transport says so explicitly.
+  stmts.insertRangeTest.run({
+    rssi: null, snr: null, hops: null, seq: null, rx_device: null, via_mqtt: null,
+    ...entry,
+  });
 }
 
 export function queryRangeTestLog(limit = 500) {

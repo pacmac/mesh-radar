@@ -124,7 +124,12 @@ export const activeTracker = {
       rotator.emit('signal_update', { signal_num: _firedNum, rssi, snr, ts: Date.now() });
       try {
         recordYagiContact(_firedNum, rssi, snr);
-        insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: _firedNum, rssi, snr, hops: null, seq: null, rx_device: ev.addr });
+        // via_mqtt: 0 stated explicitly, not left to the wrapper's default. This
+        // contact arrived as a device event on ev.addr — a real RF reception —
+        // so we KNOW it did not come over MQTT and should say so. The wrapper
+        // defaults it to null ("not stated") precisely so it never guesses.
+        insertRangeTestEntry({ ts: Math.floor(Date.now() / 1000), from_num: _firedNum, rssi, snr,
+                               hops: null, seq: null, rx_device: ev.addr, via_mqtt: 0 });
       } catch (err) { log.error('contact record failed:', err.message); }
     }
   },

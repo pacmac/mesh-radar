@@ -1,7 +1,7 @@
 ---
 module: doors
 source: src/doors.js
-source_hash: 4aa3ef56d465031e2ea9cb5646d811641268559408fe8ee2d7edb5175c42015a
+source_hash: a5d03821a79f018bdd1a4362da99b62ed0d45f860d119ef8f38d479abc1d2610
 updated: 2026-08-04
 ---
 
