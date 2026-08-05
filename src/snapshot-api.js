@@ -47,46 +47,64 @@ function sinceTs(days) {
   return days > 0 ? Math.floor(Date.now() / 1000) - days * 86400 : 0;
 }
 
-/** The hero band: how far did we actually get, inside this window.
+/** How far did we get — derived from WHAT WE HEARD, which is the whole record.
  *
- *  TWO DIFFERENT CLAIMS, never merged — the mockup's first pass conflated them:
- *    contact  any completed traceroute, however many relays carried it
- *    direct   route[0] (we reached the first hop ourselves) or an empty route
- *             (the endpoint answered with no relay at all)
- *  "We talked to something 189 km away" and "we reached something 48 km away
- *  ourselves" are not the same sentence, and only the second describes our reach.
+ *  RECEIVE IS THE ONLY SOURCE OF TRUTH. Peter, 2026-08-05: *"active means
+ *  transmit, passive means receive. if transmit was successful then receive will
+ *  reflect it. no ambiguity at all."*
+ *
+ *  A successful transmit IS a reception — the reply arrives and the node lands in
+ *  `nodes`. So transmitting cannot produce a node we have not heard, and reach
+ *  derived from traceroute is a strict SUBSET of reach derived from reception.
+ *  Measured: 115 traceroute-confirmed nodes, 113 of them also heard, **0** never
+ *  heard, and 851 heard that traceroute never confirmed. That 0 is not a finding
+ *  about the discovery engine; it is a tautology.
+ *
+ *  The previous version of this function derived everything from
+ *  `traceroute_history` and therefore served 189.1 km while `nodes` already held
+ *  285.8 km at zero hops. It reported LESS than the truth we already had, which
+ *  is the one thing the model forbids: *"passive data is the ONLY real truth. it
+ *  can be increased by active but can never be less than."*
+ *
+ *  HOPS ARE NOT A FILTER. The goal is distance — *"how far can we get"* — so a
+ *  node heard at seven hops still counts as reach. Hops survive only as a QUALITY
+ *  RANKING: 100 km direct beats 100 km through seven relays, expressed as
+ *  `km_per_hop`. Served, so the browser ranks nothing itself.
  */
 export function frontier(days = windowDays()) {
   const h = home();
   const maxKm = Number(getConfig('reach', {})?.max_plausible_km ?? 500);
-  const empty = { window_days: days, furthest_contact_km: null, furthest_contact_node: null,
-                  furthest_direct_km: null, furthest_direct_node: null,
-                  contacted: 0, direct: 0, doors_used: 0, max_plausible_km: maxKm };
+  const empty = { window_days: days, furthest_km: null, furthest_node: null,
+                  heard: 0, confirmed: 0, best_quality: null, scale_max_km: maxKm };
   if (!h) return { ...empty, ready: false, reason: 'no home position' };
 
+  // THE FLOOR: everything we have heard. `hops` may be null — unknown hop count
+  // is not zero hops, and it must not flatter the quality ranking.
   const rows = db.prepare(`
-    SELECT t.to_num, t.route, n.short_name, n.lat, n.lon
-      FROM traceroute_history t JOIN nodes n ON n.num = t.to_num
-     WHERE t.status = 'ok' AND t.ts > ?
-       AND n.lat IS NOT NULL AND n.lat != 0`).all(sinceTs(days));
+    SELECT n.num, n.short_name, n.lat, n.lon, n.hops, n.last_heard, n.rf_last_heard
+      FROM nodes n
+     WHERE n.lat IS NOT NULL AND n.lat != 0
+       AND n.last_heard IS NOT NULL AND n.last_heard > ?`).all(sinceTs(days));
 
-  const contacted = new Set(), direct = new Set(), doors = new Set();
-  let fc = null, fcNode = null, fd = null, fdNode = null;
+  // Traceroute CONFIRMS; it never establishes. Used only to mark which of the
+  // heard nodes we have also completed a round trip with.
+  const confirmed = new Set(
+    db.prepare(`SELECT DISTINCT to_num FROM traceroute_history
+                 WHERE status = 'ok' AND ts > ?`).all(sinceTs(days)).map(r => r.to_num));
+
+  let far = null, farNode = null, best = null, bestNode = null;
+  let heard = 0, confirmedHeard = 0, beyondScale = 0;
 
   for (const r of rows) {
     const d = km(h, r.lat, r.lon);
-    if (!(d <= maxKm)) continue;                       // the gate, applied once
-    contacted.add(r.to_num);
-    if (fc == null || d > fc) { fc = d; fcNode = r.short_name; }
-
-    let route = null;
-    try { route = JSON.parse(r.route ?? 'null'); } catch { /* malformed */ }
-    const relayed = Array.isArray(route) && route.length > 0;
-    if (relayed) { if (route[0] != null) doors.add(Number(route[0])); }
-    else {
-      // no relay in the path: this one we reached ourselves
-      direct.add(r.to_num);
-      if (fd == null || d > fd) { fd = d; fdNode = r.short_name; }
+    if (!(d <= maxKm)) { beyondScale++; continue; }
+    heard++;
+    if (confirmed.has(r.num)) confirmedHeard++;
+    if (far == null || d > far) { far = d; farNode = r.short_name; }
+    // Quality: distance per leg. hops=0 means one leg (us -> them), so +1.
+    if (r.hops != null && r.hops >= 0) {
+      const q = d / (r.hops + 1);
+      if (best == null || q > best) { best = q; bestNode = r.short_name; }
     }
   }
 
@@ -94,13 +112,22 @@ export function frontier(days = windowDays()) {
   return {
     ready: true,
     window_days: days,
-    furthest_contact_km: r1(fc), furthest_contact_node: fcNode,
-    furthest_direct_km:  r1(fd), furthest_direct_node:  fdNode,
-    contacted: contacted.size, direct: direct.size, doors_used: doors.size,
-    max_plausible_km: maxKm,
-    // Said out loud so a reader cannot mistake one for the other.
-    caveat: 'furthest_contact_km may have been carried by relays; furthest_direct_km '
-          + 'is a path with no relay at all. Only the second describes our own reach.',
+    furthest_km: r1(far), furthest_node: farNode,
+    heard, confirmed: confirmedHeard,
+    best_quality_km_per_hop: r1(best), best_quality_node: bestNode,
+    // NOT a plausibility gate, and not a claim that the excluded rows are junk.
+    // It bounds the DISPLAY SCALE. The furthest excluded rows cluster coherently
+    // in real places — six nodes in Galicia at ~1020-1067 km, Lisbon, Tenerife,
+    // and MLBR in Poland, which this file previously libelled as a bad GPS fix.
+    // Random corrupt coordinates do not cluster geographically.
+    scale_max_km: maxKm, beyond_scale: beyondScale,
+    caveat: 'Derived from receptions — every node here reached us, so it is alive and '
+          + 'reachable. `confirmed` counts those a traceroute also round-tripped; that '
+          + 'adds confidence, never distance. Hops rank quality (km_per_hop), they do '
+          + 'not gate reach. Nodes beyond scale_max_km are excluded from the SCALE, not '
+          + 'judged invalid — but note nothing here separates an RF path from an '
+          + 'MQTT-carried one (see packet-provenance-capture), so distance alone does '
+          + 'not prove radio reach.',
   };
 }
 

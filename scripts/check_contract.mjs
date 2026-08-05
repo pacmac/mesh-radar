@@ -151,6 +151,49 @@ await new Promise((resolve) => {
 });
 
 
+// ── Reach may never fall below what we have HEARD ────────────────────────────
+//
+// Peter, 2026-08-05: "passive data is the ONLY real truth. it can be increased by
+// active but can never be less than", and then the reason it cannot: "active
+// means transmit, passive means receive. if transmit was successful then receive
+// will reflect it."
+//
+// A successful transmit IS a reception, so traceroute-derived reach is a strict
+// subset of reception-derived reach. snapshot-api once derived reach from
+// traceroute alone and served 189.1 km while `nodes` already held 495.8 km — it
+// under-reported the truth we already possessed.
+//
+// This asserts the invariant against the LIVE endpoint so a regression to
+// transmit-only reach fails the build instead of quietly shrinking the frontier.
+{
+  const { default: db, getConfig } = await import('../src/db.js');
+  const passive = db.prepare(`
+    SELECT n.lat, n.lon FROM nodes n
+     WHERE n.lat IS NOT NULL AND n.lat != 0 AND n.last_heard IS NOT NULL`).all();
+  const hLat = Number(getConfig('home.lat')), hLon = Number(getConfig('home.lon'));
+  const cap  = 500;
+  const rad = d => d * Math.PI / 180;
+  let floor = 0;
+  for (const n of passive) {
+    const p1 = rad(hLat), p2 = rad(n.lat), dl = rad(n.lon - hLon);
+    const t = Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+    const d = 2 * 6371.0088 * Math.asin(Math.sqrt(t));
+    if (d <= cap && d > floor) floor = d;
+  }
+  const served = await fetch('http://localhost:8000/snapshot/frontier?days=0')
+                        .then(r => r.json()).catch(() => null);
+  const got = Number(served?.furthest_km);
+  if (!Number.isFinite(got)) {
+    fail('reach invariant', '/snapshot/frontier returned no furthest_km');
+  } else if (got + 0.15 < floor) {
+    fail('reach is below the passive floor',
+         `served ${got} km < heard ${floor.toFixed(1)} km — transmit-derived reach `
+       + 'is a subset of reception; it may raise the figure, never lower it');
+  } else {
+    pass(`reach >= passive floor (${got} km served, ${floor.toFixed(1)} km heard)`);
+  }
+}
+
 // ── Config keys must have SOME read path ─────────────────────────────────────
 //
 // config-api DEFAULTS is a hard allowlist for BOTH read and write: GET and PUT
