@@ -91,6 +91,11 @@ export const radarMixin = {
     this._initRadarRunning = true;
     try {
       if (!this.homePos) return;
+      this.restoreRadarLayers();
+      // Fetched once on entry and redrawn from cache. Clusters change on the
+      // order of hours (a node has to move, or a new anchor be seeded), so
+      // re-fetching them on every radar redraw would be pure waste.
+      this._loadClusters().then(() => this.drawRadar());
       this.refreshRadar();
       this.geocodeNodes();
       if (this.yagiAz != null) this._animateBeam(this.yagiAz);
@@ -120,7 +125,169 @@ export const radarMixin = {
     this._drawTargetArm(ctx);
     this._drawRadarBeam();
     this._drawRadarTraceroute(maxKm, ctx);
+    this._drawRadarClusters(maxKm);
     this._drawRadarNodes(maxKm, ctx);
+  },
+
+  // ── Clusters ───────────────────────────────────────────────────────────────
+  //
+  // Peter, 2026-08-04: "I need to be able to see them visually on the dashboard
+  // ... sort of clouds, or blobs etc showing the extent of them."
+  //
+  // EVERYTHING DRAWN HERE IS SERVED. The hull polygon, the name, the purity, the
+  // verdict and its tone all come from GET /clusters (src/clusters.js). This
+  // function projects lat/lon to screen and picks a colour from a served token.
+  // It does not decide what a cluster is, where it ends, or whether it is solved.
+  async _loadClusters() {
+    try {
+      const d = await fetchJSON('/clusters');
+      this.clusterData = d || null;
+    } catch { this.clusterData = null; }
+  },
+
+  /** Is a layer on? Reads the browser-local view preference. */
+  layerOn(key) {
+    const l = (this.radarLayers || []).find(x => x.key === key);
+    return l ? !!l.on : true;
+  },
+  get layerClusters() { return this.layerOn('clusters'); },
+
+  toggleRadarLayer(key) {
+    const l = (this.radarLayers || []).find(x => x.key === key);
+    if (!l) return;
+    l.on = !l.on;
+    try { localStorage.setItem('radarLayers', JSON.stringify(
+      Object.fromEntries(this.radarLayers.map(x => [x.key, x.on])))); } catch {}
+    this.drawRadar();
+  },
+
+  /** Restore layer visibility. A view preference, so localStorage is the right
+   *  home — it is per-viewer and carries no meaning the backend needs. */
+  restoreRadarLayers() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('radarLayers') || '{}');
+      for (const l of this.radarLayers) if (l.key in saved) l.on = !!saved[l.key];
+    } catch {}
+  },
+
+  /** Nodes the visible layers permit. `own` is always drawn — hiding our own
+   *  radios would remove the reference point the whole display is measured from. */
+  _layerFiltered(nodes) {
+    return nodes.filter(n => {
+      const k = n.node_kind || 'endpoint';
+      if (k === 'own') return true;
+      if (k === 'door')     return this.layerOn('doors');
+      if (k === 'router')   return this.layerOn('routers');
+      return this.layerOn('endpoints');
+    });
+  },
+
+  _drawRadarClusters(maxKm) {
+    const g = document.getElementById('radar-clusters-g');
+    if (!g) return;
+    g.innerHTML = '';
+    if (!this.layerClusters) return;                    // layer switched off
+    const home = this.homePos;
+    // LAZY, ORDER-INDEPENDENT LOAD. initRadar() early-returns when homePos is not
+    // ready yet on a cold URL load and never retries, so hanging the fetch off it
+    // meant the overlay silently never appeared. Loading on first draw instead
+    // works whatever order init and the WS arrive in.
+    if (this.clusterData == null && !this._clusterLoading && home) {
+      this._clusterLoading = true;
+      this._loadClusters().finally(() => { this._clusterLoading = false; this.drawRadar(); });
+      return;
+    }
+    const d = this.clusterData;
+    if (!d || !home || !Array.isArray(d.clusters)) return;
+    const CX = 300, CY = 300, R = 256;
+
+    // A cluster's verdict is SERVED; this only maps the tone to a colour, the
+    // same way the node glyphs map a served kind to a shape.
+    const TONE = {
+      success: 'rgba(0,255,120,',    // solved — one reliable way in
+      warning: 'rgba(255,190,0,',    // mixed
+      error:   'rgba(255,90,90,',    // unresolved — reached by inconsistent paths
+      neutral: 'rgba(150,170,200,',  // unknown — never reached at all
+    };
+
+    // THE OVERLAY REPLACES DETAIL, IT DOES NOT PILE ON TOP OF IT.
+    //
+    // First cut drew all 52 blobs with two lines of label each, on top of the
+    // nodes. That was MORE cluttered than the saturated display it was meant to
+    // fix — the exact failure the feature exists to prevent, so it is worth
+    // naming rather than quietly tuning away.
+    //
+    // The fix is not an arbitrary size threshold. It is that "clusters" and
+    // "endpoints" are two READINGS of the same radar, which is what Peter asked
+    // for: "the same radar only with different overlays ... I may only want to
+    // see a target node and see the cluster, router and doors only without the
+    // clutter of all the other nodes".
+    //
+    //   endpoints ON  -> blobs are quiet CONTEXT: outline only, no labels
+    //   endpoints OFF -> the cluster IS the subject: labelled, filled, named
+    //
+    // So the labels arrive exactly when there is room for them, and no number
+    // had to be invented.
+    const clusterFirst = !this.layerOn('endpoints');
+
+    for (const c of d.clusters) {
+      if (!c.member_count) continue;                    // an empty place draws nothing
+      // A two-node group has no area and reads as a ring round two dots. Worth
+      // drawing when the cluster is the subject; noise when it is not.
+      if (!clusterFirst && c.member_count < 3) continue;
+      const pts = (c.hull || []).map(p => {
+        const km = haversine(home.lat, home.lon, p.lat, p.lon);
+        const az = bearing(home.lat, home.lon, p.lat, p.lon) * Math.PI / 180;
+        const n  = this._radarNorm(km, maxKm);
+        return [CX + Math.sin(az) * n * R, CY - Math.cos(az) * n * R];
+      });
+      if (!pts.length) continue;
+      const base = TONE[c.verdict_tone] || TONE.neutral;
+      const grp  = svgElem('g', { class: 'radar-cluster' });
+
+      const fillA   = clusterFirst ? 0.14 : 0.05;
+      const strokeA = clusterFirst ? 0.65 : 0.28;
+      if (pts.length >= 3) {
+        grp.appendChild(svgElem('polygon', {
+          points: pts.map(p => p.join(',')).join(' '),
+          style: `fill:${base}${fillA});stroke:${base}${strokeA});stroke-width:1.2;stroke-linejoin:round`,
+        }));
+      } else {
+        // Two members have no area. Draw the extent as a disc rather than a line
+        // so a two-node cluster still reads as a place.
+        const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+        const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+        const rr = Math.max(6, Math.hypot(pts[0][0] - cx, pts[0][1] - cy) + 5);
+        grp.appendChild(svgElem('circle', { cx, cy, r: rr,
+          style: `fill:${base}${fillA});stroke:${base}${strokeA});stroke-width:1.2;stroke-dasharray:3 3` }));
+      }
+
+      // Label at the top of the blob: name, size, and the purity that says
+      // whether this place is solved. Purity is shown WITH its denominator —
+      // "100% of 1 routed member" is not the same claim as "92% of 13".
+      // WHO GETS A LABEL. Not everyone, even in the cluster-first view: 52
+      // clusters produced 104 lines of text that collided into an unreadable
+      // mass — measurably worse than the saturation this replaces.
+      //
+      // A two-member group is barely a place. Its label costs more than it
+      // informs, and 17 of the 52 are two-member. They still DRAW, so the
+      // extent is visible; they just do not shout their name.
+      const labelled = clusterFirst && c.member_count >= 3;
+      if (!labelled) { g.appendChild(grp); continue; }
+      const lx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+      const ly = Math.min(...pts.map(p => p[1])) - 6;
+      const t = svgElem('text', { x: lx, y: ly, 'text-anchor': 'middle',
+        style: `fill:${base}0.95);font-size:9px;font-family:ui-monospace,monospace;pointer-events:none` });
+      t.textContent = `${c.name} · ${c.member_count}`;
+      grp.appendChild(t);
+      const t2 = svgElem('text', { x: lx, y: ly + 9, 'text-anchor': 'middle',
+        style: `fill:${base}0.70);font-size:8px;font-family:ui-monospace,monospace;pointer-events:none` });
+      t2.textContent = c.routed_members
+        ? `${c.verdict} ${c.door_purity}% of ${c.routed_members}`
+        : 'never reached';
+      grp.appendChild(t2);
+      g.appendChild(grp);
+    }
   },
 
   _buildRadarCtx() {
@@ -400,7 +567,10 @@ export const radarMixin = {
     const ng = document.getElementById('radar-nodes-g');
     if (!ng) return;
     ng.innerHTML = '';
-    const nodes = this.radarNodes;
+    // LAYER FILTER. Applied here rather than to radarNodes itself, so the node
+    // TABLE and the plotted-count keep showing the whole picture while the radar
+    // shows the subset — hiding a layer is a view choice, not a data change.
+    const nodes = this._layerFiltered(this.radarNodes || []);
     const CX = 300, CY = 300, R = 256;
     const G4 = 'rgba(0,255,80,0.95)', AMBER = 'rgba(255,200,40,0.90)', LABEL = 'rgba(255,140,0,0.55)';
     const BASE_DIAG = 12, STEP_DIAG = 14, HOR_LEN = 16;

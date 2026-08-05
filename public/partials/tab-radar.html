@@ -39,6 +39,21 @@
                   <span class="font-mono opacity-60 uppercase tracking-wider">XHair</span>
                   <input type="checkbox" class="toggle toggle-xs toggle-success" :checked="radarCrosshair" @change="toggleRadarCrosshair()">
                 </li>
+
+                <!-- LAYERS. Peter, 2026-08-04: "I may only want to see a target
+                     node and see the cluster, router and doors only without the
+                     clutter of all the other nodes". Each layer is independent;
+                     the combinations he named are all just combinations. -->
+                <li class="pt-1" style="border-top:1px solid rgba(0,255,80,0.14)">
+                  <span class="font-mono opacity-60 uppercase tracking-wider">Layers</span>
+                </li>
+                <template x-for="ly in radarLayers" :key="ly.key">
+                  <li class="flex items-center justify-between gap-3">
+                    <span class="font-mono opacity-70" x-text="ly.label"></span>
+                    <input type="checkbox" class="toggle toggle-xs toggle-success"
+                           :checked="ly.on" @change="toggleRadarLayer(ly.key)">
+                  </li>
+                </template>
               </ul>
             </details>
 
@@ -226,6 +241,9 @@
               <g id="radar-beam-g" x-ignore style="transform-box:view-box;transform-origin:300px 300px;transition:transform 1.2s ease"></g>
               <g id="radar-scan-arm-g" x-ignore clip-path="url(#radarClip)"></g>
               <g id="radar-traceroute-g" x-ignore clip-path="url(#radarClip)"></g>
+              <!-- Clusters sit UNDER the nodes: a blob is context for the marks
+                   on top of it, never something that can obscure them. -->
+              <g id="radar-clusters-g" x-ignore clip-path="url(#radarClip)"></g>
               <g id="radar-nodes-g" x-ignore></g>
             </svg>
 

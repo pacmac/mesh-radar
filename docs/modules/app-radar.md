@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: f140233c0321bec719f26365517b8b75ae141ece9cc03e8f2bbd2ba5f2cfd5de
+source_hash: 5e37f47afab2d2bd4daa7b81da7410b56642029d159f720d8e257adad961f509
 updated: 2026-08-04
 ---
 
@@ -245,3 +245,79 @@ Rendered at 1600x1000 and looked at, not merely queried:
 its own styling and does not follow `data-theme`. Setting `data-theme=corporate`
 changed the attribute and left the radar unchanged. Not altered here; recorded so
 the next reader does not think the theme switch is broken.
+
+## Cluster overlay and layers (task `radar-cluster-overlay`, 2026-08-05)
+
+Peter, 2026-08-04:
+
+> the same radar only with different overlays
+
+> sort of clouds, or blobs etc showing the extent of them
+
+> I may only want to see a target node and see the cluster, router and doors only
+> without the clutter of all the other nodes
+
+Everything drawn is **served** — hull polygon, name, purity, verdict and tone all
+come from `GET /clusters` (`src/clusters.js`). This file projects lat/lon to
+screen and maps a served tone to a colour. It decides nothing about what a
+cluster is, where it ends, or whether it is solved.
+
+### Two readings of one radar, not one pile
+
+The first cut drew all 52 blobs with two lines of label each **on top of** the
+nodes. That was measurably worse than the saturation it was meant to fix — 104
+overlapping text lines. Recorded rather than quietly tuned away, because it is
+the failure mode this feature exists to prevent.
+
+The fix is not a magic threshold, it is that clusters and endpoints are two
+*readings*:
+
+| endpoints layer | clusters render as |
+|---|---|
+| **on** | quiet context — outline only (`fill .05 / stroke .28`), **no labels**, and 2-member groups suppressed entirely |
+| **off** | the subject — filled (`.14 / .65`), named, with purity |
+
+Labels therefore arrive exactly when there is room for them, and no number had to
+be invented for it.
+
+### Who gets a label
+
+Only clusters with **≥3 members**, and only in the cluster-first reading. A
+two-member group is barely a place; its label costs more than it informs, and 17
+of the 52 are two-member. They still *draw* — the extent stays visible — they
+just do not shout their name. Measured effect: 104 labels → 70.
+
+### Layers
+
+`radarLayers` holds `clusters / doors / routers / endpoints`. Which layers are
+**visible** is a browser view preference (persisted to `localStorage`); what each
+layer **contains** is served. `own` is always drawn — hiding our own radios would
+remove the reference point everything else is measured from.
+
+The filter is applied at draw time, not to `radarNodes`, so the node table and
+the plotted count keep showing the whole picture. Hiding a layer is a view
+choice, not a data change.
+
+### The load is lazy and order-independent
+
+`initRadar()` early-returns when `homePos` is not ready on a cold URL load and
+never retries, so hanging the cluster fetch off it meant the overlay silently
+never appeared — verified: `clusterData` stayed null while the endpoint returned
+52. The fetch now happens on first draw and redraws itself, which works whatever
+order init and the WS arrive in.
+
+Clusters change on the order of hours, so they are fetched once and redrawn from
+cache rather than re-fetched per redraw.
+
+### Verified 2026-08-05, by looking
+
+- endpoints on: 35 blobs, **0 labels**, nodes legible
+- endpoints off: 52 blobs, 70 labels; `cluster-k · 15 / solved 92.3% of 13`,
+  `cluster-m · 14 / mixed 66% of 9`, `cluster-h · 5 / solved 100% of 2` all read
+  cleanly
+- 0 console errors
+
+**KNOWN, NOT FIXED:** in the cluster-first reading the labels still collide in the
+dense south-west and northern regions. The node labels solve this with a
+collision solver (`_solveLabel`); the cluster labels do not use it yet. That is
+the obvious next step and it is not done.

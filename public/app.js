@@ -130,6 +130,21 @@ function dashboard() {
     // -- Radar ----------------------------------------------------------------
     radarRange:     '50',
     radarLogScale:  false,
+    // ── Radar layers ─────────────────────────────────────────────────────────
+    // Which layers are VISIBLE is a view preference and lives in the browser.
+    // What each layer CONTAINS is served — node_kind from src/node-kind.js,
+    // clusters from src/clusters.js. The browser never decides membership.
+    //
+    // Labels are here because they name a browser-side view control, not a
+    // backend concept. If these ever become backend concepts they must be served
+    // like the mode vocabulary is.
+    radarLayers: [
+      { key: 'clusters',  label: 'Clusters',  on: true  },
+      { key: 'doors',     label: 'Doors',     on: true  },
+      { key: 'routers',   label: 'Routers',   on: true  },
+      { key: 'endpoints', label: 'Endpoints', on: true  },
+    ],
+    clusterData:    null,
     radarNodes:     [],
     radarSelected:  null,
     homePos:        null,
