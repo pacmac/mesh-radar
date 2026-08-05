@@ -145,6 +145,7 @@ function dashboard() {
       { key: 'endpoints', label: 'Endpoints', on: true  },
     ],
     clusterData:    null,
+    clusterCard:    null,   // hovered cluster detail; null = hidden
     radarNodes:     [],
     radarSelected:  null,
     homePos:        null,

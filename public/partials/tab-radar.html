@@ -247,6 +247,70 @@
               <g id="radar-nodes-g" x-ignore></g>
             </svg>
 
+            <!-- CLUSTER HOVER CARD. Peter, 2026-08-05: "a mouse over / hover call
+                 out that can show more details in a formatted / pretty card."
+                 Every value here is SERVED by src/clusters.js — this prints. -->
+            <div x-show="clusterCard" x-cloak
+                 class="absolute z-30 pointer-events-none rounded-md shadow-xl"
+                 :style="`left:${clusterCard?._x}px; top:${clusterCard?._y}px; width:230px;
+                          background:rgba(6,20,8,0.96); border:1px solid rgba(0,255,80,0.30);
+                          backdrop-filter:blur(3px)`">
+              <div class="px-2.5 py-1.5 flex items-baseline justify-between gap-2"
+                   style="border-bottom:1px solid rgba(0,255,80,0.16)">
+                <span class="font-mono text-xs tracking-wider" style="color:rgba(0,255,120,0.95)"
+                      x-text="clusterCard?.name"></span>
+                <span class="font-mono text-[10px] uppercase tracking-widest"
+                      :class="{'text-success': clusterCard?.verdict_tone==='success',
+                               'text-warning': clusterCard?.verdict_tone==='warning',
+                               'text-error':   clusterCard?.verdict_tone==='error',
+                               'opacity-50':   clusterCard?.verdict_tone==='neutral'}"
+                      x-text="clusterCard?.verdict"></span>
+              </div>
+              <div class="px-2.5 py-2 grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-[10px]">
+                <span class="opacity-50">Nodes</span>
+                <span class="text-right" x-text="clusterCard?.member_count"></span>
+                <span class="opacity-50">Resolved</span>
+                <span class="text-right"
+                      x-text="clusterCard?.routed_members + ' of ' + clusterCard?.member_count"></span>
+                <template x-if="clusterCard?.routed_members">
+                  <span class="opacity-50">Door purity</span>
+                </template>
+                <template x-if="clusterCard?.routed_members">
+                  <span class="text-right" x-text="clusterCard?.door_purity + '%'"></span>
+                </template>
+                <span class="opacity-50">Distance</span>
+                <span class="text-right"
+                      x-text="clusterCard ? clusterCard.centroid_km + ' km · ' + clusterCard.centroid_deg + '°' : ''"></span>
+                <template x-if="clusterCard?.extent_km">
+                  <span class="opacity-50">Extent</span>
+                </template>
+                <template x-if="clusterCard?.extent_km">
+                  <span class="text-right"
+                        x-text="clusterCard.extent_km[0] + '–' + clusterCard.extent_km[1] + ' km'"></span>
+                </template>
+                <template x-if="clusterCard?.doors_inside?.length">
+                  <span class="opacity-50">Doors inside</span>
+                </template>
+                <template x-if="clusterCard?.doors_inside?.length">
+                  <span class="text-right" x-text="clusterCard.doors_inside.length"></span>
+                </template>
+                <template x-if="clusterCard?.drift_km">
+                  <span class="opacity-50">Drift</span>
+                </template>
+                <template x-if="clusterCard?.drift_km">
+                  <span class="text-right" x-text="clusterCard.drift_km + ' km'"></span>
+                </template>
+                <template x-if="clusterCard?.best_snr != null">
+                  <span class="opacity-50">Best SNR</span>
+                </template>
+                <template x-if="clusterCard?.best_snr != null">
+                  <span class="text-right" x-text="clusterCard.best_snr + ' dB'"></span>
+                </template>
+              </div>
+              <div class="px-2.5 pb-2 font-mono text-[9px] opacity-45"
+                   x-text="clusterCard?.routed_members ? 'purity is of RESOLVED members only' : 'never reached — no route to any member'"></div>
+            </div>
+
             <!-- Node list overlay — top-left -->
             <div x-show="radarNodeList().length > 0" x-transition
                  style="position:absolute;top:0.75rem;left:0.75rem;z-index:10;

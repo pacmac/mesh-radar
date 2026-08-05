@@ -145,6 +145,21 @@ export const radarMixin = {
     } catch { this.clusterData = null; }
   },
 
+  // ── Cluster hover card ─────────────────────────────────────────────────────
+  // Holds the detail the one-line label deliberately drops. Every value shown is
+  // SERVED (src/clusters.js) — verdict, purity, extents, drift, dominant door.
+  // This positions a card and prints them.
+  showClusterCard(c, ev) {
+    const host = document.getElementById('radar-wrap') || document.body;
+    const r = host.getBoundingClientRect();
+    this.clusterCard = {
+      ...c,
+      _x: Math.min(Math.max(ev.clientX - r.left + 14, 8), Math.max(8, r.width - 250)),
+      _y: Math.min(Math.max(ev.clientY - r.top + 14, 8), Math.max(8, r.height - 190)),
+    };
+  },
+  hideClusterCard() { this.clusterCard = null; },
+
   /** Is a layer on? Reads the browser-local view preference. */
   layerOn(key) {
     const l = (this.radarLayers || []).find(x => x.key === key);
@@ -265,27 +280,37 @@ export const radarMixin = {
       // Label at the top of the blob: name, size, and the purity that says
       // whether this place is solved. Purity is shown WITH its denominator —
       // "100% of 1 routed member" is not the same claim as "92% of 13".
-      // WHO GETS A LABEL. Not everyone, even in the cluster-first view: 52
-      // clusters produced 104 lines of text that collided into an unreadable
-      // mass — measurably worse than the saturation this replaces.
-      //
-      // A two-member group is barely a place. Its label costs more than it
-      // informs, and 17 of the 52 are two-member. They still DRAW, so the
-      // extent is visible; they just do not shout their name.
-      const labelled = clusterFirst && c.member_count >= 3;
-      if (!labelled) { g.appendChild(grp); continue; }
+      // EVERY cluster is labelled in the cluster-first reading. The earlier
+      // >=3 rule existed only because the two-line label was too big; Peter
+      // asked for a short form instead — "AA-20/10 meaning cluster AA 20 nodes,
+      // 10 resolved" — so the size threshold is no longer needed and unlabelled
+      // blobs (which he reported as confusing) are gone.
+      if (!clusterFirst) { g.appendChild(grp); continue; }
       const lx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
       const ly = Math.min(...pts.map(p => p[1])) - 6;
+      // ONE LINE, SERVED. `c.label` is composed in Domain 1 (AA-20/10); the
+      // detail that used to be a second line moves to the hover card, which is
+      // where it can be laid out properly instead of fighting for space.
       const t = svgElem('text', { x: lx, y: ly, 'text-anchor': 'middle',
-        style: `fill:${base}0.95);font-size:9px;font-family:ui-monospace,monospace;pointer-events:none` });
-      t.textContent = `${c.name} · ${c.member_count}`;
+        style: `fill:${base}0.95);font-size:9px;font-family:ui-monospace,monospace;`
+             + `paint-order:stroke;stroke:rgba(0,0,0,0.75);stroke-width:2.5px;pointer-events:none` });
+      t.textContent = c.label;
       grp.appendChild(t);
-      const t2 = svgElem('text', { x: lx, y: ly + 9, 'text-anchor': 'middle',
-        style: `fill:${base}0.70);font-size:8px;font-family:ui-monospace,monospace;pointer-events:none` });
-      t2.textContent = c.routed_members
-        ? `${c.verdict} ${c.door_purity}% of ${c.routed_members}`
-        : 'never reached';
-      grp.appendChild(t2);
+
+      // HOVER CARD. Peter, 2026-08-05: "then we can have a mouse over / hover
+      // call out that can show more details in a formatted / pretty card."
+      //
+      // The static label carries identity and size; everything else lives here,
+      // where it can be laid out instead of fighting the map for space. An
+      // invisible hit area over the hull makes the whole blob hoverable rather
+      // than just its label.
+      const hit = pts.length >= 3
+        ? svgElem('polygon', { points: pts.map(p => p.join(',')).join(' '),
+                               style: 'fill:transparent;stroke:transparent;stroke-width:10;cursor:help' })
+        : svgElem('circle', { cx: lx, cy: pts[0][1], r: 14, style: 'fill:transparent;cursor:help' });
+      hit.addEventListener('mouseenter', (e) => this.showClusterCard(c, e));
+      hit.addEventListener('mouseleave', () => this.hideClusterCard());
+      grp.appendChild(hit);
       g.appendChild(grp);
     }
   },

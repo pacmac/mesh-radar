@@ -297,7 +297,21 @@ export function clusters({ force = false } = {}) {
     const snrs = members.map(m => m.snr).filter(v => v != null);
     return {
       id: a.id, slug: a.slug, friendly_name: a.friendly_name,
+      // `code` is the short display identity — AA, AB — derived from the slug so
+      // there is exactly one source of truth for which cluster this is. Peter,
+      // 2026-08-05: "if we run out of letters of the alphabet we can use AA, AB
+      // etc" and "cluster labels need shortening, suggest AA-20/10 meaning
+      // cluster AA 20 nodes, 10 resolved".
+      code: a.slug.replace(/^cluster-/, '').toUpperCase(),
       name: a.friendly_name || a.slug,
+      // The static label, composed HERE. It is a display string, and
+      // BROWSER_CONTRACT keeps display strings server-side — the browser prints
+      // it rather than deciding how to abbreviate.
+      //
+      // `resolved` is routed_members: how many of the members we actually have a
+      // route for. 20/10 therefore reads "20 nodes, 10 of them resolved", which
+      // is the denominator that stops "100%" being read as "all of them".
+      label: `${(a.friendly_name || a.slug.replace(/^cluster-/, '').toUpperCase())}-${members.length}/${ds.routed_members}`,
       lat: a.lat, lon: a.lon,
       radius_km: a.radius_km ?? cfg.radius_km,
       source: a.source,
