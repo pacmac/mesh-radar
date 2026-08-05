@@ -138,12 +138,27 @@ function dashboard() {
     // Labels are here because they name a browser-side view control, not a
     // backend concept. If these ever become backend concepts they must be served
     // like the mode vocabulary is.
+    // `order` is BOTH the draw depth and the brightness. Peter, 2026-08-05:
+    // "when I click a layer it will move to the top and previous layers will be
+    // demoted ... as well as a toggle for a layer it also needs a depth or layer
+    // number that auto increments and possibly also allows me to change the
+    // order and IT MUST PERSIST."
+    //
+    // Highest order = the FOCUS layer: drawn last, drawn brightest. That replaces
+    // the instinct to fade everything so it can coexist, which produced two
+    // unreadable terrain renders before he told me to stop doing it.
+    //
+    // `draws: true` means it is a real draw layer with its own SVG group and can
+    // be z-ordered. The node KINDS (doors/routers/endpoints) are filters WITHIN
+    // the nodes layer — they share one <g>, so they cannot be independently
+    // depth-ordered, and pretending otherwise would be a lie in the UI.
     radarLayers: [
-      { key: 'terrain',   label: 'Terrain',   on: true  },
-      { key: 'clusters',  label: 'Clusters',  on: true  },
-      { key: 'doors',     label: 'Doors',     on: true  },
-      { key: 'routers',   label: 'Routers',   on: true  },
-      { key: 'endpoints', label: 'Endpoints', on: true  },
+      { key: 'terrain',   label: 'Terrain',   on: true, order: 1, draws: true  },
+      { key: 'clusters',  label: 'Clusters',  on: true, order: 2, draws: true  },
+      { key: 'nodes',     label: 'Nodes',     on: true, order: 3, draws: true  },
+      { key: 'doors',     label: '· Doors',     on: true, order: 0, draws: false },
+      { key: 'routers',   label: '· Routers',   on: true, order: 0, draws: false },
+      { key: 'endpoints', label: '· Endpoints', on: true, order: 0, draws: false },
     ],
     clusterData:    null,
     terrainData:    null,
@@ -309,6 +324,10 @@ function dashboard() {
     // -- Init -----------------------------------------------------------------
     async init() {
       initPersist();
+    // Layer visibility AND order, restored from the single browser store. NOT
+    // from initRadar() — that early-returns before homePos is ready on a cold
+    // load and never retries, which is why the first version never restored.
+    try { this.restoreRadarLayers(); } catch (e) { console.warn('restoreRadarLayers', e); }
       this.feedVisible = (window.feedFilterOptions || []).map(o => o.id);
 
       // One-time migration: move tilt calibration from localStorage to server DB

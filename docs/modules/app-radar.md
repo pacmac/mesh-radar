@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: 6d98aaf3639c1b1379c17fb4266314d9a0a6581bb4693077b44656b616b276fa
+source_hash: c486e03f6df151f42f52bbaffbce16afc2f2582354d8e9b907867154bcdf94ab
 updated: 2026-08-04
 ---
 
@@ -451,3 +451,68 @@ fix it.
 which drives auto-range to a 2000 km ring and crushes 60 km of terrain to a smudge.
 `clusters.js` already applies a 500 km plausibility ceiling; the radar does not.
 Not fixed here — it is a separate defect and belongs in its own task.
+
+## Layer stack — order is depth AND brightness (2026-08-05)
+
+Peter:
+
+> when I click a layer it will move to the top and previous layers will be
+> demoted, so as well as a toggle for a layer it also needs a depth or layer
+> number that aut increments and possibly also allows me to change the order and
+> IT MUST PERSIST
+
+> do not try and pay too much attention to fading down layers not to try and make
+> every layer distinguisable, basically the order that I select a layer should
+> determine it's brightness ... the last selected layer is the focus layer
+
+### Model
+
+```
+{ key, label, on, order, draws }
+```
+
+`order` is the **draw depth and the brightness at once**. Highest = focus: drawn
+last, drawn at full strength; each layer below steps down (`1 − 0.28·depth`,
+floored at 0.35).
+
+This replaces hand-tuned per-layer alpha, which is what produced two unreadable
+terrain renders before Peter told me to stop doing it. Layer contention is the
+stack's job now.
+
+- **Toggling ON promotes.** The thing you just touched is the thing you are
+  looking at. Toggling OFF does not promote — focusing something invisible is
+  meaningless.
+- **Clicking the name focuses** without changing visibility.
+- **▲▼ reorder by hand.**
+- Promotion renumbers `1..n` so the displayed numbers stay small.
+
+### `draws: false` — filters, not layers
+
+`doors`, `routers` and `endpoints` share the single `radar-nodes-g` group, so they
+**cannot** be depth-ordered independently. They are filters *within* the nodes
+layer and are shown indented, without a number. Giving them one would be a lie in
+the UI.
+
+### Persistence goes through the single store
+
+`persistSet('radarLayers', …)` / `persistGet` — `ui_prefs`, the same blob as every
+other browser pref.
+
+The first version wrote **its own `localStorage` key**: a fourth private store, in
+precisely the area Peter was about to complain about. It also called
+`restoreRadarLayers()` from inside `initRadar()`, which early-returns before
+`homePos` is ready on a cold load and never retries — so even the private store
+never restored. Restore now runs from Alpine `init()`, next to `initPersist()`.
+
+Layer visibility and order are **per-viewer view state**, so `ui_prefs` is the
+right home: they change nothing the server does and nothing another viewer sees.
+
+### Verified 2026-08-05 across a hard reload
+
+Set terrain to focus and turned routers off, then reloaded:
+
+```
+order      1:clusters  2:nodes  3:terrain     (preserved)
+routers    off                                (preserved)
+opacity    terrain 1 · nodes 0.72 · clusters 0.44   (applied to the SVG)
+```

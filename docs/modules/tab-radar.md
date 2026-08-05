@@ -1,7 +1,7 @@
 ---
 module: tab-radar
 source: public/partials/tab-radar.html
-source_hash: 828494f7c72ec2766b17c3723790673e5d7e94679424e4777e423d18d7015288
+source_hash: d801871fcc4eb5013450a395d3227c15a9bc2b84452cf3eb1134bac83eadeda7
 updated: 2026-07-08
 ---
 

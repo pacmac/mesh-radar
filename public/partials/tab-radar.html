@@ -47,10 +47,32 @@
                 <li class="pt-1" style="border-top:1px solid rgba(0,255,80,0.14)">
                   <span class="font-mono opacity-60 uppercase tracking-wider">Layers</span>
                 </li>
-                <template x-for="ly in radarLayers" :key="ly.key">
-                  <li class="flex items-center justify-between gap-3">
-                    <span class="font-mono opacity-70" x-text="ly.label"></span>
-                    <input type="checkbox" class="toggle toggle-xs toggle-success"
+                <!-- DRAW LAYERS, top of the stack first. The number is the depth
+                     AND the brightness: highest = focus. Clicking the name
+                     promotes it; the arrows reorder by hand. -->
+                <template x-for="ly in [...orderedDrawLayers].reverse()" :key="ly.key">
+                  <li class="flex items-center justify-between gap-2">
+                    <span class="font-mono text-[10px] opacity-40 w-3" x-text="ly.order"></span>
+                    <button class="font-mono opacity-70 hover:opacity-100 text-left flex-1 no-persist"
+                            :class="ly.order === orderedDrawLayers.length ? 'text-success opacity-100' : ''"
+                            @click="focusRadarLayer(ly.key)" x-text="ly.label"></button>
+                    <span class="flex flex-col leading-none">
+                      <button class="text-[8px] opacity-40 hover:opacity-100 no-persist"
+                              @click="moveRadarLayer(ly.key, 1)">&#9650;</button>
+                      <button class="text-[8px] opacity-40 hover:opacity-100 no-persist"
+                              @click="moveRadarLayer(ly.key, -1)">&#9660;</button>
+                    </span>
+                    <input type="checkbox" name="radarLayer_on" class="toggle toggle-xs toggle-success no-persist"
+                           :checked="ly.on" @change="toggleRadarLayer(ly.key)">
+                  </li>
+                </template>
+                <!-- Node KINDS are filters inside the nodes layer, not draw
+                     layers — they share one <g> so they cannot be depth-ordered,
+                     and giving them a number would be a lie. -->
+                <template x-for="ly in radarLayers.filter(l => !l.draws)" :key="ly.key">
+                  <li class="flex items-center justify-between gap-3 pl-3">
+                    <span class="font-mono opacity-55 text-[11px]" x-text="ly.label"></span>
+                    <input type="checkbox" class="toggle toggle-xs toggle-success no-persist"
                            :checked="ly.on" @change="toggleRadarLayer(ly.key)">
                   </li>
                 </template>

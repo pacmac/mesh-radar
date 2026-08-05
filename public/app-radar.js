@@ -4,6 +4,7 @@
 //   ACTV (1): nodes, route overlay for targeted node (animated dots), red crosshairs, target arm
 //   SCAN (2): nodes only, NO route overlays, target arm shows scan position
 import {fetchJSON, svgElem, ageColor, themeColor,  haversine, bearing } from './app-helpers.js';
+import { persistGet, persistSet } from './app-persist.js';
 
 // ── Node marks: a shape per KIND, and distance-based emphasis ────────────────
 //
@@ -91,7 +92,6 @@ export const radarMixin = {
     this._initRadarRunning = true;
     try {
       if (!this.homePos) return;
-      this.restoreRadarLayers();
       // Fetched once on entry and redrawn from cache. Clusters change on the
       // order of hours (a node has to move, or a new anchor be seeded), so
       // re-fetching them on every radar redraw would be pure waste.
@@ -128,6 +128,7 @@ export const radarMixin = {
     this._drawRadarTerrain(maxKm);
     this._drawRadarClusters(maxKm);
     this._drawRadarNodes(maxKm, ctx);
+    this._applyLayerOrder();
   },
 
   // ── Clusters ───────────────────────────────────────────────────────────────
@@ -283,22 +284,101 @@ export const radarMixin = {
   },
   get layerClusters() { return this.layerOn('clusters'); },
 
+  /** Toggling a layer PROMOTES it — the thing you just touched is the thing you
+   *  are looking at. Turning one off does not promote it; there is no sense in
+   *  focusing something invisible. */
   toggleRadarLayer(key) {
     const l = (this.radarLayers || []).find(x => x.key === key);
     if (!l) return;
     l.on = !l.on;
-    try { localStorage.setItem('radarLayers', JSON.stringify(
-      Object.fromEntries(this.radarLayers.map(x => [x.key, x.on])))); } catch {}
+    if (l.on && l.draws) this._promoteLayer(l);
+    this._saveRadarLayers();
     this.drawRadar();
   },
 
-  /** Restore layer visibility. A view preference, so localStorage is the right
-   *  home — it is per-viewer and carries no meaning the backend needs. */
+  /** Explicit focus without changing visibility — clicking the layer's name. */
+  focusRadarLayer(key) {
+    const l = (this.radarLayers || []).find(x => x.key === key && x.draws);
+    if (!l || !l.on) return;
+    this._promoteLayer(l);
+    this._saveRadarLayers();
+    this.drawRadar();
+  },
+
+  /** Manual reorder, +1 up / -1 down among the draw layers. */
+  moveRadarLayer(key, dir) {
+    const draws = this.radarLayers.filter(x => x.draws).sort((a, b) => a.order - b.order);
+    const i = draws.findIndex(x => x.key === key);
+    const j = i + (dir > 0 ? 1 : -1);
+    if (i < 0 || j < 0 || j >= draws.length) return;
+    const t = draws[i].order; draws[i].order = draws[j].order; draws[j].order = t;
+    this._saveRadarLayers();
+    this.drawRadar();
+  },
+
+  _promoteLayer(l) {
+    const top = Math.max(...this.radarLayers.filter(x => x.draws).map(x => x.order));
+    if (l.order === top) return;
+    l.order = top + 1;
+    // Renumber 1..n so the numbers stay small and readable in the UI.
+    this.radarLayers.filter(x => x.draws).sort((a, b) => a.order - b.order)
+      .forEach((x, i) => { x.order = i + 1; });
+  },
+
+  /** THE SINGLE PERSIST MECHANISM. Peter, 2026-08-05: "IT MUST PERSIST", and
+   *  earlier: "one of my requirements was for a single persist function in the
+   *  browser that worked on every control".
+   *
+   *  The first version of this wrote its own localStorage key — a fourth private
+   *  store, in the very area he was about to complain about. It now goes through
+   *  app-persist like everything else, so there is one browser store. */
+  _saveRadarLayers() {
+    persistSet('radarLayers', this.radarLayers.map(l => ({ key: l.key, on: l.on, order: l.order })));
+  },
+
+  /** Restore visibility AND order. Called from Alpine init, NOT from initRadar —
+   *  initRadar early-returns when homePos is not ready on a cold load and never
+   *  retries, which is why the first version never restored anything. */
   restoreRadarLayers() {
-    try {
-      const saved = JSON.parse(localStorage.getItem('radarLayers') || '{}');
-      for (const l of this.radarLayers) if (l.key in saved) l.on = !!saved[l.key];
-    } catch {}
+    const saved = persistGet('radarLayers', null);
+    if (!Array.isArray(saved)) return;
+    for (const s of saved) {
+      const l = this.radarLayers.find(x => x.key === s.key);
+      if (!l) continue;                       // a layer that no longer exists
+      if (typeof s.on === 'boolean') l.on = s.on;
+      if (Number.isFinite(s.order) && l.draws) l.order = s.order;
+    }
+  },
+
+  /** Draw layers, bottom first. */
+  get orderedDrawLayers() {
+    return this.radarLayers.filter(l => l.draws).sort((a, b) => a.order - b.order);
+  },
+
+  /** Brightness from depth: the top layer is full strength, each one below it
+   *  steps down. This is the mechanism that replaces hand-tuned per-layer alpha. */
+  layerBrightness(key) {
+    const ord = this.orderedDrawLayers;
+    const i = ord.findIndex(l => l.key === key);
+    if (i < 0) return 1;
+    const fromTop = ord.length - 1 - i;
+    return Math.max(0.35, 1 - fromTop * 0.28);
+  },
+
+  /** Apply depth + brightness to the real SVG groups. */
+  _applyLayerOrder() {
+    const G = { terrain: 'radar-terrain-img', clusters: 'radar-clusters-g', nodes: 'radar-nodes-g' };
+    const horizon = document.getElementById('radar-horizon-path');
+    for (const l of this.orderedDrawLayers) {
+      const el = document.getElementById(G[l.key]);
+      if (!el) continue;
+      el.parentNode.appendChild(el);            // re-append = move to top of the stack
+      el.style.opacity = l.on ? String(this.layerBrightness(l.key)) : '0';
+      if (l.key === 'terrain' && horizon) {
+        horizon.parentNode.appendChild(horizon);
+        horizon.style.opacity = el.style.opacity;
+      }
+    }
   },
 
   /** Nodes the visible layers permit. `own` is always drawn — hiding our own
@@ -307,6 +387,7 @@ export const radarMixin = {
     return nodes.filter(n => {
       const k = n.node_kind || 'endpoint';
       if (k === 'own') return true;
+      if (!this.layerOn('nodes')) return false;   // the whole layer is off
       if (k === 'door')     return this.layerOn('doors');
       if (k === 'router')   return this.layerOn('routers');
       return this.layerOn('endpoints');
