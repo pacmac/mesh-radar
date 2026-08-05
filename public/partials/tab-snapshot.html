@@ -203,7 +203,7 @@
             <template x-for="c in [
               {v: snapNew?.first_contacts, k:'first-ever contacts', s:'completed a round trip'},
               {v: snapNew?.new_doors,      k:'new doors',           s:'first time as a first hop'},
-              {v: snapNew?.new_clusters,   k:'new clusters',        s: (snapNew?.clusters_total ?? '?') + ' known'},
+              {v: snapNew?.new_clusters,   k:'new clusters',        s: snapClusterWhen},
               {v: snapNew?.first_heard,    k:'nodes first heard',   s:'never seen before'},
               {v: snapNew?.furthest_new_km,k:'furthest new contact',s: (snapNew?.furthest_new_node || '') + (snapNew?.furthest_new_km ? ' km' : '')}]" :key="c.k">
               <div class="card bg-base-100 border overflow-hidden"

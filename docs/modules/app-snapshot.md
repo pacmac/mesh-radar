@@ -1,7 +1,7 @@
 ---
 module: app-snapshot
 source: public/app-snapshot.js
-source_hash: 9df417543dd211ba7e0a58a877478506096ad856cae4d4505797eff8995d48af
+source_hash: 7f7c753d97a00cd8846aeda3006a588471c66191f94e548cd6033b3f1b72b915
 updated: 2026-08-05
 ---
 

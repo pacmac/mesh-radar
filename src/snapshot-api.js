@@ -238,6 +238,15 @@ export function newGround(days = windowDays()) {
     // first_heard when nodeinfo has 1104 rows of it. Twice in one session.
     new_clusters: one('SELECT COUNT(*) n FROM clusters WHERE created_at > ?', since),
     clusters_total: one('SELECT COUNT(*) n FROM clusters'),
+    // WHEN they appeared, so a figure that is identical across every window
+    // explains itself. All 52 came from one auto-seed run, so every window that
+    // reaches back past it legitimately reports 52 — which looks exactly like a
+    // hard-coded value unless the date is shown. Peter: "why is 52 new clusters
+    // shown for every date range. that is impossible?" It is not, but a number
+    // nobody can distinguish from a fake is a defect regardless.
+    clusters_seeded_at: db.prepare('SELECT MAX(created_at) t FROM clusters').get()?.t ?? null,
+    clusters_sources: db.prepare('SELECT source, COUNT(*) n FROM clusters GROUP BY 1')
+                        .all().map(r => `${r.n} ${r.source}`).join(', '),
   };
 }
 

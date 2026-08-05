@@ -84,6 +84,17 @@ export const snapshotMixin = {
     }
   },
 
+  /** Clusters were all created by a single auto-seed run, so the count is the
+   *  same in every window that reaches past it. Saying WHEN removes the
+   *  ambiguity between "correct" and "hard-coded". */
+  get snapClusterWhen() {
+    const t = this.snapNew?.clusters_seeded_at;
+    if (!t) return `${this.snapNew?.clusters_total ?? '?'} known`;
+    const hrs = Math.round((Date.now() / 1000 - t) / 3600);
+    const when = hrs < 48 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`;
+    return `${this.snapNew?.clusters_sources || ''} · ${when}`;
+  },
+
   /** The window as the labels say it, driven by the SERVED window_days — so a
    *  caption can never claim "24h" while the numbers are all-time. That mismatch
    *  is exactly what the static page shipped. */
