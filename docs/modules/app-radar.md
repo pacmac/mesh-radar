@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: f510b807d164febaf1c01f7cc776333be10e37cbcadaba1b4e1dc8f6cce5abf4
+source_hash: 56b79c91171fe8b989b9d11e58ec6b9849f76f1adbb0c5cc1e2b95c85fbb0034
 updated: 2026-08-04
 ---
 
@@ -535,3 +535,23 @@ where it says it is.
 
 Verified: auto-range picks **150 km** (rings 5 / 25 / 75 / 150) against a real
 furthest node of 193 km, with MLBR still on the display.
+
+## Cluster label placement
+
+Labels are anchored at (hull centroid x, hull top y). That anchor is right, but it
+carries no memory of where the previous labels went, so in a dense sector the
+names stack and become unreadable. The blobs there really do overlap, so this
+cannot be solved by picking a different anchor.
+
+`_placeLabel(placed, x, y, text)` nudges each label clear of the ones already
+placed in the same draw: up first (away from the radar centre, which is usually
+open sky), then down, then sideways as a last resort. It returns `moved`, and a
+moved label gets a leader line back to its blob — otherwise a displaced label
+reads as the name of whichever cluster it landed over.
+
+Collision state (`placedLabels`) is rebuilt per draw. Persisting it across frames
+would push labels further on every redraw.
+
+Measured on the live 51-cluster set: 54 overlapping pairs before, 1 after; 33
+labels moved. In a real browser at 1600x1000, `getBBox` on the rendered SVG gives
+51 labels, 18 leader lines, 0 overlapping pairs.

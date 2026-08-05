@@ -495,6 +495,42 @@ export const radarMixin = {
 
   /** Nodes the visible layers permit. `own` is always drawn — hiding our own
    *  radios would remove the reference point the whole display is measured from. */
+  /** Nudge a cluster label clear of the ones already placed in this draw.
+   *
+   *  Labels were placed at (hull centroid x, hull top y) with no memory of where
+   *  the previous ones went, so in a dense sector — which is exactly where the
+   *  clusters are — they stacked on top of each other and became unreadable.
+   *  The blobs there genuinely overlap, so this cannot be solved by choosing a
+   *  better anchor; the labels have to move.
+   *
+   *  Search upward first (away from the radar centre, where there is usually
+   *  empty sky), then downward if up is exhausted. Returns the chosen point and
+   *  whether it moved, because a label that has travelled needs a leader line or
+   *  it silently retitles a neighbouring blob.
+   */
+  _placeLabel(placed, x, y, text) {
+    const h = 11;                                   // 9px type + breathing room
+    const w = Math.max(18, (text || '').length * 5.4 + 4);   // 9px monospace advance
+    const hits = (cx, cy) => placed.some(p =>
+      Math.abs(cx - p.x) * 2 < (w + p.w) && Math.abs(cy - p.y) * 2 < (h + p.h));
+
+    let fx = x, fy = y;
+    if (hits(fx, fy)) {
+      let found = false;
+      // up, then down — 8 steps each is ~90px of travel, beyond which the label
+      // is so far from its blob that moving it further stops helping.
+      for (let i = 1; i <= 8 && !found; i++) {
+        for (const cand of [y - i * h, y + i * h]) {
+          if (!hits(x, cand)) { fy = cand; found = true; break; }
+        }
+      }
+      // Still nothing: shift sideways as a last resort rather than overlapping.
+      if (!found) { fx = x + w * 0.6; fy = y; }
+    }
+    placed.push({ x: fx, y: fy, w, h });
+    return { x: fx, y: fy, moved: Math.abs(fy - y) > 2 || Math.abs(fx - x) > 2 };
+  },
+
   _layerFiltered(nodes) {
     return nodes.filter(n => {
       const k = n.node_kind || 'endpoint';
@@ -554,6 +590,10 @@ export const radarMixin = {
     // had to be invented.
     const clusterFirst = !this.layerOn('endpoints');
 
+    // Collision state for THIS draw only — stale placements across frames would
+    // push labels further every redraw.
+    const placedLabels = [];
+
     for (const c of d.clusters) {
       if (!c.member_count) continue;                    // an empty place draws nothing
       // A two-node group has no area and reads as a ring round two dots. Worth
@@ -597,10 +637,19 @@ export const radarMixin = {
       if (!clusterFirst) { g.appendChild(grp); continue; }
       const lx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
       const ly = Math.min(...pts.map(p => p[1])) - 6;
+      const lp = this._placeLabel(placedLabels, lx, ly, c.label);
+      // A label that had to move needs a thread back to its blob, otherwise it
+      // reads as the name of whichever cluster it landed over.
+      if (lp.moved) {
+        grp.appendChild(svgElem('line', {
+          x1: lp.x, y1: lp.y + 2, x2: lx, y2: ly,
+          style: `stroke:${base}0.45);stroke-width:0.75;pointer-events:none`,
+        }));
+      }
       // ONE LINE, SERVED. `c.label` is composed in Domain 1 (AA-20/10); the
       // detail that used to be a second line moves to the hover card, which is
       // where it can be laid out properly instead of fighting for space.
-      const t = svgElem('text', { x: lx, y: ly, 'text-anchor': 'middle',
+      const t = svgElem('text', { x: lp.x, y: lp.y, 'text-anchor': 'middle',
         style: `fill:${base}0.95);font-size:9px;font-family:ui-monospace,monospace;`
              + `paint-order:stroke;stroke:rgba(0,0,0,0.75);stroke-width:2.5px;pointer-events:none` });
       t.textContent = c.label;
