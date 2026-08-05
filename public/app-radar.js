@@ -125,6 +125,7 @@ export const radarMixin = {
     this._drawTargetArm(ctx);
     this._drawRadarBeam();
     this._drawRadarTraceroute(maxKm, ctx);
+    this._drawRadarTerrain(maxKm);
     this._drawRadarClusters(maxKm);
     this._drawRadarNodes(maxKm, ctx);
   },
@@ -138,6 +139,88 @@ export const radarMixin = {
   // verdict and its tone all come from GET /clusters (src/clusters.js). This
   // function projects lat/lon to screen and picks a colour from a served token.
   // It does not decide what a cluster is, where it ends, or whether it is solved.
+  // ── Terrain relief ─────────────────────────────────────────────────────────
+  //
+  // Peter, 2026-08-05: "what I am looking at is the terrain, i.e the hills and
+  // valleys that surround me ... I can already see by looking at the node
+  // distribution that we have walls / dead zones".
+  //
+  // The grid is SERVED (src/terrain.js) as elev_m[bearing][ring]. This paints it.
+  //
+  // PAINTED TO A CANVAS, NOT DRAWN AS SVG. 180 bearings x 45 rings is 8100 cells;
+  // as SVG paths that is 8100 DOM nodes rebuilt on every radar redraw. One image
+  // costs one element and repaints only when the scale changes.
+  //
+  // IT MUST USE _radarNorm, THE SAME COMPRESSIVE SCALE AS THE RINGS. Painting
+  // terrain linearly while the nodes sit on a quantile scale would put a ridge in
+  // the wrong place relative to the nodes behind it — which is precisely the
+  // comparison the layer exists to support.
+  async _loadTerrain() {
+    try {
+      const d = await fetchJSON('/terrain');
+      this.terrainData = d?.ready ? d : null;
+    } catch { this.terrainData = null; }
+  },
+
+  _drawRadarTerrain(maxKm) {
+    const img = document.getElementById('radar-terrain-img');
+    if (!img) return;
+    if (!this.layerOn('terrain')) { img.setAttribute('href', ''); return; }
+    const d = this.terrainData;
+    if (d == null) {
+      if (!this._terrainLoading) {
+        this._terrainLoading = true;
+        this._loadTerrain().finally(() => { this._terrainLoading = false; this.drawRadar(); });
+      }
+      return;
+    }
+    // Repaint only when the projection actually changed — the terrain itself is
+    // static, so redrawing it on every node update would be pure waste.
+    const key = `${maxKm}|${this.radarLogScale}|${d.meta?.sampled_at}`;
+    if (this._terrainKey === key && img.getAttribute('href')) return;
+    this._terrainKey = key;
+
+    const S = 512, C = S / 2, R = S / 2;
+    const cv = document.createElement('canvas');
+    cv.width = S; cv.height = S;
+    const ctx = cv.getContext('2d');
+    const B = d.bearings_deg, RAD = d.radii_km, E = d.elev_m;
+    const lo = d.min_m ?? 0, hi = d.max_m ?? 1;
+    const span = Math.max(1, hi - lo);
+    const step = (B.length > 1 ? (B[1] - B[0]) : 2);
+
+    // Low ground is left dark; height is drawn as a warm glow. The radar is a
+    // dark phosphor surface and the nodes must stay the brightest thing on it,
+    // so this is deliberately quiet — it is context, not the subject.
+    const colour = (m) => {
+      if (m == null) return null;                       // no data: draw nothing
+      const t = Math.max(0, Math.min(1, (m - lo) / span));
+      const a = 0.05 + 0.55 * t * t;                    // squared: flat ground stays flat
+      const r = Math.round(90 + 165 * t), g = Math.round(70 + 120 * t), b = Math.round(40 + 30 * t);
+      return `rgba(${r},${g},${b},${a.toFixed(3)})`;
+    };
+
+    for (let i = 0; i < B.length; i++) {
+      const a0 = (B[i] - step / 2 - 90) * Math.PI / 180;
+      const a1 = (B[i] + step / 2 - 90) * Math.PI / 180;
+      let prev = 0;
+      for (let k = 0; k < RAD.length; k++) {
+        const col = colour(E[i]?.[k]);
+        const rOut = this._radarNorm(RAD[k], maxKm) * R;
+        if (col && rOut > prev) {
+          ctx.beginPath();
+          ctx.arc(C, C, rOut, a0, a1);
+          ctx.arc(C, C, prev, a1, a0, true);
+          ctx.closePath();
+          ctx.fillStyle = col;
+          ctx.fill();
+        }
+        prev = rOut;
+      }
+    }
+    img.setAttribute('href', cv.toDataURL('image/png'));
+  },
+
   async _loadClusters() {
     try {
       const d = await fetchJSON('/clusters');

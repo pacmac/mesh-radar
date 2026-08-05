@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: 84aa4268a8ba2e0bdded6a330c650feb551c5ce019bd2078877f23e75e33eebb
+source_hash: 4d98c371d4d63177e223443ee220e4f32bada6c859dbcfaa4848d4a43f88f87f
 updated: 2026-08-04
 ---
 
@@ -321,3 +321,46 @@ cache rather than re-fetched per redraw.
 dense south-west and northern regions. The node labels solve this with a
 collision solver (`_solveLabel`); the cluster labels do not use it yet. That is
 the obvious next step and it is not done.
+
+## Terrain relief layer (2026-08-05)
+
+Peter: *"what I am looking at is the terrain, i.e the hills and valleys that
+surround me"*, and *"I can already see by looking at the node distribution that we
+have walls / dead zones, my gut feeling is these will most likely correlate with
+terrain."*
+
+The grid is **served** (`src/terrain.js`, `elev_m[bearing][ring]`). This paints it.
+
+**Painted to a canvas, not drawn as SVG.** 180 bearings × 45 rings is 8,100 cells;
+as SVG paths that is 8,100 DOM nodes rebuilt on every radar redraw. One `<image>`
+costs one element, and it repaints only when the projection changes — the terrain
+itself is static.
+
+**It must use `_radarNorm`.** Painting terrain linearly while the nodes sit on the
+compressive quantile scale would put a ridge in the wrong place relative to the
+nodes behind it — which is exactly the comparison the layer exists to support.
+
+Colour: low ground stays dark, height is a warm glow, alpha ramped on `t²` so flat
+ground stays flat. Deliberately quiet — the radar is a dark phosphor surface and
+the node marks must remain the brightest thing on it. Null elevations (sea, or
+outside coverage) draw nothing rather than as land.
+
+Sits directly above the background and below everything else, at `opacity 0.55`.
+Toggled by the `terrain` layer.
+
+### Verified 2026-08-05
+
+Grid loaded (180 bearings, −1 to 484 m), image painted (64 KB at 2000 km range,
+343 KB at 50 km). Ridge structure visible: the south-west band, higher ground
+west and north-west, darker low ground east.
+
+**KNOWN — coarse at range.** Ring radii are quadratic, so samples crowd near home
+and thin out badly past ~30 km, giving visible radial streaking at the rim. That
+is the right trade for RF (the near field decides whether we get out at all) but
+it is not a pretty relief map. More rings, or a second linear pass at range, would
+fix it.
+
+**KNOWN — the auto range is blown out by one bad node.** `MLBR` reports 1681 km,
+which drives auto-range to a 2000 km ring and crushes 60 km of terrain to a smudge.
+`clusters.js` already applies a 500 km plausibility ceiling; the radar does not.
+Not fixed here — it is a separate defect and belongs in its own task.

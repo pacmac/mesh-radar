@@ -139,12 +139,14 @@ function dashboard() {
     // backend concept. If these ever become backend concepts they must be served
     // like the mode vocabulary is.
     radarLayers: [
+      { key: 'terrain',   label: 'Terrain',   on: true  },
       { key: 'clusters',  label: 'Clusters',  on: true  },
       { key: 'doors',     label: 'Doors',     on: true  },
       { key: 'routers',   label: 'Routers',   on: true  },
       { key: 'endpoints', label: 'Endpoints', on: true  },
     ],
     clusterData:    null,
+    terrainData:    null,
     clusterCard:    null,   // hovered cluster detail; null = hidden
     radarNodes:     [],
     radarSelected:  null,
