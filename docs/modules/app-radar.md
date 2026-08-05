@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: 56b79c91171fe8b989b9d11e58ec6b9849f76f1adbb0c5cc1e2b95c85fbb0034
+source_hash: 683fcea6bd399d433e8c4af624e838799f89c10f4d03c751f22e504cf1f731d5
 updated: 2026-08-04
 ---
 
@@ -555,3 +555,40 @@ would push labels further on every redraw.
 Measured on the live 51-cluster set: 54 overlapping pairs before, 1 after; 33
 labels moved. In a real browser at 1600x1000, `getBBox` on the rendered SVG gives
 51 labels, 18 leader lines, 0 overlapping pairs.
+
+## A layer toggle may never hide what is being aimed at
+
+Peter, 2026-08-05: *"any endpoint that is currently being targeted should always
+be visible with crosshairs no matter what layers are selected."*
+
+The layer filter added earlier the same day made the target a casualty of the
+`nodes` toggle: the selection marker is emitted inside the node draw loop, and
+that loop is fed by `_layerFiltered()`. Turning endpoints off therefore deleted
+the one node you most need on screen.
+
+Two separate requirements come out of that sentence, and only the first was
+handled by the initial draft:
+
+1. **The targeted node must survive the layer filter.**
+   `_withTargetsVisible(filtered, all, ctx)` re-admits it *after* filtering, so
+   the filter stays honest for everything else. Returns `filtered` untouched when
+   nothing is missing, so the common case allocates nothing.
+
+2. **The targeted node must carry crosshairs.** The dashed marker was gated on
+   `isSelected` alone — the operator's selection. A node the *engine* is aiming
+   at was re-admitted and drawn as an ordinary dot, which satisfies "visible" but
+   not "with crosshairs". The gate is `isSelected || isEngineTarget`.
+
+"Target" has two senses and both count:
+
+| sense | source | crosshairs |
+|---|---|---|
+| what the engine is aiming at | `yagiPointTarget`, `ctx.tracerouteNode` | yes |
+| what the operator selected | `radarSelected.num` | yes |
+
+Verified with every layer off, so `_layerFiltered()` returns 0:
+
+```
+no selection, engine target live   -> 1 mark  (the engine target)
+plus an operator selection         -> 2 marks (selection + engine target)
+```

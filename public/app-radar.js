@@ -508,6 +508,23 @@ export const radarMixin = {
    *  whether it moved, because a label that has travelled needs a leader line or
    *  it silently retitles a neighbouring blob.
    */
+  /** Re-admit the currently-targeted endpoint to a layer-filtered list.
+   *
+   *  Returns `filtered` unchanged when the targets already survived, so the
+   *  common case allocates nothing.
+   */
+  _withTargetsVisible(filtered, all, ctx) {
+    const want = new Set([
+      this.yagiPointTarget,
+      ctx?.tracerouteNode,
+      this.radarSelected?.num,
+    ].filter(n => n != null));
+    if (!want.size) return filtered;
+    const have = new Set(filtered.map(n => n.num));
+    const missing = all.filter(n => want.has(n.num) && !have.has(n.num));
+    return missing.length ? filtered.concat(missing) : filtered;
+  },
+
   _placeLabel(placed, x, y, text) {
     const h = 11;                                   // 9px type + breathing room
     const w = Math.max(18, (text || '').length * 5.4 + 4);   // 9px monospace advance
@@ -955,7 +972,21 @@ export const radarMixin = {
     // LAYER FILTER. Applied here rather than to radarNodes itself, so the node
     // TABLE and the plotted-count keep showing the whole picture while the radar
     // shows the subset — hiding a layer is a view choice, not a data change.
-    const nodes = this._layerFiltered(this.radarNodes || []);
+    // A LAYER TOGGLE MAY NEVER HIDE THE THING BEING AIMED AT.
+    //
+    // Peter, 2026-08-05: "any endpoint that is currently being targeted should
+    // always be visible with crosshairs no matter what layers are selected."
+    //
+    // The layer filter shipped today made the crosshair a casualty of the
+    // `nodes` toggle, because the marker is emitted inside the node draw loop
+    // that this list feeds — so turning endpoints off deleted the one node you
+    // most need on screen. Re-admitting here, AFTER the filter, keeps the filter
+    // honest for everything else while making the target unhideable.
+    //
+    // Both senses of "target" count: what the engine is currently aiming at
+    // (yagiPointTarget / ctx.tracerouteNode) and what the operator has selected.
+    const allNodes = this.radarNodes || [];
+    const nodes = this._withTargetsVisible(this._layerFiltered(allNodes), allNodes, ctx);
     const CX = 300, CY = 300, R = 256;
     const G4 = 'rgba(0,255,80,0.95)', AMBER = 'rgba(255,200,40,0.90)', LABEL = 'rgba(255,140,0,0.55)';
     const BASE_DIAG = 12, STEP_DIAG = 14, HOR_LEN = 16;
@@ -1040,8 +1071,16 @@ export const radarMixin = {
         ? (this.deviceConfigs[otherDev]?.color ? themeColor(this.deviceConfigs[otherDev].color) : null)
         : null;
       const isSelected   = node.num === selectedNum;
+      // WHAT THE ENGINE IS AIMING AT, which is not the same as what the operator
+      // clicked. Peter's rule is about the former — "any endpoint that is
+      // currently being targeted" — and the dashed marker was gated on the
+      // selection alone, so a node the rotator was pointing at got re-admitted
+      // past the layer filter and then drawn as an ordinary dot.
+      const isEngineTarget = node.num === pointTarget || node.num === ctxTraceNode;
       const isLastHeard  = node.num === lastHeardNum;
-      const g = svgElem('g', { class: 'radar-node' + (isSelected ? ' radar-node-selected' : ''), style: 'cursor:pointer' });
+      const g = svgElem('g', { class: 'radar-node'
+        + (isSelected ? ' radar-node-selected' : '')
+        + (isEngineTarget ? ' radar-node-target' : ''), style: 'cursor:pointer' });
 
       if (isLastHeard) {
         const rs = `stroke:${AMBER};stroke-width:1.2`;
@@ -1100,14 +1139,24 @@ export const radarMixin = {
       }
       // ─────────────────────────────────────────────────────────────────────
 
-      if (isSelected)
+      // CROSSHAIRS ON ANYTHING BEING TARGETED — selection OR engine aim. The
+      // engine target gets a second, wider ring so the two senses stay tellable
+      // apart when they are different nodes: an operator can be inspecting one
+      // node while the rotator is pointed at another, and a single identical
+      // marker on both would make that look like one target.
+      if (isSelected || isEngineTarget)
         g.appendChild(svgElem('circle', { cx: x, cy: y, r: 8, style: `fill:none;stroke:${G4};stroke-width:1.5;stroke-dasharray:4 3` }));
-      const r = isSelected ? 6 : 4;
+      if (isEngineTarget)
+        g.appendChild(svgElem('circle', { cx: x, cy: y, r: 12, style: `fill:none;stroke:${G4};stroke-width:1;stroke-dasharray:2 4;opacity:0.8` }));
+      const r = (isSelected || isEngineTarget) ? 6 : 4;
       // KIND-AWARE MARK. `node_kind` is served (src/node-kind.js); this only maps
       // it to a shape. Unknown/absent kind falls back to 'endpoint', so an older
       // payload degrades to today's behaviour rather than drawing nothing.
       const kind = node.node_kind || 'endpoint';
-      const op   = isSelected ? 1 : markOpacity(kind, npos[ni].norm ?? 1);
+      // Full opacity for a target too — markOpacity() fades distant nodes, and a
+      // far target that survived the layer filter must not then be dimmed to the
+      // edge of visibility.
+      const op   = (isSelected || isEngineTarget) ? 1 : markOpacity(kind, npos[ni].norm ?? 1);
       if (ringColor)
         g.appendChild(svgElem('circle', { cx: x, cy: y, r: r + 2, style: `fill:${ringColor};opacity:${0.85 * op}` }));
       for (const el of kindGlyph(kind, x, y, r, dotColor, op)) g.appendChild(el);
