@@ -89,24 +89,22 @@ Nothing is "fixed" until it passes a test that proves it.
 
 ---
 
-## Skills — in force by default, no reminder needed
+## Skills
 
-Peter should not have to name these at the start of every session.
+The standing set — `/idiot`, `/xsession`, `/terse`, `/park`, `/handover`,
+`/playwright`, `/hallucinate` — plus the gate, absence-checking, tagging and
+lead-with-the-defect rules live in **`~/.claude/CLAUDE.md`** and apply to every
+project. They are not repeated here.
 
-| skill | when it applies |
+What is specific to node-dash:
+
+| | |
 |---|---|
-| `/idiot` | **every** code change. Active mcpp task + attached spec BEFORE any `Edit`/`Write`. Never bypass with `python3` heredocs or `sed -i` — that walks past the hook. |
-| `/xsession` | anything belonging to another repo. **Inform the peer; never fix it yourself, and never build a workaround for their bug.** Channels are per-pair, e.g. `mcpp-plan--node-dash`. |
-| `/terse` | always. Outcome first, no preamble, no recap. |
-| `/park` | Peter raises an idea mid-task: capture as `park-<slug>`, restore the previous task, continue. Surface the parked list when going idle. |
-| `/handover` | before abandoning a session — careless, error-prone, or out of context. Writes `<project-root>/docs/HANDOVER.md`. |
-| `/playwright` | every UI change. Real browser, both themes, at the sizes actually used. A rendered DOM element is not a verified one. |
-| `frontend-design` | when designing a page rather than fixing one. |
-| `/hallucinate` | Peter invokes it when a description does not match what is on screen. Stop, re-read the source, correct explicitly. |
-
-Task, step and handover titles follow `docs/TASK_VOCABULARY.md` — the closed verb
-set (`BUG`, `GAP`, `VERIFY`, `MEASURE`, `DISCUSS`, `DECIDE`, `AGREE`, `TOOL`,
-`TIDY`). No opaque ids, no numbered sections.
+| xsession channels | `mesh-gw--node-dash`, `mcpp-plan--node-dash`, `device--node-dash`, `mt-transport--node-dash`, `node-dash--services`, `mt-radar--node-dash` |
+| UI verification | ~1600x1000 **and** 1280x800, both themes. Layout is three checks: `.card-body scrollHeight > clientHeight` (cropped), `.card rect.bottom > innerHeight` (off screen), leaf `rect.bottom > innerHeight` (text cut). |
+| page contract tests | `tests/test_page_snapshot.py` — presence, action, truth. One per page; add one when you add a page. |
+| task vocabulary | `docs/TASK_VOCABULARY.md` (the global verb set, scoped to this repo's tasks) |
+| deploys | pm2, **watch OFF** — `src/` edits need `pm2 restart node-dash`; `public/` is live immediately |
 
 ---
 
