@@ -1,8 +1,8 @@
 ---
 module: tab-snapshot
 source: public/partials/tab-snapshot.html
-source_hash: 7c26cfacbc6eeebc16c8a0c0dab7a01887df17293b283e79770f241d65a7dfcd
-updated: 2026-08-05
+source_hash: b88663b498d05d78cad1319a11d2d1f32c933d99bf511287ff5335c0e4e144c6
+updated: 2026-08-06
 ---
 
 # Module: tab-snapshot
@@ -12,14 +12,60 @@ updated: 2026-08-05
 The Snapshot board: one screen answering *how far can we get · what is new · are
 we productive · is the machine working*. Presentation only.
 
-## Sized to the viewport, not the parent
+## Sized by the shell — `h-full`, and no padding of its own
 
-`h-[calc(100vh-5.2rem)]`. `h-full` resolves to the PARENT, which starts below the
-top bar, so the page hung off screen by exactly the header height — and the "no
-scroll" check passed because the container fits *itself*.
+`h-full`, no `p-3`. This was `h-[calc(100vh-5.2rem)] p-3` and both halves were
+wrong. Measured 2026-08-06 at 1280x800:
+
+```
+panel parent   .flex-1.min-h-0 > .h-full.p-3     top 39  bottom 800   <- ends AT the viewport
+panel (old)    h-[calc(100vh-5.2rem)] p-3        top 52  bottom 764   <- 36px thrown away
+```
+
+The 5.2rem was a guess at the chrome above; the parent chain already resolves to
+the viewport, so the guess only cost height. The parent also already applies
+`p-3`, so the panel's own `p-3` was a second helping — another 25px. Together
+that is 61px, and the cards below paid for all of it.
+
+**The old spec said `h-full` "hung off screen by exactly the header height".**
+That was true of an earlier shell and false of this one, and it was carried
+forward for weeks as if it were a measurement. Re-measure before restoring any
+calc: confirm the panel's parent bottom equals `innerHeight`. If a shell change
+ever breaks that, fix the SHELL — every full-height page has the same need.
 
 Rows are content-driven. Fixed `basis-[42%]` fractions broke at 1280x800 because
 the card CONTENTS do not scale with the viewport.
+
+## The two bands are not symmetric — `flex-[1.15]` and `flex-1`
+
+Band 1 carries the ladder, whose rows are a fixed height each. Band 3 carries a
+sparkline that shrinks freely and a health list with room to spare. An even split
+starved the one that cannot shrink. Measured at 1280x800:
+
+```
+even split (flex-1 / flex-1)      ladder headroom  7px   health slack  86px
+flex-[1.15] / flex-1              ladder headroom 28px   health slack  65px
+```
+
+Re-measure both if either card gains a row. A layout that fits with 7px to spare
+is not fixed, it is about to break.
+
+## Density, not deletion — how the 1280x800 overflow was actually closed
+
+At 1280x800 the ladder needed 387px in 251 and the health list 295 in 179. **No
+row was dropped and no scroll container was removed.** The height came from:
+
+| change | why |
+|---|---|
+| bands wrapped in their own `gap-1` | a list of bars is not a stack of sections; the card-body `gap-3` was separating all twelve rows |
+| ladder + health `!p-3 gap-2` | these two cards are the tightest on the page |
+| ladder counts, both headings → `text-sm` | matches the labels already beside them |
+| health rows → `text-sm`, `py-1` dropped | at 1280 this column is narrow enough that text-base label + text-base value could not share a line, so "Alert email" and "Last alert sent" WRAPPED — 61px rows against 35px. The `border-b` already separates rows; the padding added nothing it did not. |
+| new-ground tiles `!p-3`, `text-3xl` | the caption wrapped at 245px wide, growing the strip 74px → 67px after |
+
+Doors stay itemised at 2 with the remainder STATED. A third row costs ~22px of
+the 28px headroom, which is not a margin. Raise the slice only against a fresh
+measurement.
 
 **The layout check, all three levels:**
 
@@ -38,6 +84,10 @@ is worse.
 "No scrolling" governs the PAGE. The ladder/doors card scrolls as one region when
 it cannot fit; an earlier version deleted door rows to make them fit, which is
 discarding data to fix CSS.
+
+As of 2026-08-06 it does not need to: `tests/test_page_snapshot.py` reports
+`cut 0` at 1600x1000 and 1280x800 in both themes. The `overflow-y-auto` stays as
+the failure mode of last resort — a scrollbar is recoverable, a crop is not.
 
 ## Nothing on this page may be invented
 

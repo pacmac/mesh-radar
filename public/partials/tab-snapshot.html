@@ -23,11 +23,25 @@
              to either stretch (preserveAspectRatio="none" — which visibly
              distorted the first pass) or letterbox. Percentage-positioned
              elements scale correctly at any width. -->
-        <!-- h-full resolves to the PARENT's height, and the parent starts below the top
-     bar — so h-full overflowed the viewport by exactly the header height (48px
-     at 1000px tall) and cropped the bottom row. Measure against the VIEWPORT,
-     not the container: a container that fits itself can still hang off screen. -->
-<div class="h-[calc(100vh-5.2rem)] flex flex-col gap-3 p-3 overflow-hidden"
+        <!-- SIZE FROM THE SHELL, NOT FROM A GUESSED NUMBER.
+             This was `h-[calc(100vh-5.2rem)] p-3`, and both halves were wrong:
+
+               - 5.2rem was a guess at the chrome above. Measured 2026-08-06 at
+                 1280x800: the panel's own parent already ends exactly at the
+                 viewport bottom (top 39 → bottom 800), so the guess simply threw
+                 away 36px of height and the cards below paid for it.
+               - the parent ALREADY applies p-3. The panel's own p-3 was a second
+                 helping of the same padding — another 25px.
+
+             The old comment claimed `h-full` "overflowed the viewport by exactly
+             the header height". That was true of an older shell; it is not true
+             of this one. Re-measure before restoring the calc — an inherited
+             claim about a layout is not evidence about the layout you have.
+
+             To re-check: read the panel's parent chain and confirm its bottom
+             equals innerHeight. If a future shell change breaks that, fix the
+             SHELL, not this page — every full-height page has the same need. -->
+<div class="h-full flex flex-col gap-3 overflow-hidden"
              x-init="loadSnapshot()">
 
           <!-- ── header ────────────────────────────────────────────────── -->
@@ -69,7 +83,14 @@
           </div>
 
           <!-- ── band 1: how far can we get ────────────────────────────── -->
-          <div class="grid grid-cols-3 gap-3 flex-1 min-h-[13rem]">
+          <!-- flex-[1.15], not flex-1. The two bands are NOT symmetric in what
+               they need: this row carries the ladder, whose rows are a fixed
+               height each, while band 3 carries a sparkline that shrinks freely
+               and a health list with room to spare. Measured at 1280x800 with an
+               even split the ladder had 7px of headroom, band 3 had 86px going
+               spare. 1.15 moves ~19px across: ladder 28px, health still 65px.
+               Re-measure both if either card gains content. -->
+          <div class="grid grid-cols-3 gap-3 flex-[1.15] min-h-[13rem]">
             <div class="card bg-base-100 border border-base-300 col-span-2 overflow-hidden">
               <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
                 <div class="flex items-baseline gap-6 shrink-0">
@@ -145,30 +166,44 @@
 
             <!-- ladder + doors -->
             <div class="card bg-base-100 border border-base-300 overflow-hidden">
-              <div class="card-body !p-4 gap-3 min-h-0 overflow-y-auto">
-                <h2 class="text-base font-display font-semibold tracking-wide opacity-70 shrink-0">Where the mesh lives
+              <!-- This card is the tightest on the page and the one that used to
+                   scroll. Its density comes from three places, none of which
+                   drops a row:
+                     !p-3 not !p-4      — 8px
+                     gap-2 not gap-3    — the card-body gap separates SECTIONS,
+                                          and there are 4 of them, not 12 rows
+                     text-sm counts     — matches the labels already beside them;
+                                          text-base made every row 4px taller
+                   The bands live in their own gap-1 wrapper below for the same
+                   reason: a list of bars is not a stack of sections. -->
+              <div class="card-body !p-3 gap-2 min-h-0 overflow-y-auto">
+                <h2 class="text-sm font-display font-semibold tracking-wide opacity-70 shrink-0">Where the mesh lives
                   <span class="text-xs font-mono opacity-50 ml-1" x-text="snapWindowLabel"></span></h2>
-                <template x-for="r in (snapDist?.bands || [])" :key="r.label">
-                  <div class="flex items-center gap-2.5">
-                    <span class="text-sm font-mono opacity-60 w-20 shrink-0" x-text="r.label"></span>
-                    <div class="flex-1 h-3 bg-base-300 rounded-sm overflow-hidden">
-                      <div class="h-full rounded-sm"
-                           :class="r.pct === 100 ? 'bg-primary' : 'bg-base-content/30'"
-                           :style="`width:${r.pct}%`"></div>
+                <div class="flex flex-col gap-1 shrink-0">
+                  <template x-for="r in (snapDist?.bands || [])" :key="r.label">
+                    <div class="flex items-center gap-2.5">
+                      <span class="text-sm font-mono opacity-60 w-20 shrink-0" x-text="r.label"></span>
+                      <div class="flex-1 h-3 bg-base-300 rounded-sm overflow-hidden">
+                        <div class="h-full rounded-sm"
+                             :class="r.pct === 100 ? 'bg-primary' : 'bg-base-content/30'"
+                             :style="`width:${r.pct}%`"></div>
+                      </div>
+                      <span class="text-sm font-mono w-10 text-right" x-text="r.count"></span>
                     </div>
-                    <span class="text-base font-mono w-10 text-right" x-text="r.count"></span>
-                  </div>
-                </template>
+                  </template>
+                </div>
 
-                <h2 class="text-base font-display font-semibold tracking-wide opacity-70 mt-1">Doors carrying us
+                <h2 class="text-sm font-display font-semibold tracking-wide opacity-70">Doors carrying us
                   <span class="text-xs font-mono opacity-50 ml-1"><span x-text="snapDist?.doors_total ?? 0"></span> total</span></h2>
                 <!-- Every door the window holds, scrollable INSIDE the card. The
                      previous version deleted rows to stop the card clipping,
                      which is fixing a CSS bug by discarding data. -->
                 <div class="flex flex-col gap-1 shrink-0">
-                  <!-- 2 rows, not 5. Five bands + five doors + two headings need
-                       306px in a 242px card at 800px tall. The remainder is still
-                       STATED below, so nothing is hidden — fewer are itemised. -->
+                  <!-- 2 rows, not 5. The card now has ~28px of headroom at
+                       1280x800; a third door row costs ~22px and would leave 6px,
+                       which is not a margin. The remainder is STATED below, so
+                       nothing is hidden — fewer are itemised. Raise the slice
+                       only against a fresh measurement, not by eye. -->
                   <template x-for="r in (snapDist?.doors || []).slice(0, 2)" :key="r.num">
                     <div class="flex items-center gap-2.5">
                       <span class="text-sm font-mono opacity-60 w-20 shrink-0 truncate" x-text="r.name"></span>
@@ -177,7 +212,7 @@
                              :class="r.pct === 100 ? 'bg-primary' : 'bg-base-content/30'"
                              :style="`width:${r.pct}%`"></div>
                       </div>
-                      <span class="text-base font-mono w-14 text-right" x-text="r.uses"></span>
+                      <span class="text-sm font-mono w-14 text-right" x-text="r.uses"></span>
                     </div>
                   </template>
                   <div class="text-sm opacity-50" x-show="!(snapDist?.doors || []).length">
@@ -211,8 +246,13 @@
               {v: snapNew?.furthest_new_km,k:'furthest new contact',s: (snapNew?.furthest_new_node || '') + (snapNew?.furthest_new_km ? ' km' : '')}]" :key="c.k">
               <div class="card bg-base-100 border overflow-hidden"
                    :class="(c.v > 0) ? 'border-primary/40' : 'border-base-300'">
-                <div class="card-body !p-4 flex-row items-center gap-3">
-                  <div class="text-4xl font-display font-bold leading-none tracking-tight"
+                <!-- !p-3 and text-3xl, not !p-4/text-4xl. At 1280 these five
+                     tiles are 245px wide and the caption wraps to two lines, so
+                     the strip grew 74px → 107px exactly where the two full-height
+                     bands could least afford it. It is 67px now, and the tile is
+                     still the largest number on its row. -->
+                <div class="card-body !p-3 flex-row items-center gap-3">
+                  <div class="text-3xl font-display font-bold leading-none tracking-tight"
                        :class="(c.v > 0) ? 'text-primary' : 'opacity-40'"
                        x-text="c.v == null ? '–' : c.v"></div>
                   <div class="min-w-0">
@@ -257,15 +297,22 @@
             </div>
 
             <div class="card bg-base-100 border border-base-300 overflow-hidden">
-              <div class="card-body !p-4 gap-3 min-h-0 overflow-hidden">
-                <h2 class="text-base font-display font-semibold tracking-wide opacity-70">Is the machine working</h2>
+              <!-- Same density treatment as the ladder, for a different reason:
+                   at 1280 this column is narrow enough that a text-base label and
+                   a text-base value could not share a line, so "Alert email" and
+                   "Last alert sent" WRAPPED — 61px rows against 35px ones, and
+                   the whole list scrolled. text-sm fits them on one line each.
+                   The py-1 went with it: a border-b already separates the rows,
+                   so the padding was doing nothing the border was not. -->
+              <div class="card-body !p-3 gap-2 min-h-0 overflow-hidden">
+                <h2 class="text-sm font-display font-semibold tracking-wide opacity-70">Is the machine working</h2>
                 <div class="flex-1 min-h-0 overflow-y-auto pr-1">
                   <template x-for="r in (snapHealth?.rows || [])" :key="r.label">
-                    <div class="flex items-center justify-between gap-2 py-1 border-b border-base-300/50 last:border-0 shrink-0">
-                      <span class="text-base opacity-70" x-text="r.label"></span>
+                    <div class="flex items-center justify-between gap-2 border-b border-base-300/50 last:border-0 shrink-0">
+                      <span class="text-sm opacity-70" x-text="r.label"></span>
                       <!-- A row we cannot measure says so. It never shows a
                            plausible-looking value it did not obtain. -->
-                      <span class="text-base font-mono text-right"
+                      <span class="text-sm font-mono text-right"
                             :class="r.value == null ? 'opacity-40 text-sm' : (r.tone === 'warning' ? 'text-warning' : '')"
                             x-text="r.value ?? ('unknown — ' + r.reason)"></span>
                     </div>
