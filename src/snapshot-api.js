@@ -94,8 +94,38 @@ export function frontier(days = windowDays()) {
     db.prepare(`SELECT DISTINCT to_num FROM traceroute_history
                  WHERE status = 'ok' AND ts > ?`).all(sinceTs(days)).map(r => r.to_num));
 
+  // WHAT CARRIED IT. This endpoint used to tell the browser that RF and MQTT
+  // could not be told apart, citing `packet-provenance-capture` as unlanded. It
+  // HAD landed — `relay_observation.transport` holds 132,674 rows. That was the
+  // fourth absence asserted in this codebase without reading the schema, after
+  // nodeinfo.first_heard, clusters.created_at and alert_rules.last_sent, and no
+  // test caught any of them because nothing is wrong with code that renders a
+  // false caveat.
+  //
+  // Same window as everything else above: a provenance flag from a different
+  // period would be exactly the mixed-window defect this file exists to prevent.
+  const loraNodes = new Set(
+    db.prepare(`SELECT DISTINCT from_num FROM relay_observation
+                 WHERE transport = 'TRANSPORT_LORA' AND ts > ?`).all(sinceTs(days))
+      .map(r => r.from_num));
+
+  // THE EVIDENCE EPOCH, and it matters more than the flag. relay_observation
+  // begins 2026-08-03 07:39 — it does not reach back over the history `nodes`
+  // holds. So `lora: false` means "NO PROVENANCE RECORDED", never "arrived by
+  // MQTT". All-time: 590 heard, 261 with a LoRa row, 329 without — and every one
+  // of those 329 has ZERO relay_observation rows of ANY transport, not internal
+  // ones. Reading absence as MQTT would replace the false caveat this change
+  // removes with a fresh one pointing the other way.
+  //
+  // Same class as `direct-gate-epoch` (signal_history before 27 Jul): a column
+  // that started recording partway through needs its start date served beside
+  // it, or every consumer silently treats "not yet recorded" as "measured false".
+  const provenanceSince =
+    db.prepare('SELECT MIN(ts) t FROM relay_observation').get()?.t ?? null;
+
   let far = null, farNode = null, best = null, bestNode = null;
-  let heard = 0, confirmedHeard = 0, beyondScale = 0;
+  let farLora = null, farLoraNode = null;
+  let heard = 0, confirmedHeard = 0, beyondScale = 0, heardLora = 0;
   // THE RULER'S TICKS, one per heard node. Previously a typed array of
   // positions, which meant the density — the entire point of the instrument —
   // was invented. Served as distances; the browser only maps them to a scale.
@@ -107,8 +137,13 @@ export function frontier(days = windowDays()) {
     heard++;
     if (confirmed.has(r.num)) confirmedHeard++;
     if (far == null || d > far) { far = d; farNode = r.short_name; }
+    const lora = loraNodes.has(r.num);
+    if (lora) {
+      heardLora++;
+      if (farLora == null || d > farLora) { farLora = d; farLoraNode = r.short_name; }
+    }
     ticks.push({ km: Math.round(d * 10) / 10, hops: r.hops ?? null,
-                 direct: r.hops === 0, confirmed: confirmed.has(r.num) });
+                 direct: r.hops === 0, confirmed: confirmed.has(r.num), lora });
     // Quality: distance per leg. hops=0 means one leg (us -> them), so +1.
     if (r.hops != null && r.hops >= 0) {
       const q = d / (r.hops + 1);
@@ -123,6 +158,19 @@ export function frontier(days = windowDays()) {
     furthest_km: r1(far), furthest_node: farNode,
     heard, confirmed: confirmedHeard,
     best_quality_km_per_hop: r1(best), best_quality_node: bestNode,
+    // PROVENANCE, not a second reach figure. `furthest_lora_km` <= `furthest_km`
+    // by construction: it is the same set filtered, never a longer distance.
+    // NOT YET RENDERED — serving it is Domain 1, putting it on the board is
+    // Domain 2 (`snapshot-lora-provenance-card`). Serving an unrendered figure
+    // is how charts.heard_km hid; this one is deliberate and tracked.
+    heard_lora: heardLora,
+    furthest_lora_km: r1(farLora), furthest_lora_node: farLoraNode,
+    // Served so no consumer can read `lora: false` as MQTT. `lora_covers_window`
+    // is false whenever the requested window starts before provenance recording
+    // did — which today is true of every window longer than 3 days, and of the
+    // all-time window permanently.
+    provenance_since: provenanceSince,
+    lora_covers_window: provenanceSince != null && (days !== 0) && sinceTs(days) >= provenanceSince,
     // NOT a plausibility gate, and not a claim that the excluded rows are junk.
     // It bounds the DISPLAY SCALE. The furthest excluded rows cluster coherently
     // in real places — six nodes in Galicia at ~1020-1067 km, Lisbon, Tenerife,
@@ -131,13 +179,20 @@ export function frontier(days = windowDays()) {
     scale_max_km: maxKm, beyond_scale: beyondScale,
     // Sorted so the browser never re-orders served data.
     ticks: ticks.sort((a, b) => a.km - b.km),
+    // The old ending — "nothing here separates an RF path from an MQTT-carried
+    // one … so distance alone does not prove radio reach" — was FALSE, and the
+    // replacement is deliberately narrower rather than its opposite. LoRa on the
+    // last hop is what the column actually proves.
     caveat: 'Derived from receptions — every node here reached us, so it is alive and '
           + 'reachable. `confirmed` counts those a traceroute also round-tripped; that '
           + 'adds confidence, never distance. Hops rank quality (km_per_hop), they do '
           + 'not gate reach. Nodes beyond scale_max_km are excluded from the SCALE, not '
-          + 'judged invalid — but note nothing here separates an RF path from an '
-          + 'MQTT-carried one (see packet-provenance-capture), so distance alone does '
-          + 'not prove radio reach.',
+          + 'judged invalid. `lora` means relay_observation recorded TRANSPORT_LORA for '
+          + 'that node in this window, which proves the FINAL hop into our gateway was '
+          + 'radio — not that the whole path was, since a packet can be MQTT-bridged '
+          + 'into the mesh elsewhere and re-transmitted locally. `lora` false means NO '
+          + 'PROVENANCE RECORDED, never MQTT: recording began at provenance_since, and '
+          + 'when lora_covers_window is false the window reaches back before it.',
   };
 }
 

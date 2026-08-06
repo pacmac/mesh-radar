@@ -1,8 +1,8 @@
 ---
 module: snapshot-api
 source: src/snapshot-api.js
-source_hash: 28248bb8ad7bfed8c2ca9ba1a9c81c4d66718e045f8a6a99cd0d803cc4b1eb6d
-updated: 2026-08-05
+source_hash: c3b1b164d6da062deaf23f21b721c029154aaa7a0710a9381d019a5aa8d02548
+updated: 2026-08-06
 ---
 
 # Module: snapshot-api
@@ -84,22 +84,73 @@ Random corrupt coordinates do not cluster geographically. The cap bounds what th
 radar and this endpoint will **scale** to; it makes no claim that the excluded
 rows are invalid. `beyond_scale` reports how many were set aside.
 
-## The open question this exposes
+## What carried the packet — CORRECTED 2026-08-06
 
-With hops irrelevant, the distinction that matters is **what carried the packet**
-— RF or the internet. `rf_last_heard` cannot currently tell them apart: Tenerife
-at 2737 km is flagged `RF`. Until `packet-provenance-capture` lands
-(`transport_mechanism`, `relay_node`), distance alone does not prove radio reach,
-and the served `caveat` says so.
+This section previously read: *"Until `packet-provenance-capture` lands
+(`transport_mechanism`, `relay_node`), distance alone does not prove radio
+reach."* **It had already landed.** `relay_observation.transport`, counted
+2026-08-06:
 
-The figure with unambiguous provenance is the 0-hop maximum, **285.8 km** — no
-relay, no MQTT path.
+```
+TRANSPORT_LORA       40,844 obs   398 nodes
+TRANSPORT_INTERNAL   91,830 obs     3 nodes   (TA2o OMNI, TA2y YAGI, + 1 stray VIXR row)
+```
+
+Every node beyond 150 km is 100% LoRa, zero internal — MLBR at 1686.8 km has 7
+LoRa observations and none internal. This was the **fourth** false absence in
+this codebase, after `nodeinfo.first_heard`, `clusters.created_at` and
+`alert_rules.last_sent`. No test caught any of them: nothing is wrong with the
+code that renders a false caveat.
+
+`frontier` now serves `lora` per tick, plus `heard_lora`, `furthest_lora_km` and
+`furthest_lora_node`, joined over the **same window** as everything else.
+
+### The replacement claim is narrower, not opposite
+
+`TRANSPORT_LORA` proves the **final hop into our gateway** was radio. It does not
+prove the whole path was — a packet can be MQTT-bridged into the mesh elsewhere
+and re-transmitted locally.
+
+### `lora: false` means NOT RECORDED, never MQTT
+
+**This is the part that will cause the next wrong conclusion if it is skipped.**
+`relay_observation` begins **2026-08-03 07:39:39**. It does not reach back over
+the history `nodes` holds:
+
+```
+window   heard   heard_lora   lora_covers_window
+1d        130       130          true
+2d        187       187          true
+7d        320       258          false
+all       590       261          false
+```
+
+All 329 all-time nodes without a LoRa row have **zero relay_observation rows of
+any transport** — not internal ones. So absence is missing evidence, not evidence
+of MQTT. Reading it the other way would replace the false caveat this change
+removed with a fresh one pointing the opposite direction.
+
+`provenance_since` and `lora_covers_window` are served so no consumer has to
+know this from a document. Same class as `direct-gate-epoch` (signal_history
+before 27 Jul): **a column that started recording partway through needs its start
+date served beside it**, or every consumer treats "not yet recorded" as
+"measured false".
+
+Invariant, asserted live across four windows: `furthest_lora_km <= furthest_km`
+and `heard_lora <= heard`. At all-time they differ — 444.2 km against 495.8 km —
+so the 495.8 km record has no radio proof, only no evidence either way.
+
+`heard_lora` / `furthest_lora_km` are **served but not yet rendered**. That is the
+same shape as the `charts.heard_km` bug, so it is deliberate and tracked:
+serving is Domain 1, rendering is Domain 2 (`snapshot-lora-provenance-card`).
 
 ## Route
 
 `GET /snapshot/frontier?days=N` → `furthest_km`, `furthest_node`, `heard`,
 `confirmed`, `best_quality_km_per_hop`, `best_quality_node`, `window_days`,
-`scale_max_km`, `beyond_scale`, `caveat`.
+`scale_max_km`, `beyond_scale`, `heard_lora`, `furthest_lora_km`,
+`furthest_lora_node`, `provenance_since`, `lora_covers_window`, `ticks[]`
+(`km`, `hops`, `direct`, `confirmed`, `lora`), `caveat`.
 
 `window_days` rides in the payload and the browser prints what it is given — the
 static page once showed an all-time 189.1 km under a 7D badge (true 7-day figure
