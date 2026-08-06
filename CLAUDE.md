@@ -89,6 +89,27 @@ Nothing is "fixed" until it passes a test that proves it.
 
 ---
 
+## Skills — in force by default, no reminder needed
+
+Peter should not have to name these at the start of every session.
+
+| skill | when it applies |
+|---|---|
+| `/idiot` | **every** code change. Active mcpp task + attached spec BEFORE any `Edit`/`Write`. Never bypass with `python3` heredocs or `sed -i` — that walks past the hook. |
+| `/xsession` | anything belonging to another repo. **Inform the peer; never fix it yourself, and never build a workaround for their bug.** Channels are per-pair, e.g. `mcpp-plan--node-dash`. |
+| `/terse` | always. Outcome first, no preamble, no recap. |
+| `/park` | Peter raises an idea mid-task: capture as `park-<slug>`, restore the previous task, continue. Surface the parked list when going idle. |
+| `/handover` | before abandoning a session — careless, error-prone, or out of context. Writes `<project-root>/docs/HANDOVER.md`. |
+| `/playwright` | every UI change. Real browser, both themes, at the sizes actually used. A rendered DOM element is not a verified one. |
+| `frontend-design` | when designing a page rather than fixing one. |
+| `/hallucinate` | Peter invokes it when a description does not match what is on screen. Stop, re-read the source, correct explicitly. |
+
+Task, step and handover titles follow `docs/TASK_VOCABULARY.md` — the closed verb
+set (`BUG`, `GAP`, `VERIFY`, `MEASURE`, `DISCUSS`, `DECIDE`, `AGREE`, `TOOL`,
+`TIDY`). No opaque ids, no numbered sections.
+
+---
+
 ## Docs
 
 - `docs/SPEC_INFRA.md` — spec rules and tooling

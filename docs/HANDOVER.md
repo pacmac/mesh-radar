@@ -230,6 +230,35 @@ written and failing, the fix is not made.
 
 ---
 
+## SKILLS — what was in force, and what must stay in force
+
+Listed from `ls ~/.claude/skills/`, not from memory — I would have missed half.
+
+**Standing, every session in this repo, no reminder needed:**
+
+| skill | when |
+|---|---|
+| `/idiot` | **every** code change. Active task + attached spec BEFORE any Edit/Write. `check_specs` must pass to close. CLAUDE.md calls it non-negotiable. |
+| `/xsession` | anything touching another repo. Inform the peer; never fix it yourself. Channels are per-pair, e.g. `mcpp-plan--node-dash`. |
+| `/terse` | standing. Outcome first, no preamble. |
+| `/park` | Peter drops an idea mid-task — capture as `park-<slug>`, restore focus, carry on. Surface parked items when going idle. |
+| `/handover` | when the session is being abandoned — careless, error-prone, or out of context. |
+
+**Used situationally this session, and why:**
+
+| skill | why it came up |
+|---|---|
+| `frontend-design:frontend-design` | Peter: "mock one up" / "make it pretty" — the Snapshot board |
+| `/playwright` | every UI verification. Real browser at 1600x1000 AND 1280x800, both themes. |
+| `/hallucinate` | Peter invoked it after I described a screenshot inaccurately |
+| `/no-argue` | invoked alongside it |
+| `/afk` | earlier, for unattended work |
+
+**The pairing that matters:** `/idiot` says report out-of-scope findings to the
+bug ledger; `/xsession` is where a finding that belongs to ANOTHER repo goes. A
+cross-repo defect is raised, never worked around — see `[rename-task-step]` and
+`[active-project-flipped-mid-session]` on the mcpp-plan channel.
+
 ## DOCS — what to read, and what each is for
 
 Derived, not remembered (`git log --name-only <session-start>..HEAD | grep ^docs/`):
