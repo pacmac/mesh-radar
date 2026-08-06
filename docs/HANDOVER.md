@@ -228,6 +228,25 @@ written and failing, the fix is not made.
 
 ---
 
+## DOCS — what to read, and what each is for
+
+Derived, not remembered (`git log --name-only <session-start>..HEAD | grep ^docs/`):
+
+| doc | what it is for |
+|---|---|
+| `docs/HANDOVER.md` | this file — read AUDIT first |
+| `docs/SNAPSHOT_OPEN_DEFECTS.md` | the live defect list and the two method failures behind most of it |
+| `docs/TASK_VOCABULARY.md` | the closed verb set — BUG/GAP/VERIFY/… — binding on all new tasks and steps |
+| `docs/modules/snapshot-api.md` | Domain 1 for the board: receive is the only source of truth; window rules |
+| `docs/modules/app-snapshot.md` | Domain 2 mixin: one window, four bands; null is not zero |
+| `docs/modules/tab-snapshot.md` | the page: layout checks, no-invented-values rule |
+| `docs/modules/node-kind.md` | role normalisation and `KNOWN_ROLES` |
+| `docs/modules/traceroute.md` | the aim decision rule — and the retraction on beam evidence |
+| `docs/modules/app-config.md`, `tab-cfg.md` | the callout transmit switch and why it applies immediately |
+
+Previous handovers archive to `docs/handover/`. If a defect appears in more than
+one, that is a signal about priority, not a duplicate.
+
 ## CHECKS — output, run at write-up
 
 ```
