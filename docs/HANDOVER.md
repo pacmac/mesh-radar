@@ -5,6 +5,31 @@ context. **The last few edits were made under pressure and deserve re-reading.**
 
 ---
 
+## AUDIT — open tasks, verified against the repo
+
+Done FIRST because it changed what the rest of this document says. Every task
+checked against the **code and database**, not against its own completion marks —
+which have been wrong in both directions.
+
+| task | evidence | verdict |
+|---|---|---|
+| `packet-provenance-capture` | `relay_observation` 123,997 rows, `transport` column live | **DONE — I had been citing it as open all session** |
+| `rate-by-band-by-day` | `RATE_BANDS` + `answerRateByDistance` in observatory-ws | done, close it |
+| `observatory-window` | `observatory.window_days` honoured in 6 modules | done, close it |
+| `verdict-strings-to-backend` | no thresholds left in `app-perf.js` | done, close it |
+| `strip-browser-verdicts` | same | done, close it |
+| `passive-tracer-starved` | 40 traceroutes in the last hour — not starved | done, close it |
+| `backfill-stranded-positions` | **2 nodes still stranded** — nodeinfo has a position, nodes does not | **marked complete, is NOT — reopen** |
+| `set-yagi-az` | another session was active on it today | leave alone |
+| `ltc-pulse-gate`, `ltc-pol-invert`, `ltc-int-loopback`, `ltc-raw-knob` | different project | not ours |
+
+**What this caught:** I had reasoned all session from "nothing separates RF from
+MQTT" and was about to hand that on as a known gap. The column exists. See
+REMAINS / RF vs MQTT.
+
+**Not actioned:** ran out of context before issuing the closes. Six to close, one
+to reopen. The verification above is complete — do not redo it, just act on it.
+
 ## STATE — the running system right now
 
 Re-queried at write-up, not recalled:
@@ -103,24 +128,7 @@ NEXT ACTION: join relay_observation.transport into snapshot-api so the board can
 separate radio-delivered from internally-injected, and rewrite the caveat.
 This was the FOURTH absence asserted without checking — see GOT WRONG.
 
-**TIDY — housekeeping.** Audited the 12 "all steps complete but not closed"
-tasks against the REPO, not against their own marks (marks have been wrong
-before):
-
-| task | verified | close? |
-|---|---|---|
-| `packet-provenance-capture` | `relay_observation` 123,997 rows, `transport` column live | YES |
-| `rate-by-band-by-day` | `RATE_BANDS` + `answerRateByDistance` in observatory-ws | YES |
-| `observatory-window` | `observatory.window_days` honoured in 6 modules | YES |
-| `verdict-strings-to-backend` | no thresholds left in `app-perf.js` | YES |
-| `strip-browser-verdicts` | same | YES |
-| `passive-tracer-starved` | 40 traceroutes in the last hour — not starved | YES |
-| `backfill-stranded-positions` | **2 still stranded** (nodeinfo has a position, nodes does not) | NO — reopen |
-| `set-yagi-az` | another session was ACTIVE on it today | NO — not mine to close |
-| `ltc-*` (4 tasks) | different project | NO |
-
-I ran out of context before issuing the closes. The verification above is done;
-the `plan_task_complete` calls are not. Six to close, one to reopen.
+**TIDY — housekeeping.** See AUDIT: six tasks verified closable, one to reopen (`backfill-stranded-positions`). Closes not issued — ran out of context. Loose PNGs and `.spdchk.mjs` in the repo root.
 
 ---
 
