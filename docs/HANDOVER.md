@@ -77,25 +77,63 @@ the reason it is inert is its own finding: **traceroute's aim path is not
 executing in production**. Only ~40 completed routes exist since the fix; not
 enough to re-measure. Re-measure before building on that number.
 
-**GAP — RF vs MQTT provenance.** Nothing separates a radio path from an
-internet-carried one — Tenerife at 2737 km is flagged `RF`. Until
-`packet-provenance-capture` lands, no long-distance figure proves radio reach.
-The figure with clean provenance is the 0-hop maximum, **285.8 km**.
+**GAP — RF vs MQTT provenance. CORRECTED — the data already exists.**
 
-**TIDY — housekeeping.** 12 mcpp tasks complete but never closed. Loose PNGs and
-`.spdchk.mjs` in the repo root.
+I claimed all session, in specs, commits and an earlier draft of this file, that
+nothing distinguishes a radio path from an internet-carried one and that
+`packet-provenance-capture` had not landed. **It has.**
+`relay_observation.transport` holds 123,997 rows:
+
+```
+TRANSPORT_LORA      38,445 obs   396 nodes   furthest 1681.2 km
+TRANSPORT_INTERNAL  85,555 obs     3 nodes   furthest     1.7 km
+```
+
+TRANSPORT_INTERNAL is only our own three locally-attached radios. Everything
+distant — MLBR in Poland at 1681 km included — arrived over **LoRa**. So the last
+hop into our gateway is provably radio, and the "distance does not prove radio
+reach" caveat currently in `snapshot-api.md` is too strong and should be rewritten.
+
+THE REAL REMAINING QUESTION is narrower: TRANSPORT_LORA proves the FINAL hop was
+radio, not that the whole path was. A packet can be MQTT-bridged into the mesh
+elsewhere and re-transmitted locally. That is worth stating precisely rather than
+claiming no provenance exists at all.
+
+NEXT ACTION: join relay_observation.transport into snapshot-api so the board can
+separate radio-delivered from internally-injected, and rewrite the caveat.
+This was the FOURTH absence asserted without checking — see GOT WRONG.
+
+**TIDY — housekeeping.** Audited the 12 "all steps complete but not closed"
+tasks against the REPO, not against their own marks (marks have been wrong
+before):
+
+| task | verified | close? |
+|---|---|---|
+| `packet-provenance-capture` | `relay_observation` 123,997 rows, `transport` column live | YES |
+| `rate-by-band-by-day` | `RATE_BANDS` + `answerRateByDistance` in observatory-ws | YES |
+| `observatory-window` | `observatory.window_days` honoured in 6 modules | YES |
+| `verdict-strings-to-backend` | no thresholds left in `app-perf.js` | YES |
+| `strip-browser-verdicts` | same | YES |
+| `passive-tracer-starved` | 40 traceroutes in the last hour — not starved | YES |
+| `backfill-stranded-positions` | **2 still stranded** (nodeinfo has a position, nodes does not) | NO — reopen |
+| `set-yagi-az` | another session was ACTIVE on it today | NO — not mine to close |
+| `ltc-*` (4 tasks) | different project | NO |
+
+I ran out of context before issuing the closes. The verification above is done;
+the `plan_task_complete` calls are not. Six to close, one to reopen.
 
 ---
 
 ## GOT WRONG — what was believed, what was true
 
-**Asserted an absence without reading the schema — three times.**
+**Asserted an absence without reading the schema — FOUR times.**
 
 | claimed | truth |
 |---|---|
 | `nodes` has no `first_heard` | `nodeinfo.first_heard` — 1104 rows |
 | "cluster anchors carry no creation timestamp" | `clusters.created_at` — 52 rows |
 | "no send log is stored" | `alert_rules.last_sent` — 21:36 today |
+| "nothing separates RF from MQTT" | `relay_observation.transport` — 123,997 rows |
 
 Each rendered a card that *looked* honest ("unknown — no send log is stored")
 while being false. **No test fired**, because nothing was wrong with the code
