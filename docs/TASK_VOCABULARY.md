@@ -42,17 +42,21 @@ number breaks the moment a section is inserted and cannot be grepped.
 
 ## Retro-fitting existing tasks
 
-**mcpp has no rename tool.** `plan_step_*` offers only new / delete / done /
-notes, so retitling an existing step means delete-and-recreate, which destroys
-its completion history.
+`plan_task_rename` and `plan_step_retitle` exist as of 2026-08-05 — shipped by
+the mcpp-plan session in response to `[rename-task-step]` on the xsession
+channel. Both preserve history: the tool contract says "Preserves all history"
+and "without affecting its status, completed_at, or order", and that was checked
+rather than trusted — a completed task retitled kept all five steps `complete`
+with its goal and plan notes intact.
 
-Therefore:
+**So there is no longer an excuse.** Retitle existing tasks and steps to the verb
+set as you touch them. Completed steps included: renaming one costs nothing now,
+where before it meant delete-and-recreate and losing `completed_at`.
 
-- **Every NEW task and step uses the verbs from today.** Non-negotiable.
-- **Open, incomplete steps** may be recreated with a verb prefix — the history
-  lost is nil.
-- **Completed steps keep their titles.** The record of what was done is worth
-  more than the prefix. Do not delete a completed step to rename it.
+`plan_task_rename` changes the DISPLAY TITLE, not the slug — cross-references and
+`plan_task_switch` keep working.
+
+`plan_step_retitle` acts on the ACTIVE task, so switch to it first.
 
 ## Scope
 

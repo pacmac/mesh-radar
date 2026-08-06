@@ -29,6 +29,13 @@ REMAINS / RF vs MQTT.
 
 **Not actioned:** ran out of context before issuing the closes. Six to close, one
 to reopen. The verification above is complete — do not redo it, just act on it.
+The list has since grown to 16 flagged tasks (the `ltc-*` set expanded); only the
+node-dash ones above have been verified.
+
+**RENAME NOW EXISTS.** `plan_task_rename` and `plan_step_retitle` shipped
+2026-08-05 from the `[rename-task-step]` xsession request, and both preserve
+history — verified, not assumed. Task titles in this project have been retro-fitted
+to the verb set; other projects' tasks are theirs to do.
 
 ## STATE — the running system right now
 
