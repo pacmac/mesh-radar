@@ -5,7 +5,7 @@ context. **The last few edits were made under pressure and deserve re-reading.**
 
 ---
 
-## 1. State of the running system
+## STATE — the running system right now
 
 Re-queried at write-up, not recalled:
 
@@ -31,7 +31,7 @@ beam-derived before that is wrong by 120°.
 
 ---
 
-## 2. What shipped, with evidence
+## SHIPPED — with the evidence for each
 
 | SHA | what | evidence |
 |---|---|---|
@@ -45,16 +45,16 @@ beam-derived before that is wrong by 120°.
 | `a271125` | invented health rows and badges removed | |
 | `0491472` | `clusters.created_at` exists — "no timestamp" was wrong | 52 clusters |
 | `4e08288` | all three "unknown" health rows were wrong | 0 unknowns |
-| `f7965ff` | **per-page contract test** (failing on purpose — see §3) | |
+| `f7965ff` | **per-page contract test** (failing on purpose — see REMAINS) | |
 | — | alerts fix (config only) | `VERIFY OK`, `node_offline` sent 21:36 |
 
 Reverted: `566feab` deleted three sections of the page; reverted by `4a80cd4`.
 
 ---
 
-## 3. What remains — with the exact next action
+## REMAINS — with the exact next action
 
-**A. The Snapshot page fails its own contract test.** This is the top item.
+**BUG — the Snapshot page fails its own contract test.** This is the top item.
 
 ```
 python tests/test_page_snapshot.py
@@ -70,24 +70,24 @@ shrink the hero, or accept in-card scrolling below 1000px.
 Two approaches already rejected: deleting rows (loses data silently) and removing
 the scroll container (turns reachable content into an unrecoverable crop).
 
-**B. `918df5e` rests on void evidence.** The `door_near` rule is justified by
+**VERIFY — `918df5e` rests on void evidence.** The `door_near` rule is justified by
 "first hop inside the 35° beam only 12.9% of the time", measured with the boom
 120° out. Currently **inert** — 0 firings in 90 dispatches — so not harmful, but
 the reason it is inert is its own finding: **traceroute's aim path is not
 executing in production**. Only ~40 completed routes exist since the fix; not
 enough to re-measure. Re-measure before building on that number.
 
-**C. RF vs MQTT provenance.** Nothing separates a radio path from an
+**GAP — RF vs MQTT provenance.** Nothing separates a radio path from an
 internet-carried one — Tenerife at 2737 km is flagged `RF`. Until
 `packet-provenance-capture` lands, no long-distance figure proves radio reach.
 The figure with clean provenance is the 0-hop maximum, **285.8 km**.
 
-**D. Housekeeping.** 12 mcpp tasks complete but never closed. Loose PNGs and
+**TIDY — housekeeping.** 12 mcpp tasks complete but never closed. Loose PNGs and
 `.spdchk.mjs` in the repo root.
 
 ---
 
-## 4. What I got wrong
+## GOT WRONG — what was believed, what was true
 
 **Asserted an absence without reading the schema — three times.**
 
@@ -125,7 +125,7 @@ Tenerife). Retracted in `snapshot-api.md`.
 didn't know" cannot be any other number, because a successful transmit *is* a
 reception.
 
-### The class of error
+### GOT WRONG — the class, not the instances
 
 Not the individual bugs. Two patterns:
 
@@ -136,7 +136,7 @@ Not the individual bugs. Two patterns:
 
 ---
 
-## 5. How the next session avoids this
+## AVOID — runnable rules, each one earned today
 
 Runnable rules, each earned today:
 
@@ -161,7 +161,7 @@ Runnable rules, each earned today:
 
 ---
 
-## 6. Tasks and specs
+## TASKS — and the phase this was abandoned at
 
 | task | state |
 |---|---|
@@ -170,7 +170,7 @@ Runnable rules, each earned today:
 | `retro-ungated-work-20260805` | closed; records the `/idiot` bypass |
 | `node-role-normalise` | closed |
 | `alerts-smtp-port-587-blocked` | closed |
-| `yagi-unaimed-fallback` | Phase 5 done, but see §3B — evidence void |
+| `yagi-unaimed-fallback` | Phase 5 done, but see REMAINS / door_near evidence — evidence void |
 | `bugs` | steps 86–87: role validation, unaimed yagi |
 
 Specs: `docs/modules/snapshot-api.md`, `app-snapshot.md`, `tab-snapshot.md`,
@@ -182,13 +182,13 @@ written and failing, the fix is not made.
 
 ---
 
-## 7. Check output, run now
+## CHECKS — output, run at write-up
 
 ```
 python scripts/check_specs.py          All specs current.
 node scripts/check_contract.mjs        Contract clean. (incl. reach >= passive floor)
 node scripts/check_snapshot.mjs        54 checks across 6 windows, 0 mismatches
-python tests/test_page_snapshot.py     4 failures — the layout, see §3A
+python tests/test_page_snapshot.py     4 failures — the layout, see REMAINS / Snapshot layout
 ```
 
 Data is correct and provable. The page layout is not.
