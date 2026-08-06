@@ -244,7 +244,7 @@ Derived, not remembered (`git log --name-only <session-start>..HEAD | grep ^docs
 | `docs/modules/traceroute.md` | the aim decision rule — and the retraction on beam evidence |
 | `docs/modules/app-config.md`, `tab-cfg.md` | the callout transmit switch and why it applies immediately |
 
-Previous handovers archive to `docs/handover/`. If a defect appears in more than
+This file lives at `<project-root>/docs/HANDOVER.md` — resolved from `git rev-parse --show-toplevel`, never from cwd. Previous handovers archive to `<project-root>/docs/handover/`. If a defect appears in more than
 one, that is a signal about priority, not a duplicate.
 
 ## CHECKS — output, run at write-up
