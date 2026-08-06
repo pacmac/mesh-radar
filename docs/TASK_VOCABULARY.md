@@ -54,4 +54,12 @@ Therefore:
 - **Completed steps keep their titles.** The record of what was done is worth
   more than the prefix. Do not delete a completed step to rename it.
 
-Applies to every project, not just node-dash.
+## Scope
+
+**This repo.** node-dash tasks, node-dash steps, node-dash handovers.
+
+Other projects have their own conventions and their own sessions to set them.
+Peter has said the same convention elsewhere (`device-open-work`: "you will NOT
+use things like B3 and F11"), but that is his instruction to those sessions, not
+this repo's to legislate. If another project should adopt it, that is raised on
+its xsession channel — not asserted here.
