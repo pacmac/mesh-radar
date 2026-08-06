@@ -109,12 +109,38 @@ shrink the hero, or accept in-card scrolling below 1000px.
 Two approaches already rejected: deleting rows (loses data silently) and removing
 the scroll container (turns reachable content into an unrecoverable crop).
 
-**VERIFY — `918df5e` rests on void evidence.** The `door_near` rule is justified by
-"first hop inside the 35° beam only 12.9% of the time", measured with the boom
-120° out. Currently **inert** — 0 firings in 90 dispatches — so not harmful, but
-the reason it is inert is its own finding: **traceroute's aim path is not
-executing in production**. Only ~40 completed routes exist since the fix; not
-enough to re-measure. Re-measure before building on that number.
+**VERIFY — beam alignment: MEASURED 2026-08-06, and it worked.**
+
+The re-measurement this was waiting for. Around the boom fix (2026-08-05 20:00):
+
+```
+                 attempts   answered   rate
+before              1704        210    12.3%
+after                605        139    23.0%
+
+matched targets only (95 nodes attempted in BOTH periods):
+before              1029        189    18.4%
+after                599        139    23.2%     <- not just an easier target mix
+
+by distance band:
+  <25 km        20.6% -> 21.1%
+  25-75 km      12.5% -> 20.9%
+  75+ km         5.6% -> 24.6%   <- 4.4x, exactly where a 120-degree error hurts
+```
+
+Close range barely moved, which is right — the omni covers it and a beam error
+cannot hurt there. The far band transformed. That is the signature you would
+predict from fixing a 120-degree boom error.
+
+CAVEATS, because this is the kind of number that gets over-claimed: the 75+ band
+is only **57 attempts** after (14 successes), so it can move a lot. THREE changes
+landed together — boom alignment, `disc.tx` -> rotator, and `door_near` — and
+this data cannot separate them. The band pattern points at alignment, because the
+other two do not predict a distance-dependent effect, but that is inference.
+
+`918df5e` (`door_near`) is still **inert** — 0 firings in 90 dispatches — and the
+12.9%-in-beam figure it rests on is still un-re-measured. Its evidence is void
+even though the alignment fix worked.
 
 **GAP — RF vs MQTT provenance. CORRECTED — the data already exists.**
 
@@ -141,6 +167,39 @@ claiming no provenance exists at all.
 NEXT ACTION: join relay_observation.transport into snapshot-api so the board can
 separate radio-delivered from internally-injected, and rewrite the caveat.
 This was the FOURTH absence asserted without checking — see GOT WRONG.
+
+**GAP — the board is not comparative, so it cannot answer the question Peter
+actually asks.**
+
+The analysis above — rate by distance band, before/after an intervention,
+matched-target control — used none of the dashboard. It was all ad-hoc SQL.
+
+The board answers *"what is true now"*. It cannot answer *"did that change
+help"*, which is the whole point of fixing the boom, flipping `disc.tx`, or any
+future intervention.
+
+Specifically missing: **answer rate BY DISTANCE BAND** (the board shows band
+counts, not band rates — and the rate is what revealed the finding), any
+before/after time comparison, and any control for target mix.
+
+**The most valuable chart here already exists and is on a dead page.**
+`rate-by-band-by-day` is DONE — `RATE_BANDS` and `answerRateByDistance` are live
+in `observatory-ws.js` — but Observatory is the page Peter has called dead. Move
+it, do not rebuild it.
+
+THE GENERALISABLE POINT, and the best source of requirements this project has:
+**the questions Peter asks are the requirements list.** Every time he asks
+something and the answer needs a SQL prompt, that is a gap with a worked query
+already attached. Today's set, and whether the board answers it:
+
+| question | on the board? |
+|---|---|
+| how are node stats today | mostly, since this morning |
+| have any new clusters been discovered | yes, since this morning |
+| what is the best km | partly — furthest heard, but not split by evidence class |
+| how far away is that endpoint | no |
+| is traceroute and pointing working | no |
+| are traceroute hits up | **no** — needed everything above |
 
 **TIDY — housekeeping.** See AUDIT: six tasks verified closable, one to reopen (`backfill-stranded-positions`). Closes not issued — ran out of context. Loose PNGs and `.spdchk.mjs` in the repo root.
 
