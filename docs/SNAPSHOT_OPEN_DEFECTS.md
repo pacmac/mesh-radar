@@ -113,14 +113,9 @@ But the same audit found the **fourth** false absence, in
 The prior stated here ("3 in 3") is now **4 in 4**. Nothing has yet been claimed
 absent in this codebase and turned out to be absent.
 
-## 3. VERIFY — `918df5e` still rests on void evidence, for a different reason
+## 3. VERIFY — `918df5e` still rests on void evidence
 
-This document said: *"the reason it is inert is its own finding: traceroute's aim
-path is not executing in production at all"*, and *"only ~40 completed routes
-exist since the fix. Not enough."*
-
-**Sample size is not the blocker, and the aim path is not broken.** Measured
-2026-08-06 over 739 post-fix traceroutes:
+Measured 2026-08-06 over 739 post-fix traceroutes:
 
 ```
 tx_device   beam_deg  aim_mode   n    rotator_az   route
@@ -128,22 +123,50 @@ OMNI          360.0     none    661        0        137
 YAGI           35.0     none     74       74         20
 ```
 
-`aim_mode` is `none` on all 736 rows carrying one, and the rotator sat at
-18.86°–20.89° across every yagi shot. **The dash has been in PASV, and PASV
-declares `aim:'none'`.** It is not executing because the mode says not to.
+The 20 yagi traces with routes cover three distinct first hops (TA2o 32.2°, T4
+274.2°, fir 219.0°) against a beam parked at 18.86°–20.89°. The only nominal "in
+beam" hit is our own OMNI 0.8 km away. **That re-measures nothing**, and the
+12.9% figure stays un-re-measured.
 
-The 20 yagi traces with routes cover three distinct first hops against a
-stationary beam; the only nominal "in beam" hit is our own OMNI 0.8 km away. That
-cannot re-measure anything.
+### RETRACTED: "the mode gates aiming"
 
-**Unblocking it needs the dash in ACTV or DISC** for long enough to accumulate
-aimed traces. A mode change transmits, so it is Peter's call. Waiting longer in
-PASV produces more of exactly this data.
+An earlier version of this section said the aim path *"is not executing because
+the mode says not to"*, and that unblocking it needed a mode change from Peter.
+**Both were wrong.** Peter, 2026-08-06: *"ACTV and SCAN are modes that use the
+pointer, but they do not control or gate it."* The code agrees —
+`traceroute.js:343`:
+
+```js
+const want = aimOpt ?? modeAim(modeKey) ?? 'none';
+```
+
+The **caller's** `opts.aim` wins. The mode is only the fallback when a caller
+supplies nothing. Two further errors in the same claim:
+
+- **`aim_mode:'none'` does not mean the beam was unaimed.** It means *traceroute
+  did not do the aiming*. In SCAN the sweep already put the beam on the contact's
+  bearing (`lifecycle.js:32`) and in ACTV the tracker has already pointed at the
+  target (`lifecycle.js:80`) — both pass `aim:'none'` deliberately, so run() does
+  not fight them. The beam is aimed; traceroute just did not move it.
+- **661 of the 736 rows are the OMNI**, which can never be aimed at all
+  (`traceroute.js:359` records `'none'` for any non-rotator radio). Quoting 736
+  as one population mixed a hard radio constraint with a policy decision.
+
+So this needs **no mode change and no decision from Peter**. `rotator_az` is the
+real beam position at transmit time whoever set it, so the measurement is
+available — what is missing is traffic where the beam is actually being driven.
+
+**How the error was made, since it is the same shape as the four false
+absences:** the causal claim was read off the `/config/modes` table — pasv says
+`aim:'none'`, therefore the mode gates aiming — instead of off the one line of
+code that consumes it. A config value that *looks* like a switch is not evidence
+that anything reads it as one.
 
 Related, and easy to misread: pre-fix the unaimed beam covered 191 distinct
 azimuths across the full circle; post-fix, 14 within 2°. The slewing stopped
-because PASV drives nothing — **not** because the hold bug in `_aim()` was fixed.
-It is still there and will bite again in DISC or SCAN. See `yagi-unaimed-fallback`.
+because nothing was driving the rotator, **not** because the hold bug in `_aim()`
+was fixed. It is still there and will bite whenever the scanner or tracker is
+driving the beam again. See `yagi-unaimed-fallback`.
 
 ## 4. Housekeeping — DONE
 
