@@ -23,13 +23,25 @@ alone.
 ## Method failure 2 — asserting an absence without reading the schema
 
 Three times in one session, a confident "this data does not exist" was written,
-and all three were false:
+and all three were false. **A fourth was found on 2026-08-06**, which is why this
+section is the one to read twice:
 
 | claim | truth |
 |---|---|
 | `nodes` has no `first_heard` | `nodeinfo.first_heard` — **1104 rows** |
 | "cluster anchors carry no creation timestamp" | `clusters.created_at` — **52 rows**, all 2026-08-05 00:15:26 |
 | "no send log is stored" | `alert_rules.last_sent` — most recent 2026-08-05 21:36 |
+| "nothing separates an RF path from an MQTT-carried one" | `relay_observation.transport` — **132,674 rows** |
+
+The fourth was not in a card. It was in a **spec and a served caveat**, which is
+worse: it told every future reader the capability did not exist, and two commit
+messages repeated it. Four for four. Nothing claimed absent in this codebase has
+yet turned out to be absent.
+
+**A claim inherited from a previous session's handover or spec is not evidence
+either.** Checking the fourth one also caught a smaller error being copied
+forward — that `TRANSPORT_INTERNAL` is "our own three locally-attached radios".
+It is two of ours plus one stray row from a foreign node.
 
 Each produced a card that *looked* honest — "unknown — no send log is stored" —
 while being false. **No test fired, because nothing was wrong with the code that
@@ -45,48 +57,126 @@ everything" was unreliable all day.
 
 ---
 
-## Open defects
+## Status, 2026-08-06
 
-### 1. LAYOUT — 1280×800 needs internal scrolling
+Four of the five below are closed. Detail follows; read the two method failures
+above regardless, because they are what produced the list.
 
-At 1600×1000 the board fully satisfies *"no V or H scrolling, all there right
-where I can see it"*. At 1280×800 the doors list and health rows do not fit, and
-two cards scroll internally.
+| | was | now |
+|---|---|---|
+| 1. LAYOUT | needed Peter's call between three bad options | **FIXED**, `08f1a70` — none of the three was needed |
+| 2. AUDIT | every "cannot measure" claim suspect | **DONE** — health clean, but it caught a fourth false absence elsewhere |
+| 3. VERIFY | `918df5e` rests on void evidence | **STILL VOID**, and the stated reason was wrong |
+| 4. Housekeeping | 12 tasks unclosed, litter in the root | **DONE** |
+| 5. RF vs MQTT | *(was not on this list, and should have been)* | **FIXED**, `cf6bd24` |
 
-Verified: `pastFold 0 · cutNotScrollable 0 · unpopulated 0 · pageScroll false ·
-scrollsInCard 2`. **Nothing is lost or cut** — but the requirement is not met.
+---
 
-Three attempts, two worse:
-- deleting rows → data lost silently
-- removing the scroll container → content **cut** (unrecoverable; a scrollbar is not)
-- current: doors capped at 5 with the remainder STATED ("+11 more carrying N routes")
+## 1. LAYOUT — 1280×800 needed internal scrolling — FIXED `08f1a70`
 
-**Needs Peter's call:** fewer health rows, a shorter hero, or accept internal
-scroll below 1000px. Guessing a fourth time is not appropriate.
+`tests/test_page_snapshot.py` now reports `cut 0` at 1600×1000 and 1280×800 in
+both themes, 16/16 assertions.
 
-### 2. AUDIT — every remaining "cannot measure" claim is suspect
+**None of the three options this document asked Peter to choose between was
+needed.** No health row was dropped, the hero was not shrunk, and no card scrolls.
+The question was wrong because the cause was misdiagnosed as density. It was two
+guessed numbers on the panel:
 
-Health now reports **0 unknowns**, but that is only because three were caught.
-Any future null-with-a-reason must be schema-checked before it is believed. On
-today's record the prior probability that such a claim is wrong is 3 in 3.
+```
+h-[calc(100vh-5.2rem)]   the parent chain ALREADY ends at the viewport
+                         (measured 1280x800: parent top 39, bottom 800) — 36px thrown away
+p-3                      the parent already applies p-3 — another 25px
+```
 
-### 3. VERIFY — `918df5e` rests on void evidence
+61px, and every card below paid for it. The spec had justified the calc with
+"h-full hung off screen by exactly the header height" — true of an older shell,
+false of this one, carried forward for weeks as if measured.
 
-The `door_near` rule is justified by "the first hop is inside the 35° beam only
-12.9% of the time", measured over 2726 traces **with the boom 120° out of
-alignment**. Peter fixed the alignment; the figure has not been re-measured.
+The remainder came from density with nothing deleted: the five distance bands
+were being separated by the card-body's *section* gap; health rows wrapped to
+61px because a text-base label and a text-base value could not share a narrow
+column. See `docs/modules/tab-snapshot.md`.
 
-Currently **inert** — 0 firings in 90 dispatches — so it is not actively harmful.
-But the reason it is inert is its own finding: traceroute's aim path is not
-executing in production at all.
+**The lesson is not about CSS.** Three attempts had been made at the wrong
+problem, and the fourth was going to be asked of Peter. Nobody had measured where
+the height was actually going.
 
-Only ~40 completed routes exist since the fix. Not enough. Re-measure before
-building anything further on that number.
+## 2. AUDIT — DONE, and it found a fourth false absence
 
-### 4. Housekeeping
+Every `value: null` + `reason` path in `snapshot-api.js health()` was read against
+the schema. All six reasons are conditional on a genuine absence and none fires
+today; the card renders 7 of 7 rows with real values.
 
-12 tasks have all steps complete and were never closed. Loose PNGs and
-`.spdchk.mjs` litter the repo root.
+But the same audit found the **fourth** false absence, in
+`docs/modules/snapshot-api.md` — see item 5.
+
+The prior stated here ("3 in 3") is now **4 in 4**. Nothing has yet been claimed
+absent in this codebase and turned out to be absent.
+
+## 3. VERIFY — `918df5e` still rests on void evidence, for a different reason
+
+This document said: *"the reason it is inert is its own finding: traceroute's aim
+path is not executing in production at all"*, and *"only ~40 completed routes
+exist since the fix. Not enough."*
+
+**Sample size is not the blocker, and the aim path is not broken.** Measured
+2026-08-06 over 739 post-fix traceroutes:
+
+```
+tx_device   beam_deg  aim_mode   n    rotator_az   route
+OMNI          360.0     none    661        0        137
+YAGI           35.0     none     74       74         20
+```
+
+`aim_mode` is `none` on all 736 rows carrying one, and the rotator sat at
+18.86°–20.89° across every yagi shot. **The dash has been in PASV, and PASV
+declares `aim:'none'`.** It is not executing because the mode says not to.
+
+The 20 yagi traces with routes cover three distinct first hops against a
+stationary beam; the only nominal "in beam" hit is our own OMNI 0.8 km away. That
+cannot re-measure anything.
+
+**Unblocking it needs the dash in ACTV or DISC** for long enough to accumulate
+aimed traces. A mode change transmits, so it is Peter's call. Waiting longer in
+PASV produces more of exactly this data.
+
+Related, and easy to misread: pre-fix the unaimed beam covered 191 distinct
+azimuths across the full circle; post-fix, 14 within 2°. The slewing stopped
+because PASV drives nothing — **not** because the hold bug in `_aim()` was fixed.
+It is still there and will bite again in DISC or SCAN. See `yagi-unaimed-fallback`.
+
+## 4. Housekeeping — DONE
+
+Seven tasks closed after verifying each against the repo rather than its own
+marks (`packet-provenance-capture`, `rate-by-band-by-day`, `observatory-window`,
+`verdict-strings-to-backend`, `strip-browser-verdicts`, `passive-tracer-starved`,
+`retro-ungated-work-20260805`).
+
+`backfill-stranded-positions` was **reopened**: marked complete with nodes still
+stranded. Re-verified — 1 remains (`!f68e1508` TCm2), down from 2.
+
+Still unclosed and deliberately not touched: `set-yagi-az` (another session was
+active on it) and seven `ltc-*` tasks (different project, mis-filed here).
+
+Loose PNGs and `.spdchk.mjs` moved out of the repo root. The `doc` symlink
+remains — it points into `pac-garage-alarm` and is not this repo's to delete.
+
+## 5. RF vs MQTT — the caveat was FALSE — FIXED `cf6bd24`
+
+Not on the original list, which is itself the finding: the endpoint was telling
+the browser that RF and MQTT could not be told apart, citing
+`packet-provenance-capture` as unlanded. It had landed.
+`relay_observation.transport` holds 132,674 rows, and every node past 150 km is
+100% LoRa.
+
+The replacement is deliberately **narrower**, not opposite: LoRa proves the final
+hop into our gateway was radio, not that the whole path was.
+
+**And the part that nearly became the next false claim:** `relay_observation`
+only begins 2026-08-03 07:39:39. `lora: false` means NO PROVENANCE RECORDED,
+never "MQTT" — all 329 all-time nodes without a LoRa row have zero rows of *any*
+transport. `provenance_since` and `lora_covers_window` are served so no consumer
+has to know that from a document.
 
 ---
 
