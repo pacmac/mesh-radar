@@ -1,7 +1,14 @@
 # Handover — 2026-08-05
 
-Written under `/handover` because this session became careless and is out of
-context. **The last few edits were made under pressure and deserve re-reading.**
+Written with `/handover write` because this session became careless and ran out
+of context. **The last few edits were made under pressure and deserve
+re-reading.**
+
+**New session: run `/handover read`.** It tells you to re-verify STATE (it ages
+fastest), run the checks under CHECKS and compare, act on AUDIT rather than
+repeating it, and treat GOT WRONG as your own risk list rather than someone
+else's confession. Do not start fresh — the tasks, specs and the one failing test
+are the state of the work.
 
 ---
 
