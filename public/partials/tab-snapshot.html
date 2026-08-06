@@ -166,7 +166,10 @@
                      previous version deleted rows to stop the card clipping,
                      which is fixing a CSS bug by discarding data. -->
                 <div class="flex flex-col gap-1 shrink-0">
-                  <template x-for="r in (snapDist?.doors || []).slice(0, 5)" :key="r.num">
+                  <!-- 2 rows, not 5. Five bands + five doors + two headings need
+                       306px in a 242px card at 800px tall. The remainder is still
+                       STATED below, so nothing is hidden — fewer are itemised. -->
+                  <template x-for="r in (snapDist?.doors || []).slice(0, 2)" :key="r.num">
                     <div class="flex items-center gap-2.5">
                       <span class="text-sm font-mono opacity-60 w-20 shrink-0 truncate" x-text="r.name"></span>
                       <div class="flex-1 h-3 bg-base-300 rounded-sm overflow-hidden">
@@ -184,9 +187,9 @@
                        deleted rows outright to make the card fit, and a later one
                        hid them behind an in-card scrollbar; both lose the count. -->
                   <div class="text-sm font-mono opacity-50"
-                       x-show="(snapDist?.doors || []).length > 5">
-                    + <span x-text="(snapDist?.doors || []).length - 5"></span> more
-                    carrying <span x-text="(snapDist?.doors || []).slice(5).reduce((s,d)=>s+d.uses,0)"></span> routes
+                       x-show="(snapDist?.doors || []).length > 2">
+                    + <span x-text="(snapDist?.doors || []).length - 2"></span> more
+                    carrying <span x-text="(snapDist?.doors || []).slice(2).reduce((s,d)=>s+d.uses,0)"></span> routes
                   </div>
                 </div>
               </div>
