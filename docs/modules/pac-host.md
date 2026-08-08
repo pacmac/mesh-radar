@@ -1,7 +1,7 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: 13e4f1cf6be127ff5fa1bcf6b4a8ff13821a8a2f19f85c038352a84c7634f490
+source_hash: 9e31f57457bdb42415980e2c31ce491f2752cae8782925166aa501275cf95e39
 updated: 2026-08-08
 ---
 
@@ -121,6 +121,39 @@ Two upstream properties, both stated by services and both verified here on
 This surface exists because there is **no generic passthrough** on this boundary
 — see Out of scope. Reaching a new pac-host route always costs a named function
 here.
+
+### `obsForUnit(unitId)` + `_pollObs` — added 2026-08-08
+
+`_pollObs` keeps each unit's series warm at `OBS_POLL_MS` (60 s); `obsForUnit`
+is the synchronous read.
+
+**Why poll at all, when the Stats pane already fetches on demand:** the node page
+contributes its coulomb section through `registerNodeSection`, and
+`buildNodeStatus` is **synchronous** — a provider cannot await. It needs rows
+already in hand, exactly as `reachability` needs `unitForNum`.
+
+Cost measured on loopback 2026-08-08, not estimated:
+
+```
+GET /mesh/obs/!987ab80f?field=n&limit=2      0.0012 s     147 bytes
+GET /mesh/obs/!987ab80f?field=n&limit=200    0.0015 s  14,443 bytes
+```
+
+The device reports on a ~900 s beat, so 60 s is already 15x faster than the data
+can change; quicker would poll for samples that cannot exist yet. Two units.
+Small — but it is new load on a service DEV1 owns, so it is a stated decision.
+
+A failed poll **keeps the last-known rows** rather than blanking, same rule as
+`_pollQueues`. Blanking would turn a transient pac-host hiccup into "this unit
+has no gauge", which is a different and false claim.
+
+**The prime waits for the roster, and this was a real bug.** `start()` first did
+`_pollObs()` alongside the unawaited `_poll()`. At that moment `_lastStatus` is
+null, so `isAvailable()` is false and `_pollObs` returned immediately having done
+nothing — **silently**, because that early return has nothing to say. Measured:
+the node-page section was then absent for the first 60 s after every restart,
+until the interval fired. That is precisely the "a blank reads as no gauge"
+failure the prime exists to prevent. It now chains off the first poll's promise.
 
 ```js
 export function start()          // begin polling; idempotent

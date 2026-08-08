@@ -28,8 +28,10 @@ import {
   fmtRssi, fmtSnr, fmtUptime, fmtAgo, fmtUntil, fmtCount,
 } from './format.js';
 import { field, compact, registerNodeSection } from './node-status.js';
-import { unitForNum } from './pac-host.js';
+import { unitForNum, obsForUnit } from './pac-host.js';
 import { resolveDeviceLabel } from './node-label.js';
+import { coulombModel } from './coulomb.js';
+import { log } from './log.js';
 
 // ─── Reachability ────────────────────────────────────────────────────────────
 //
@@ -200,3 +202,58 @@ function buildReachabilitySection(num, perRadio) {
 // SAME array the header's Signal tile is built from. Re-querying it here would
 // turn the header↔section agreement (cc2e55f) back into a coincidence.
 registerNodeSection((num, ctx) => buildReachabilitySection(num, ctx.perRadio));
+
+// ─── Charge counter ──────────────────────────────────────────────────────────
+//
+// Peter, 2026-08-08, having found the Stats pane and then opened the node page:
+// "this page also shows node stats. it shows stats that are available for every
+// node as well as our enhanced data." This is the enhanced half, for the units
+// that have a gauge.
+//
+// THE DERIVATION IS NOT REPEATED HERE. It calls coulombModel() — the same pure
+// function the Stats pane's WS RPC ends up in. Two copies of a subtraction, a
+// grst refusal and a set of state rules would drift apart silently and the two
+// pages would then disagree about the same unit, which is worse than the
+// feature missing.
+//
+// It reads pac-host's POLLED cache rather than fetching, because
+// buildNodeStatus is synchronous and a provider cannot await.
+function buildCoulombSection(num) {
+  const unit = unitForNum(num);
+  if (!unit) return null;                    // not a pac-host unit — silent, as reachability is
+
+  const rows = obsForUnit(unit.id);
+  // ABSENT, NOT EMPTY. The existing rule is that a section appears only if it
+  // has data, and an empty series cannot currently be attributed: "no gauge"
+  // and "fitted but nothing recorded yet" are different facts and pac-host does
+  // not yet distinguish them (services offered the flag; xsession #89/#90).
+  // Rendering a "we don't know" row on every node page would be noise, and
+  // rendering "not fitted" would be a claim I cannot support. So: no section.
+  // The Control > Stats pane is where that distinction is spelled out.
+  if (!rows.length) return null;
+
+  let m;
+  try { m = coulombModel(unit.id, rows); }
+  catch (e) {                                 // ascending-order assertion tripped
+    log.warn('alarm-sections', `coulomb model failed for ${unit.id}: ${e.message}`);
+    return null;
+  }
+  if (m.state !== 'has_samples') return null;
+
+  // field(label, raw, text, ts, desc) — `raw` is the machine value, `text` what
+  // is printed, `ts` makes the age live, `desc` is the qualifier beneath.
+  const fields = compact([
+    field('Charge count', m.latest.n, String(m.latest.n), m.latest.at, m.latest.ago),
+    m.current?.refused
+      // The refusal is SHOWN, not swallowed. Omitting the row would read as "no
+      // rate available"; the truth is "the counter reset inside this span, so
+      // any rate across it would be invented".
+      ? field('Derived current', 'refused', m.current.refused_reason, null, null)
+      : field('Derived current', m.current?.value_text, m.current?.value_text,
+              null, m.current?.span_text),
+  ]);
+  if (!fields.length) return null;
+  return { id: 'charge', kind: 'value_grid', title: 'Charge counter', fields };
+}
+
+registerNodeSection(num => buildCoulombSection(num));

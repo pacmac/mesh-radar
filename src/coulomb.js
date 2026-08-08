@@ -51,13 +51,30 @@ function assertAscending(rows) {
   return rows;
 }
 
-/** The display model for one unit's coulomb series.
+/** The display model for one unit's coulomb series — FETCHES.
  *
  *  `unit` is pac-host's `!hex` id — short names do not resolve upstream.
  *  Never throws for an absent gauge or an empty series; those are STATES, not
  *  errors, and each one says which it is. */
 export async function buildCoulomb(unit, { spanHours = null, limit = DEFAULT_LIMIT } = {}) {
-  const rows = assertAscending(await getObs(unit, { limit }) || []);
+  return coulombModel(unit, await getObs(unit, { limit }) || [], { spanHours });
+}
+
+/** The same model from rows ALREADY IN HAND. Pure: no fetch, no clock beyond
+ *  fmtAgo, no I/O.
+ *
+ *  THIS SPLIT IS LOAD-BEARING, not tidiness. The node page contributes its
+ *  section through `registerNodeSection`, and `buildNodeStatus` is SYNCHRONOUS
+ *  (node-status.js) — a provider cannot await. Without this entry point the
+ *  node-page section would need its own copy of the subtraction, the grst
+ *  refusal and the state rules, and two copies of a measurement drift apart
+ *  silently. One implementation, two callers:
+ *
+ *    ws-relay `coulomb` RPC   -> buildCoulomb()  (fetches, for the Stats pane)
+ *    alarm-sections provider  -> coulombModel()  (cached rows, for the node page)
+ */
+export function coulombModel(unit, rawRows, { spanHours = null } = {}) {
+  const rows = assertAscending(rawRows || []);
 
   const nRows    = rows.filter(r => r.field === FIELD_N);
   const consRows = rows.filter(r => r.field === FIELD_CONS);

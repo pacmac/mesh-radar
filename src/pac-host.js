@@ -15,6 +15,11 @@ const PAC_HOST_URL = process.env.PAC_HOST_URL || 'http://127.0.0.1:8787/v1';
 const HEALTH_POLL_MS = 30000;
 const QUEUE_POLL_MS = 5000;
 const ALIGN_POLL_MS = 2000; // faster than the queue poll — burst progress (~30s) should feel live
+// The device reports observations on a ~900 s beat, so 60 s is already 15x
+// faster than the data can change. Anything quicker polls for samples that
+// cannot exist yet. See _pollObs.
+const OBS_POLL_MS = 60000;
+const OBS_POLL_LIMIT = 200;
 
 export const events = new EventEmitter();
 
@@ -25,6 +30,8 @@ let _lastStatus = null; // null until the first poll resolves
 let _units = [];        // pac-host's own alarm-device roster (GET /mesh/devices) — already scoped to ours, no downstream filter needed
 let _queues = {};       // unit num -> queue ledger array, kept fresh by _pollQueues so the browser never fetches this itself
 let _alignModel = null; // last pushed align view-model (GET /mesh/align), null until first poll
+let _obsTimer = null;
+let _obs = {};          // unit !hex id -> observation rows (oldest-first), kept warm by _pollObs so a SYNCHRONOUS node_status provider can read them
 let _alignPrevMode = null; // dash mode saved when we forced PASV for an align session; null when not holding it
 
 function _statusesEqual(a, b) {
@@ -135,6 +142,45 @@ export function queuesMessage() {
   return { type: 'pac_host_queues', queues: _queues };
 }
 
+/** Keep each unit's observation series warm.
+ *
+ *  WHY POLL AT ALL, when the Stats pane already fetches on demand: the node
+ *  page contributes its coulomb section through `registerNodeSection`, and
+ *  `buildNodeStatus` is SYNCHRONOUS — a provider cannot await a fetch. It needs
+ *  the rows already in hand, so they are kept here, the same way `_queues` and
+ *  the align model already are.
+ *
+ *  OBS_POLL_MS is 60 s against a device beat of ~900 s, so it is already 15x
+ *  faster than the data can change; going quicker would poll for samples that
+ *  cannot exist yet. Cost measured 2026-08-08 on loopback: 1.5 ms and 14 kB per
+ *  unit at limit=200, two units. Small, but it IS new load on a service DEV1
+ *  owns, so it is a stated decision rather than an accident.
+ *
+ *  A failed poll KEEPS THE LAST-KNOWN ROWS rather than blanking them — same
+ *  rule as _pollQueues. Blanking would turn a transient pac-host hiccup into
+ *  "this unit has no gauge" on the page, which is a different and false claim. */
+async function _pollObs() {
+  if (!isAvailable()) { _obs = {}; return; }
+  const next = {};
+  for (const u of _units) {
+    try {
+      next[u.id] = await getObs(u.id, { limit: OBS_POLL_LIMIT }) || [];
+    } catch (e) {
+      log.warn('pac-host', `obs fetch failed for ${u.id}: ${e.message}`);
+      next[u.id] = _obs[u.id] ?? [];
+    }
+  }
+  _obs = next;
+}
+
+/** Cached observation rows for a unit's `!hex` id, oldest-first as served.
+ *  Empty array when never polled or genuinely empty — the CALLER decides what
+ *  an empty series means, because "no gauge" and "no samples yet" are not the
+ *  same fact and this layer cannot tell them apart. */
+export function obsForUnit(unitId) {
+  return _obs[unitId] ?? [];
+}
+
 // Keeps the antenna-alignment view-model fresh via the documented polling
 // fallback (GET /mesh/align) — SSE (mesh.align) is live on pac-host's side
 // but node-dash has no SSE client yet (same deferral as the command ledger,
@@ -187,10 +233,23 @@ export function alignMessage() {
  *  first poll runs asynchronously, so node-dash serves pages before it resolves. */
 export function start() {
   if (_timer) return;
-  _poll();
+  // Held so the obs prime below can wait for the roster this resolves. Callers
+  // still do not await start() — nothing else depends on the first poll.
+  const _pollPromise = _poll();
   _timer = setInterval(_poll, HEALTH_POLL_MS);
   _queueTimer = setInterval(_pollQueues, QUEUE_POLL_MS);
   _alignTimer = setInterval(_pollAlign, ALIGN_POLL_MS);
+  _obsTimer = setInterval(_pollObs, OBS_POLL_MS);
+  // Prime AFTER the first health poll resolves, not beside it. `_poll()` above
+  // is deliberately not awaited, so at this point `_lastStatus` is still null,
+  // `isAvailable()` is false and a bare `_pollObs()` returns immediately having
+  // done nothing — silently, because that early return has nothing to say.
+  //
+  // Measured: the section was then absent for the first 60 s after every
+  // restart, until the interval fired. That is exactly the "a blank reads as
+  // no gauge" failure this prime exists to prevent, so the prime has to wait
+  // for the roster it depends on.
+  _pollPromise.then(_pollObs);
 }
 
 /** Stop polling and clear cached status (tests, shutdown). */
@@ -198,13 +257,16 @@ export function stop() {
   if (_timer) clearInterval(_timer);
   if (_queueTimer) clearInterval(_queueTimer);
   if (_alignTimer) clearInterval(_alignTimer);
+  if (_obsTimer) clearInterval(_obsTimer);
   _timer = null;
   _queueTimer = null;
   _alignTimer = null;
+  _obsTimer = null;
   _lastStatus = null;
   _queues = {};
   _alignModel = null;
   _alignPrevMode = null;
+  _obs = {};
 }
 
 export function isAvailable() {

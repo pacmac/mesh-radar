@@ -1,8 +1,8 @@
 ---
 module: alarm-sections
 source: src/alarm-sections.js
-source_hash: 71d27e8ae20f162159a78a0d92e7863f549dbe0a58d37d92d4f7a3f8afd33170
-updated: 2026-07-29
+source_hash: 393cd46fbc21f1355288f8e0834b549644e5ba120aed54211bd92ecb563dbe5c
+updated: 2026-08-08
 ---
 
 # Module: alarm-sections
@@ -112,6 +112,11 @@ Full rationale for each: `docs/REACHABILITY_SPEC.md`.
 
 - Anything about non-alarm nodes. This module is called for every node and must
   return `null` for all but pac-host units.
+- **The coulomb DERIVATION.** The `charge` section calls `coulombModel()` in
+  `src/coulomb.js` — the same pure function the Control ▸ Stats WS RPC ends up
+  in. Two copies of a subtraction, a `grst` refusal and a set of state rules
+  would drift apart silently, and the two pages would then disagree about the
+  same unit, which is worse than the feature missing. See `docs/modules/coulomb.md`.
 - The header's Signal / Least hops / Verified hops tiles — **pure core**
   (`signal_history`, `messages`, `traceroute_history`), no alarm dependency.
 - `src/ws-relay.js`'s pac-host couplings — seven of them, six pre-dating this

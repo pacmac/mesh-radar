@@ -1,7 +1,7 @@
 ---
 module: coulomb
 source: src/coulomb.js
-source_hash: 6bd67057b84b9dcd8743483e04af03fdf1318c19ec5c2caa0f936066bf1c247b
+source_hash: 92bb44dad43e734a315c356d6a97b15fa8a7a2db5c24e3da3862b81a684b26fa
 updated: 2026-08-08
 ---
 
@@ -103,6 +103,22 @@ conversion happens once, at this boundary. Getting it wrong yields an age ~56000
 too large, which is obvious, or a silently wrong rate, which is not.
 
 ## Public interface
+
+### `coulombModel(unit, rows, { spanHours } = {}) -> model`
+
+**Pure. No fetch, no I/O.** The model from rows already in hand.
+
+**This split is load-bearing, not tidiness.** The node page contributes its
+section through `registerNodeSection`, and `buildNodeStatus` is **synchronous** —
+a provider cannot await. Without this entry point the node-page section would
+need its own copy of the subtraction, the `grst` refusal and the state rules, and
+two copies of a measurement drift apart silently until the two pages disagree
+about the same unit. One implementation, two callers:
+
+| caller | entry | rows from |
+|---|---|---|
+| `ws-relay` `coulomb` RPC → Control ▸ Stats | `buildCoulomb()` | fetched on demand |
+| `alarm-sections` provider → node page | `coulombModel()` | `pac-host.obsForUnit()` cache |
 
 ### `buildCoulomb(unit, { spanHours } = {}) -> Promise<model>`
 
