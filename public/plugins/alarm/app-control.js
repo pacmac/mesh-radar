@@ -15,13 +15,86 @@ export const CONTROL_SHORTCUTS = ['ping', 'status', 'config', 'reboot'];
 
 export const controlMixin = {
   // Sub-tab switch (Summary/Command/Config/Stats/Yagi Align/Chat — task
-  // control-section-ia, 2026-07-25). State + persist only, same shape as
-  // switchCfgTab (app-config.js). No per-tab data load: Command's data is
-  // already WS-pushed regardless of which sub-tab is active, and the other
-  // sub-tabs are skeleton placeholders with nothing to fetch yet.
+  // control-section-ia, 2026-07-25). State + persist, same shape as
+  // switchCfgTab (app-config.js).
+  //
+  // This used to say "No per-tab data load ... the other sub-tabs are skeleton
+  // placeholders with nothing to fetch yet." That stopped being true when Stats
+  // gained the coulomb pane (2026-08-08), so it is corrected here rather than
+  // left to mislead the next reader. Command still needs no load — its data is
+  // WS-pushed regardless of which sub-tab is showing. Stats is on-demand
+  // because a per-unit history nobody is looking at should not be built.
   switchControlTab(name) {
     this.controlTab = name;
     persistSet('controlTab', name);
+    if (name === 'stats') this.requestCoulomb();
+  },
+
+  // ── ALARM PLUGIN: coulomb counter (task coulomb-series-stats-tab) ─────────
+  // WS RPC, never a GET — see the file header. The reply lands in the plugin's
+  // own `coulomb` wsHandler.
+
+  /** pac-host's `!hex` id for the selected unit. The RPC needs this, not the
+   *  num: short names and nums do not resolve upstream (measured 2026-08-08,
+   *  raised with services #90). */
+  coulombUnitId() {
+    return this.controlDevices().find(d => d.num === this.controlTarget)?.id ?? null;
+  },
+
+  requestCoulomb() {
+    const unit = this.coulombUnitId();
+    if (!unit) return;
+    this.coulombLoading = true;
+    this.coulombModel = null;
+    this.wsSend({ type: 'coulomb', unit, span_hours: this.coulombSpanHours });
+  },
+
+  /** Raw user input forwarded to the backend, which re-derives the rate over
+   *  the new span. The browser does NOT re-slice the series it already holds —
+   *  that would be deriving a measurement. Same rule as setNodeWindow. */
+  setCoulombSpan(hours) {
+    if (this.coulombLoading || hours === this.coulombSpanHours) return;
+    this.coulombSpanHours = hours;
+    this.requestCoulomb();
+  },
+
+  /** The series as ONE path `d`, broken at every counter reset.
+   *
+   *  A `grst` means the count restarted, so joining across it would draw one
+   *  continuous slope through two unrelated origins — the same lie the server
+   *  already refuses to put a number to. The gap IS the information, and in a
+   *  path a `M` (moveto) is exactly that gap.
+   *
+   *  ONE PATH, NOT AN x-for OF POLYLINES. The first version did the latter and
+   *  it threw on every render: an Alpine `<template x-for>` nested inside an
+   *  `<svg>` has empty `.content` after HTML parsing, so Alpine dereferenced
+   *  undefined ("Cannot read properties of undefined (reading 'children')").
+   *  Caught from the browser console, not the screenshot — the pane looked
+   *  fine, it simply had no line in it.
+   *
+   *  Geometry only. BROWSER_CONTRACT permits "render and format data it
+   *  receives ... layout"; precedent is snapSparkPoints in app-snapshot.js. */
+  coulombPath() {
+    const pts = this.coulombModel?.series ?? [];
+    if (pts.length < 2) return '';
+    const breaks = this.coulombModel?.breaks ?? [];
+    const xs = pts.map(p => p.at), ys = pts.map(p => p.n);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const W = 560, H = 100;
+    const sx = t => x1 === x0 ? 0 : ((t - x0) / (x1 - x0)) * W;
+    // Inverted: SVG y grows downward. A flat series pins to the middle rather
+    // than dividing by zero.
+    const sy = v => y1 === y0 ? H / 2 : H - ((v - y0) / (y1 - y0)) * H;
+
+    let d = '', penDown = false;
+    for (let i = 0; i < pts.length; i++) {
+      const broke = i > 0 && breaks.some(b => b > pts[i - 1].at && b <= pts[i].at);
+      const cmd = (!penDown || broke) ? 'M' : 'L';
+      d += `${d ? ' ' : ''}${cmd}${sx(pts[i].at).toFixed(1)},${sy(pts[i].n).toFixed(1)}`;
+      penDown = true;
+    }
+    return d;
   },
 
   // pac-host's own alarm-device roster (GET /mesh/devices, task

@@ -1,8 +1,8 @@
 ---
 module: app-control
 source: public/plugins/alarm/app-control.js
-source_hash: aebb74196097303a9c984ea12e94422a3c8946247499523d026ee45379e210bc
-updated: 2026-08-01
+source_hash: 5472b672f07c1716e483883017c9a48cce704491b3387d96d5d47b6af267e4ea
+updated: 2026-08-08
 ---
 
 # Module: app-control
@@ -251,6 +251,56 @@ translation. Raised on xsession ([receipt-schema]) whether pac-host can
 publish a label/unit schema per verb, same shape as `[config-schema-api]`'s
 `fields` array; if/when that lands, only this function changes (id → label
 lookup), no template change.
+
+## Coulomb Stats pane (task `coulomb-series-stats-tab`, 2026-08-08)
+
+Peter: *"device is now pushing the coulomb count, looks like we are tracking
+this, but it is invisible to me in node-dash."*
+
+**Requested over WS RPC, never fetched.** `requestCoulomb()` sends
+`{ type:'coulomb', unit, span_hours }` and the reply arrives through the
+plugin's own `wsHandlers`, not core's — `plugin.js` keeps core's first refusal
+intact. There is still no GET anywhere in this file, and the standing note at
+the top of it applies unchanged.
+
+`unit` is pac-host's `!hex` id, taken from `controlDevices()`'s `id`. Short names
+do not resolve upstream (measured 2026-08-08, raised with services #90), so the
+`num`→`id` hop is not optional.
+
+**When it is requested — this is the part that was previously untrue.** The
+`switchControlTab` comment used to read *"No per-tab data load: ... the other
+sub-tabs are skeleton placeholders with nothing to fetch yet."* Stats is no
+longer a placeholder, so the comment was corrected in the same commit rather than
+left to mislead. A request fires on entering Stats, on changing unit while Stats
+is open, and on changing span. Not on a timer, and not on every tab switch.
+
+**Everything rendered is server-decided.** `state`, `empty_reason`,
+`current.value_text`, `current.refused_reason`, `latest.ago`, `caveat` — all
+strings built in `src/coulomb.js`. This file computes no rate, formats no age and
+decides no empty state. The one thing it does compute is SVG geometry
+(`coulombPoints()`), which is layout, permitted explicitly by BROWSER_CONTRACT
+("render and format data it receives ... layout") and precedented by
+`app-snapshot.js`'s `snapSparkPoints`.
+
+**`coulomb_age` replaces only the age string.** The server pushes it each time
+the formatted value changes; the handler writes it into the held model and
+nothing else. A browser timer recomputing it is forbidden (BROWSER_CONTRACT
+transport rule) and there is none.
+
+**Breaks split the line, they are not drawn as points.** `coulombPath()` emits
+ONE SVG path `d`, using a `M` (moveto) instead of an `L` at every `grst` so the
+line has a visible gap. Joining across one would draw a continuous slope through
+a counter reset — the same lie the server already refuses to put a number to.
+
+**One path, not an `x-for` of polylines — and this was a real bug, not a style
+choice.** The first version rendered `<template x-for>` inside the `<svg>`. An
+Alpine `x-for` template nested in SVG has an EMPTY `.content` after HTML parsing,
+so Alpine dereferenced undefined and threw on every render:
+`Cannot read properties of undefined (reading 'children')`, followed by
+`seg is not defined`. **The pane looked correct in a screenshot** — cards,
+headings and numbers all present — it simply had no line in it. It was caught by
+reading the browser console, which is the argument for checking the console and
+not only the picture.
 
 ## Out of scope
 

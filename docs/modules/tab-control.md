@@ -1,8 +1,8 @@
 ---
 module: tab-control
 source: public/plugins/alarm/tab-control.html
-source_hash: ac19adc37cbe762c9988a55e6212614615e8da0a1423285310198901755f7934
-updated: 2026-08-01
+source_hash: c8bc1b715787e643844ee7a4287f40359e1517e0526d57cd347297cf4a5a2715
+updated: 2026-08-08
 ---
 
 # Module: tab-control
@@ -369,6 +369,35 @@ displayed `1` instead of its actual state value (`4`) on initial load — an
 direct DOM inspection (`.value`), not a screenshot guess. Fixed with an
 `x-init` post-mount resync; see `docs/modules/app-align.md` for the full
 diagnosis.
+
+## Stats pane (task `coulomb-series-stats-tab`, 2026-08-08)
+
+Was a placeholder card reading "Stats" / "Coming soon." until 2026-08-08.
+
+Renders `coulombModel` and derives nothing. Four states, and the pane looks
+different in each — an empty panel for all of them was the failure mode to avoid:
+
+| `state` | what the pane shows |
+|---|---|
+| `has_samples` | the reading, the derived current, the line |
+| `unknown_gauge` | `empty_reason` — pac-host has not said whether a gauge is fitted |
+| `not_fitted` / `no_samples` | `empty_reason` (reserved; not reachable until services ships the fitted flag) |
+| `error` | `empty_reason` carrying the failure, so a failed READ never looks like "no data" |
+
+**`n` is the headline and `cons` is not.** `cons` is whole-mAh, derived, and
+scaled by an unconfirmed constant; it appears once, small, labelled as a
+cross-check. No mAh conversion and no percentage anywhere on this pane — see
+`docs/modules/coulomb.md` for why a wrongly-scaled number is unrecoverable while
+a raw count is not.
+
+**A refused rate shows the reason, not a dash.** When the span crosses a counter
+reset the server sends `refused: true` and a sentence; the pane prints the
+sentence. A `—` would read as "no data" when the truth is "this arithmetic would
+have lied to you".
+
+**The line is CSS/SVG percentages, not a chart library.** Same reasoning as the
+Snapshot ruler: no lifecycle to manage inside an `x-show` pane, and nothing to
+tear down when the sub-tab changes. `grst` breaks are gaps in the path.
 
 ## Out of scope
 

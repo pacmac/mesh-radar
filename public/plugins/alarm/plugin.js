@@ -59,6 +59,12 @@ import { persistGet }   from '/app-persist.js';
     alignNBurst:        4,
     alignReplyWinInput: 30,
     alignSending:       false,
+    // -- Coulomb counter (task coulomb-series-stats-tab) --------------------
+    // The whole model is built by src/coulomb.js: state, verdicts, the derived
+    // rate, the refusal sentence, and the "9m ago". Held here purely to render.
+    coulombModel:       null,
+    coulombLoading:     false,
+    coulombSpanHours:   null,   // null = the widest span the server has
   },
 
   // Handlers run bound to the Alpine component, and ONLY for event types core
@@ -79,6 +85,24 @@ import { persistGet }   from '/app-persist.js';
     pac_host_queues(ev) { this.pacHostQueues = ev.queues || {}; },
 
     alarm_images(ev)    { this.alarmImages = ev.units || {}; },
+
+    // The display model for the selected unit's charge counter. Replaces the
+    // held model wholesale — there is nothing to merge, because every field was
+    // decided server-side in one pass.
+    coulomb(ev) {
+      this.coulombLoading = false;
+      this.coulombModel = ev;
+    },
+
+    // ONLY the formatted age changes here. The server recomputes it each second
+    // and pushes when the STRING changes; a browser timer doing this is
+    // forbidden (BROWSER_CONTRACT transport rule). Guarded on unit so a reply
+    // for a unit we have since navigated away from cannot overwrite the age of
+    // the one on screen.
+    coulomb_age(ev) {
+      if (!this.coulombModel?.latest || ev.unit !== this.coulombModel.unit) return;
+      this.coulombModel.latest.ago = ev.ago;
+    },
 
     pac_host_align(ev) {
       this.alignModel = ev.model;

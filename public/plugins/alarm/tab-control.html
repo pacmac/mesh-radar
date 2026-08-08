@@ -149,13 +149,128 @@
           </div>
 
           <!-- ==================== STATS (skeleton) ==================== -->
-          <div x-show="controlTab==='stats'" class="flex-1 min-h-0 max-w-2xl">
-            <div class="card bg-base-100 shadow">
-              <div class="card-body py-3">
-                <h2 class="card-title">Stats</h2>
-                <p class="text-xs text-base-content/50">Coming soon.</p>
+          <!-- ==================== STATS (coulomb counter) ====================
+               Every number, verdict and sentence here was decided by
+               src/coulomb.js. This markup derives nothing — see
+               docs/modules/tab-control.md and docs/BROWSER_CONTRACT.md.
+
+               n is the headline because it is the RAW count. cons is whole-mAh,
+               derived, and scaled by a constant nobody has confirmed, so it
+               appears once as a cross-check and never as the reading. There is
+               deliberately no mAh figure and no percentage anywhere on this
+               pane: a number multiplied by a wrong constant cannot be corrected
+               later, and a percentage on a dashboard is believed. -->
+          <div x-show="controlTab==='stats'" class="flex-1 min-h-0 max-w-2xl flex flex-col gap-3">
+
+            <!-- Unit + span. Changing either RE-ASKS THE SERVER; the browser
+                 never re-slices the series it already holds, because that would
+                 be deriving the measurement rather than rendering it. -->
+            <div class="flex items-center gap-2 flex-wrap shrink-0">
+              <span class="text-sm text-base-content/60 w-12 shrink-0">Unit</span>
+              <div class="join">
+                <template x-for="d in controlDevices()" :key="d.num">
+                  <button class="join-item btn btn-sm"
+                          :class="controlTarget === d.num ? 'btn-primary' : 'btn-outline'"
+                          @click="controlTarget = d.num; requestCoulomb()"
+                          x-text="d.label"></button>
+                </template>
+              </div>
+              <div class="join ml-auto">
+                <template x-for="s in [{h:null,l:'all'},{h:6,l:'6h'},{h:24,l:'24h'},{h:168,l:'7d'}]" :key="s.l">
+                  <button class="btn btn-xs join-item font-mono"
+                          :class="coulombSpanHours === s.h && 'btn-primary'"
+                          :disabled="coulombLoading"
+                          @click="setCoulombSpan(s.h)" x-text="s.l"></button>
+                </template>
               </div>
             </div>
+
+            <div x-show="coulombLoading" class="text-sm text-base-content/50">Reading…</div>
+
+            <!-- NOT A BLANK PANEL. An empty series has several possible causes
+                 and they are not the same fact; the server says which one it is
+                 and this prints that sentence verbatim. A card showing nothing
+                 would misreport a unit with no gauge and a unit that simply has
+                 no samples yet as the same thing. -->
+            <div x-show="!coulombLoading && coulombModel && coulombModel.state !== 'has_samples'"
+                 class="card bg-base-100 shadow shrink-0">
+              <div class="card-body py-3 gap-1">
+                <h2 class="card-title text-base">Charge counter</h2>
+                <p class="text-sm text-base-content/70" x-text="coulombModel?.empty_reason"></p>
+              </div>
+            </div>
+
+            <template x-if="!coulombLoading && coulombModel?.state === 'has_samples'">
+              <div class="flex flex-col gap-3 min-h-0">
+
+                <!-- The reading, and its AGE. The age is a server-formatted
+                     string refreshed by the coulomb_age push — there is no
+                     browser timer here and there must never be one. -->
+                <div class="card bg-base-100 shadow shrink-0">
+                  <div class="card-body py-3 gap-2">
+                    <div class="flex items-baseline gap-3 flex-wrap">
+                      <span class="text-4xl font-display font-bold leading-none tracking-tight text-primary"
+                            x-text="coulombModel.latest.n"></span>
+                      <span class="text-sm text-base-content/60">counts</span>
+                      <span class="text-sm font-mono text-base-content/60 ml-auto"
+                            x-text="coulombModel.latest.ago"></span>
+                    </div>
+                    <div class="text-xs font-mono text-base-content/50" x-text="coulombModel.latest.at_text"></div>
+                  </div>
+                </div>
+
+                <!-- THE MEASUREMENT. A refusal prints its reason rather than a
+                     dash: "—" reads as "no data" when the truth is "this
+                     subtraction would have lied to you". -->
+                <div class="card bg-base-100 shadow shrink-0">
+                  <div class="card-body py-3 gap-1">
+                    <h2 class="card-title text-base">Derived current</h2>
+                    <template x-if="!coulombModel.current?.refused">
+                      <div class="flex items-baseline gap-3">
+                        <span class="text-2xl font-display font-bold" x-text="coulombModel.current?.value_text"></span>
+                        <span class="text-sm text-base-content/60" x-text="coulombModel.current?.span_text"></span>
+                      </div>
+                    </template>
+                    <template x-if="coulombModel.current?.refused">
+                      <p class="text-sm text-warning" x-text="coulombModel.current?.refused_reason"></p>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- The series. Breaks are GAPS, not marks: the count restarted,
+                     so a continuous line across one would draw a slope that was
+                     never measured. -->
+                <div class="card bg-base-100 shadow flex-1 min-h-0">
+                  <div class="card-body py-3 gap-2 min-h-0">
+                    <div class="flex items-baseline gap-2">
+                      <h2 class="card-title text-base">n over time</h2>
+                      <span class="text-xs font-mono text-base-content/50"
+                            x-show="coulombModel.breaks?.length"
+                            x-text="coulombModel.breaks.length + ' counter reset(s) — shown as gaps'"></span>
+                    </div>
+                    <div class="flex-1 min-h-[6rem]">
+                      <!-- ONE path, not an x-for of polylines. A <template x-for>
+                           nested inside <svg> has empty .content after HTML
+                           parsing and Alpine throws on every render — the pane
+                           still looked fine, it just had no line. A moveto (M)
+                           inside the path IS the gap at a counter reset. -->
+                      <svg viewBox="0 0 560 100" preserveAspectRatio="xMidYMid meet"
+                           class="w-full h-full" aria-label="Charge count over time">
+                        <path fill="none" stroke="currentColor" stroke-width="2"
+                              stroke-linejoin="round" stroke-linecap="round"
+                              class="text-primary" :d="coulombPath()"></path>
+                      </svg>
+                    </div>
+                    <div class="text-xs font-mono text-base-content/50">
+                      <span x-text="coulombModel.series?.length"></span> samples ·
+                      cross-check cons <span x-text="coulombModel.cons_latest ?? '–'"></span> mAh
+                    </div>
+                  </div>
+                </div>
+
+                <p class="text-xs text-base-content/50 shrink-0" x-text="coulombModel.caveat"></p>
+              </div>
+            </template>
           </div>
 
           <!-- ==================== YAGI ALIGN ==================== -->
