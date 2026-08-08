@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 422f5a93dda4c149d835e558dfd18eacf330b6432d15e29d7259a76f95071301
-updated: 2026-08-04
+source_hash: 7b681d3f743c0674c58d156d235c8327a687a92af2c1a1689d40a1e44e5f047c
+updated: 2026-08-08
 ---
 
 # Module: ws-relay
@@ -837,3 +837,39 @@ covers the browser's `deviceBleStates`, which is built from that feed.
 **Behaviour-preserving:** the served tones were checked against the old browser
 rules at every band boundary — 67/67 identical. Nothing on screen moves until
 Domain 2 switches over, and nothing should move then either.
+
+## `coulomb` RPC + `coulomb_age` push (task `coulomb-series-stats-tab`, 2026-08-08)
+
+Client→server RPC, third of its kind after `geocode` and `node_status`:
+
+```
+→ { type: 'coulomb', unit: '!hex', span_hours?: number }
+← { type: 'coulomb', ...model }        // see docs/modules/coulomb.md
+← { type: 'coulomb_age', unit, at, ago }   // pushed while the page is open
+```
+
+**Why a socket RPC and not a GET.** `docs/BROWSER_CONTRACT.md`'s transport rule
+names "histories" as page data, and on-demand page data is explicitly permitted
+over WS RPC. A GET route for this exact shape of thing existed briefly in
+`pac-command-api.js` and was a real bug (Peter, 2026-07-25): the browser fetched
+on click, which is neither real-time nor permitted. `pac-command-api.js` carries
+a standing note not to re-add it. Nothing was added to `WS_ONLY_ROUTES` because
+no route was created.
+
+**`coulomb_age` exists because a relative age is a server fact.** The reading's
+"12 minutes ago" changes with wall time even when the unit is silent, and the
+contract forbids browser timers that recompute server facts. So the server holds
+the last reading's timestamp per connection, recomputes `fmtAgo` every second,
+and **pushes only when the formatted string changes** — byte-for-byte the shape
+`node_status_age` already uses, deliberately, so there is one mechanism to
+understand rather than two.
+
+Both timers are per-connection and both are cleared on `close`. A payload with no
+reading (`latest == null`) stops the timer rather than leaving it pushing an age
+for a sample that does not exist.
+
+An absent gauge and an empty series are STATES handled inside `buildCoulomb`, not
+errors. Reaching the catch here means the fetch or the ascending-order assertion
+failed, and the model is replaced with `state: 'error'` carrying the message — the
+page must say a read failed rather than render an empty panel that looks like
+"no data".

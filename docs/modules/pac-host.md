@@ -1,8 +1,8 @@
 ---
 module: pac-host
 source: src/pac-host.js
-source_hash: efb5e973138e39e49126adba60066d455658b00a0b5c9af44780d7011997d23a
-updated: 2026-08-01
+source_hash: 13e4f1cf6be127ff5fa1bcf6b4a8ff13821a8a2f19f85c038352a84c7634f490
+updated: 2026-08-08
 ---
 
 # Module: pac-host
@@ -94,6 +94,33 @@ the health/status signal.
 Deliberately small — every function the rest of node-dash needs is
 ready-made here, so no call site outside this file needs to know pac-host's
 event shapes or message types.
+
+### `getObs(unit, { field, since, until, limit })` — added 2026-08-08
+
+Thin fetch of a unit's stored observation series (the coulomb counters). Returns
+the rows as served. **It does not interpret them**: the subtraction, the verdicts
+and the display strings are `src/coulomb.js`'s job, because this file is a proxy
+and a poller and does not know what `n` means. Same split as `snapshot-api.js`
+and `node-status.js`.
+
+`unit` MUST be pac-host's `!hex` id. **Short names do not resolve** — measured
+2026-08-08, `GET /mesh/obs/BNCH` returns `cannot resolve target` even though BNCH
+appears in the roster `/mesh/devices` returns. Raised with services on the
+`node-dash--services` channel (#90); callers use `numToNodeId()` and it costs
+nothing.
+
+Two upstream properties, both stated by services and both verified here on
+2026-08-08, which pull in opposite directions:
+
+- rows come back **OLDEST-FIRST**. `coulomb.js` asserts this rather than trusting
+  it, because the consumer's operation is a subtraction and a descending list
+  would make a discharging cell read as charging.
+- `limit` takes the **NEWEST** n, so a plain call is the recent end of history,
+  not the start.
+
+This surface exists because there is **no generic passthrough** on this boundary
+— see Out of scope. Reaching a new pac-host route always costs a named function
+here.
 
 ```js
 export function start()          // begin polling; idempotent

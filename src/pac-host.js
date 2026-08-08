@@ -262,6 +262,33 @@ export async function getQueue(unit) {
   return _call(`/mesh/queue/${encodeURIComponent(unit)}`);
 }
 
+/** Fetch a unit's stored observation series (the coulomb counters).
+ *
+ *  THIN ON PURPOSE. This file is a proxy and a poller; it does not know what
+ *  `n` means. The subtraction, the verdicts and the display strings live in
+ *  src/coulomb.js — putting them here would put business logic in the transport
+ *  boundary. Same split as snapshot-api.js and node-status.js.
+ *
+ *  `unit` MUST be pac-host's `!hex` id. Short names do NOT resolve: measured
+ *  2026-08-08, GET /mesh/obs/BNCH returns "cannot resolve target" even though
+ *  BNCH is in the roster that /mesh/devices returns. Raised with services
+ *  (xsession node-dash--services #90); use numToNodeId() and it is a non-issue.
+ *
+ *  Two properties of the upstream that pull in opposite directions, both stated
+ *  by services and both verified here 2026-08-08:
+ *    - rows come back OLDEST-FIRST. coulomb.js asserts this rather than trusting
+ *      it, because the consumer's operation is a subtraction.
+ *    - `limit` takes the NEWEST n, so a plain call is the RECENT end. */
+export async function getObs(unit, { field, since, until, limit } = {}) {
+  const q = new URLSearchParams();
+  if (field != null) q.set('field', String(field));
+  if (since != null) q.set('since', String(since));
+  if (until != null) q.set('until', String(until));
+  if (limit != null) q.set('limit', String(limit));
+  const qs = q.toString();
+  return _call(`/mesh/obs/${encodeURIComponent(unit)}${qs ? `?${qs}` : ''}`);
+}
+
 // -- pac-host's image routes, and what each one costs -----------------------
 // Only the two LOCAL reads below are safe on anything a page depends on.
 // Measured 2026-07-31 against the running service:

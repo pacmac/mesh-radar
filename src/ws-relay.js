@@ -59,6 +59,7 @@ import { lookupGeocode } from './geocode.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 import { fmtAgo } from './format.js';
+import { buildCoulomb } from './coulomb.js';
 
 // THE SNR EMIT BOUNDARY. Everything leaving for the browser carries dB, never
 // the raw quarter-dB the wire uses — see src/snr.js for why that module is
@@ -1009,6 +1010,38 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
 
     ws.once('close', stopNodeStatusAge);
 
+    // The coulomb reading's "12 minutes ago" is a SERVER-FORMATTED value and it
+    // changes with wall time even when the unit is silent. BROWSER_CONTRACT:
+    // "browser timers that recompute server facts ... are forbidden freshness
+    // mechanisms" — so the server pushes the changed string, exactly as
+    // node_status_age does above. Same shape deliberately: one mechanism to
+    // understand, not two.
+    let coulombAge = null;
+    let coulombAgeTimer = null;
+
+    function stopCoulombAge() {
+      if (coulombAgeTimer) clearInterval(coulombAgeTimer);
+      coulombAgeTimer = null;
+      coulombAge = null;
+    }
+
+    function rememberCoulombAge(payload) {
+      // No reading means nothing to age. An absent gauge must not leave a timer
+      // running that pushes "ago" for a sample that does not exist.
+      if (payload?.latest?.at == null) { stopCoulombAge(); return; }
+      coulombAge = { unit: payload.unit, at: payload.latest.at, ago: payload.latest.ago };
+      if (coulombAgeTimer) return;
+      coulombAgeTimer = setInterval(() => {
+        if (!coulombAge || ws.readyState !== 1) return;
+        const ago = fmtAgo(coulombAge.at);
+        if (ago == null || ago === coulombAge.ago) return;   // push only on CHANGE
+        coulombAge.ago = ago;
+        ws.send(JSON.stringify({ type: 'coulomb_age', unit: coulombAge.unit, at: coulombAge.at, ago }));
+      }, 1000);
+    }
+
+    ws.once('close', stopCoulombAge);
+
     // Send current bridge connection state immediately
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: bridge.connected ? 'bridge_connected' : 'bridge_disconnected' }));
@@ -1049,6 +1082,39 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'node_status', ...payload }));
           rememberNodeStatusAge(payload);
+        }
+      }
+
+      // coulomb: one unit's charge-counter series, as a DISPLAY MODEL.
+      //
+      // WS RPC and not a GET route. BROWSER_CONTRACT's transport rule names
+      // "histories" as page data, and a GET for exactly this shape of thing was
+      // added to pac-command-api once and was a real bug (Peter, 2026-07-25):
+      // the browser fetched on click, which is neither real-time nor permitted.
+      // On-demand page data goes over the socket — same as geocode and
+      // node_status.
+      //
+      // Every derivation is in coulomb.js. Nothing here decides anything, and
+      // the browser decides even less.
+      if (msg?.type === 'coulomb' && msg.unit) {
+        let payload;
+        try {
+          payload = await buildCoulomb(String(msg.unit), { spanHours: msg.span_hours ?? null });
+        } catch (e) {
+          // A gauge that is absent, or a unit with no samples, is a STATE and is
+          // handled inside buildCoulomb. Reaching here means the fetch or the
+          // ascending-order assertion failed — a real fault, and the page must
+          // say so rather than render an empty panel that looks like "no data".
+          console.error(`[coulomb] build failed for ${msg.unit}: ${e.message}`);
+          payload = {
+            unit: String(msg.unit), state: 'error',
+            empty_reason: `Could not read the coulomb series: ${e.message}`,
+            latest: null, current: null, series: [], breaks: [], cons_latest: null, caveat: null,
+          };
+        }
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'coulomb', ...payload }));
+          rememberCoulombAge(payload);
         }
       }
     });
