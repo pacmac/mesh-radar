@@ -15,7 +15,7 @@
 //
 // See docs/WS_PLUGIN_HOOKS_SPEC.md and docs/PLUGIN_BOUNDARY_SPEC.md.
 
-import * as pacHost from './pac-host.js';
+import * as pacHost from './alarm-host.js';
 import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
 
 // Live pushes. Core hands us `broadcast` and `hintNodeStatus`; we know pac-host,

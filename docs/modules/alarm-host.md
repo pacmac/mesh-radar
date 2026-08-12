@@ -1,0 +1,433 @@
+---
+module: alarm-host
+source: src/alarm-host.js
+source_hash: 0ac143316d0ec267e69179f0a56598e93277a8637c2a70ed4bf4ed09442a0d7d
+updated: 2026-08-12
+---
+
+# Module: alarm-host
+
+## Purpose
+
+The **one** boundary between node-dash and the mt-alarm bridge on `:8790`. Replaces
+`pac-host.js`, whose service was stopped under pm2 at 09:35Z on 2026-08-12 and will
+not return on a reboot.
+
+Everything bridge-shaped lives in this file. No other module branches on the
+bridge's types, fields, or message shapes — they call the small surface exported
+here. That was true of `pac-host.js` and is the only reason this migration is one
+module rather than fourteen.
+
+## Why the rename, and why not `bridge-*`
+
+`pac-host.js` pointing at a service called the bridge would be a lie in a filename,
+and the next session pays for it.
+
+**`bridge-` was rejected because it is already taken.** `src/bridge-events.js` is
+mesh-gw's event bridge — a different thing entirely, on a different host, older.
+Two unrelated "bridges" in one `src/` is worse than the stale name it replaces.
+
+`alarm-host` names what it is: the boundary to the alarm estate's host. Every
+importer is already `alarm-*` (`alarm-ws`, `alarm-images`, `alarm-sections`,
+`alarm-browser`, `alarm-image-api`).
+
+## The outage this exists because of
+
+Measured, not remembered:
+
+- 1568 failed fetches between 09:35:27Z and 09:35:35Z
+- `_poll()` caught, set `available:false`, emptied `_units`, and every downstream
+  poll then returned early
+- logs go **silent** at 09:35:35 and stayed silent for five hours
+
+Nothing crashed. Nothing errored. Six panels rendered **nothing**, which is
+identical on screen to "this unit has nothing to say". That is the defect worth
+designing against, and it is why the section contract below is not optional
+polish.
+
+## THE SECTION CONTRACT — the reason to migrate, above any route
+
+`GET /dash` returns a `sections` map. Every panel appears **whether or not anything
+can fill it**, and one that cannot names a reason and an owner:
+
+```
+units    ok    bridge GET /state
+commands ok    bridge POST /queue
+outbox   gap   device    no route lists commands sent and their outcome
+obs      gap   plugins   no series store; the record plugin is unbuilt
+images   gap   undecided chunks are classified and logged, nothing reassembles them
+align    gap   undecided ownership parked by Peter 2026-08-12 (park-align-ownership)
+config   gap   device    NOT CONSUMED HERE — zero call sites, droppable
+diag     gap   device    NOT CONSUMED HERE — zero call sites, droppable
+```
+
+**A gap is served to the browser as text, never as absence.** The Camera panel
+must read *"unavailable: nothing reassembles chunks yet — device"*, not spin and
+not blank. A section is never omitted; omission is how a gap becomes invisible,
+which is precisely what happened this morning.
+
+When an upstream gap closes, the entry changes on their side and the panel fills
+**with no deploy here**.
+
+## Migrating restores TWO of six panels, and the spec says so out loud
+
+| node-dash panel | bridge section | after migration |
+|---|---|---|
+| unit roster / reachability | `units` | **fills** |
+| command buttons | `commands` | **fills** |
+| queue ledger | `outbox` | still empty — device owns it |
+| Camera | `images` | still empty — undecided |
+| coulomb / Stats | `obs` | still empty — plugins, unbuilt |
+| Yagi Align | `align` | still empty — parked |
+
+Anyone reading this expecting the alarm pages to come back whole should stop here.
+They do not, and no work in this repo makes them.
+
+## Identity: the bridge speaks `!hex` ONLY
+
+`GET /dash` unit keys, measured 2026-08-12: `unit, heardAt, rssi, snr, radios,
+beat, win`. **There is no node num anywhere on the bridge.**
+
+node-dash's core speaks node nums (`unitForNum(num)`, `unitNums()`, and every
+`node_status` caller). The conversion is mechanical — `!hex` IS the num in hex,
+`!987ab80f` → 2558179343 — and `src/node-label.js:55` already does it.
+
+**The conversion happens once, here, at this boundary.** No caller outside this
+file converts, and `unitForNum`/`unitNums` keep their existing num-based
+signatures so the thirteen importers do not change.
+
+Short names do not resolve on the bridge, the same as pac-host. Full `!id` always.
+
+## Path or query is NOT uniform — and the wrong form returns 200
+
+Measured live 15:02Z, `!987ab80f` percent-encoded:
+
+```
+GET /state/%21987ab80f       200   {unit, schedule, comms, link…}  ONE unit
+GET /state?unit=%21987ab80f  200   {!987ab80f, !8cee336b}          EVERY unit
+GET /state                   200   {!987ab80f, !8cee336b}          identical
+GET /dash/unit?unit=%21…     200   {unit, state…}                  ONE unit
+GET /dash/unit/%21987ab80f   404
+```
+
+**device's core routes take a PATH param. plugins' routes take a QUERY param.**
+plugins' written guidance — *"there are no path parameters anywhere, every
+`/thing/:target` becomes `/thing?unit=`"* — is correct for their own routes and
+wrong for device's.
+
+The dangerous half is line 2: `/state?unit=` does not 404 and does not error. It
+returns 200 with a well-formed body that is **every unit rather than the one asked
+for**. A client written to the guidance reads one unit's schedule as another's, and
+the two live units are on 60 s and 300 s beats, so a staleness indicator would be
+confidently wrong rather than blank.
+
+**CONFIRMED AND CLOSED**, `[path-or-query-8790]`, 2026-08-12. plugins withdrew the
+guidance with file and line: `device/bridge/src/api.js:120` is `path === '/state'`,
+but `:122` is `path.startsWith('/state/')` and `:172` the same for `DELETE /queue/`.
+The `===` is real but lives only in the **plugin dispatch loop**
+(`path !== r.path`), which was the code they had read. Device's core routes take
+path parameters.
+
+The silent-ignore is mechanical: `path` is `url.pathname`, so a query string is
+never part of the comparison. Nothing looks at the query, so nothing rejects it.
+Whether `/state?unit=` should 400 is device's call and is with them.
+
+Each call site here names which convention it uses. `/dash/unit?unit=<id>` also
+returns the whole `state` object, so it is a route around the question — not taken,
+since the question now has an answer.
+
+## Two fields to take from `/health`, not `/dash`
+
+- **`startedAt`.** `/dash` serves `null` with `startedAtWhy` — plugins' own known
+  bug, the value is unreachable from a plugin. `GET /health` carries the real
+  value (`2026-08-12T14:47:26.405Z`, measured). Read it there. Their fix will land
+  by itself; this is not a workaround for a peer's defect, it is reading the
+  authoritative source.
+- **`present`.** `/dash` units have no such flag, and pac-host's `/mesh/devices`
+  carried `present:false` for a unit DECLARED but not currently in the roster.
+  **`GET /health` already distinguishes it** — it returns both `units` (declared)
+  and `heard`, as separate arrays. `present` = in `units`, absent from `heard`.
+
+`present:false` units **must be rendered, never dropped**. A unit silent for a day
+disappearing from the list shows a shrinking roster instead of a unit in trouble,
+and silence is the exact thing the panel exists to display.
+
+## `beat` provenance EXISTS — corrected 2026-08-12, and the correction is the point
+
+**An earlier draft of this spec said the bridge had no `beatSource` and that one
+had been requested from plugins. That was false, and it was a false ABSENCE of
+exactly the kind this repo keeps paying for.** It was read off `GET /dash`, whose
+unit summary carries a bare `beat` — without then opening `GET /state/<id>`, which
+carries provenance in three places.
+
+Measured on `!987ab80f`, 15:14Z:
+
+```
+schedule.beat      60000          DECLARED
+aim.source         "declared"
+contact.basis      "declared"
+measured.beat      { n:20, meanMs:62862, minMs:49905, maxMs:129256,
+                     declaredMs:60000, errorMs:2862, contacts:255 }
+measured.lateWakes { n:51, worstMs:189622 }
+```
+
+So the bridge is **richer than pac-host was**, not poorer: it serves the declared
+value, the measured mean, and the error between them, per unit. `beatSource` maps
+to `contact.basis`. The drift that made BNCH's `beatSource: measured` matter is
+now a number (`errorMs`) rather than a flag.
+
+The rule that follows is unchanged and now better supported: a countdown rendered
+from the declared beat while the measured mean is 2.8 s longer and the worst late
+wake is 189 s is a promise the unit did not make. **Render the basis alongside the
+number, and prefer `measured` where `n` is meaningful.**
+
+Per unit, never one number for the estate: the two live units are 60000 and 300000.
+
+`/dash`'s summary remains the wrong place to read provenance from. Where a panel
+needs it, the per-unit call is the source.
+
+## Field map — what the thirteen importers consume, and where it now comes from
+
+Consumed fields, counted across the importers:
+
+| node-dash field | bridge source | note |
+|---|---|---|
+| `u.id` | `unit` | `!hex`, unchanged |
+| `u.num` | `unit` | converted here, `node-label.js:55` |
+| `u.beat` | `schedule.beat` | declared |
+| `u.beatSource` | `contact.basis` | `"declared"` observed |
+| `u.windowMs` | `schedule.win` | |
+| `u.nextWake` | `aim.nextWakeAt` | ISO; `comms.nextWakeMs` is the countdown form |
+| `u.name`, `u.shortName` | **not on the bridge** | resolved here via `node-label.js` — the bridge holds no names |
+| `u.awake` | **no direct field** | `contact.overdue` + `aim.nextWakeAt` are the nearest facts |
+| `u.txRadio` | **no direct field** | `link.radios` lists both; which one TX'd is not stated |
+| `u.acks` | **no direct field** | `traffic` has `lastReplyAt`, `roundTripMs`, `queued`, `inFlight` — no counts |
+| `u.wakesSeen` / `wakesExpected` | partial | `measured.beat.contacts`, `measured.lateWakes.n` |
+
+**The last four are genuine losses and must be rendered as such** — the field says
+it has no source today, naming the owner, rather than being computed from a
+near-enough substitute.
+
+Confirmed by plugins 2026-08-12 (`[where-do-these-live]`), who enumerated all eight
+blocks of `/state` before answering:
+
+| field | verdict |
+|---|---|
+| `awake` | not served under any name. **device's to publish** — they know whether `aim.preemptMs` counts |
+| `acks` | not served per unit. `/stats` is estate-wide only. device's to add or decline |
+| `wakesExpected` | not served. `measured.beat.contacts` is seen; there is no expected |
+| `txRadio` | **plugins are building it** — the `before:send` hook already carries `{unit, text, radio, channel}` past them |
+
+**Why this module does not compute `awake` itself**, in plugins' words, who refused
+the same request for the same reason: *"a boolean I synthesised would be a second
+opinion about whether a unit 2.5 km away is listening, sitting in the same payload
+as the bridge's own numbers, with nothing to say which was right when they
+disagreed."* The parts are all present — `aim.nextWakeAt`, `schedule.win`,
+`aim.preemptMs` — which is exactly what makes the derivation tempting and wrong.
+
+`wakesExpected` is the sharpest case. It is `elapsed / beat`, and **which beat is a
+judgement about the unit, not arithmetic**: declared 60000 against
+`measured.beat.meanMs` 68617. Dividing by the declared one is a choice that would
+have been made here without anyone noticing a choice was made.
+
+## contact vs aim — silence and opportunity are different clocks
+
+Both can be true at once, and on 2026-08-12 both were: `contact.overdue` true with
+`overdueBy` 35062 while `aim.nextWakeAt` was 38 s in the **future**. That is not a
+contradiction.
+
+```
+contact.dueAt     when we should have HEARD from it by   -> SILENCE
+aim.nextWakeAt    when we predict it will next LISTEN    -> OPPORTUNITY
+```
+
+`dueAt` is derived from when we last heard; `nextWakeAt` from the schedule. A unit
+can be late for a wake it has not yet reached.
+
+**"Next window" is built from `aim` and is correct.** It answers *when can I get a
+command to it*. Reading it as staleness was a misreading on this side, not a defect
+in the field — recorded here so it stays a reason rather than a coincidence. A
+staleness indicator, if one is ever built, comes from `contact` plus
+`contact.basis`.
+
+**NO ESCALATION ON `contact.overdue`.** plugins' caveat, honoured: they have watched
+25 overdue/returned pairs in 100 minutes, several resolving in under half a second,
+and have an open item with device asking whether that is a real lapse or their
+detector firing on its own boundary. Indicator yes, pager no, until that is
+answered. This constraint travels with any future alerting path (`/notify` is the
+obvious candidate and is deliberately not consumed yet).
+
+`u.acks` losing its source is what breaks `alarm-sections.js:102` independently of
+services' vocabulary change. Both causes land on the same field.
+
+## Instants: ISO on the wire, epoch MILLISECONDS in the unit object
+
+`heardAt`, `restoredAt`, `startedAt`, `aim.nextWakeAt` are ISO 8601 on the bridge.
+pac-host stamped epoch ms.
+
+**The unit object this module builds carries epoch MILLISECONDS, not seconds.**
+That is pac-host's contract and every consumer assumes it: `alarm-sections` calls
+`msToSec(u.beat)`, `msToSec(u.windowMs)`, `msToSec(u.nextWake)` and does the divide
+itself, exactly once. `_isoToMs()` is the only converter here; there is deliberately
+no seconds-producing variant, so the second divide cannot be added by accident.
+
+**This was got wrong on the first cut and shipped.** An earlier `_isoToSec()`
+handed `nextWake` over already divided, `nextWindowField` divided again, and
+`1755012899` became `1755012` — **21 January 1970**. Permanently in the past, so
+"Next window" read `overdue` on every unit forever, while the bridge's own
+`contact.overdue` said `false`. The page was contradicting its own source.
+
+What made it hard to see: `beat` (60000) and `windowMs` (8000) rendered perfectly
+throughout, because the bridge serves those as plain millisecond **durations**
+which were never double-converted. **A units bug that is wrong on one field and
+right on the two printed beside it does not look like a units bug.** It looks like
+a unit that is genuinely overdue — which, on a device that sleeps 99% of the time,
+is entirely plausible. Nothing but arithmetic catches this.
+
+Same rule as `docs/modules/coulomb.md`'s ms→s divide, and the rule services'
+`[ms-everywhere]` note exists because of.
+
+## `obs` is TWO things and the word is overloaded
+
+`GET /obs` shipped 2026-08-12 and is **the runtime-params table**, not the series.
+Conflating them puts "no data" on a panel that has data, or the reverse.
+
+| | needs a store | status |
+|---|---|---|
+| **table** — what is this device saying now, latest value per wire key | no | **live** |
+| **series** — how has this number moved | yes | gap, `record` unbuilt |
+
+The same payload carries `series: null` + `seriesWhy` deliberately, so one cannot
+be mistaken for the other. `getObs()` therefore **never falls through to
+`GET /obs`** — that route answers 200 with a table, and coulomb.js expects an
+ascending series of `{at, n}`; the subtraction would run on whatever came out.
+
+The `obs` entry in `sections` describes the **series**. `_pollObsTable()` is
+deliberately **not** gated on it, or a working panel would hide behind an
+unrelated gap.
+
+### Four row states, and the difference is the point
+
+```
+arrived                    value, ty, label, at
+declared `must`, absent    A DEFECT — also named in missingMust
+declared `opt`, absent     normal, still listed; an absent optional is information
+arrived, UNDECLARED        THE FINDING — firmware sends what the schema does not know
+```
+
+An undeclared key arrives as `value: null, withheld: true`. **Render the key,
+never the value.** plugins' reason: `classify()` maps TELEMETRY/POSITION/NODEINFO
+all to `beat`, so a position payload arrives on the same event class and lat/lon
+lives in there. None of the 18 declared fields is positional, so the safe set and
+the useful set are the same set.
+
+### A broken schema is a ROW, not a gate
+
+Got this backwards first: the section returned "unavailable" whenever
+`schema.declared === 0`, which suppressed the rows entirely. But with an empty
+schema **every arrived key classifies as undeclared** — and those are precisely
+the rows this table exists to surface. BNCH had 17 keys arriving while the panel
+said "unavailable".
+
+The schema's state is now the first row (`0 of 18 declared` + the reason), and
+only a table with no rows at all falls back to a bare statement.
+
+### Presentation
+
+Peter, 2026-08-12: *"this is a simple key/value list / table"*, *"make the table
+fit the data"*. It is a `value_grid` like Reachability — short pairs in a grid
+that sizes to them — **not** a full-width table and **not** a card per field. The
+field set changes when firmware changes, so any hand-picked layout guarantees the
+newest field is the one not shown.
+
+**Every section needs an `id`.** The browser keys its section list on it, so two
+sections without one collide and only ONE renders — silently, whichever loses
+simply absent. `Charge` shipped without an id and looked fine as the only such
+section; adding `Runtime params` made Charge vanish.
+
+## Public interface
+
+**Unchanged from `pac-host.js`.** That is the point: the transport is rewritten,
+the surface is not, and the thirteen importers are untouched apart from the import
+path.
+
+Retained as-is: `events`, `start`, `stop`, `isAvailable`, `connectMessage`,
+`queuesMessage`, `alignMessage`, `unitForNum`, `unitNums`, `obsForUnit`,
+`queueCommand`, `getQueue`, `getObs`, `getImagesProgress`, `getStoredImages`,
+`getDeviceImage`, `getImageById`, `getImageBytes`, `alignPing`, `alignStop`,
+`alignConfig`.
+
+### New
+
+#### `sections()` -> `{ [name]: { ok, source, owner, why } }`
+
+The bridge's own section map, forwarded verbatim. **Never synthesised here** — if
+the bridge stops serving it, this returns null and the browser says so, rather than
+this module inventing an optimistic map.
+
+### Gap-bound exports
+
+`getObs`, `getImagesProgress`, `getStoredImages`, `getDeviceImage`, `getImageById`,
+`getImageBytes`, `getQueue`, `alignPing`, `alignStop`, `alignConfig` have **no
+route on the bridge today**.
+
+They must **throw a stated reason carrying the section's `owner` and `why`** — not
+return empty, not return null, not fake a shape. An empty array from
+`getStoredImages` is indistinguishable from "this unit has no images", and that
+conflation is the whole defect this file was written after.
+
+## State
+
+Same shape as `pac-host.js`: last poll status, unit roster, per-unit queue ledger,
+align view-model, warm obs cache. All read-only views of the last poll — a caller
+on a request path (`node-status`'s reachability section, which is **synchronous**)
+never fetches and cannot block.
+
+## Events emitted
+
+`change` (status/roster), `alignChanged`. Both consumed by `alarm-ws.js`.
+
+## Invariants
+
+- **The PASV interlock stays here.** `pac-host.js:200-225` saves the dash mode when
+  an align session starts, forces PASV, and restores the previous mode when it
+  ends. That is node-dash's own machinery, nothing outside this repo knows dash
+  modes exist, and it survives the migration untouched regardless of where align
+  ownership lands.
+- No module outside this file names a bridge route, field, or status string.
+- `!hex` ↔ num conversion happens only here.
+- ISO → epoch-**milliseconds** conversion happens only here, via `_isoToMs()`.
+  Consumers divide to seconds themselves, once.
+- A gap is rendered as its reason and owner. Never as absence, never as a spinner,
+  never as an empty success.
+- `present:false` units are served, not filtered.
+- The browser never talks to `:8790`. `docs/BROWSER_CONTRACT.md` — page data is
+  WS-only, replayed on connect, pushed on change. This matters more than usual
+  here: `:8790` binds `0.0.0.0` with **no authentication of any kind** and accepts
+  commands. node-dash's backend is the sole consumer and the surface stays on this
+  host.
+
+## Test notes
+
+- The migration's proof is **panel-by-panel against the section map**, not "the
+  page loads". A page that loads while every panel is silently empty is exactly
+  the state this replaces.
+- `units` and `commands` must fill. `outbox`, `obs`, `images`, `align` must each
+  render their stated reason and owner. Both themes, 1600x1000 and 1280x800.
+- `schemaHash` (`0xbaf7`, measured 2026-08-12) is served by `/health`. Worth
+  logging on change — contract drift becomes visible instead of being discovered
+  as a shape bug.
+- Verify against a genuinely absent bridge too: with `:8790` stopped, node-dash
+  must boot and serve every non-alarm page identically. Absence is normal — that
+  was `pac-host.js`'s founding property and it must not be lost.
+
+## Out of scope
+
+- `config` and `diag` — zero call sites here, ever. plugins told to drop them.
+- Building the series store, the image reassembler, or the outbox route. Those are
+  other repos' and no amount of work here creates them.
+- The `delivered` bug at `alarm-sections.js:102` — services' vocabulary change
+  makes that state unproducible. Separate step, separate concern.
+- `/notify`, `/probe`, `/pointer` — real routes on the bridge, deliberately not
+  consumed yet. `/notify` in particular decides what *would* page a human and
+  sends nothing; an alerts panel is a future decision, not this task.

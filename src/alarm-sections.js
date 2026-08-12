@@ -28,7 +28,8 @@ import {
   fmtRssi, fmtSnr, fmtUptime, fmtAgo, fmtUntil, fmtCount,
 } from './format.js';
 import { field, compact, registerNodeSection } from './node-status.js';
-import { unitForNum, obsForUnit } from './pac-host.js';
+import { unitForNum, obsForUnit, sections,
+         obsTableForUnit, obsTableSchema } from './alarm-host.js';
 import { resolveDeviceLabel } from './node-label.js';
 import { coulombModel } from './coulomb.js';
 import { log } from './log.js';
@@ -85,7 +86,15 @@ const AWAKE_SOURCE_TEXT = {
 // which is what "can we reach it" asks. NULL means NEVER COMMANDED, and renders
 // as unknown, never as failure: Peter must be able to tell "not yet asked" from
 // "asked and got nothing" at a glance.
-function deliveryField(acks) {
+function deliveryField(acks, acksSource) {
+  // "NEVER COMMANDED" AND "NO SOURCE FOR THE COUNTS" ARE DIFFERENT FACTS and
+  // must not print the same string. Since pac-host was retired the bridge serves
+  // no per-unit ack counts at all (`/stats` is estate-wide), so `acks` is null
+  // for every unit — including ones that HAVE been commanded. Rendering "not yet
+  // asked" for those is a false statement about the estate, not a blank.
+  if (!acks && acksSource) {
+    return field('Delivery', 'unavailable', 'unavailable', null, acksSource);
+  }
   if (!acks) {
     return field('Delivery', 'never', 'not yet asked', null,
                  'no command has been sent to this unit');
@@ -98,14 +107,28 @@ function deliveryField(acks) {
   // every one was counted as a send (services, 2026-07-29). A single success
   // flag would have shown a green tick through the whole of 2026-07-28, while
   // every send was being refused.
-  let text;
-  if (delivered   > 0) text = 'delivered';
+  //
+  // `delivered` IS A LEGACY VALUE AND NO LONGER REACHABLE FOR NEW ROWS.
+  // "Radio reported delivery" is want_ack, and services' issue 118 removed every
+  // `to:` from the command path when DMs were retired — so no command can
+  // produce a delivery report at all. Measured across their whole ledger
+  // 2026-08-09: all 24 `delivered` rows predate 118; none since. Their published
+  // vocabulary is now answered / unanswered / not sent / still trying, and
+  // node-dash acked that change.
+  //
+  // The branch is KEPT rather than deleted because the value still exists on
+  // historical rows and this field renders history. Deleting it would make old
+  // rows fall through to 'sent, no ack', silently restating a stronger claim
+  // than the row supports. It is labelled instead.
+  let text, legacy = false;
+  if (delivered   > 0) { text = 'delivered'; legacy = true; }
   else if (transmitted > 0) text = 'sent, no ack';
   else if (notSent     > 0) text = 'refused';
   else if (unknownSent > 0) text = 'sent, status unknown';
   else                      text = 'queued';
 
   const bits = [];
+  if (legacy) bits.push('legacy verdict — no longer producible');
   if (verb) bits.push(verb);
   // Only stated when it disagrees — "1/1 left the radio" is noise, and the gap
   // is the whole point.
@@ -160,7 +183,7 @@ function buildReachabilitySection(num, perRadio) {
   if (!u) return null;
 
   const fields = compact([
-    deliveryField(u.acks),
+    deliveryField(u.acks, u.acksSource),
     nextWindowField(u),
     // No age: pac-host does not record when beat was established. Priority-one
     // on our ask to them, because nextWake is computed FROM beat — a stale beat
@@ -175,10 +198,22 @@ function buildReachabilitySection(num, perRadio) {
     wakeReliabilityField(u),
     field('Awake', u.awake == null ? 'unknown' : u.awake,
           u.awake == null ? 'unknown' : (u.awake ? 'yes' : 'no'), null,
-          AWAKE_SOURCE_TEXT[u.awakeSource] ?? null),
-    field('TX radio', u.txRadio?.id ?? null,
-          resolveDeviceLabel(u.txRadio?.addr || u.txRadio?.id) || null, null,
-          u.txRadio?.state ? String(u.txRadio.state).toLowerCase() : null),
+          // Falls back to the raw source string when it is not one of the known
+          // keys. Since the bridge replaced pac-host it carries no awake field
+          // at all, and the honest qualifier is "not served by the bridge" —
+          // a bare "unknown" with no reason beneath it reads as a measurement
+          // that failed rather than a fact nobody publishes.
+          AWAKE_SOURCE_TEXT[u.awakeSource] ?? u.awakeSource ?? null),
+    // Served by GET /tx since 2026-08-12. When nothing has been sent to this
+    // unit the bridge gives a `why` rather than silence, and the row says that
+    // instead of disappearing — "nothing sent yet" and "we cannot tell" are
+    // different facts and an absent row conflates them.
+    u.txRadio
+      ? field('TX radio', u.txRadio.id,
+              resolveDeviceLabel(u.txRadio.addr || u.txRadio.id) || u.txRadio.id,
+              u.txAt ?? null,
+              u.txRadio.state ? String(u.txRadio.state).toLowerCase() : null)
+      : field('TX radio', 'none', 'nothing sent yet', null, u.txRadioSource ?? null),
     // OUR signal_history, not pac-host's radios{}. services conceded per-radio
     // rssi/snr to us (xsession [data-ownership-3categories]): "we retain a
     // per-radio model internally because it drives RADIO SELECTION — that is a
@@ -222,13 +257,47 @@ function buildCoulombSection(num) {
   const unit = unitForNum(num);
   if (!unit) return null;                    // not a pac-host unit — silent, as reachability is
 
+  // A STATED GAP IS NOT AN UNKNOWN, so it is rendered rather than hidden.
+  //
+  // The rule below — absent rather than empty — was written when the ambiguity
+  // was real: "no gauge" and "fitted but nothing recorded yet" were
+  // indistinguishable, so any row would have been a claim we could not support.
+  //
+  // That is no longer the situation. Since pac-host was retired (2026-08-12) the
+  // bridge NAMES why the series is missing and WHO OWNS the hole — "no series
+  // store; the record plugin is unbuilt — plugins". That is a fact, not a
+  // shrug, and hiding it reproduces the exact failure of that morning: the
+  // coulomb feature vanished from the page and looked identical to a unit that
+  // simply has no gauge. Peter asked for this counter BECAUSE it was invisible.
+  const obsGap = sections()?.obs;
+  if (obsGap && obsGap.ok !== true) {
+    return {
+      // EVERY section needs an `id`. The browser keys its section list on it,
+      // so two sections without one collide and only ONE renders — silently,
+      // and whichever loses is simply absent. Charge shipped without an id and
+      // looked fine while it was the only such section; adding Runtime params
+      // made it disappear instead of making both appear.
+      id: 'charge',
+      title: 'Charge',
+      kind: 'value_grid',
+      fields: compact([
+        // raw is 'unavailable', NOT null: field() drops a null raw by design
+        // ("an absent value is absent, not a placeholder"), which would render
+        // the heading with an empty body — worse than either showing the reason
+        // or omitting the section. Same shape as the 'refused' row below.
+        field('Charge count', 'unavailable', 'unavailable', null,
+              `${obsGap.why ?? 'no route on the bridge'} — ${obsGap.owner ?? 'unknown'}`),
+      ]),
+    };
+  }
+
   const rows = obsForUnit(unit.id);
-  // ABSENT, NOT EMPTY. The existing rule is that a section appears only if it
-  // has data, and an empty series cannot currently be attributed: "no gauge"
-  // and "fitted but nothing recorded yet" are different facts and pac-host does
-  // not yet distinguish them (services offered the flag; xsession #89/#90).
-  // Rendering a "we don't know" row on every node page would be noise, and
-  // rendering "not fitted" would be a claim I cannot support. So: no section.
+  // ABSENT, NOT EMPTY — and this branch still stands for the case it was
+  // written for: the series store EXISTS and this unit has nothing in it.
+  // "No gauge" and "fitted but nothing recorded yet" remain different facts
+  // that nothing upstream distinguishes yet (services offered the flag;
+  // xsession #89/#90). Rendering a "we don't know" row on every node page would
+  // be noise, and rendering "not fitted" would be a claim I cannot support.
   // The Control > Stats pane is where that distinction is spelled out.
   if (!rows.length) return null;
 
@@ -256,4 +325,132 @@ function buildCoulombSection(num) {
   return { id: 'charge', kind: 'value_grid', title: 'Charge counter', fields };
 }
 
+// THE RUNTIME PARAMS — what this device is actually saying, as key and value.
+//
+// Peter, 2026-08-12: *"this is a simple key/value list / table and allows me to
+// see all of the runtime params on a device"* and *"make the table fit the
+// data"*. So it is a value_grid like Reachability, not a full-width table: the
+// rows are short pairs and the grid sizes to them. No card per field, and no
+// curated field list — the set changes when firmware changes, so anything
+// hand-picked here guarantees the NEWEST field is the one not shown.
+//
+// Every row keeps its declared state. An absent optional is listed, because an
+// absent optional is information; an absent `must` is a DEFECT and says so; and
+// a key the schema never declared is the finding worth surfacing most, because
+// it means firmware is sending something nobody wrote down.
+function buildObsSection(num) {
+  const unit = unitForNum(num);
+  if (!unit) return null;
+
+  const table = obsTableForUnit(unit.id);
+  const schema = obsTableSchema();
+
+  const rows = Array.isArray(table?.fields) ? table.fields : [];
+  const heard = table?.heard ?? null;
+
+  // "NOT SENT" IS A CLAIM ABOUT THE DEVICE, AND WE CANNOT MAKE IT WHEN NOTHING
+  // DECODED. GARG is heard every 60 s — 46 frames, port 260 among them — and
+  // ZERO carried a decodable payload. Every field then reads
+  // `declared-never-arrived`, and rendering that as "not sent" told Peter the
+  // unit is silent about 30 parameters when the truth is that we cannot read
+  // what it says. plugins state it exactly: "the fields below are the schema,
+  // not observations".
+  //
+  // So when nothing decoded, the section reports the FAULT and the evidence for
+  // it, and does not list thirty rows asserting anything about the firmware.
+  if (heard && heard.decoded === 0) {
+    // `ports` became an array of OBJECTS when plugins added per-port decode
+    // errors (2026-08-12). It was an array of strings that morning. Handle both
+    // rather than assume — the shape changed once today already and a `.join`
+    // on objects renders "[object Object]" without erroring.
+    const portList = Array.isArray(heard.ports) ? heard.ports : [];
+    const portObjs = portList.filter(p => p && typeof p === 'object');
+    const portNames = portList.map(p => (typeof p === 'object' ? p.port : p));
+    const ourPorts = portObjs.filter(p => p.ours && p.lastError);
+    return {
+      id: 'obs_runtime',
+      title: 'Runtime params',
+      kind: 'value_grid',
+      fields: compact([
+        // THE BRIDGE'S OWN SENTENCE, VERBATIM AND FIRST. "the unit was built
+        // against 0xbaf7, this butler loaded 0xd339" is something Peter can act
+        // on; "25 fields undeclared" was not. Never paraphrased — the hashes are
+        // the actionable part and a summary would drop them.
+        ...ourPorts.map(p => field(
+          'Decode error', 'error', 'schema mismatch',
+          heard.lastFrameAt ? Date.parse(heard.lastFrameAt) : null,
+          p.lastError)),
+        field('Readable frames', 0, 'none', null,
+              heard.why ?? 'no frame carried a decodable payload'),
+        field('Frames heard', heard.frames ?? 0, String(heard.frames ?? 0),
+              heard.lastFrameAt ? Date.parse(heard.lastFrameAt) : null,
+              'the unit is transmitting — this is a decode fault, not silence'),
+        // AN ERROR MEANS UNREADABLE; NO ERROR MEANS ABSENT. Different faults,
+        // different people to chase, and they looked identical until plugins
+        // split them 2026-08-12.
+        field('Ports', portNames.join(','), portNames.join(' · ') || 'none', null,
+              ourPorts.length
+                ? `${ourPorts.length} of ours carrying frames — unreadable, not absent`
+                : 'none of ours among them — the payload is absent, not unreadable'),
+        field('Fields declared', rows.length, String(rows.length), null,
+              'schema only — no value below has been observed'),
+      ]),
+    };
+  }
+
+  // A BROKEN SCHEMA DOES NOT MEAN NO ROWS, and suppressing the rows because the
+  // schema is empty gets it exactly backwards. With `declared: 0` EVERY arrived
+  // key classifies as undeclared — and an undeclared key is the finding plugins
+  // built this table to surface: firmware is sending something nobody wrote
+  // down. BNCH had 17 such keys while this section said "unavailable".
+  //
+  // So the schema's state is a ROW, not a gate. Only a table with nothing in it
+  // at all falls back to the bare statement.
+  const schemaRow = (schema && schema.declared === 0)
+    ? field('schema', 'broken', `0 of 18 declared`, null,
+            `${schema.why ?? 'no reason given'} — plugins. Every key below reads as undeclared until this loads.`)
+    : null;
+
+  if (!rows.length) {
+    const why = schema?.why ?? 'the runtime table has not been read yet';
+    return {
+      id: 'obs_runtime',
+      title: 'Runtime params',
+      kind: 'value_grid',
+      fields: compact([
+        field('Fields', 'none', 'nothing received', null, `${why} — plugins`),
+      ]),
+    };
+  }
+
+  const fields = compact([schemaRow, ...rows.map(r => {
+    // An undeclared key is served with value:null and withheld:true — the KEY is
+    // the finding, the VALUE of an unvetted field is the risk (a POSITION
+    // payload arrives on the same event class and carries lat/lon). Render the
+    // key, never the value.
+    if (r.withheld) {
+      // When the schema is broken EVERY key is undeclared, so the per-row
+      // explanation repeats 18 times and says nothing the schema row above has
+      // not already said once. Once the schema loads, an undeclared key is rare
+      // and genuinely worth spelling out on its own line.
+      return field(r.key, 'undeclared', 'undeclared', null,
+                   schemaRow ? null : 'firmware sends this; the schema does not declare it');
+    }
+    if (r.value == null) {
+      return field(r.key, r.req === 'must' ? 'missing' : 'not sent',
+                   r.req === 'must' ? 'missing' : 'not sent', null,
+                   r.req === 'must'
+                     ? `declared must — ${r.label ?? 'no label'}`
+                     : (r.label ?? null));
+    }
+    return field(r.key, r.value, String(r.value), r.at ? Date.parse(r.at) : null,
+                 r.label ?? null);
+  })]);
+
+  return fields.length
+    ? { id: 'obs_runtime', title: 'Runtime params', kind: 'value_grid', fields }
+    : null;
+}
+
 registerNodeSection(num => buildCoulombSection(num));
+registerNodeSection(num => buildObsSection(num));

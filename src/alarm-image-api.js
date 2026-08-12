@@ -13,7 +13,7 @@
 // See docs/modules/alarm-image-api.md.
 
 import { Router } from 'express';
-import { getImageBytes, getImageById, getDeviceImage } from './pac-host.js';
+import { getImageBytes, getImageById, getDeviceImage } from './alarm-host.js';
 import { isStoredPid, isStoredId, isDevicePid, setDeviceImage } from './alarm-images.js';
 import { numToNodeId } from './utils.js';
 import { log } from './log.js';

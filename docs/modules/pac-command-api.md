@@ -1,7 +1,7 @@
 ---
 module: pac-command-api
 source: src/pac-command-api.js
-source_hash: c0dad3a16222e66a77ca47f0384c663c50cb6689bbc704e88518b9ea65849ea9
+source_hash: 6af6948f14babf5c3d850ab7bb5e213e7c0eb15fe9dd90b780695790c7ad27f0
 updated: 2026-07-25
 ---
 

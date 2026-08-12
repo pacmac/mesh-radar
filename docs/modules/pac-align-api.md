@@ -1,7 +1,7 @@
 ---
 module: pac-align-api
 source: src/pac-align-api.js
-source_hash: 399cc8b0e9380cd8312665c20dfff1d6d726b415e6a2bb20e733bc6d4f9cb3a5
+source_hash: a4d9ac3570f3cb785db085d5d9b43b9c6c057d65773eff0369428495578e7785
 updated: 2026-07-25
 ---
 

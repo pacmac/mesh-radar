@@ -1,7 +1,7 @@
 ---
 module: alarm-ws
 source: src/alarm-ws.js
-source_hash: 32d69986141d733bb6548abd09bc571df359528d22c7ea869e85ba851063962d
+source_hash: 9903e055ca520c0d9408e3fa25326d655e29511bfc067850aaf411d604369ae7
 updated: 2026-07-29
 ---
 

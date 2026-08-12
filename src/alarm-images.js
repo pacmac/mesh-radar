@@ -9,7 +9,7 @@
 //
 // See docs/CAMERA_PAGE_SPEC.md.
 
-import * as pacHost from './pac-host.js';
+import * as pacHost from './alarm-host.js';
 import { registerWsWiring, registerConnectReplay } from './ws-relay.js';
 import { fmtAgo, fmtUptime, fmtCount, fmtStamp } from './format.js';
 import { log } from './log.js';
@@ -226,7 +226,17 @@ function _recordEndings(num, seenNow, storedPids, nowMs) {
 }
 
 async function _poll() {
-  if (!pacHost.isAvailable()) {
+  // A GAP IS NOT A TRANSIENT, so it is not polled. The image routes have no
+  // home on the bridge (section `images`, owner undecided — nothing reassembles
+  // chunks yet), and polling them anyway turned a known hole into two warnings
+  // every two seconds. That is the shape of this morning's failure, not its
+  // cure: 1568 fetches against a dead port in eight seconds.
+  //
+  // The panel is not left silent — `_push()` carries the section's own stated
+  // reason and owner, so the page says why it is empty instead of showing
+  // nothing. When the gap closes upstream this starts polling again with no
+  // deploy here.
+  if (!pacHost.isAvailable() || !pacHost.sections()?.images?.ok) {
     if (Object.keys(_byNum).length) { _byNum = {}; _stored = {}; _storedIds = {}; _push(); }
     return;
   }

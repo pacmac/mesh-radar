@@ -3,7 +3,7 @@
 // direct mesh-gw send. See docs/modules/pac-host.md.
 
 import { Router } from 'express';
-import { queueCommand } from './pac-host.js';
+import { queueCommand } from './alarm-host.js';
 import { numToNodeId } from './utils.js';
 
 const router = Router();

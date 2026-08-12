@@ -1,7 +1,7 @@
 ---
 module: coulomb
 source: src/coulomb.js
-source_hash: 92bb44dad43e734a315c356d6a97b15fa8a7a2db5c24e3da3862b81a684b26fa
+source_hash: 4d3bbb9f70d9133ac984c8361924d1202901c1c98b8c13eff7405588798b257c
 updated: 2026-08-08
 ---
 

@@ -1,7 +1,7 @@
 ---
 module: alarm-image-api
 source: src/alarm-image-api.js
-source_hash: 9c9767fd5e1b8ff3c276c9cc29139e97e34110a0f2066672ede626b22529077e
+source_hash: b25ec479cf772930114dae600e0579b97c66c67bc785dab3b96e7a1416b19102
 updated: 2026-08-01
 ---
 

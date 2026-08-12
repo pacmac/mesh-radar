@@ -1,7 +1,7 @@
 ---
 module: alarm-sections
 source: src/alarm-sections.js
-source_hash: 393cd46fbc21f1355288f8e0834b549644e5ba120aed54211bd92ecb563dbe5c
+source_hash: 14362592a8a9e0b70b4a053cb98784e9400e52e0d094d9b9e82578c0357dfe9b
 updated: 2026-08-08
 ---
 

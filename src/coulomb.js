@@ -10,7 +10,7 @@
 //
 // Spec: docs/modules/coulomb.md. Contract: xsession node-dash--services #87/#88.
 
-import { getObs } from './pac-host.js';
+import { getObs } from './alarm-host.js';
 import { fmtAgo, fmtStamp } from './format.js';
 
 // `n` is the RAW accumulated count and the only field to subtract across.

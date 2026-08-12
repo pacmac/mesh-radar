@@ -4,7 +4,7 @@
 // pushed over WS by pac-host.js, never fetched here). See docs/modules/pac-host.md.
 
 import { Router } from 'express';
-import { alignPing, alignStop, alignConfig } from './pac-host.js';
+import { alignPing, alignStop, alignConfig } from './alarm-host.js';
 
 const router = Router();
 

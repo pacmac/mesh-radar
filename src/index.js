@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { bridge } from './bridge.js';
-import * as pacHost from './pac-host.js';
+import * as pacHost from './alarm-host.js';
 import configRouter from './config-api.js';
 import snapshotRouter from './snapshot-api.js';
 import { logEvent } from './hooks.js';
