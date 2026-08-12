@@ -129,6 +129,43 @@
                       <span x-text="snapFrontier?.beyond_scale"></span> beyond
                       <span x-text="snapFrontier?.scale_max_km"></span>km scale
                     </div>
+
+                    <!-- RF PROVENANCE. The headline counts every node heard by
+                         ANY path; this is the subset proven to have arrived over
+                         LoRa rather than via MQTT. Served since cf6bd24 and
+                         invisible until now, which made the headline read as an
+                         RF claim it was never making. -->
+                    <div class="text-xs font-mono mt-2 pt-2 border-t border-base-content/10"
+                         x-show="snapFrontier?.heard_lora != null" x-cloak>
+                      <span class="opacity-40">RF-confirmed</span>
+                      <span class="opacity-70" x-text="snapFrontier?.heard_lora"></span><span
+                            class="opacity-40"> of </span><span
+                            class="opacity-70" x-text="snapFrontier?.heard"></span>
+                      <span class="opacity-40"> · furthest </span><span
+                            class="opacity-70"
+                            x-text="snapKm(snapFrontier?.furthest_lora_km)"></span><span
+                            class="opacity-40">km</span>
+                    </div>
+
+                    <!-- THE EPOCH CAVEAT, AND IT CANNOT BE OMITTED. Provenance
+                         recording started part-way through the estate's life, so
+                         a node with no LoRa row is NOT an MQTT node — it is a
+                         node heard before we began recording. Rendering the
+                         count without this invites the inverse false claim. -->
+                    <!-- NO DATE HERE, DELIBERATELY. `provenance_since` is served
+                         as an epoch int, and formatting it would be the browser
+                         deriving a display string (BROWSER_CONTRACT). A first
+                         attempt called snapClusterWhen() and threw three times
+                         per render — x-text evaluates even while x-show is
+                         false, so a hidden block still ran. The formatted date
+                         must be SERVED beside the epoch; until it is, the
+                         caveat stands without it, which is still the fact that
+                         matters. -->
+                    <div class="text-xs font-mono opacity-40 mt-1"
+                         x-show="snapFrontier?.lora_covers_window === false" x-cloak>
+                      provenance recording starts part-way through this window —
+                      earlier nodes are unattributed, not MQTT
+                    </div>
                   </div>
                 </div>
 
