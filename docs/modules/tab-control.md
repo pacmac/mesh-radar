@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/plugins/alarm/tab-control.html
-source_hash: c8bc1b715787e643844ee7a4287f40359e1517e0526d57cd347297cf4a5a2715
+source_hash: df336a85b350acdef9b1de2a0698b46b1e3c5d98dbeccbc6cdf3d15c9fd5e8ca
 updated: 2026-08-08
 ---
 

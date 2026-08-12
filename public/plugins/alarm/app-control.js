@@ -110,6 +110,34 @@ export const controlMixin = {
 
   controlShortcuts() { return CONTROL_SHORTCUTS; },
 
+  // ── Section gaps ───────────────────────────────────────────────────────────
+  // The backend serves a `sections` map naming, for every panel, whether
+  // anything can fill it and WHO OWNS the hole. This is a pure read of that
+  // map — the browser decides nothing, it renders the server's own sentence
+  // (BROWSER_CONTRACT).
+  //
+  // It exists because a control that cannot work must not look like one that
+  // can. Camera offered "Take photo" and Yagi Align offered PING/END while
+  // neither had a route behind it: pressing them produced a 501 with a reason
+  // buried in a console, and the page looked functional. A named hole beats a
+  // dead button.
+  //
+  // Returns the section object when it is a GAP, or null when it is fine —
+  // so `x-show="sectionGap('images')"` reads as "show this when it is broken".
+  sectionGap(name) {
+    const s = this.pacHostStatus?.sections?.[name];
+    if (!s || s.ok === true) return null;
+    return s;
+  },
+
+  // The server's stated reason and owner, as one line, for rendering under a
+  // disabled control. Never assembled from anything this side knows.
+  sectionGapText(name) {
+    const s = this.sectionGap(name);
+    if (!s) return null;
+    return `${s.why || 'no source'} — ${s.owner || 'owner unstated'}`;
+  },
+
   // ── ALARM PLUGIN: Camera ───────────────────────────────────────────────────
   // Pure reads of server-pushed state (alarm_images, replayed on connect and
   // broadcast on change). Zero fetch, zero derivation — every count, percentage

@@ -378,11 +378,20 @@
               </div>
             </div>
 
+            <!-- The server's own sentence. Align was ported out of node-dash in
+                 July and its ownership is parked, so PING/END have no route
+                 behind them — they must not look live. -->
+            <div x-show="sectionGap('align')" x-cloak
+                 class="alert alert-warning py-2 px-3 text-sm shrink-0">
+              <span><span class="font-semibold">Yagi Align unavailable.</span>
+                <span x-text="sectionGapText('align')"></span></span>
+            </div>
+
             <!-- Actions -->
             <div class="grid grid-cols-3 gap-2 shrink-0">
               <button class="btn btn-lg col-span-2 font-display"
-                      :class="!alignBursting() && !alignSending && alignTarget ? 'btn-primary' : 'btn-disabled'"
-                      :disabled="alignBursting() || alignSending || !alignTarget"
+                      :class="!alignBursting() && !alignSending && alignTarget && !sectionGap('align') ? 'btn-primary' : 'btn-disabled'"
+                      :disabled="alignBursting() || alignSending || !alignTarget || !!sectionGap('align')"
                       @click="alignPing()">
                 <span x-show="!alignBursting()">PING</span>
                 <span x-show="alignBursting()" class="flex items-center gap-2">
@@ -390,7 +399,8 @@
                   <span x-text="'GATHERING ' + (alignModel?.burst?.got ?? 0) + '/' + (alignModel?.burst?.of ?? 0)"></span>
                 </span>
               </button>
-              <button class="btn btn-lg btn-outline font-display" :disabled="!alignRunning()" @click="alignEnd()">End</button>
+              <button class="btn btn-lg btn-outline font-display"
+                      :disabled="!alignRunning() || !!sectionGap('align')" @click="alignEnd()">End</button>
             </div>
           </div>
 
@@ -509,10 +519,20 @@
                     </select>
                   </label>
 
-                  <!-- The only primary button on the page. -->
+                  <!-- The only primary button on the page. Disabled when the
+                       backend says the images section has no source — a control
+                       that cannot work must not look like one that can. -->
                   <button class="btn btn-primary font-display flex-1 min-w-[10rem]" @click="cameraGrab()"
-                          :disabled="controlTarget == null || cameraGrabbing"
+                          :disabled="controlTarget == null || cameraGrabbing || !!sectionGap('images')"
                           x-text="cameraGrabbing ? 'sending…' : 'Take photo'"></button>
+                </div>
+
+                <!-- The server's own sentence, naming the owner. Not a spinner
+                     and not a blank: this is why the button above is dead. -->
+                <div x-show="sectionGap('images')" x-cloak
+                     class="alert alert-warning py-2 px-3 text-sm mt-2">
+                  <span><span class="font-semibold">Camera unavailable.</span>
+                    <span x-text="sectionGapText('images')"></span></span>
                 </div>
 
                 <!-- Says what ONE PRESS actually does. It used to promise
