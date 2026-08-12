@@ -358,7 +358,19 @@ function buildObsSection(num) {
   //
   // So when nothing decoded, the section reports the FAULT and the evidence for
   // it, and does not list thirty rows asserting anything about the firmware.
-  if (heard && heard.decoded === 0) {
+  // NOTHING HEARD IS NOT A DECODE FAULT — IT IS SILENCE, AND SILENCE IS DERIVED
+  // FROM THE FRAME COUNT, NEVER ASSERTED.
+  //
+  // This branch previously ran on `decoded === 0` alone and printed "the unit is
+  // transmitting" as a fixed string. A unit that had gone off the air therefore
+  // rendered as a decode fault while the page insisted it was transmitting —
+  // a hard-coded liveness claim, and exactly backwards on the one case that
+  // matters. If there is no data, it is offline; the page must not decide
+  // otherwise from a literal.
+  //
+  // frames > 0 && decoded === 0  -> heard but unreadable: a real decode fault
+  // frames === 0                 -> not heard: say so, claim nothing else
+  if (heard && heard.decoded === 0 && (heard.frames ?? 0) > 0) {
     // `ports` became an array of OBJECTS when plugins added per-port decode
     // errors (2026-08-12). It was an array of strings that morning. Handle both
     // rather than assume — the shape changed once today already and a `.join`
@@ -384,7 +396,8 @@ function buildObsSection(num) {
               heard.why ?? 'no frame carried a decodable payload'),
         field('Frames heard', heard.frames ?? 0, String(heard.frames ?? 0),
               heard.lastFrameAt ? Date.parse(heard.lastFrameAt) : null,
-              'the unit is transmitting — this is a decode fault, not silence'),
+              // Derived from the count above it, never asserted.
+              `heard on air — unreadable, not silent`),
         // AN ERROR MEANS UNREADABLE; NO ERROR MEANS ABSENT. Different faults,
         // different people to chase, and they looked identical until plugins
         // split them 2026-08-12.
@@ -394,6 +407,28 @@ function buildObsSection(num) {
                 : 'none of ours among them — the payload is absent, not unreadable'),
         field('Fields declared', rows.length, String(rows.length), null,
               'schema only — no value below has been observed'),
+      ]),
+    };
+  }
+
+  // NOT HEARD AT ALL. No frames means no observations, and every declared field
+  // would otherwise render `not sent` — 30 statements about a firmware we have
+  // heard nothing from. The unit's liveness is the frame count and nothing else;
+  // this section does not compute an "offline" verdict of its own, it reports
+  // that it has no frames and stops.
+  if (heard && (heard.frames ?? 0) === 0) {
+    return {
+      id: 'obs_runtime',
+      title: 'Runtime params',
+      kind: 'value_grid',
+      fields: compact([
+        field('Frames heard', 0, 'none',
+              heard.lastFrameAt ? Date.parse(heard.lastFrameAt) : null,
+              heard.lastFrameAt
+                ? 'nothing since the last frame below'
+                : 'nothing has been heard from this unit'),
+        field('Fields declared', rows.length, String(rows.length), null,
+              'schema only — nothing has been observed to fill them'),
       ]),
     };
   }
