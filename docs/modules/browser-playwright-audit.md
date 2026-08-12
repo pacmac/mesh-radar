@@ -31,8 +31,8 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 9f3ec512d5b0d23c0f70c132f49259615e5c907f7b1d601f7e295c6aa5828015
-updated: 2026-08-08
+source_hash: bbaa1bf18ac2d463911338de8835b421990539b9e4030cc732ed389c5cb8c0e3
+updated: 2026-08-12
 ---
 
 # Module: browser-playwright-audit
@@ -522,3 +522,41 @@ rewriting it to `overview`. Confirmed unrelated to the 2026-07-29 changes —
 - **Funnel legend** now names every exclusion, including the two it hid: the
   mislabelled "no position" (really `km > 250`), the previously uncounted
   "no rule matched", and the 331 nodes that never reach the selector at all.
+
+## A control that cannot work must not look like one that can — 2026-08-12
+
+pac-host was retired mid-afternoon and node-dash moved to the mt-alarm bridge on
+`:8790`, which serves a `sections` map naming, for every panel, whether anything
+can fill it and **who owns the hole**. Four of six panels have no source today.
+
+- **Camera** and **Yagi Align** presented live controls over dead sections.
+  "Take photo", PING and End were fully enabled while nothing was behind them;
+  pressing one produced a 501 with the reason buried in a console. Both are now
+  disabled with the server's own sentence rendered beneath them — *"chunks are
+  classified and logged; nothing reassembles them (#421 Q3) — undecided"* and
+  *"split between node-dash and the retired pac-host; ownership parked by
+  Peter — undecided"*.
+- **`sectionGap()` / `sectionGapText()`** in `app-control.js` are pure reads of
+  the served map. The browser assembles no wording of its own, so a gap closing
+  upstream restores the controls with **no deploy on this side**.
+- This is the same defect class as the outage that preceded it: node-dash showed
+  empty alarm panels for five hours and nobody noticed, because *broken* and
+  *working with nothing to say* were indistinguishable on screen. A named hole
+  beats a dead button, and beats a blank panel.
+
+## Snapshot states its RF provenance — 2026-08-12
+
+- The frontier headline counts every node heard by **any** path. The
+  LoRa-confirmed subset had been in the payload since `cf6bd24` and rendered
+  nowhere, so the headline read as an RF claim it was never making. Now:
+  **RF-confirmed 158 of 158 · furthest 444.2km**.
+- **The epoch caveat ships with it and is not optional.** `relay_observation`
+  starts 2026-08-03, so a node with no LoRa row is one heard *before recording
+  began*, not an MQTT node. Publishing the count without that invites the
+  inverse false claim — which is exactly how the original RF-vs-MQTT defect
+  happened.
+- **No date is rendered.** `provenance_since` is served as an epoch int and
+  formatting it here would be a browser-side derivation. A first attempt called
+  `snapClusterWhen()` and threw three times per render: **`x-text` evaluates
+  even while `x-show` is false**, so a hidden block still ran. Worth remembering
+  — an `x-show` guard does not protect the expressions inside it.
