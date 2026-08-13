@@ -1,8 +1,8 @@
 ---
 module: db
 source: src/db.js
-source_hash: a36c16f356b941ee437494e39ff97dbc17246ec8791ecd10b62a7239371d8293
-updated: 2026-08-04
+source_hash: dfb7e0089b702e23c0b4d4339c821b357847dc83cedfeeb016f1bf1c98c939e6
+updated: 2026-08-13
 ---
 
 # Module: db
@@ -76,7 +76,7 @@ clearRangeTestLog()                 // → void
 ```js
 insertTilt(entry)                   // → void  — { ts, node_id, pitch, roll, version, sample_count, window_ms, avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch, max_delta, rms_motion }
 queryTiltHistory(nodeId, sinceTs)   // → row[]  — ncal=0 only, ASC by ts
-queryAllTiltHistory(sinceTs)        // → row[]  — all node_ids, ncal=0 only
+queryAllTiltHistory(sinceTs)        // → row[]  — all node_ids, ncal=0 only, MOST RECENT 2000 PER NODE
 markTiltNcal(nodeId, tsFrom, tsTo)  // → number — rows changed
 getTiltCal()                        // → { zero: number|null, north_angle: number|null }
 saveTiltCal({ zero, north_angle })  // → void  — undefined fields are not written
@@ -87,8 +87,14 @@ saveTiltCal({ zero, north_angle })  // → void  — undefined fields are not wr
 ```js
 insertEnvHistory(entry)             // → void  — { ts, num, packet_id?, temperature, relative_humidity, barometric_pressure }
 queryEnvHistory(num, sinceTs)       // → row[]
-queryAllEnvHistory(sinceTs)         // → row[]
+queryAllEnvHistory(sinceTs)         // → row[]  — MOST RECENT 2000 PER NODE
 ```
+
+Both `queryAll*` are capped at `HISTORY_ROWS_PER_NODE = 2000` rows per node,
+ascending. That is not a tuning choice — it is the browser's own
+`MAX_HISTORY_ROWS` (`public/app-ws.js:15`), which truncates on arrival, so
+anything beyond it was transmitted and discarded in the same tick. **Change one
+and you must change the other.** Spec: `docs/modules/ws-connect-replay.md`.
 
 `packet_id` defaults to null in the wrapper, so callers without one (the
 bridge-events nodedb-replay writer) keep working — better-sqlite3 throws on a
@@ -187,11 +193,11 @@ syncAlertedAt(packetId)             // → void  — writes alerted_at if alread
 | `getNodeDevices` | SELECT num, device FROM nodes WHERE device IS NOT NULL |
 | `insertTilt` | INSERT into tilt_history |
 | `queryTilt` | SELECT from tilt_history WHERE node_id AND ts >= AND ncal=0 |
-| `queryAllTilt` | SELECT from tilt_history WHERE ts >= AND ncal=0 |
+| `queryAllTilt` | SELECT from tilt_history WHERE ts >= AND ncal=0, ROW_NUMBER() partitioned by node_id, rn <= 2000 |
 | `markNcal` | UPDATE tilt_history SET ncal=1 WHERE node_id AND ts BETWEEN |
 | `insertEnvHistory` | INSERT OR IGNORE into environment_history (dedup on num, packet_id) |
 | `queryEnvHistory` | SELECT from environment_history WHERE num AND ts >= |
-| `queryAllEnvHistory` | SELECT from environment_history WHERE ts >= |
+| `queryAllEnvHistory` | SELECT from environment_history WHERE ts >=, ROW_NUMBER() partitioned by num, rn <= 2000 |
 | `insertDeviceMetricsHistory` | INSERT OR IGNORE into device_metrics_history (dedup on num, packet_id) |
 | `insertDetectionEvent` | INSERT OR IGNORE into detection_events (dedup on num, packet_id) |
 | `queryDeviceMetricsHistory` | SELECT from device_metrics_history WHERE num AND ts >= (ASC — chart-ready, browser never sorts) |

@@ -624,6 +624,25 @@ db.transaction(() => {
   _seedRules.run('tilt_high',         1, 10,   30);
 })();
 
+// How much history the connect replay is allowed to carry, PER NODE.
+//
+// This is not a tuning knob — it is the browser's own declared cap. The two WS
+// history handlers truncate on arrival with `slice(-MAX_HISTORY_ROWS)`
+// (public/app-ws.js:15, :483, :500), so every row beyond this was transmitted
+// and discarded in the same tick. Measured 2026-08-13: 88.5% of the tilt replay
+// (15,456 of 17,456 rows) and 81.4% of the env replay (34,743 of 42,708) were
+// being thrown away, in two frames of 4.36 MB and 5.90 MB — over the 1 MiB
+// default WebSocket frame limit, so a client on library defaults could not
+// connect at all. Ledger B92, spec docs/modules/ws-connect-replay.md.
+//
+// Because the browser keeps the TAIL of an ascending list, serving the most
+// recent N per node leaves it holding identical state. Order is load-bearing:
+// reverse it and the oldest rows survive while every row count still matches.
+//
+// IF public/app-ws.js MAX_HISTORY_ROWS CHANGES, CHANGE THIS WITH IT. They are
+// two halves of one number and nothing keeps them in step.
+const HISTORY_ROWS_PER_NODE = 2000;
+
 export const stmts = {
   insertMessage: db.prepare(`
     INSERT OR IGNORE INTO messages (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi, packet_id, reply_id, device, replay, hops, short_name, long_name)
@@ -883,12 +902,22 @@ export const stmts = {
     ORDER BY ts ASC
   `),
 
+  // Bounded to the most recent HISTORY_ROWS_PER_NODE per node — see that
+  // constant. Measured 2026-08-13: this returned 17,456 rows and the browser
+  // kept 2,000 of them.
   queryAllTilt: db.prepare(`
     SELECT ts, node_id, pitch, roll, version, sample_count, window_ms,
       avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch,
       max_delta, rms_motion
-    FROM tilt_history
-    WHERE ts >= ? AND ncal = 0
+    FROM (
+      SELECT ts, node_id, pitch, roll, version, sample_count, window_ms,
+        avg_roll, avg_pitch, min_roll, max_roll, min_pitch, max_pitch,
+        max_delta, rms_motion,
+        ROW_NUMBER() OVER (PARTITION BY node_id ORDER BY ts DESC) rn
+      FROM tilt_history
+      WHERE ts >= ? AND ncal = 0
+    )
+    WHERE rn <= ${HISTORY_ROWS_PER_NODE}
     ORDER BY ts ASC
   `),
 
@@ -1099,9 +1128,16 @@ export const stmts = {
     ORDER BY ts ASC
   `),
 
+  // Bounded per node — see HISTORY_ROWS_PER_NODE. Measured 2026-08-13: this
+  // returned 42,708 rows across 42 nodes and the browser kept 7,965.
   queryAllEnvHistory: db.prepare(`
     SELECT ts, num, temperature, relative_humidity, barometric_pressure, gas_resistance
-    FROM environment_history WHERE ts >= ?
+    FROM (
+      SELECT ts, num, temperature, relative_humidity, barometric_pressure, gas_resistance,
+        ROW_NUMBER() OVER (PARTITION BY num ORDER BY ts DESC) rn
+      FROM environment_history WHERE ts >= ?
+    )
+    WHERE rn <= ${HISTORY_ROWS_PER_NODE}
     ORDER BY ts ASC
   `),
 
