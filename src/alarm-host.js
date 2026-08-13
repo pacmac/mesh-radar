@@ -18,6 +18,7 @@
 // available here.
 
 import { EventEmitter } from 'events';
+import WebSocket from 'ws';
 import { log } from './log.js';
 import { fmtAgo } from './format.js';
 import { dashMode } from './dash-mode.js';
@@ -30,30 +31,40 @@ import { numToNodeId, nodeIdToNum } from './utils.js';
 // poll after the cutover — the same collision this file's name avoids, walked
 // into through the environment instead.
 const ALARM_HOST_URL = process.env.ALARM_HOST_URL || 'http://127.0.0.1:8790';
-const HEALTH_POLL_MS = 30000;
-const QUEUE_POLL_MS = 5000;
-const ALIGN_POLL_MS = 2000; // faster than the queue poll — burst progress (~30s) should feel live
-// The device reports observations on a ~900 s beat, so 60 s is already 15x
-// faster than the data can change. Anything quicker polls for samples that
-// cannot exist yet. See _pollObs.
-const OBS_POLL_MS = 60000;
-const OBS_POLL_LIMIT = 200;
-
+// THERE IS NO POLL INTERVAL IN THIS FILE ANY MORE, AND THAT IS THE POINT.
+//
+// Peter, 2026-08-13: "GET/HTTP is FORBIDDEN FOR LIVE DATA. NO EXCEPTIONS ...
+// the ONLY data that can use POST/GET is for things like form submission."
+//
+// This module was written 2026-08-12 with SIX pollers — health 30 s, queues 5 s,
+// align 2 s, obs 60 s, obs-table 60 s, tx 5 s — against a bridge that was
+// advertising `ws /events` the entire time. plugins named that socket in their
+// very first message and it was read past; pac-host's polling shape was carried
+// over wholesale instead. plugins then deleted seven GET routes on the same rule
+// at 07:02Z, and four of them were ones this file polled.
+//
+// device's own test, api.js:13: "if a caller would have to POLL to keep up, it
+// belongs on the WS."
+//
+// The only GETs left are one-shot snapshots taken at connect. They answer "what
+// is true right now" once, and the socket keeps them true afterwards.
+const WS_URL = (process.env.ALARM_HOST_URL || 'http://127.0.0.1:8790')
+  .replace(/^http/, 'ws');
+const RECONNECT_MS = 5000;
 export const events = new EventEmitter();
 
-let _timer = null;
-let _queueTimer = null;
-let _alignTimer = null;
-let _obsTimer = null;
-let _obsTableTimer = null;
-let _txTimer = null;
-let _lastStatus = null; // null until the first poll resolves
+let _lastStatus = null; // null until the first push arrives
 let _units = [];        // mapped unit view-models, one per DECLARED unit (present or not)
 let _sections = null;   // the bridge's own section map, forwarded verbatim — never synthesised
 let _queues = {};       // unit num -> queue ledger array
 let _obs = {};          // unit !hex id -> observation rows (oldest-first)
-let _obsTable = null;   // GET /obs — the runtime-params table, estate-wide, one call
-let _tx = null;         // GET /tx — last send per unit (radio, channel, at, text)
+let _tx = null;         // last send per unit, from the `send` event
+let _counters = null;   // bridge counters, from /plugin/dash/live
+let _declared = [];     // unit ids the bridge DECLARES — one-shot GET /health
+let _state = {};        // !id -> the one-shot GET /state snapshot, kept current by events
+let _contact = {};      // !id -> overdue/dueAt/missed, from overdue + returned events
+let _obsFrames = {};    // !id -> { at, json, decodeError, portnum } from beat/alarm
+let _heard = {};        // !id -> { frames, decoded, lastFrameAt, ports } counted off the stream
 let _alignModel = null; // last pushed align view-model, null until first poll
 let _alignPrevMode = null; // dash mode saved when we forced PASV for an align session
 let _schemaHash = null; // /health's schemaHash — logged on change so contract drift is visible
@@ -229,207 +240,16 @@ function _statusesEqual(a, b) {
     && JSON.stringify(a.units) === JSON.stringify(b.units);
 }
 
-/** Health, sections and the unit roster in one cycle.
- *
- *  `present` comes from /health, which returns `units` (DECLARED) and `heard`
- *  as separate arrays. /dash's summary carries no such flag. A present:false
- *  unit MUST be rendered, never dropped: a unit silent for a day disappearing
- *  from the list shows a shrinking roster instead of a unit in trouble, and
- *  silence is the exact thing the panel exists to display.
- *
- *  `startedAt` also comes from /health. /dash serves it as null with a stated
- *  reason (plugins' own known bug — the value is unreachable from a plugin).
- *  Reading /health is not a workaround for a peer's defect; it is reading the
- *  authoritative source. */
-async function _poll() {
-  let result;
-  let health = null;
-  try {
-    health = await _call('/health');
-    result = {
-      available: health?.ok === true,
-      status: health?.ok === true ? 'ready' : 'degraded',
-      startedAt: _isoToMs(health?.startedAt),
-      lastCheckedMs: Date.now(),
-      error: null,
-    };
-  } catch (e) {
-    result = { available: false, status: 'unreachable', startedAt: null, lastCheckedMs: Date.now(), error: e.message };
-  }
-
-  if (health?.schemaHash && health.schemaHash !== _schemaHash) {
-    // Contract drift becomes visible instead of being discovered as a shape bug.
-    log.info('alarm-host', `bridge schemaHash ${_schemaHash ?? '(none)'} -> ${health.schemaHash}`);
-    _schemaHash = health.schemaHash;
-  }
-
-  if (result.available) {
-    try {
-      const dash = await _call('/dash'); // plugin route, no params
-      _sections = dash?.sections ?? null;
-    } catch (e) {
-      log.warn('alarm-host', `dash fetch failed: ${e.message}`);
-      _sections = null;
-    }
-
-    // /tx is read BEFORE the units are mapped, not beside them. It has its own
-    // faster timer, but on the FIRST cycle that timer has not run yet, so
-    // _mapUnit would stamp every unit's txRadioSource with the generic "not
-    // served by the bridge" instead of the bridge's real reason ("nothing has
-    // been sent to this unit since this plugin started") — and it would say so
-    // for a full 30 s. Same shape as the obs-prime no-op this file already
-    // carries a comment about: a prime that runs beside the thing it depends on
-    // is a prime that has not run.
-    await _pollTx();
-
-    const declared = Array.isArray(health?.units) ? health.units : [];
-    const heard = new Set(Array.isArray(health?.heard) ? health.heard : []);
-    const next = [];
-    for (const id of declared) {
-      let state = null;
-      try {
-        // DEVICE CORE ROUTE — path param. The query form returns every unit
-        // with a 200; see the transport note above.
-        state = await _call(`/state/${encodeURIComponent(id)}`);
-      } catch (e) {
-        log.warn('alarm-host', `state fetch failed for ${id}: ${e.message}`);
-      }
-      next.push(_mapUnit(id, state, heard.has(id), _tx?.units?.[id] ?? null));
-    }
-    _units = next;
-  } else {
-    _units = [];
-    _sections = null;
-  }
-  result.units = _units;
-  result.sections = _sections;
-
-  const changed = !_lastStatus || !_statusesEqual(_lastStatus, result);
-  _lastStatus = result;
-  if (changed) {
-    log.info('alarm-host', `status: ${result.status}${result.error ? ` (${result.error})` : ''}, ${_units.length} unit(s)`);
-    events.emit('change');
-  }
-}
-
-/** Per-unit command ledger.
- *
- *  GAP TODAY — the bridge has no route listing commands sent and their outcome
- *  (section `outbox`, owner device). We do NOT poll a route that does not
- *  exist: this morning's failure was 1568 fetches against a dead port in eight
- *  seconds, and a gap is not a transient. The ledger stays empty and the panel
- *  renders the gap's stated reason. */
-async function _pollQueues() {
-  if (!isAvailable() || !_sectionOk('outbox')) { _queues = {}; return; }
-  const next = {};
-  for (const u of _units) {
-    try {
-      const ledger = await getQueue(u.id);
-      // Live (unsettled: queued/trying) rows age from createdAt — how long it
-      // has been waiting. Settled rows age from settledAt — when it actually
-      // finished — not createdAt, or a reply that took 66 minutes to arrive
-      // reads as though it landed the moment it was queued (task
-      // settled-age-wrong-timestamp, 2026-07-25).
-      next[u.num] = Array.isArray(ledger)
-        ? ledger.map(e => {
-            const live = e.state === 'queued' || e.state === 'trying';
-            const ts = live ? e.createdAt : (e.settledAt ?? e.createdAt);
-            return { ...e, since: fmtAgo(Math.floor((ts ?? 0) / 1000)) };
-          })
-        : [];
-    } catch (e) {
-      log.warn('alarm-host', `queue fetch failed for ${u.id}: ${e.message}`);
-      next[u.num] = _queues[u.num] ?? []; // keep last-known rather than blank on a transient error
-    }
-  }
-  const changed = JSON.stringify(next) !== JSON.stringify(_queues);
-  _queues = next;
-  if (changed) events.emit('queuesChanged');
-}
+// -- WS-fed state; the pollers that used to fill these are gone ------------
 
 /** Ready-to-send WS message describing every commandable unit's queue. */
 export function queuesMessage() {
   return { type: 'pac_host_queues', queues: _queues, gap: _sectionOk('outbox') ? null : _sections?.outbox ?? null };
 }
 
-/** Keep each unit's observation series warm.
- *
- *  WHY POLL AT ALL, when the Stats pane already fetches on demand: the node
- *  page contributes its coulomb section through `registerNodeSection`, and
- *  `buildNodeStatus` is SYNCHRONOUS — a provider cannot await a fetch. It needs
- *  the rows already in hand.
- *
- *  GAP TODAY — no series store exists on the bridge; the record plugin is
- *  unbuilt (section `obs`, owner plugins). The coulomb feature shipped
- *  2026-08-09 across b86b44e/40bbb17/1bfccea and has no data source until that
- *  lands. It renders the gap's reason, NOT an empty series: blanking would say
- *  "this unit has no gauge", which is a different and false claim. */
-/** The runtime-params table. One call for the whole estate — the response is
- *  keyed by unit, so this does not scale with unit count.
- *
- *  NOT gated on the `obs` section. That entry describes the SERIES store, which
- *  is still unbuilt; the table shipped separately and answers today. Gating this
- *  on it would hide a working panel behind an unrelated gap.
- *
- *  A failed poll KEEPS THE LAST TABLE rather than blanking it — same rule as the
- *  queue and series polls. Blanking would read as "this device reports nothing",
- *  which is a claim about the firmware rather than about our connection. */
-async function _pollObsTable() {
-  if (!isAvailable()) { _obsTable = null; return; }
-  try {
-    const next = await getObsTable();
-    const changed = JSON.stringify(next) !== JSON.stringify(_obsTable);
-    _obsTable = next;
-    if (changed) events.emit('change');
-  } catch (e) {
-    log.warn('alarm-host', `obs table fetch failed: ${e.message}`);
-  }
-}
-
-/** Last send per unit — which radio transmitted to it, on what channel, when,
- *  and the command text.
- *
- *  plugins built this off the bridge's `before:send` hook, which already carries
- *  {unit, text, radio, channel} past them. It is the ONE of the four null fields
- *  that needed nobody's permission: the data was already flowing.
- *
- *  LATEST ONLY, overwritten, no history — as specified. A unit with nothing sent
- *  gets null WITH a `why` rather than being omitted, because an omitted entry
- *  reads as "no such unit" and there would be no way to tell the difference.
- *
- *  `text` is OUR command string, never a device payload, so nothing in it is
- *  withheld — unlike the obs table, where an undeclared value may carry position. */
-async function _pollTx() {
-  if (!isAvailable()) { _tx = null; return; }
-  try {
-    const next = await _call('/tx');
-    const changed = JSON.stringify(next) !== JSON.stringify(_tx);
-    _tx = next;
-    if (changed) events.emit('change');
-  } catch (e) {
-    log.warn('alarm-host', `tx fetch failed: ${e.message}`);
-  }
-}
-
-async function _pollObs() {
-  if (!isAvailable() || !_sectionOk('obs')) { _obs = {}; return; }
-  const next = {};
-  for (const u of _units) {
-    try {
-      next[u.id] = await getObs(u.id, { limit: OBS_POLL_LIMIT }) || [];
-    } catch (e) {
-      log.warn('alarm-host', `obs fetch failed for ${u.id}: ${e.message}`);
-      next[u.id] = _obs[u.id] ?? [];
-    }
-  }
-  _obs = next;
-}
-
-/** Cached observation rows for a unit's `!hex` id, oldest-first as served.
- *  Empty array when never polled or genuinely empty — the CALLER decides what
- *  an empty series means, because "no gauge" and "no samples yet" are not the
- *  same fact and this layer cannot tell them apart. With `obs` a gap, callers
- *  must consult sections() rather than reading emptiness as a measurement. */
+/** Cached observation rows for a unit's `!hex` id. The coulomb SERIES has no
+ *  source (section `obs`, plugins, unbuilt) — callers must consult sections()
+ *  rather than reading emptiness as a measurement. */
 export function obsForUnit(unitId) {
   return _obs[unitId] ?? [];
 }
@@ -446,15 +266,13 @@ export function obsForUnit(unitId) {
  *  previous mode on stop. mt-transport flagged it as ours alone to replicate:
  *  "If the Yagi moves during a burst, the readings are silently wrong rather
  *  than obviously broken, which is the worst kind of wrong." */
-async function _pollAlign() {
-  if (!isAvailable() || !_sectionOk('align')) { _alignModel = null; return; }
-  let next;
-  try {
-    next = await _call('/align');
-  } catch (e) {
-    log.warn('alarm-host', `align poll failed: ${e.message}`);
-    return; // keep last-known model rather than blanking on a transient error
-  }
+// NOT ON A TIMER. Align has no source at all today — the section is a gap and
+// ownership is parked — so there is nothing to subscribe to and nothing to
+// poll. This is kept as a pure state-transition handler so that whoever ends up
+// owning align wires it to a feed and the interlock works unchanged. It is
+// never called from a clock.
+export function applyAlignModel(next) {
+  if (!_sectionOk('align')) { _alignModel = null; return; }
 
   const wasRunning = !!_alignModel?.running;
   const nowRunning = !!next?.running;
@@ -478,47 +296,201 @@ export function alignMessage() {
   return { type: 'pac_host_align', model: _alignModel, gap: _sectionOk('align') ? null : _sections?.align ?? null };
 }
 
-/** Begin polling. Idempotent — a second call is a no-op. Never blocks: the
- *  first poll runs asynchronously, so node-dash serves pages before it resolves. */
-export function start() {
-  if (_timer) return;
-  // Held so the obs prime below can wait for the roster this resolves. Callers
-  // still do not await start() — nothing else depends on the first poll.
-  const _pollPromise = _poll();
-  _timer = setInterval(_poll, HEALTH_POLL_MS);
-  _queueTimer = setInterval(_pollQueues, QUEUE_POLL_MS);
-  _alignTimer = setInterval(_pollAlign, ALIGN_POLL_MS);
-  _obsTimer = setInterval(_pollObs, OBS_POLL_MS);
-  _obsTableTimer = setInterval(_pollObsTable, OBS_POLL_MS);
-  // /tx changes only when WE send, so it rides the queue cadence rather than
-  // the slow obs one — a command's radio should appear while the page is still
-  // being looked at.
-  _txTimer = setInterval(_pollTx, QUEUE_POLL_MS);
-  // Prime AFTER the first poll resolves, not beside it. `_poll()` above is
-  // deliberately not awaited, so at this point `_lastStatus` is still null,
-  // `isAvailable()` is false and a bare `_pollObs()` returns immediately having
-  // done nothing — silently, because that early return has nothing to say.
-  //
-  // Measured on pac-host: the section was then absent for the first 60 s after
-  // every restart. That is exactly the "a blank reads as no gauge" failure this
-  // prime exists to prevent.
-  _pollPromise.then(() => { _pollObs(); _pollObsTable(); _pollTx(); });
+// -- handlers ----------------------------------------------------------------
+
+/** plugins' view model, pushed. { at, bridge, units[], counters }. */
+function _onDashLive(msg) {
+  if (!Array.isArray(msg?.units)) return;
+  _counters = msg.counters ?? null;
+  const heard = new Set(msg.units.map(u => u.unit));
+  const next = [];
+  for (const id of (_declared.length ? _declared : msg.units.map(u => u.unit))) {
+    const live = msg.units.find(u => u.unit === id) ?? null;
+    // _state[id] is the one-shot snapshot: schedule, contact, aim, measured.
+    // The live message carries the fast-moving half; merge rather than replace,
+    // or every push would erase beatSource and nextWake.
+    next.push(_mapUnit(id, _mergeState(_state[id], live), heard.has(id), _tx?.units?.[id] ?? null));
+  }
+  _units = next;
+  const result = { available: msg?.bridge?.ok !== false, status: msg?.bridge?.ok === false ? 'degraded' : 'ready',
+                   startedAt: _isoToMs(msg?.bridge?.startedAt), lastCheckedMs: Date.now(),
+                   error: null, units: _units, sections: _sections };
+  const changed = !_lastStatus || !_statusesEqual(_lastStatus, result);
+  _lastStatus = result;
+  if (changed) events.emit('change');
 }
 
-/** Stop polling and clear cached status (tests, shutdown). */
+/** Fold the live half of a unit into its snapshot. */
+function _mergeState(snap, live) {
+  if (!live) return snap;
+  return {
+    ...(snap || {}),
+    schedule: { ...(snap?.schedule || {}), beat: live.beat, win: live.win },
+    link: { ...(snap?.link || {}), heardAt: live.heardAt, rssi: live.rssi, snr: live.snr,
+            radios: live.radios },
+  };
+}
+
+/** device's event stream. One JSON event per message, in publish order. */
+function _onBridgeEvent(ev) {
+  const unit = ev?.unit;
+  if (!unit) return;
+
+  switch (ev.type) {
+    // THE RUNTIME PARAMS. frame.json IS the parameters — already through
+    // device's decoder once, which is the only decode in the system. Reading a
+    // field off it is not decoding and never was (plugins, 2026-08-13).
+    case 'beat':
+    case 'alarm': {
+      const f = ev.frame;
+      if (!f) break;
+      const prev = _obsFrames[unit];
+      // A FRAME THAT FAILED TO DECODE MUST NOT ERASE THE VALUES WE ALREADY HAVE.
+      //
+      // BNCH emits both `alarm` frames (which decode, json present) and `beat`
+      // frames (which on this firmware carry json:null plus a decodeError).
+      // Overwriting blindly meant the panel showed 18 fields for one second and
+      // then "nothing received" for the rest of the minute — measured, and the
+      // reason this comment exists.
+      //
+      // The parameters are the LAST SUCCESSFUL decode; a later failure is a
+      // fault to report beside them, not a reason to forget what the device
+      // already told us.
+      _obsFrames[unit] = {
+        at:          f.json ? (f.at ?? ev.at) : (prev?.at ?? null),
+        json:        f.json ?? prev?.json ?? null,
+        jsonAt:      f.json ? (f.at ?? ev.at) : (prev?.jsonAt ?? null),
+        decodeError: f.decodeError ?? null,
+        portnum:     f.portnum ?? prev?.portnum ?? null,
+      };
+      _bumpHeard(unit, f.decodeError ? 0 : 1);
+      events.emit('change');
+      break;
+    }
+    // TX radio, verbatim off the event that already carried it.
+    case 'send':
+      _tx = _tx || { units: {} };
+      _tx.units[unit] = { radio: ev.radio ?? null, channel: ev.channel ?? null,
+                          at: ev.at ?? null, text: ev.text ?? null };
+      events.emit('change');
+      break;
+    // Contact state — replaces re-reading /state for overdue/missed.
+    case 'overdue':
+      _contact[unit] = { overdue: true, dueAt: ev.dueAt ?? null,
+                         overdueBy: ev.overdueBy ?? null, missed: ev.missed ?? null };
+      events.emit('change');
+      break;
+    case 'returned':
+      _contact[unit] = { overdue: false, dueAt: null, overdueBy: 0, missed: ev.missed ?? null };
+      events.emit('change');
+      break;
+    case 'witness':
+      _bumpHeard(unit, 0);
+      break;
+  }
+}
+
+/** Frame accounting per unit, so the Runtime params panel can say "heard N,
+ *  decoded M" without any of it being a guess. Counted from the stream itself. */
+function _bumpHeard(unit, decoded) {
+  const h = _heard[unit] || (_heard[unit] = { frames: 0, decoded: 0, lastFrameAt: null, ports: [] });
+  h.frames += 1;
+  h.decoded += decoded;
+  h.lastFrameAt = new Date().toISOString();
+}
+
+// -- the two sockets ---------------------------------------------------------
+
+/** Connect one socket, resubscribing forever. `onOpen` runs on every (re)connect
+ *  because a reconnect means we missed events and the snapshot must be retaken —
+ *  a socket that comes back without re-priming shows the state it had when it
+ *  dropped, indefinitely, with no indication anything was missed. */
+function _socket(path, onMessage, onOpen) {
+  let ws = null, timer = null, closed = false;
+  const connect = () => {
+    if (closed) return;
+    ws = new WebSocket(`${WS_URL}${path}`);
+    ws.on('open', () => { log.info('alarm-host', `${path} connected`); onOpen?.(); });
+    ws.on('message', buf => {
+      let msg; try { msg = JSON.parse(buf); } catch { return; }
+      try { onMessage(msg); }
+      // A throw in a handler must not take the socket down with it. The stream
+      // is the only live source now, so an unhandled shape would otherwise end
+      // every panel at once.
+      catch (e) { log.warn('alarm-host', `${path} handler failed: ${e.message}`); }
+    });
+    ws.on('close', () => {
+      if (closed) return;
+      log.warn('alarm-host', `${path} closed — reconnecting in ${RECONNECT_MS}ms`);
+      timer = setTimeout(connect, RECONNECT_MS);
+    });
+    ws.on('error', err => {
+      const bits = [err?.code, err?.syscall, err?.message].filter(Boolean);
+      log.warn('alarm-host', `${path} error: ${bits.join(' · ') || String(err)}`);
+    });
+  };
+  connect();
+  return () => { closed = true; clearTimeout(timer); try { ws?.close(); } catch {} };
+}
+
+let _closers = [];
+
+/** THE ONLY GETs LEFT, and every one is a one-shot snapshot taken on connect —
+ *  never on a timer, never to "keep up". They answer what is true at this
+ *  instant once; the socket keeps it true afterwards.
+ *
+ *  Re-run on every RECONNECT, because a reconnect means events were missed and
+ *  a stale snapshot with a live socket over it is the worst of both.
+ *
+ *    GET /health         which units the bridge DECLARES vs which it has HEARD.
+ *                        `present` lives here and nowhere else — a declared unit
+ *                        that has gone quiet must still render, or the roster
+ *                        shrinks instead of showing a unit in trouble.
+ *    GET /state/<!id>    the rich per-unit snapshot: schedule, contact.basis,
+ *                        aim.nextWakeAt, measured.*. Not on the stream, and
+ *                        genuinely a question rather than a feed.
+ *    GET /dash/sections  which panels can be filled and who owns each gap.
+ *                        Static: it changes when a peer ships something. */
+async function _primeSnapshot() {
+  try {
+    const health = await _call('/health');
+    _declared = Array.isArray(health?.units) ? health.units : [];
+    if (health?.schemaHash && health.schemaHash !== _schemaHash) {
+      log.info('alarm-host', `bridge schemaHash ${_schemaHash ?? '(none)'} -> ${health.schemaHash}`);
+      _schemaHash = health.schemaHash;
+    }
+  } catch (e) { log.warn('alarm-host', `health snapshot failed: ${e.message}`); }
+
+  try { _sections = (await _call('/dash/sections'))?.sections ?? null; }
+  catch (e) { log.warn('alarm-host', `sections snapshot failed: ${e.message}`); _sections = null; }
+
+  for (const id of _declared) {
+    try { _state[id] = await _call(`/state/${encodeURIComponent(id)}`); }
+    catch (e) { log.warn('alarm-host', `state snapshot failed for ${id}: ${e.message}`); }
+  }
+  events.emit('change');
+}
+
+/** Subscribe. Idempotent — a second call is a no-op. Never blocks. */
+export function start() {
+  if (_closers.length) return;
+
+  // plugins' aggregated view model: bridge, units, counters. Pushed on every
+  // bridge event, so `heardAt`/`rssi`/`beat` are current without asking.
+  _closers.push(_socket('/plugin/dash/live', _onDashLive));
+
+  // device's own stream — witness / beat / alarm / send / overdue / returned.
+  // This is where the runtime params and the TX radio come from now: /obs and
+  // /tx were DELETED rather than moved, because both were re-serving what these
+  // events already carry, and a plugin in the middle is a second surface that
+  // can only drift.
+  _closers.push(_socket('/events', _onBridgeEvent, _primeSnapshot));
+}
+
+/** Close both sockets and clear cached state (tests, shutdown). */
 export function stop() {
-  if (_timer) clearInterval(_timer);
-  if (_queueTimer) clearInterval(_queueTimer);
-  if (_alignTimer) clearInterval(_alignTimer);
-  if (_obsTimer) clearInterval(_obsTimer);
-  if (_obsTableTimer) clearInterval(_obsTableTimer);
-  if (_txTimer) clearInterval(_txTimer);
-  _timer = null;
-  _queueTimer = null;
-  _alignTimer = null;
-  _obsTimer = null;
-  _obsTableTimer = null;
-  _txTimer = null;
+  for (const close of _closers) close();
+  _closers = [];
   _obsTable = null;
   _tx = null;
   _lastStatus = null;
@@ -621,21 +593,51 @@ export async function getQueue(unit) {
  *  the 18 declared fields is positional, so the safe set and the useful set are
  *  the same set. Do not render a withheld value; render the key.
  *
- *  Estate-wide in one call — the response is keyed by unit. No per-unit fetch. */
-export async function getObsTable() {
-  return _call('/obs');
-}
-
-/** Cached runtime-params table for a unit's `!hex` id, or null before the first
- *  poll. Read-only view — `buildNodeStatus` is SYNCHRONOUS and cannot await. */
+ *  BUILT FROM THE `beat` AND `alarm` EVENTS, NOT FROM A ROUTE. plugins deleted
+ *  GET /obs at 07:02Z rather than moving it, because it was re-serving what
+ *  those events already carry: `frame.json` IS the runtime parameters, already
+ *  through device's decoder once. A plugin in the middle of that is a second
+ *  surface over our own feed which can only drift.
+ *
+ *  Read-only view of what the socket has delivered — `buildNodeStatus` is
+ *  SYNCHRONOUS and cannot await. */
 export function obsTableForUnit(unitId) {
-  return _obsTable?.units?.[unitId] ?? null;
+  const f = _obsFrames[unitId];
+  const h = _heard[unitId];
+  if (!f && !h) return null;
+  const json = f?.json ?? null;
+  return {
+    // The instant of the last SUCCESSFUL decode, not of the last frame — a
+    // value's age is when it was read, not when something else arrived.
+    at: f?.jsonAt ?? f?.at ?? null,
+    // Every key the device actually sent, as key/value. The field set changes
+    // when firmware changes, so nothing here is hand-picked.
+    fields: json
+      ? Object.entries(json).map(([key, value]) => ({
+          key, value, state: 'arrived', label: null, req: null, withheld: false,
+        }))
+      : [],
+    missingMust: [],
+    heard: h ? {
+      frames: h.frames,
+      decoded: h.decoded,
+      lastFrameAt: h.lastFrameAt,
+      ports: f?.portnum != null ? [{ port: String(f.portnum), ours: true, frames: h.frames,
+                                     decoded: h.decoded, errors: h.frames - h.decoded,
+                                     lastError: f?.decodeError ?? null }] : [],
+      // The bridge's own sentence, verbatim — this is where GARG's
+      // "built against 0xbaf7, this butler loaded 0xd339" arrives.
+      why: f?.decodeError ?? null,
+    } : null,
+  };
 }
 
-/** The table's schema block — { source, declared, why }. Rendered as-is when
- *  `declared` is 0, because it is the table honestly reporting itself broken. */
+/** Schema provenance no longer arrives as a block — the events carry decoded
+ *  values or a stated decodeError, and there is no separate declared-count to
+ *  report. Returns null so the section renders what it has rather than a
+ *  fabricated "0 of 18". */
 export function obsTableSchema() {
-  return _obsTable?.schema ?? null;
+  return null;
 }
 
 /** A unit's stored observation SERIES (the coulomb counters). Still a gap.
@@ -647,13 +649,12 @@ export function obsTableSchema() {
  *
  *  `unit` MUST be the `!hex` id; short names do not resolve. */
 export async function getObs(unit, { field, since, until, limit } = {}) {
-  // MUST NOT fall through to GET /obs. That route is now the runtime-params
-  // TABLE (getObsTable above), and it answers 200 — so a naive call here would
-  // hand coulomb.js a table where it expects an ascending series of {at, n},
-  // and the subtraction would run on whatever came out. The series has no
-  // route; the bridge says so in the table's own payload.
-  const why = _obsTable?.seriesWhy
-    ?? 'no history store — the series needs `record`, which is unbuilt';
+  // THE SERIES HAS NO SOURCE AND MUST NOT BE FAKED FROM THE STREAM.
+  // `beat`/`alarm` carry the LATEST value per field, which is the table. A
+  // history is a different thing: it needs the `record` plugin, which is
+  // unbuilt. Accumulating events into a series here would produce a chart that
+  // starts whenever node-dash last restarted and looks like a measurement.
+  const why = 'no history store — the series needs `record`, which is unbuilt';
   throw Object.assign(new Error(`coulomb series unavailable: ${why} — plugins`),
                       { status: 501, gap: 'obs-series', owner: 'plugins', why });
 }

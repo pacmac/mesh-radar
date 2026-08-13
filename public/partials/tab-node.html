@@ -121,8 +121,29 @@
            room. Single column below lg. -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <template x-for="section in nodeStatus.sections" :key="section.id">
+        <!-- `obs_runtime` is the exception to the full-width rule. It is a
+             REFERENCE READOUT — every parameter the device reports, consulted
+             rarely and needed exactly when it is needed. Given a full row it
+             put eighteen rows of firmware internals above the charts that are
+             actually watched, and buried them.
+
+             Peter, 2026-08-13: "that dominates the whole page ... something I
+             will rarely look at but is needed ... a small maybe 25% width
+             scrollable card".
+
+             So it takes ONE column and caps its own height. Rank on this page
+             is expressed as area, and a reference table should have the least
+             of it.
+
+             The width cap sits on the CARD, not on its contents. Capping the
+             inner list instead left a 643px card holding a 320px column and
+             320px of nothing — the card still claimed the space, which is the
+             thing being fixed. -->
         <div class="card bg-base-100 shadow-sm border border-base-300 h-full"
-             :class="section.kind !== 'series' && 'lg:col-span-2'">
+             :class="[
+               section.kind !== 'series' && section.id !== 'obs_runtime' ? 'lg:col-span-2' : '',
+               section.id === 'obs_runtime' ? 'max-w-sm self-start' : '',
+             ]">
           <!-- h-full + flex-col + the chart wrapper growing keeps two charts in
                a row the SAME HEIGHT even when one carries an extra note line. -->
           <div class="card-body py-4 gap-3 flex flex-col">
@@ -162,7 +183,34 @@
                  Optional, and server-supplied like every other value here: no
                  field carried a `desc` when this was added, so nothing on
                  screen changed until a section started sending one. -->
-            <template x-if="section.kind === 'value_grid'">
+            <!-- The compact readout. Same grammar as value_grid — muted key
+                 left, mono value right — at reference density: one narrow
+                 column, hairline rows, and its own scroll so the card's height
+                 is fixed no matter how many parameters the firmware gains.
+                 That last part matters: the field set changes when firmware
+                 changes, so a card sized to today's eighteen would be resized
+                 by a future release rather than by a decision. -->
+            <template x-if="section.kind === 'value_grid' && section.id === 'obs_runtime'">
+              <div>
+                <div class="max-h-64 overflow-y-auto pr-1">
+                  <template x-for="f in section.fields" :key="f.label">
+                    <div class="flex items-baseline justify-between gap-3
+                                border-b border-base-200 last:border-0 py-0.5">
+                      <span class="text-xs text-base-content/50 shrink-0" x-text="f.label"></span>
+                      <span class="text-xs font-mono tabular-nums text-right truncate"
+                            :title="f.text" x-text="f.text"></span>
+                    </div>
+                  </template>
+                </div>
+                <!-- A count, so the card can be trusted at a glance without
+                     reading it — which is the whole point of a panel you look
+                     at rarely. -->
+                <p class="text-xs text-base-content/40 pt-2"
+                   x-text="section.fields.length + ' reported'"></p>
+              </div>
+            </template>
+
+            <template x-if="section.kind === 'value_grid' && section.id !== 'obs_runtime'">
               <div class="grid gap-x-8 gap-y-1 justify-start"
                    style="grid-template-columns:repeat(auto-fill,minmax(15rem,22rem))">
                 <template x-for="f in section.fields" :key="f.label">

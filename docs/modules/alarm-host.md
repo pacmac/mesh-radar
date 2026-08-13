@@ -1,7 +1,7 @@
 ---
 module: alarm-host
 source: src/alarm-host.js
-source_hash: 0ac143316d0ec267e69179f0a56598e93277a8637c2a70ed4bf4ed09442a0d7d
+source_hash: 7225c73fceffc0b614dec5f2e20c2bce587b108b88e8653f067733bed5f48a92
 updated: 2026-08-12
 ---
 
@@ -286,6 +286,64 @@ is entirely plausible. Nothing but arithmetic catches this.
 
 Same rule as `docs/modules/coulomb.md`'s ms→s divide, and the rule services'
 `[ms-everywhere]` note exists because of.
+
+## NOTHING IN THIS MODULE POLLS — 2026-08-13
+
+Peter: *"GET/HTTP is FORBIDDEN FOR LIVE DATA. NO EXCEPTIONS ... the ONLY data
+that can use POST/GET is for things like form submission."*
+
+This module shipped 2026-08-12 with **six pollers** — health 30 s, queues 5 s,
+align 2 s, obs 60 s, obs-table 60 s, tx 5 s — against a bridge that was
+advertising `ws /events` the whole time. plugins named that socket in their first
+message; it was read past, and pac-host's polling shape was carried over
+wholesale. device's own test, `api.js:13`: *"if a caller would have to POLL to
+keep up, it belongs on the WS."*
+
+plugins then deleted seven GET routes on the same rule at 07:02Z. Four were ones
+this file polled, and node-dash retried `/tx` every five seconds until it was cut
+over.
+
+### Two sockets
+
+```
+ws /plugin/dash/live   { at, bridge, units[], counters }   pushed on bridge events
+ws /events             { type, at, unit, … }              device's own stream
+```
+
+| event | carries | replaces |
+|---|---|---|
+| `beat` / `alarm` | `frame.json`, `frame.decodeError` | **GET /obs** |
+| `send` | `radio`, `channel`, `text` | **GET /tx** |
+| `witness` | `rssi`, `snr`, `direct`, `hops` | polled signal |
+| `overdue` / `returned` | `dueAt`, `overdueBy`, `missed` | re-read `/state` |
+
+**`/obs` and `/tx` were DELETED, not moved**, and neither is a loss: both
+re-served what these events already carry. `frame.json` IS the runtime
+parameters, already through device's decoder once — reading a field off it is not
+decoding. A plugin in the middle of its own feed is a second surface that can
+only drift.
+
+### The only GETs left
+
+`GET /health`, `GET /state/<!id>`, `GET /dash/sections` — one-shot snapshots
+taken at connect, re-taken on every reconnect because a reconnect means events
+were missed and a stale snapshot under a live socket is the worst of both. They
+answer *what is true now* once; the socket keeps it true.
+
+### A failed decode must not erase what decoded
+
+BNCH emits `alarm` frames that decode and `beat` frames carrying `json: null`
+plus a `decodeError`. Overwriting blindly showed 18 fields for one second and
+"nothing received" for the rest of the minute — measured. The parameters are the
+**last successful decode**; a later failure is reported beside them, and `at` is
+the instant of that decode, not of the last frame to arrive.
+
+### The series is still a gap and must not be faked
+
+`beat`/`alarm` carry the latest value per field — that is the table. A history
+needs the `record` plugin, which is unbuilt. Accumulating events into a series
+here would draw a chart starting at the last node-dash restart that looks like a
+measurement.
 
 ## `obs` is TWO things and the word is overloaded
 
