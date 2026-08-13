@@ -31,8 +31,8 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: bbaa1bf18ac2d463911338de8835b421990539b9e4030cc732ed389c5cb8c0e3
-updated: 2026-08-12
+source_hash: f1474f1b852b25ebce009857bd95d7978add2f392b62aae1a809940a49d88aa6
+updated: 2026-08-13
 ---
 
 # Module: browser-playwright-audit
@@ -522,6 +522,14 @@ rewriting it to `overview`. Confirmed unrelated to the 2026-07-29 changes —
 - **Funnel legend** now names every exclusion, including the two it hid: the
   mislabelled "no position" (really `km > 250`), the previously uncounted
   "no rule matched", and the 331 nodes that never reach the selector at all.
+
+## Hash moved without a browser change — 2026-08-13
+
+`CLAUDE.md` is in this spec's 30-file source list, so a project-rules edit moves
+the composite hash with nothing in `public/` touched. The edit was the peer
+succession: `node-dash--services` marked FROZEN and `node-dash--plugins` added.
+Recorded so the next reader does not go hunting for a browser change that was
+never made. See `docs/PEER_SUCCESSION.md`.
 
 ## A control that cannot work must not look like one that can — 2026-08-12
 

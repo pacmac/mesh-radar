@@ -99,7 +99,11 @@ router.get('/alarm/image/:num/:pid', async (req, res) => {
 // cache, every call; measured 4.3 s). services, asked directly: "Airtime on that
 // link is the scarcest thing in this project… a background poller would compete
 // with real commands for the same windows." NEVER put this on a timer. If a
-// cadence is ever wanted, services own the polling and publish an age.
+// cadence is ever wanted, the OWNER of the image surface polls and publishes an
+// age — that was services, who are frozen since 2026-08-12; it is now whoever
+// takes the `images` section, which the bridge still lists as a gap with owner
+// `undecided`. See docs/PEER_SUCCESSION.md. The rule is unchanged whoever owns
+// it: never a timer on this side.
 //
 // A POST because it is an ACTION that spends airtime, not page data. The result
 // reaches the browser the same way everything else does — pushed over the WS in
@@ -153,9 +157,12 @@ router.post('/alarm/image/:num/:pid/fetch', async (req, res) => {
     });
   }
 
-  // Fire and forget. services own the START frame, the repair loop and the
-  // retry policy; we only ask for the image and watch /progress like everyone else.
-  // refresh:true — skip services' store and go to the device. Without it a pid
+  // Fire and forget. The START frame, the repair loop and the retry policy
+  // belong to whoever owns the image surface — services built them and are
+  // frozen since 2026-08-12; the bridge lists `images` as a gap owned by
+  // `undecided` (docs/PEER_SUCCESSION.md). Either way node-dash only asks for
+  // the image and watches progress, and that does not change with ownership.
+  // refresh:true — skip the upstream store and go to the device. Without it a pid
   // they already hold is served from disk in milliseconds and nothing goes on
   // air, so the button would report a download that never happened.
   getImageBytes(numToNodeId(num), pid, { timeoutMs: PULL_TIMEOUT_MS, refresh: true })

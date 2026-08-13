@@ -295,8 +295,11 @@ function buildCoulombSection(num) {
   // ABSENT, NOT EMPTY — and this branch still stands for the case it was
   // written for: the series store EXISTS and this unit has nothing in it.
   // "No gauge" and "fitted but nothing recorded yet" remain different facts
-  // that nothing upstream distinguishes yet (services offered the flag;
-  // xsession #89/#90). Rendering a "we don't know" row on every node page would
+  // that nothing upstream distinguishes yet. services OFFERED the fitted flag
+  // (xsession node-dash--services #89/#90) and were frozen 2026-08-12 before
+  // building it, so that promise died with them — it is not owed by plugins and
+  // must be re-raised if it is still wanted (docs/PEER_SUCCESSION.md).
+  // Rendering a "we don't know" row on every node page would
   // be noise, and rendering "not fitted" would be a claim I cannot support.
   // The Control > Stats pane is where that distinction is spelled out.
   if (!rows.length) return null;

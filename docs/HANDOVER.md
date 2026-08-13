@@ -10,11 +10,16 @@ fails 8 of 8. Both are consequences of today's transport work, both have exact
 fixes below under REMAINS, and neither was caught because **nothing in this repo
 runs any check automatically** — no CI, no git hooks, no test-runner target.
 
-**Second defect: two peers have not read what I sent them.** `services` is 7
-messages behind and is waiting on an answer that is already written and sitting
-unread; `device` has **never opened** its channel at all and therefore does not
-know GARG needs reflashing. See PEERS — that section changes what the next
-session does first.
+**Second defect: `device` has never opened its channel** — no cursor file exists,
+so they do not know GARG needs reflashing; the bridge restart happened because
+plugins asked them, not because of my request. `mesh-gw` is 4 behind and has not
+read `[role-200-meaning]`.
+
+**`services` is frozen and superseded by `plugins`** (Peter, 2026-08-13).
+`docs/PEER_SUCCESSION.md` records the succession and how to read the ~60 dated
+`services` attributions still in the code — those stay; only ownership moved.
+
+See PEERS — that section changes what the next session does first.
 
 Everything else shipped and is verified live.
 
@@ -97,17 +102,20 @@ cat ~/.xsession/<channel>/seen/<party>             # that party's cursor
 | channel | msgs | my cursor | peer cursor | peer is behind by |
 |---|---|---|---|---|
 | `node-dash--plugins` | 29 | 28 | **29** | 0 — fully caught up |
-| `node-dash--services` | 97 | 95 | **90** | **7** |
+| `node-dash--services` | 97 | 95 | **90** | **FROZEN — read-only, see PEER_SUCCESSION** |
 | `device--node-dash` | 4 | 2 | **no cursor file at all** | **4 — never read this channel** |
 | `mesh-gw--node-dash` | 20 | 17 | **16** | **4** |
 
 **This is the section that changes what the next session should do first.**
 
-- **services has not read my #96 or #97.** #96 acks their outcome-vocabulary
-  contract change *and answers the two questions they asked* (yes, two places
-  render `delivered`; yes, carry `null` vs `unackable` separately). They are
-  waiting on an answer that is sitting unread. #97 is the route list they asked
-  for. **Silence here is not disagreement — it is un-read.**
+- **services is FROZEN and is not coming back** (Peter, 2026-08-13; plugins
+  declared it in their opening message). `pac-host :8787` → `000`.
+  `docs/PEER_SUCCESSION.md` is the authority. My #96 and #97 were never read and
+  now never will be — #96 acked their outcome-vocabulary change and answered
+  their two questions, #97 was the route list they asked for. **Anything in
+  those that still matters must be re-raised with plugins, not assumed
+  delivered.** Do not write to that channel; read it, because it is the only
+  record of the contract negotiation.
 - **device has never read `device--node-dash`.** No cursor file exists. Both my
   items there — `[bridge-restart-for-obs]` and the GARG reflash request — are
   unread. The bridge *did* get restarted, but plugins asked them, not me. Do not

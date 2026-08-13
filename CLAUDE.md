@@ -100,7 +100,7 @@ What is specific to node-dash:
 
 | | |
 |---|---|
-| xsession channels | `mesh-gw--node-dash`, `mcpp-plan--node-dash`, `device--node-dash`, `mt-transport--node-dash`, `node-dash--services`, `mt-radar--node-dash` |
+| xsession channels | `node-dash--plugins`, `device--node-dash`, `mesh-gw--node-dash`, `mcpp-plan--node-dash`, `mt-transport--node-dash`, `mt-radar--node-dash`. **`node-dash--services` is FROZEN** — read it, never write to it; `plugins` succeeded it 2026-08-12. See `docs/PEER_SUCCESSION.md` |
 | UI verification | ~1600x1000 **and** 1280x800, both themes. Layout is three checks: `.card-body scrollHeight > clientHeight` (cropped), `.card rect.bottom > innerHeight` (off screen), leaf `rect.bottom > innerHeight` (text cut). |
 | page contract tests | `tests/test_page_snapshot.py` — presence, action, truth. One per page; add one when you add a page. |
 | task vocabulary | `docs/TASK_VOCABULARY.md` (the global verb set, scoped to this repo's tasks) |
@@ -110,6 +110,9 @@ What is specific to node-dash:
 
 ## Docs
 
+- `docs/PEER_SUCCESSION.md` — **who to talk to now, and how to read the old names.**
+  ~60 comments cite `services`, who are frozen; the attributions stay, ownership
+  follows this file
 - `docs/SPEC_INFRA.md` — spec rules and tooling
 - `docs/OVERVIEW.md` — architecture (to be written)
 - `docs/gw/` — symlink to mesh-gw docs (read-only reference, never modify)
