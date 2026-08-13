@@ -83,6 +83,15 @@ When an upstream gap closes, the entry changes on their side and the panel fills
 Anyone reading this expecting the alarm pages to come back whole should stop here.
 They do not, and no work in this repo makes them.
 
+## Meshtastic is these units' TRANSPORT, not their application
+
+`docs/ALARM_TRANSPORT_BOUNDARY.md` — **mandatory before changing anything in this
+module.** The units run 100% custom firmware. They appear in the node list, the
+radar and signal history because our radios hear them, and at that layer they are
+ordinary nodes — but no inference about what they DO may be drawn from Meshtastic
+semantics. The `alarm` class on portnum 260 is a port classification and not a
+motion event; that mistake paged a peer 21 times in 40 minutes.
+
 ## Identity: the bridge speaks `!hex` ONLY
 
 `GET /dash` unit keys, measured 2026-08-12: `unit, heardAt, rssi, snr, radios,

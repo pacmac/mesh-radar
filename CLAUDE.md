@@ -110,6 +110,10 @@ What is specific to node-dash:
 
 ## Docs
 
+- `docs/ALARM_TRANSPORT_BOUNDARY.md` — **Meshtastic is the alarm's TRANSPORT, never
+  its application.** Alarm units run 100% custom firmware; they appear here as
+  ordinary nodes because our radios hear them, but NOTHING about their behaviour
+  follows from Meshtastic semantics. Read before touching anything alarm-shaped
 - `docs/PEER_SUCCESSION.md` — **who to talk to now, and how to read the old names.**
   ~60 comments cite `services`, who are frozen; the attributions stay, ownership
   follows this file
