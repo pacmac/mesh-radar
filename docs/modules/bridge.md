@@ -1,7 +1,7 @@
 ---
 module: bridge
 source: src/bridge.js
-source_hash: b52c0d8748e50aa53624dc2bd4be791a7de0201335ef9f13f2de59650a3c0b8d
+source_hash: 729728549dedbb3ff8f07ed97ba091be7d86abebcbfc9b22b9ef0ebee07e5518
 updated: 2026-06-30
 ---
 

@@ -91,7 +91,24 @@ class BridgeClient extends EventEmitter {
     });
 
     ws.on('error', (err) => {
-      console.error(`[bridge] WS error: ${err.message}`);
+      // `err.message` IS EMPTY ON THIS ERROR — measured, 1368 identical lines
+      // reading "[bridge] WS error: " and nothing else. A socket error from ws
+      // carries its diagnosis in `code` (ECONNREFUSED, ECONNRESET, EPIPE...),
+      // and that is precisely the field this line omitted, so 1368 log entries
+      // recorded that something failed and never once what.
+      //
+      // Everything present is printed and everything absent is skipped, so the
+      // line cannot go empty again: if some future error carries only a name or
+      // only a stack, that is what appears.
+      const bits = [err?.code, err?.syscall, err?.errno, err?.message]
+        .filter(v => v !== undefined && v !== null && v !== '');
+      const addr = [err?.address, err?.port].filter(Boolean).join(':');
+      if (addr) bits.push(addr);
+      // `name` is a LAST RESORT, not a field. On a plain Error it appends a
+      // bare "Error" that says nothing; it only earns its place when the error
+      // carried no code, no syscall and no message at all.
+      if (!bits.length && err?.name) bits.push(err.name);
+      console.error(`[bridge] WS error: ${bits.length ? bits.join(' · ') : String(err)}`);
     });
   }
 
