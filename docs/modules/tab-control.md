@@ -1,7 +1,7 @@
 ---
 module: tab-control
 source: public/plugins/alarm/tab-control.html
-source_hash: df336a85b350acdef9b1de2a0698b46b1e3c5d98dbeccbc6cdf3d15c9fd5e8ca
+source_hash: 4d1c1b05bf3670aaa773ef6b0ee87b0b6e594ce79c8324a9e2af4bb62c8da5fe
 updated: 2026-08-08
 ---
 
@@ -300,6 +300,50 @@ So the caption keeps its `text-warning` qualifier until services expose the
 operation (xsession #59/#61). **The rail is built so that when it lands, the
 button's second half drops in with no re-layout** — same button, same position,
 the status block already sized for a running transfer.
+
+## Link freshness banner — above the sub-tabs, not inside one
+
+Renders `pac_host_status.link`, served by `src/alarm-host.js` (`docs/modules/alarm-host.md`).
+
+**It sits above the sub-tab bar deliberately.** A stale bridge link makes the unit
+list, the charge counter and the camera panel *equally* untrustworthy, so a
+warning inside one pane would be invisible from the other five.
+
+| served | rendered |
+|---|---|
+| `fresh: true` | **nothing.** There is nothing to say about a link that works |
+| `fresh: false` | `alert-warning`: "Bridge link stale. \<label\> — nothing on this page has been refreshed since." |
+| `fresh: null` | quieter `bg-base-200` panel: "Bridge link unverified. \<why\>" |
+
+**Unknown is not stale, and the two must never collapse into one.** `null` means
+no state body has arrived yet, or the tick clock is off and silence cannot be
+judged. Rendering that as a stale warning is a false alarm, and a false alarm
+teaches the reader to ignore the true one.
+
+Every string comes from the server — `label` and `why` are rendered with `x-text`
+and nothing is built, compared or timed here. `grep -c "setInterval\|setTimeout\|
+Date.now()"` on this file returns **0**.
+
+### Verified 2026-08-13, genuinely stale rather than injected
+
+`_onState` was made deaf after one body so the link really went stale, then all
+four combinations were captured:
+
+```
+1600x1000 light   "last state body 36s ago"
+1600x1000 dark    "last state body 44s ago"
+1280x800  dark    "last state body 50s ago"
+1280x800  light   "last state body 1m ago"
+```
+
+The age advancing across the run *is* the evidence that the server's transition
+pushes reach the browser — the page holds no clock of its own. Layout checks at
+1280x800: banner bottom 92px (on screen), `.card-body` not cropped, card not off
+screen. After reverting the deafness: `fresh: true`, both banners `display: none`.
+
+An earlier attempt injected the stale state from the console instead, and the live
+10 s push overwrote it between tool calls every time — recorded because it looks
+like a rendering bug and is not one.
 
 ## Invariants
 
