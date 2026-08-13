@@ -16,7 +16,25 @@ socket watchdog (`6553528`) is correct and proven to fire, and the roster is
 populated now — but a bridge restart at the same moment fits the log equally
 well. Do not record it as proven.
 
-**Third: `npm run check` is RED.** 9 of 10; `node_api` fails for `B92`/`B93`.
+**Third, and this is the actual cause of the frozen page — `tick` IS ARRIVING
+EVERY 10 SECONDS AND NODE-DASH IGNORES IT.**
+
+```
+grep -rn "'tick'\|\"tick\"" src/     ->  NO MATCHES
+```
+
+Device ships a `tick` on `/events` at least every 10 s specifically so a consumer
+can refresh time-derived fields on a silent mesh (their `41a2e6c`). Measured
+tonight: 5 ticks in 45 s. **Nothing in `src/` reads it.** `_onDashLive` only emits
+`change` when the units payload differs (`_statusesEqual`, `alarm-host.js:249`),
+and the garage beats once per 900 s — so between beats nothing re-pushes and
+every age on the page is frozen by design. Peter, measured: before refresh
+`29m ago`, after `14m ago`.
+
+The watchdog in `6553528` was necessary but it is NOT this. Do not read it as the
+fix for the frozen page.
+
+**Fourth: `npm run check` is RED.** 9 of 10; `node_api` fails for `B92`/`B93`.
 
 ---
 
@@ -155,6 +173,48 @@ threshold 0.0, cooldown 60), and on the OMNI `color=blue`, `is_primary=true`,
 `{lat:null,lon:null}` and did not land. **I did not verify why**, and that matters
 for whoever runs this next. The parked task `radar-home-position-ssot` ("home
 position erased") is very likely an EARLIER run of this same test.
+
+### BUG - `tick` is ignored, and this is why the page is frozen — DO THIS FIRST
+
+**The single highest-value item in this document.** Everything else about the
+alarm page is downstream of it.
+
+```
+grep -rn "'tick'\|\"tick\"" src/     ->  NO MATCHES
+```
+
+Verified tonight, in this order, so the next session does not repeat it:
+
+1. the socket is healthy — no stall since 17:49:13, ~57 min clean
+2. the feed is fresh — `/plugin/dash/live` frames carry `units` (array of 2) with
+   `heardAt: 2026-08-13T19:14:22.993Z`
+3. `_units` is populated and `_mapUnit` **does** set `num` (`alarm-host.js:187`),
+   so `unitNums()` is not the problem once the roster is filled
+4. `/events` delivers `tick` — 5 in 45 s
+5. **nothing consumes it**
+
+The mechanism that IS wired — `_onDashLive` → `if (changed) events.emit('change')`
+→ `alarm-ws.js:38` `for (const num of unitNums()) hintNodeStatus(num)` — fires
+**only when the units payload differs**. On a 900 s beat that is once every 15
+minutes. Between beats, `contact.overdueBy`, `contact.missed`, `dueAt` and every
+"N ago" are stale, and device REBUILDS those on each push precisely so a consumer
+gets them right within 10 s.
+
+**The fix, in device's own words (`tick-contract-confirm`):** *"The body is
+REBUILT on every push, never a cached packet re-sent … Re-render on message and
+you are right within 10 s, with no clock of your own."* So: handle `tick` in
+`alarm-host.js`'s `/events` handler and re-hint `node_status` for the roster —
+NOT a timer, the tick IS the event. Domain 1, small.
+
+**Two constraints from device, both confirmed to them and both easy to break:**
+`tick` MUST NOT be counted as a reception (it would inflate `obs_observation`
+and the Snapshot "heard" figures — an inflated count does not look wrong, it
+looks like better coverage), and 10 s MUST NOT be hard-coded — read `feedTickMs`
+from `curl /health`.
+
+**I did not verify** whether `node_status_update` currently reaches the browser
+for `2364420971`. That measurement was started three times and stopped each time.
+It is the one reading that would confirm the above end-to-end.
 
 ### BUG - the browser still runs six timers, and the page is still in breach
 
