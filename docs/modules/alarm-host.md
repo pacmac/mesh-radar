@@ -1,8 +1,8 @@
 ---
 module: alarm-host
 source: src/alarm-host.js
-source_hash: 7841a932be55cd523b0b4c9620026e9e51b20ea0e07f25a224e24c53f1a7eeed
-updated: 2026-08-12
+source_hash: b194458ae9df82a66dd5ceb036c3932e357ce7a790de56123f7f8d459c25b92f
+updated: 2026-08-13
 ---
 
 # Module: alarm-host
@@ -303,12 +303,58 @@ plugins then deleted seven GET routes on the same rule at 07:02Z. Four were ones
 this file polled, and node-dash retried `/tx` every five seconds until it was cut
 over.
 
-### Two sockets
+### An EVENT STREAM is not a STATE FEED — 2026-08-13, device
+
+The rule, in device's words on `[events-is-not-a-state-feed]`:
+
+> **Use `/events` to learn that something HAPPENED; use a feed to learn what is
+> TRUE. Only the second kind rebuilds.**
+
+On a feed the body is a *function*, re-invoked on every push, so the whole body is
+recomputed from current state and current time. `/events` forwards each event
+verbatim and has no body to rebuild — which is why a `tick` there is 47 bytes and
+carries no state. That is correct, not a deficiency:
 
 ```
-ws /plugin/dash/live   { at, bridge, units[], counters }   pushed on bridge events
-ws /events             { type, at, unit, … }              device's own stream
+{"type":"tick","at":"2026-08-13T19:48:38.443Z"}
 ```
+
+This module was built against the opposite assumption. It held two sockets and
+took everything else as one-shot GETs at connect, so every value that only lives
+in a rebuilt body — `contact.overdueBy`, `contact.missed`, `dueAt`, `measured.*`,
+`servedAt` — was frozen at the moment the socket opened.
+
+**One asymmetry that makes the state feed mandatory rather than a convenience**
+(device, same item): `overdue` fires as an event **once per lapse**, on purpose —
+*"six hours of silence is one event, not 360"*. The event stream gives a single
+edge and never says it got worse. The magnitude exists only in the rebuilt
+`contact` block. "Silent for 3 beats and counting" cannot be derived from events.
+
+### Four sockets
+
+Measured 2026-08-13 20:11Z, each by opening it and diffing consecutive frames.
+
+```
+ws /health             { ok, startedAt, uptimeMs, units, heard, schemaHash,
+                         feedTickMs, servedAt }                        216 B
+ws /state              { "!id": {schedule, comms, link, traffic, aim,
+                         contact, measured}, …, servedAt }            3611 B
+ws /events             { type, at, unit, … }          device's own event stream
+ws /plugin/dash/live   { at, bridge, units[], counters }        plugins' view model
+```
+
+`/state` is **one socket for every unit**, keyed by `!hex`, not one per unit.
+Across three frames on a quiet mesh it moved `link.heardAt`, `link.rssi`,
+`contact.dueAt`, `measured.beat.meanMs`, `measured.beat.contacts` and `servedAt`.
+
+`feedTickMs` arrives **on the `/health` body**, so the watchdog threshold is read
+from the wire and never hard-coded. `null` means the tick clock is OFF — a real
+state, and one that must not be defaulted to 10000, because that would claim a
+guarantee that is not running. See `docs/modules/alarm-socket-watchdog.md`.
+
+`servedAt` is on CORE feed bodies only (`/health`, `/state`, `/stats`) and
+deliberately **not** on plugin bodies or on `/events` — injecting a field into a
+plugin's payload would be a contract change in their repo. Take it from `/state`.
 
 | event | carries | replaces |
 |---|---|---|
@@ -323,12 +369,48 @@ parameters, already through device's decoder once — reading a field off it is 
 decoding. A plugin in the middle of its own feed is a second surface that can
 only drift.
 
-### The only GETs left
+### The only GET left, and it is not ours to fix
 
-`GET /health`, `GET /state/<!id>`, `GET /dash/sections` — one-shot snapshots
-taken at connect, re-taken on every reconnect because a reconnect means events
-were missed and a stale snapshot under a live socket is the worst of both. They
-answer *what is true now* once; the socket keeps it true.
+`GET /dash/sections`. It is the one route on the bridge that **refuses a socket
+upgrade** — measured, `ws /dash/sections` → `404`, while `/health`, `/state`,
+`/stats`, `/events` and `/plugin/dash/live` all open. It is plugins' route; raised
+with them, not worked around here.
+
+`GET /health` and `GET /state/<!id>` are **gone**. Both were one-shot snapshots
+taken at connect, and both are sockets that rebuild every `feedTickMs`. Peter,
+2026-08-13: *"GET and polling is forbidden. You subscribe to the feed, it is real
+time, it is not polled, it is a LIVE STREAM."*
+
+**A packet is a packet.** There is no re-broadcast handling in this module and
+there must never be. Nothing on these feeds is a delta, a partial or a replay —
+every push is a complete body, and the only correct response to receiving one is
+to take it and use it, exactly as with any other packet. Peter, 2026-08-13:
+*"they should be treated just like every other packet received. They are NOT
+partial packets."*
+
+That retires `_statusesEqual`. Comparing each body against the last and dropping
+it when equal is the re-broadcast special-casing this rule forbids, and it is why
+the page went stale: on the dash feed the only field that moves between pushes is
+`at`, so the gate answered "nothing changed" every single time, forever.
+
+### The age is OURS, and no feed can carry it
+
+Distinguish two things that were conflated for a day:
+
+| | moves when | whose job |
+|---|---|---|
+| `heardAt` — an **instant** | the mesh speaks | the bridge's; it is current on every push |
+| `"29 minutes ago"` — an **age** | the wall clock advances | **node-dash's** |
+
+`heardAt` not moving while a unit is silent is *correct*. The rendered string
+still has to change, and nothing the bridge sends can make it — the thing that
+changed is on this side of the wire. device, `[events-is-not-a-state-feed]`:
+*"The rendered age was always yours."*
+
+With `/state` pushing every `feedTickMs`, a rendered age is at most one tick
+stale, which bounds it at ~10 s against a 900 s beat. Where a tighter bound is
+needed the mechanism is `src/served-time.js` — a push scheduled at the computed
+transition of the rendered string, never a comparison on a cadence.
 
 ### A socket that dies without a FIN — the watchdog
 
@@ -452,10 +534,27 @@ conflation is the whole defect this file was written after.
 
 ## State
 
-Same shape as `pac-host.js`: last poll status, unit roster, per-unit queue ledger,
-align view-model, warm obs cache. All read-only views of the last poll — a caller
-on a request path (`node-status`'s reachability section, which is **synchronous**)
-never fetches and cannot block.
+Last pushed status, unit roster, per-unit queue ledger, align view-model, warm obs
+cache. All read-only views of **the last packet received** — a caller on a request
+path (`node-status`'s reachability section, which is **synchronous**) never fetches
+and cannot block.
+
+Held from the feeds, each named with the socket that fills it:
+
+| state | filled by | note |
+|---|---|---|
+| `_declared`, `_heardIds`, `_schemaHash` | `ws /health` | was a one-shot GET |
+| `_feedTickMs` | `ws /health` | **read, never hard-coded**; `null` = tick clock off |
+| `_state` (`!id` → full unit body) | `ws /state` | was a one-shot GET **per unit** |
+| `_servedAt` | `ws /state` | proves the bridge is still BUILDING bodies |
+| `_units`, `_counters` | `ws /plugin/dash/live` | plugins' view model |
+| `_obsFrames`, `_heard`, `_tx` | `ws /events` | what HAPPENED |
+| `_sections` | `GET /dash/sections` | the one route that refuses an upgrade |
+
+**`_contact` is deleted.** It was written by the `overdue` and `returned` events
+and read by nothing (ledger `B106`), while `_mapUnit` took the same fields from a
+connect-time snapshot. Both halves were wrong: the live values ride `/state`, and
+the event edge cannot carry the magnitude anyway.
 
 ## Events emitted
 

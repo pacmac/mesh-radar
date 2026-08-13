@@ -1,7 +1,7 @@
 ---
 module: alarm-socket-watchdog
 source: src/alarm-host.js
-source_hash: 7841a932be55cd523b0b4c9620026e9e51b20ea0e07f25a224e24c53f1a7eeed
+source_hash: b194458ae9df82a66dd5ceb036c3932e357ce7a790de56123f7f8d459c25b92f
 updated: 2026-08-13
 ---
 
@@ -67,25 +67,55 @@ Device, `tick-contract-confirm`, live since 18:22 BST (their commit `41a2e6c`):
 | socket attached, peer stopped publishing | **no** — the WS layer answers pings happily | **yes** |
 
 A pong proves the *connection* is alive. It says nothing about whether data is
-flowing. `/plugin/dash/live` is a **plugin** feed and is not covered by device's
-core-feed tick guarantee, so the pong is what protects that one. Implementing
-only one of the two would leave a real failure mode uncovered.
+flowing. Implementing only one of the two would leave a real failure mode
+uncovered.
 
-## Derived thresholds — not chosen
+**Corrected 2026-08-13:** this document previously said *"`/plugin/dash/live` is
+a plugin feed and is not covered by device's core-feed tick guarantee, so the
+pong is what protects that one."* That is measurably wrong. A 45 s simultaneous
+tap of both feeds put a dash frame at the same millisecond as every `/events`
+tick — dash `.449/.450/.450/.451` against events `.449/.450/.450/.450` — with no
+mesh traffic involved. The feed does tick; it simply does not label the frame.
+Ledger `B111`; reported to plugins as `[dash-live-frames-untyped]`.
+
+## Derived thresholds — READ, not chosen, and not constants
 
 ```
-PING_MS     = 10_000   one probe per guaranteed tick interval
-SILENCE_MS  = 30_000   3 x the tick interval
+_feedTickMs   null until the /health FEED delivers it     — never a literal
+MISSED_TICKS  3
+pingMs()      _feedTickMs ?? RECONNECT_MS
+silenceMs()   _feedTickMs == null ? null : _feedTickMs * MISSED_TICKS
 ```
 
-`SILENCE_MS` is **3×** the bridge's declared tick, per device's instruction to
-use a multiple rather than the value itself:
+`feedTickMs` is device's `--feed-tick-ms` **operator setting**, published on the
+`/health` body. A literal here goes stale the moment Peter changes it, so it is
+read from the wire on every `/health` push and logged when it moves.
+
+**`null` is a real answer and is never defaulted to a number.** plugins: *"null
+means the clock is OFF, which is a real state and must not be defaulted to 10000:
+that would claim a guarantee that is not running."* While null, `silenceMs()`
+returns null, the silence check is **inert**, and only ping/pong is load-bearing.
+Judging silence against a guessed interval would report false stalls on a bridge
+behaving exactly as configured.
+
+Before the value is known the probe cadence falls back to `RECONNECT_MS` — an
+existing constant in the module, reused rather than invented. While the tick
+contract is unknown, bounding discovery of a dead socket to the same interval we
+would take to rebuild one is the only ratio available that is not a guess.
+
+The watchdog **re-arms with `setTimeout` instead of holding a `setInterval`**,
+because `feedTickMs` arrives after the socket is already up; a captured interval
+would keep probing at the bootstrap cadence for the life of the connection.
+
+`MISSED_TICKS` is **3**, per device's instruction to use a multiple rather than
+the value itself — one tick is always in flight, so a threshold of exactly
+`feedTickMs` reads real gaps of 10000 and 10001 ms as failures:
 
 - 1× would fire on ordinary scheduling jitter;
 - 2× would fire on a GC pause or a slow event-loop turn;
-- 3× at 30 s is beyond any plausible pause, and bounds staleness from a socket
-  fault at ~30 s. Against a 900 s beat that is 3% of one cycle, versus the 30+
-  minutes actually observed.
+- 3× is beyond any plausible pause, and at the currently served 10 s bounds
+  staleness from a socket fault at ~30 s. Against a 900 s beat that is 3% of one
+  cycle, versus the 30+ minutes actually observed.
 
 Any frame resets the clock, `tick` included — a tick is proof of attachment,
 which is its entire purpose. It is **not** counted as a reception anywhere

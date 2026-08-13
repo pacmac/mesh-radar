@@ -52,18 +52,32 @@ const WS_URL = (process.env.ALARM_HOST_URL || 'http://127.0.0.1:8790')
   .replace(/^http/, 'ws');
 const RECONNECT_MS = 5000;
 
-// DERIVED FROM THE BRIDGE'S OWN CONTRACT, not chosen. Device guarantees a `tick`
-// on /events and every core feed at least every 10 s even on a completely silent
-// mesh (their commit 41a2e6c, xsession [tick-contract-confirm]). The interval is
-// their `--feed-tick-ms`, default 10000 — a SETTING, so this must never be used
-// as a bare threshold.
-const FEED_TICK_MS = 10_000;   // their declared default; asked them to expose it
-const PING_MS      = FEED_TICK_MS;       // one probe per guaranteed tick
-// 3x, per device's instruction to use a multiple: 1x fires on scheduling jitter,
-// 2x on a GC pause, 3x is beyond any plausible pause and still bounds staleness
-// at ~30 s — against a 900 s beat that is 3% of a cycle, versus the 30+ minutes
-// actually observed on 2026-08-13.
-const SILENCE_MS   = FEED_TICK_MS * 3;
+// READ FROM THE WIRE, NEVER CHOSEN AND NEVER HARD-CODED. `feedTickMs` is on the
+// /health body — it is device's `--feed-tick-ms` operator setting, so a literal
+// here would go stale the moment Peter changes it. Both peers warned about this
+// independently (device #13, plugins #36).
+//
+// null means one of two things, and they are handled identically on purpose:
+// not learnt yet, or THE TICK CLOCK IS OFF. plugins: "null means the clock is OFF,
+// which is a real state and must not be defaulted to 10000: that would claim a
+// guarantee that is not running." While null, the silence check is INERT and only
+// ping/pong is load-bearing.
+let _feedTickMs = null;
+// 3 missed ticks, per device's instruction to use a MULTIPLE and never the bare
+// value: one tick is always in flight, so a threshold of exactly feedTickMs reads
+// real gaps of 10000 and 10001 ms as failures. 1x fires on scheduling jitter, 2x
+// on a GC pause, 3x is beyond any plausible pause and still bounds staleness at
+// three ticks — against the garage's 900 s beat that is 3% of a cycle, versus the
+// 30+ minutes actually observed on 2026-08-13.
+const MISSED_TICKS = 3;
+/** Probe cadence: one per guaranteed tick once we know it. Before we do, reuse
+ *  RECONNECT_MS rather than invent a number — while the tick contract is unknown,
+ *  bounding discovery of a dead socket to the same interval we would take to
+ *  rebuild one is the only ratio available that is not a guess. */
+function pingMs()    { return _feedTickMs ?? RECONNECT_MS; }
+/** null while the tick clock is unknown or off — the caller must then not judge
+ *  silence at all. */
+function silenceMs() { return _feedTickMs == null ? null : _feedTickMs * MISSED_TICKS; }
 export const events = new EventEmitter();
 
 let _lastStatus = null; // null until the first push arrives
@@ -73,9 +87,11 @@ let _queues = {};       // unit num -> queue ledger array
 let _obs = {};          // unit !hex id -> observation rows (oldest-first)
 let _tx = null;         // last send per unit, from the `send` event
 let _counters = null;   // bridge counters, from /plugin/dash/live
-let _declared = [];     // unit ids the bridge DECLARES — one-shot GET /health
-let _state = {};        // !id -> the one-shot GET /state snapshot, kept current by events
-let _contact = {};      // !id -> overdue/dueAt/missed, from overdue + returned events
+let _declared = [];     // unit ids the bridge DECLARES — from the /health FEED
+let _heardIds = [];     // unit ids the bridge has HEARD — from the /health FEED
+let _state = {};        // !id -> the full unit body, REBUILT on every /state push
+let _servedAt = null;   // /state's own serve instant — proof the bridge is still
+                        // BUILDING bodies, not merely holding a socket open
 let _obsFrames = {};    // !id -> { at, json, decodeError, portnum } from beat/alarm
 let _heard = {};        // !id -> { frames, decoded, lastFrameAt, ports } counted off the stream
 let _alignModel = null; // last pushed align view-model, null until first poll
@@ -244,16 +260,19 @@ function _mapUnit(id, state, present, tx) {
   };
 }
 
-// -- polling ----------------------------------------------------------------
-
-function _statusesEqual(a, b) {
-  return a.status === b.status
-    && a.available === b.available
-    && JSON.stringify(a.sections) === JSON.stringify(b.sections)
-    && JSON.stringify(a.units) === JSON.stringify(b.units);
-}
-
 // -- WS-fed state; the pollers that used to fill these are gone ------------
+//
+// THERE IS NO CHANGE-GATE HERE AND THERE MUST NEVER BE ONE AGAIN.
+//
+// `_statusesEqual` used to compare each incoming body against the last and drop
+// it when they matched. That is re-broadcast special-casing, and Peter's rule is
+// that there is no such thing to special-case: "they should be treated just like
+// every other packet received. They are NOT partial packets."
+//
+// It is also precisely why the page froze. On /plugin/dash/live the only field
+// that moves between pushes is `at`, which the comparison did not even look at —
+// so it answered "nothing changed" every 10 s, forever, and nothing reached the
+// browser between 900 s beats. A packet arrives; we take it and we push. Always.
 
 /** Ready-to-send WS message describing every commandable unit's queue. */
 export function queuesMessage() {
@@ -325,12 +344,56 @@ function _onDashLive(msg) {
     next.push(_mapUnit(id, _mergeState(_state[id], live), heard.has(id), _tx?.units?.[id] ?? null));
   }
   _units = next;
-  const result = { available: msg?.bridge?.ok !== false, status: msg?.bridge?.ok === false ? 'degraded' : 'ready',
-                   startedAt: _isoToMs(msg?.bridge?.startedAt), lastCheckedMs: Date.now(),
-                   error: null, units: _units, sections: _sections };
-  const changed = !_lastStatus || !_statusesEqual(_lastStatus, result);
-  _lastStatus = result;
-  if (changed) events.emit('change');
+  _lastStatus = { available: msg?.bridge?.ok !== false, status: msg?.bridge?.ok === false ? 'degraded' : 'ready',
+                  startedAt: _isoToMs(msg?.bridge?.startedAt), lastCheckedMs: Date.now(),
+                  servedAt: _servedAt, error: null, units: _units, sections: _sections };
+  events.emit('change');
+}
+
+/** device's CORE state feed: every unit keyed by `!hex`, plus the bridge's own
+ *  `servedAt`. ONE socket for the whole roster, not one per unit.
+ *
+ *  THIS IS THE FEED THE PAGE'S TIME-SENSITIVE FACTS COME FROM, and it was being
+ *  read as a one-shot GET at connect until 2026-08-13 — so `contact.overdueBy`,
+ *  `contact.missed`, `dueAt` and every `measured.*` figure were frozen at the
+ *  instant the socket opened. device, [events-is-not-a-state-feed]: "use /events
+ *  to learn that something HAPPENED; use a feed to learn what is TRUE. Only the
+ *  second kind rebuilds." The body is a function, re-invoked per push, so
+ *  `contact` is computed from the current clock every time.
+ *
+ *  The magnitude of a lapse EXISTS ONLY HERE. `overdue` fires as an event once
+ *  per lapse by design — device: "six hours of silence is one event, not 360" —
+ *  so the event stream gives one edge and never says it got worse. "Silent for
+ *  three beats and counting" is unavailable from events at any price. */
+function _onState(msg) {
+  if (!msg || typeof msg !== 'object') return;
+  _servedAt = _isoToMs(msg.servedAt);
+  for (const [id, body] of Object.entries(msg)) {
+    if (id === 'servedAt') continue;
+    _state[id] = body;
+  }
+  // Re-map from the refreshed bodies so `unitForNum`/`connectMessage` carry the
+  // new contact and measured figures rather than the ones mapped at connect.
+  _units = _units.map(u => _mapUnit(u.id, _state[u.id] ?? null, u.present, _tx?.units?.[u.id] ?? null));
+  if (_lastStatus) _lastStatus = { ..._lastStatus, units: _units, servedAt: _servedAt };
+  events.emit('change');
+}
+
+/** device's CORE health feed. Carries the DECLARED roster, what has been HEARD,
+ *  the schema hash, and `feedTickMs` — the one number this module must never
+ *  invent. Was a one-shot GET until 2026-08-13. */
+function _onHealth(msg) {
+  if (!msg || typeof msg !== 'object') return;
+  _declared = Array.isArray(msg.units) ? msg.units : _declared;
+  _heardIds = Array.isArray(msg.heard) ? msg.heard : _heardIds;
+  if (msg.feedTickMs !== _feedTickMs) {
+    log.info('alarm-host', `feedTickMs ${_feedTickMs ?? '(unknown)'} -> ${msg.feedTickMs ?? 'null (tick clock OFF)'}`);
+    _feedTickMs = msg.feedTickMs ?? null;
+  }
+  if (msg.schemaHash && msg.schemaHash !== _schemaHash) {
+    log.info('alarm-host', `bridge schemaHash ${_schemaHash ?? '(none)'} -> ${msg.schemaHash}`);
+    _schemaHash = msg.schemaHash;
+  }
 }
 
 /** Fold the live half of a unit into its snapshot. */
@@ -387,14 +450,17 @@ function _onBridgeEvent(ev) {
                           at: ev.at ?? null, text: ev.text ?? null };
       events.emit('change');
       break;
-    // Contact state — replaces re-reading /state for overdue/missed.
+    // Contact EDGES. The values are NOT taken from here: an `overdue` event fires
+    // ONCE per lapse by design (device: "six hours of silence is one event, not
+    // 360"), so it marks the transition and can never say the lapse got worse.
+    // The magnitude — overdueBy, missed, dueAt — is rebuilt on every /state push
+    // and is read from there.
+    //
+    // These two cases previously wrote a `_contact` map that NOTHING READ (ledger
+    // B106) while `_mapUnit` took the same fields from a connect-time snapshot.
+    // Both halves were wrong. The edge is still news, so it still pushes.
     case 'overdue':
-      _contact[unit] = { overdue: true, dueAt: ev.dueAt ?? null,
-                         overdueBy: ev.overdueBy ?? null, missed: ev.missed ?? null };
-      events.emit('change');
-      break;
     case 'returned':
-      _contact[unit] = { overdue: false, dueAt: null, overdueBy: 0, missed: ev.missed ?? null };
       events.emit('change');
       break;
     case 'witness':
@@ -442,16 +508,24 @@ function _socket(path, onMessage, onOpen) {
     const sawMessage = () => { lastMsgAt = Date.now(); awaitingPong = false; };
     const sawPong    = () => { awaitingPong = false; };
 
-    watchdog = setInterval(() => {
+    // RE-ARMED EACH TIME rather than a fixed setInterval, because the period is
+    // read from the wire: feedTickMs arrives on the /health feed AFTER this
+    // socket is already up, and a captured interval would keep probing at the
+    // bootstrap cadence for the life of the connection.
+    const probe = () => {
       const silentMs = Date.now() - lastMsgAt;
+      const limit = silenceMs();
       // BOTH checks, because they catch different faults: a pong proves the
       // CONNECTION is alive but says nothing about data flowing, and the
       // silence check catches an attached socket whose peer stopped publishing.
-      // /plugin/dash/live is a plugin feed and carries no core `tick`, so the
-      // pong is what protects that one.
-      if (silentMs > SILENCE_MS || awaitingPong) {
+      // `limit` is null while the tick clock is unknown or OFF — then silence
+      // proves nothing and only the pong is load-bearing. Judging silence
+      // against a guessed interval would report false stalls on a bridge that
+      // is behaving exactly as configured.
+      if ((limit != null && silentMs > limit) || awaitingPong) {
         log.warn('alarm-host',
           `${path} STALLED — no traffic for ${Math.round(silentMs / 1000)}s` +
+          `${limit != null ? ` (limit ${Math.round(limit / 1000)}s = ${MISSED_TICKS} ticks)` : ' (no tick clock)'}` +
           `${awaitingPong ? ' and no pong' : ''}; terminating to force a reconnect`);
         awaitingPong = false;
         try { ws.terminate(); } catch { /* already gone */ }
@@ -459,7 +533,9 @@ function _socket(path, onMessage, onOpen) {
       }
       awaitingPong = true;
       try { ws.ping(); } catch { /* the close handler will pick it up */ }
-    }, PING_MS);
+      watchdog = setTimeout(probe, pingMs());
+    };
+    watchdog = setTimeout(probe, pingMs());
 
     ws.on('pong', sawPong);
 
@@ -474,7 +550,7 @@ function _socket(path, onMessage, onOpen) {
       catch (e) { log.warn('alarm-host', `${path} handler failed: ${e.message}`); }
     });
     ws.on('close', () => {
-      clearInterval(watchdog); watchdog = null;   // or every reconnect adds another
+      clearTimeout(watchdog); watchdog = null;   // or every reconnect adds another
       if (closed) return;
       log.warn('alarm-host', `${path} closed — reconnecting in ${RECONNECT_MS}ms`);
       timer = setTimeout(connect, RECONNECT_MS);
@@ -488,46 +564,29 @@ function _socket(path, onMessage, onOpen) {
   return () => {
     closed = true;
     clearTimeout(timer);
-    clearInterval(watchdog);   // a stopped socket must not keep probing
+    clearTimeout(watchdog);   // a stopped socket must not keep probing
     try { ws?.close(); } catch {}
   };
 }
 
 let _closers = [];
 
-/** THE ONLY GETs LEFT, and every one is a one-shot snapshot taken on connect —
- *  never on a timer, never to "keep up". They answer what is true at this
- *  instant once; the socket keeps it true afterwards.
+/** THE ONLY GET LEFT, and it is the one route on the bridge that REFUSES a socket
+ *  upgrade — measured 2026-08-13: `ws /dash/sections` -> 404, while /health,
+ *  /state, /stats, /events and /plugin/dash/live all open.
  *
- *  Re-run on every RECONNECT, because a reconnect means events were missed and
- *  a stale snapshot with a live socket over it is the worst of both.
+ *  It is plugins' route. Raised with them as [sections-refuses-socket-upgrade];
+ *  either it becomes a feed or they confirm it is static by design, and this
+ *  comment records their answer. It is NOT worked around here, and it must never
+ *  acquire a timer to "refresh" it.
  *
- *    GET /health         which units the bridge DECLARES vs which it has HEARD.
- *                        `present` lives here and nowhere else — a declared unit
- *                        that has gone quiet must still render, or the roster
- *                        shrinks instead of showing a unit in trouble.
- *    GET /state/<!id>    the rich per-unit snapshot: schedule, contact.basis,
- *                        aim.nextWakeAt, measured.*. Not on the stream, and
- *                        genuinely a question rather than a feed.
- *    GET /dash/sections  which panels can be filled and who owns each gap.
- *                        Static: it changes when a peer ships something. */
-async function _primeSnapshot() {
-  try {
-    const health = await _call('/health');
-    _declared = Array.isArray(health?.units) ? health.units : [];
-    if (health?.schemaHash && health.schemaHash !== _schemaHash) {
-      log.info('alarm-host', `bridge schemaHash ${_schemaHash ?? '(none)'} -> ${health.schemaHash}`);
-      _schemaHash = health.schemaHash;
-    }
-  } catch (e) { log.warn('alarm-host', `health snapshot failed: ${e.message}`); }
-
+ *  Re-run on every RECONNECT, because a reconnect means we were detached and the
+ *  gap map may have moved while we were not listening.
+ *
+ *    GET /dash/sections  which panels can be filled and who owns each gap. */
+async function _primeSections() {
   try { _sections = (await _call('/dash/sections'))?.sections ?? null; }
   catch (e) { log.warn('alarm-host', `sections snapshot failed: ${e.message}`); _sections = null; }
-
-  for (const id of _declared) {
-    try { _state[id] = await _call(`/state/${encodeURIComponent(id)}`); }
-    catch (e) { log.warn('alarm-host', `state snapshot failed for ${id}: ${e.message}`); }
-  }
   events.emit('change');
 }
 
@@ -535,23 +594,47 @@ async function _primeSnapshot() {
 export function start() {
   if (_closers.length) return;
 
+  // CORE health: the DECLARED roster, what has been HEARD, schemaHash, and
+  // feedTickMs. `present` is declared-vs-heard and lives here and nowhere else —
+  // a declared unit that has gone quiet must still render, or the roster shrinks
+  // instead of showing a unit in trouble.
+  _closers.push(_socket('/health', _onHealth));
+
+  // CORE state, ONE socket for every unit. The rebuilt bodies: schedule,
+  // contact.*, aim.nextWakeAt, measured.*, and servedAt. This is the feed that
+  // answers "when was it last heard, and is its beat on schedule" — the
+  // questions Peter has been having to ask an agent because the page could not
+  // answer them.
+  _closers.push(_socket('/state', _onState));
+
   // plugins' aggregated view model: bridge, units, counters. Pushed on every
   // bridge event, so `heardAt`/`rssi`/`beat` are current without asking.
   _closers.push(_socket('/plugin/dash/live', _onDashLive));
 
-  // device's own stream — witness / beat / alarm / send / overdue / returned.
-  // This is where the runtime params and the TX radio come from now: /obs and
+  // device's own EVENT stream — witness / beat / alarm / send / overdue /
+  // returned. It says what HAPPENED; it is not a state feed and must never be
+  // read as one. The runtime params and the TX radio come from here: /obs and
   // /tx were DELETED rather than moved, because both were re-serving what these
   // events already carry, and a plugin in the middle is a second surface that
   // can only drift.
-  _closers.push(_socket('/events', _onBridgeEvent, _primeSnapshot));
+  _closers.push(_socket('/events', _onBridgeEvent, _primeSections));
 }
 
-/** Close both sockets and clear cached state (tests, shutdown). */
+/** Close every socket and clear cached state (tests, shutdown).
+ *
+ *  THIS FUNCTION USED TO THROW. Its first statement assigned to `_obsTable`, a
+ *  variable declared nowhere in this module — and an ES module is strict mode, so
+ *  that is a ReferenceError, not an implicit global. Every line below it was
+ *  unreachable. It survived because nothing in src/ calls stop() today (ledger
+ *  B105); it would have fired the first time a test or a shutdown path did.
+ *
+ *  The intent was plainly to clear the obs table, which is held in `_obsFrames`
+ *  and `_heard` — so that is what it now clears. */
 export function stop() {
   for (const close of _closers) close();
   _closers = [];
-  _obsTable = null;
+  _obsFrames = {};
+  _heard = {};
   _tx = null;
   _lastStatus = null;
   _units = [];
@@ -560,6 +643,15 @@ export function stop() {
   _alignModel = null;
   _alignPrevMode = null;
   _obs = {};
+  // The feeds' own state. _feedTickMs returns to null rather than to a number:
+  // after stop() we have not read it from the wire, and pretending otherwise
+  // would arm a silence threshold against a value nobody served.
+  _state = {};
+  _servedAt = null;
+  _declared = [];
+  _heardIds = [];
+  _feedTickMs = null;
+  _schemaHash = null;
 }
 
 export function isAvailable() {
@@ -569,8 +661,23 @@ export function isAvailable() {
 function _status() {
   return _lastStatus ?? {
     available: false, status: 'unreachable', units: [], sections: null,
-    startedAt: null, lastCheckedMs: null, error: null,
+    startedAt: null, lastCheckedMs: null, servedAt: null, error: null,
   };
+}
+
+/** The instant the bridge last BUILT a state body, from `/state`'s own servedAt.
+ *
+ *  THIS IS THE ANSWER TO "IS WHAT I AM LOOKING AT STALE?", and it is a different
+ *  question from "is the socket open". An attached socket served by a wedged
+ *  process passes every liveness check and serves nothing — device named that
+ *  case explicitly when they shipped the field. A page that cannot say "my link
+ *  to the bridge is stale" makes a healthy device look dead.
+ *
+ *  Epoch ms, or null before the first /state push. The AGE of it is not computed
+ *  here: whoever renders it serves the string, and the browser calculates
+ *  nothing. */
+export function servedAt() {
+  return _servedAt;
 }
 
 /** Ready-to-send WS message describing the bridge's current state.
