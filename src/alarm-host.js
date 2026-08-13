@@ -21,7 +21,6 @@ import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { log } from './log.js';
 import { fmtAgo } from './format.js';
-import { dashMode } from './dash-mode.js';
 import { numToNodeId, nodeIdToNum } from './utils.js';
 
 // NOT `BRIDGE_URL` — that name is TAKEN. It is mesh-gw's bridge
@@ -95,7 +94,6 @@ let _servedAt = null;   // /state's own serve instant — proof the bridge is st
 let _obsFrames = {};    // !id -> { at, json, decodeError, portnum } from beat/alarm
 let _heard = {};        // !id -> { frames, decoded, lastFrameAt, ports } counted off the stream
 let _alignModel = null; // last pushed align view-model, null until first poll
-let _alignPrevMode = null; // dash mode saved when we forced PASV for an align session
 let _schemaHash = null; // /health's schemaHash — logged on change so contract drift is visible
 
 // -- gaps -------------------------------------------------------------------
@@ -291,32 +289,37 @@ export function obsForUnit(unitId) {
  *  GAP TODAY — the align routes have no home on the bridge and ownership is
  *  PARKED (Peter, 2026-08-12, task park-align-ownership).
  *
- *  THE PASV INTERLOCK BELOW SURVIVES REGARDLESS OF WHERE OWNERSHIP LANDS, and
- *  is kept wired rather than deleted. It is node-dash's own machinery: nothing
- *  outside this repo knows dash modes exist. It forces PASV for a session's
- *  duration so the Yagi will not auto-swing mid-burst, and restores the
- *  previous mode on stop. mt-transport flagged it as ours alone to replicate:
- *  "If the Yagi moves during a burst, the readings are silently wrong rather
- *  than obviously broken, which is the worst kind of wrong." */
+ *  THIS MODULE DOES NOT TOUCH THE DASH MODE, AND MUST NEVER TOUCH IT AGAIN.
+ *
+ *  It used to: an align session saved `dashMode.value`, forced PASV, and
+ *  restored the mode on stop. That was deleted on 2026-08-13 (ledger B112).
+ *
+ *  Peter: "PASV/ACTV etc have nothing whatsoever to do with alarm, they are
+ *  functions of the radar and the probing of the mesh to reach as far as
+ *  possible. There is NO link between that whatsoever. The ONLY common factor
+ *  is MY RADIOS (OMNI and RAK) and the rotator. They are 2 entirely different
+ *  things and there is nothing one offers to the other."
+ *
+ *  It was also the 2026-08-06 rule broken from the other end — modes use the
+ *  pointer, they must not control or gate it — and it had been unreachable
+ *  since the bridge migration, because the guard on the first line returns
+ *  while section `align` is a gap. Dead code asserting a relationship that does
+ *  not exist is worse than live wrong code: nothing will ever contradict it.
+ *
+ *  THE UNDERLYING NEED IS REAL AND IS NOT A MODE. mt-transport's point stands —
+ *  "if the Yagi moves during a burst, the readings are silently wrong rather
+ *  than obviously broken, which is the worst kind of wrong." What that calls
+ *  for is a HOLD on the beam for a stated duration, owned by the rotator, which
+ *  is shared hardware with several users. A lease with a timeout, not a mode
+ *  change, and not something a plugin reaches across the repo to do.
+ *
+ *  See docs/ALARM_TRANSPORT_BOUNDARY.md. */
 // NOT ON A TIMER. Align has no source at all today — the section is a gap and
 // ownership is parked — so there is nothing to subscribe to and nothing to
 // poll. This is kept as a pure state-transition handler so that whoever ends up
-// owning align wires it to a feed and the interlock works unchanged. It is
-// never called from a clock.
+// owning align can wire it to a feed. It is never called from a clock.
 export function applyAlignModel(next) {
   if (!_sectionOk('align')) { _alignModel = null; return; }
-
-  const wasRunning = !!_alignModel?.running;
-  const nowRunning = !!next?.running;
-  if (nowRunning && !wasRunning && _alignPrevMode == null) {
-    _alignPrevMode = dashMode.value;
-    dashMode.set(0); // force PASV — see comment above
-    log.info('alarm-host', `align session started, forced PASV (was ${_alignPrevMode})`);
-  } else if (!nowRunning && wasRunning && _alignPrevMode != null) {
-    dashMode.set(_alignPrevMode);
-    log.info('alarm-host', `align session ended, restored mode ${_alignPrevMode}`);
-    _alignPrevMode = null;
-  }
 
   const changed = JSON.stringify(next) !== JSON.stringify(_alignModel);
   _alignModel = next;
@@ -641,7 +644,6 @@ export function stop() {
   _sections = null;
   _queues = {};
   _alignModel = null;
-  _alignPrevMode = null;
   _obs = {};
   // The feeds' own state. _feedTickMs returns to null rather than to a number:
   // after stop() we have not read it from the wire, and pretending otherwise

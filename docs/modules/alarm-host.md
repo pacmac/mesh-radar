@@ -1,7 +1,7 @@
 ---
 module: alarm-host
 source: src/alarm-host.js
-source_hash: b194458ae9df82a66dd5ceb036c3932e357ce7a790de56123f7f8d459c25b92f
+source_hash: 2011870ad522d92ee76e087463b22de2704a270181cc79df587e1c696e52dd25
 updated: 2026-08-13
 ---
 
@@ -82,6 +82,42 @@ When an upstream gap closes, the entry changes on their side and the panel fills
 
 Anyone reading this expecting the alarm pages to come back whole should stop here.
 They do not, and no work in this repo makes them.
+
+## This module does not touch the dash mode — 2026-08-13
+
+**PASV / ACTV / SCAN are radar concepts. The alarm has no relationship to them.**
+
+Peter: *"PASV/ACTV etc have nothing whatsoever to do with alarm, they are
+functions of the radar and the probing of the mesh to reach as far as possible.
+There is NO link between that whatsoever. The ONLY common factor is MY RADIOS
+(OMNI and RAK) and the rotator. They are 2 entirely different things and there is
+nothing one offers to the other."*
+
+Until 2026-08-13 `applyAlignModel()` saved `dashMode.value`, forced PASV for the
+duration of an align session and restored the mode on stop. Deleted, with the
+import and the saved-mode variable (ledger `B112`).
+
+**This is not migration preparation and does not depend on one.** Peter, while it
+was being implemented: *"it makes no diff if alarms is moved to a new server or
+not, there is still no relationship between radar modes and alarm."* The
+possibility of the alarm moving out is why the coupling was noticed; it is not
+why it is being removed. If the alarm never moves, the interlock is still wrong.
+
+Two further reasons it had to go:
+
+- it is the **2026-08-06 rule broken from the plugin's end** — *modes use the
+  pointer, they must not control or gate it* (task `mode-must-not-control-aim`);
+- it had been **unreachable** since the bridge migration, because the guard on
+  the function's first line returns while section `align` is a gap. Dead code
+  asserting a relationship that does not exist is worse than live wrong code —
+  nothing will ever contradict it.
+
+**The underlying need is real and is not a mode.** mt-transport's point stands:
+*"if the Yagi moves during a burst, the readings are silently wrong rather than
+obviously broken, which is the worst kind of wrong."* What that calls for is a
+**hold on the beam for a stated duration**, owned by the rotator, which is shared
+hardware with several users including the garage alarm — a lease with a timeout,
+not a mode change, and not something a plugin reaches across the repo to perform.
 
 ## Meshtastic is these units' TRANSPORT, not their application
 

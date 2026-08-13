@@ -1,7 +1,7 @@
 ---
 module: alarm-socket-watchdog
 source: src/alarm-host.js
-source_hash: b194458ae9df82a66dd5ceb036c3932e357ce7a790de56123f7f8d459c25b92f
+source_hash: 2011870ad522d92ee76e087463b22de2704a270181cc79df587e1c696e52dd25
 updated: 2026-08-13
 ---
 
@@ -136,13 +136,18 @@ its returned teardown clears it.
   events") — only the **detection** was missing, and nothing about the recovery
   path changes here.
 - **The watchdog is cleared on teardown and on close**, or a reconnect leaves the
-  previous socket's timer running and each cycle adds another.
-- **10 s is never hard-coded as a threshold.** It appears once, as the derived
-  base, with the multiple stated beside it.
+  previous socket's timer running and each cycle adds another. It re-arms with
+  `setTimeout`, so the teardown is `clearTimeout`.
+- **10 s appears nowhere as a threshold, derived or otherwise.** The only number
+  in the file is `MISSED_TICKS = 3`; the interval itself is read from the
+  `/health` feed. A literal would be a claim about an operator setting we do not
+  own.
 
 ## State
 
-Per socket: `lastMsgAt`, `awaitingPong`, and one interval handle.
+Per socket: `lastMsgAt`, `awaitingPong`, and one timeout handle. Module-wide:
+`_feedTickMs`, learnt from the `/health` feed and shared by every socket's
+watchdog, which is why the probe re-arms rather than holding a fixed interval.
 
 ## Events emitted
 
@@ -152,9 +157,21 @@ how 38 socket closes were dismissed as noise earlier in this session.
 
 ## Test notes
 
-`tests/test_socket_watchdog.mjs` — pure, fake clock and a stub socket:
+**THIS TEST DOES NOT EXIST. Ledger `B113`.** The section below was written on
+2026-08-13 as though it did, and nothing caught that: `check_specs` validates
+frontmatter hashes, not claims in prose, and the runner has no watchdog entry
+(`npm run check:list` → no match; `find . -name "*watchdog*"` returns this
+document and nothing else). So the watchdog shipped in `6553528` is **unproven by
+any repeatable test** — it was verified once by hand, against a socket killed
+without a FIN, and that evidence died with the session.
 
-- silence past `SILENCE_MS` calls `terminate()` exactly once;
+What it should contain, kept as the specification for whoever writes it —
+pure, fake clock and a stub socket:
+
+- silence past `silenceMs()` calls `terminate()` exactly once;
+- with `_feedTickMs` null the silence check does NOT fire however long the gap —
+  only the pong can terminate, because an unknown or stopped tick clock makes
+  silence unjudgeable;
 - any message, `tick` included, resets the clock and prevents termination;
 - a pong resets `awaitingPong`; a missed pong terminates;
 - teardown clears the interval — a stopped socket must not keep probing.
