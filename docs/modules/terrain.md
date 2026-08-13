@@ -3,7 +3,7 @@ module: terrain
 source:
   - src/terrain.js
   - src/terrain-api.js
-source_hash: 59c0d0d3dacb840f8325987a8e01320157ff6f87e257260b875b25581a2e368b
+source_hash: 58bb4531ccc5438208e7cce12baf664a634c18336ee9ce91606bdc7f70340f88
 updated: 2026-08-05
 ---
 
@@ -70,6 +70,7 @@ request.
 
 | route | purpose |
 |---|---|
+| ~~`GET /terrain/visibility`~~ | **DELETED 2026-08-13.** The mask the radar draws now arrives in the `radar` WS message. It was the most defensible of the three to leave — it changes only when the home position or the grid does — but BROWSER_CONTRACT names page data as WS-only without carving out slow-moving data |
 | `GET /terrain` | the whole grid: `elev_m[bearing][ring]`, `radii_km`, `bearings_deg`, min/max, home |
 | `GET /terrain/status` | sampling flag, staleness, meta, config |
 | `POST /terrain/sample` | run the one-time sample (~90 s) |

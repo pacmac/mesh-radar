@@ -3,7 +3,7 @@ module: clusters
 source:
   - src/clusters.js
   - src/clusters-api.js
-source_hash: 745f6a00ff886b22ac873a4ead303ad3a73ea8b6a0b00797a36fbcc84c7a2505
+source_hash: 94bc2b48e3663a0a3991378d3a2f68167e19f3ae535830b21261a52870e66467
 updated: 2026-08-05
 ---
 
@@ -85,7 +85,7 @@ Verdict strings and tones are **served**, not composed in the browser.
 
 | route | purpose |
 |---|---|
-| `GET /clusters` | every cluster with derivation and stats, plus loners |
+| ~~`GET /clusters`~~ | **DELETED 2026-08-13.** Live data over HTTP is forbidden. Every cluster with derivation and stats now arrives in the `radar` WS message, replayed on connect — see `radarOverlays()` in ws-relay.js. `?force=1` went with it: it recomputed on read, a WRITE dressed as a GET, and nothing ever set it |
 | `GET /clusters/config` | the merged config |
 | `GET /clusters/anchors` | raw anchors, undERIVED, for a management UI |
 | `POST /clusters/seed` | run the seeder; additive |

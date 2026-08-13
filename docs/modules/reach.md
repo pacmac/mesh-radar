@@ -3,7 +3,7 @@ module: reach
 source:
   - src/reach.js
   - src/reach-api.js
-source_hash: e9cb41ade9dea4e726cf44459056d7f104fb29c0da12f79f35762655a563067e
+source_hash: 077a6b7af4a14e77d4c2a1bde77946133d4d055c0c3717fbd2e6caf4fef7a1aa
 updated: 2026-08-05
 ---
 
@@ -95,5 +95,5 @@ where it has failed.
 
 | route | purpose |
 |---|---|
-| `GET /reach` | both series, per sector |
+| ~~`GET /reach`~~ | **DELETED 2026-08-13.** Live data over HTTP is forbidden. Both series arrive per sector in the `radar` WS message, replayed on connect. The achieved/potential split moved unchanged — proven and ground-allowed remain two kinds of claim and are still never merged |
 | `GET /reach/links` | the individual proven and heard links |
