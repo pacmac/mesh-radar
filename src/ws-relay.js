@@ -12,6 +12,7 @@ import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.j
 import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { snrDbList } from './snr.js';
+import { scheduleTime } from './served-time.js';
 import { nodeKind, provenDoors, rolesByNum } from './node-kind.js';
 import { ownDeviceNums } from './node-filter.js';
 import { signalVerdict, marginHealth, hopsTone, blePctTone, verdictBands,
@@ -1022,7 +1023,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     let nodeStatusAgeTimer = null;
 
     function stopNodeStatusAge() {
-      if (nodeStatusAgeTimer) clearInterval(nodeStatusAgeTimer);
+      // scheduleTime returns an idempotent stop(), not a timer id.
+      if (nodeStatusAgeTimer) nodeStatusAgeTimer();
       nodeStatusAgeTimer = null;
       nodeStatusAge = null;
     }
@@ -1039,10 +1041,12 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         ago: lastHeard.ago,
       };
       if (nodeStatusAgeTimer) return;
-      nodeStatusAgeTimer = setInterval(() => {
+      // EVENT DRIVEN, NOT POLLED. This was a 1000 ms setInterval that recomputed,
+      // compared and discarded — 3,600 wakes an hour to produce one change on an
+      // hour-old fact. scheduleTime wakes at the computed transition and only
+      // there. See docs/modules/served-time.md.
+      nodeStatusAgeTimer = scheduleTime(nodeStatusAge.raw, (ago) => {
         if (!nodeStatusAge || ws.readyState !== 1) return;
-        const ago = fmtAgo(nodeStatusAge.raw);
-        if (ago == null || ago === nodeStatusAge.ago) return;
         nodeStatusAge.ago = ago;
         ws.send(JSON.stringify({
           type: 'node_status_age',
@@ -1050,7 +1054,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
           raw: nodeStatusAge.raw,
           ago,
         }));
-      }, 1000);
+      });
     }
 
     ws.once('close', stopNodeStatusAge);
@@ -1065,7 +1069,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     let coulombAgeTimer = null;
 
     function stopCoulombAge() {
-      if (coulombAgeTimer) clearInterval(coulombAgeTimer);
+      if (coulombAgeTimer) coulombAgeTimer();
       coulombAgeTimer = null;
       coulombAge = null;
     }
@@ -1076,13 +1080,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       if (payload?.latest?.at == null) { stopCoulombAge(); return; }
       coulombAge = { unit: payload.unit, at: payload.latest.at, ago: payload.latest.ago };
       if (coulombAgeTimer) return;
-      coulombAgeTimer = setInterval(() => {
+      // Same mechanism as node_status_age above — one mechanism to understand,
+      // not two, which was already the intent here. It is now a SCHEDULED
+      // TRANSITION rather than a 1 s cadence.
+      coulombAgeTimer = scheduleTime(coulombAge.at, (ago) => {
         if (!coulombAge || ws.readyState !== 1) return;
-        const ago = fmtAgo(coulombAge.at);
-        if (ago == null || ago === coulombAge.ago) return;   // push only on CHANGE
         coulombAge.ago = ago;
         ws.send(JSON.stringify({ type: 'coulomb_age', unit: coulombAge.unit, at: coulombAge.at, ago }));
-      }, 1000);
+      });
     }
 
     ws.once('close', stopCoulombAge);

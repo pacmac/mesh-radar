@@ -1,7 +1,7 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 5cfdaffa263b546bef006d23c0efb16d4234d9ef62221e8cca3b66756a493337
+source_hash: 3031f07519c4ea8fc187b35dfe3910d23f24ef2700d3f7e253fac1b22ca0e160
 updated: 2026-08-08
 ---
 
@@ -41,6 +41,10 @@ to every newly connected client so the browser is immediately consistent.
 - `traceroute.js` — `traceroute` (events: `start`, `result`, `cancel`)
 - `feature-flags.js` — `FF.SSOT_TRACEROUTE`, `FF.SSOT_ROUTE_RENDER`
 - `db.js` — `insertTilt`, `insertEnvHistory`, `getTiltCal`, `queryRangeTestLog`, `queryAllTiltHistory`, `queryAllEnvHistory`, `stmts.queryTracerouteHistory`, `stmts.updateMessageStatus`, `persistNodeMac`, `loadNodeMacMap`
+- `served-time.js` — `scheduleTime`, for the `node_status_age` and `coulomb_age`
+  pushes. Both were 1000 ms `setInterval`s that recomputed, compared and
+  discarded; they now wake at the computed transition and only there. Peter,
+  2026-08-13: "EVENT DRIVEN NOT POLLED". See docs/modules/served-time.md.
 - `filters.js` — `queryMessages`
 - `alerts.js` — `handleAlertEvent`
 - `node-label.js` — `resolveNodeLabel`, `resolveDeviceLabel`

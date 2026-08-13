@@ -22,6 +22,7 @@ const CHECKS = [
   { name: 'channel_write',          group: 'fast',    cmd: 'node',    args: ['tests/test_channel_write.mjs'],     needs: '—',                   measured: '30 ms',    timeoutMs: 30_000 },
   { name: 'op_manager',             group: 'fast',    cmd: 'node',    args: ['tests/test_op_manager.mjs'],        needs: '—',                   measured: '140 ms',   timeoutMs: 30_000 },
   { name: 'coulomb',                group: 'fast',    cmd: 'node',    args: ['tests/test_coulomb.mjs'],           needs: '—',                   measured: '158 ms',   timeoutMs: 30_000 },
+  { name: 'served_time',            group: 'fast',    cmd: 'node',    args: ['tests/test_served_time.mjs'],       needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
 
   { name: 'check_snapshot',         group: 'service', cmd: 'node',    args: ['scripts/check_snapshot.mjs'],       needs: 'node-dash up',        measured: '3.9 s',    timeoutMs: 30_000 },
   { name: 'check_contract',         group: 'service', cmd: 'node',    args: ['scripts/check_contract.mjs'],       needs: 'node-dash up',        measured: '5.1 s',    timeoutMs: 60_000 },
