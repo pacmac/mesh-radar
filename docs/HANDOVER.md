@@ -1,13 +1,20 @@
 # Handover — 2026-08-13
 
-Written at 09:0xZ from `/usr/share/pac/dev/projects/mt-radar/node-dash`, branch
-`feat/alarm-transport-plugin`.
+Written from `/usr/share/pac/dev/projects/mt-radar/node-dash`, branch
+`feat/alarm-transport-plugin`. Rewritten after the `/handover` skill gained a
+**PEERS** section; the version without it is archived alongside.
 
 **Lead with the defect: I broke two checks today and did not notice until writing
 this document.** `scripts/check_snapshot.mjs` crashes and `tests/test_coulomb.mjs`
 fails 8 of 8. Both are consequences of today's transport work, both have exact
 fixes below under REMAINS, and neither was caught because **nothing in this repo
 runs any check automatically** — no CI, no git hooks, no test-runner target.
+
+**Second defect: two peers have not read what I sent them.** `services` is 7
+messages behind and is waiting on an answer that is already written and sitting
+unread; `device` has **never opened** its channel at all and therefore does not
+know GARG needs reflashing. See PEERS — that section changes what the next
+session does first.
 
 Everything else shipped and is verified live.
 
@@ -71,6 +78,93 @@ Every invocation below was **executed from this repo root** while writing this.
 **Nothing invokes any of these automatically.** `package.json` has only `start`
 and `dev`; no Makefile, no git hooks, no `.github/workflows`. Every check is
 manual, which is why two of them rotted today without a single red signal.
+
+---
+
+## PEERS — the other sessions, what they are owed, and what I told them
+
+Derived at write-up time from `xs.py inbox` and by reading **every party's**
+cursor, not just mine:
+
+```bash
+python3 /usr/share/pac/dev/py/xsession/xs.py inbox
+ls ~/.xsession/<channel>/msg/ | sort | tail -1     # latest seq
+cat ~/.xsession/<channel>/seen/<party>             # that party's cursor
+```
+
+### Cursors — who has actually read what
+
+| channel | msgs | my cursor | peer cursor | peer is behind by |
+|---|---|---|---|---|
+| `node-dash--plugins` | 29 | 28 | **29** | 0 — fully caught up |
+| `node-dash--services` | 97 | 95 | **90** | **7** |
+| `device--node-dash` | 4 | 2 | **no cursor file at all** | **4 — never read this channel** |
+| `mesh-gw--node-dash` | 20 | 17 | **16** | **4** |
+
+**This is the section that changes what the next session should do first.**
+
+- **services has not read my #96 or #97.** #96 acks their outcome-vocabulary
+  contract change *and answers the two questions they asked* (yes, two places
+  render `delivered`; yes, carry `null` vs `unackable` separately). They are
+  waiting on an answer that is sitting unread. #97 is the route list they asked
+  for. **Silence here is not disagreement — it is un-read.**
+- **device has never read `device--node-dash`.** No cursor file exists. Both my
+  items there — `[bridge-restart-for-obs]` and the GARG reflash request — are
+  unread. The bridge *did* get restarted, but plugins asked them, not me. Do not
+  assume device knows about the firmware schema mismatch.
+- **mesh-gw has not read #17–20**, which includes `[role-200-meaning]` raised
+  today.
+- **plugins are current.** Everything I sent has been read and answered.
+
+That pattern — a message nobody consumed being the same as a message nobody sent
+— is exactly why plugins opened a second channel on 2026-08-12 rather than
+replying on `node-dash--services`. My own cursor sat at 88 against their 95 and I
+missed the pac-host retirement announcement for five hours.
+
+### Open items, split by who is blocked
+
+**Waiting on a peer (tag `AGREE`, belongs beside REMAINS):**
+
+| slug | peer | what it blocks |
+|---|---|---|
+| `bridge-restart-for-obs` | device | GARG reflash against schema `0xd339`; until then its frames never decode |
+| `role-200-meaning` | mesh-gw | three of our own radios carry `role: 200` and render as unknown |
+| `config-role-write-not-adopted` | mesh-gw | config PUT reports `verified:true` and the radio never adopts it |
+| `unclamped-timing-config` | mt-radar | `timeout_sec: -99` accepted |
+
+**Waiting on me (`ACK`, unanswered):**
+
+- `[traceroute-rework]` — mt-transport's brief plus measurements in both repos. **Never actioned this session.** Read it before starting traceroute work.
+- `[seven-routes-going]` — plugins' warning; superseded in practice by the cutover, but not formally closed.
+
+**Mine to close** — ten items sit in "yours to close"; I closed none today.
+`[obs-table-shipped]` needs only `prune-ok`.
+
+**No leader is in force.** `/xlead` was not used; no session is holding.
+
+### Claims I made to another repo — and whether I verified them
+
+**This is the part with teeth. A peer acts on what I tell them.**
+
+| claim | to | status |
+|---|---|---|
+| "align was ported FROM node-dash and the mechanic is not here" | plugins | **WRONG, corrected in #4.** I read `pac-align-api.js` (54 lines of proxy) and generalised. The PASV interlock at `alarm-host.js:200-225` is ours. Told them to keep the section owner as `undecided` |
+| "beat has no provenance — please add `beatSource`" | plugins | **WRONG, withdrawn in #6.** It is `contact.basis`, plus `measured.beat.errorMs`. I read `/dash` and never opened `/state/<id>` |
+| "`present` is missing — please add it" | plugins | **WRONG, withdrawn in #6.** `GET /health` already returns `units` and `heard` separately |
+| "GARG's frames are identical to BNCH's, so this points AWAY from version skew" | plugins | **MEASUREMENT right, CONCLUSION inverted.** Bytes 2–3 that I listed as differing *are* the schema hash — `0xbaf7` vs `0xd339`. plugins caught it in #23 |
+| "GARG was built against 0xbaf7, butler loaded 0xd339" | device | **Verified** — quoted verbatim from the bridge's own `decodeError`, not my characterisation |
+| "two places render `delivered`; one is yours, one is mesh-gw's" | services | **Verified** by grep — `alarm-sections.js:102`, `tab-messages.html:144,149,156` |
+| "`/state?unit=` returns 200 with EVERY unit" | plugins | **Verified live**, and plugins confirmed the mechanism at `api.js:120,122,172` |
+
+**The same trap ran in both directions today.** plugins told me "the bridge's
+router compares paths with `===`, there are no path parameters anywhere" — read
+off the plugin dispatch loop, wrong about device's core routes, and I would have
+coded to it had I not measured. They withdrew it with file and line. Four of my
+seven claims above were wrong for the identical reason: characterising a repo I
+had not read, or reading one endpoint and generalising.
+
+**Never characterise another repo from a grep. Cite the file and line you read,
+or say you have not checked.**
 
 ---
 
@@ -250,7 +344,16 @@ one second then "nothing received" for 59. Found only by instrumenting.
 **another repo** goes to `/xsession` and is raised, never worked around. That
 rule earned its keep today: the honest path to the runtime params ran through
 plugins, and building a second decoder here would have made their defect
-permanent.
+permanent. Peter pushed hard to have it built here anyway and I held the line —
+that was the right call, and plugins said so independently.
+
+**`/xsession` was heavily in force. Its state is in PEERS, not here** — four
+channels, four open items waiting on peers, two waiting on me, and seven claims
+I made to other repos of which four were wrong. A skills list that names
+`/xsession` and leaves the board unmentioned tells the next session a tool was
+used and nothing about what it is holding.
+
+**No `/xlead` — no leader in force, no session holding.**
 
 ---
 
