@@ -180,9 +180,15 @@ await new Promise((resolve) => {
     const d = 2 * 6371.0088 * Math.asin(Math.sqrt(t));
     if (d <= cap && d > floor) floor = d;
   }
-  const served = await fetch('http://localhost:8000/snapshot/frontier?days=0')
-                        .then(r => r.json()).catch(() => null);
-  const got = Number(served?.furthest_km);
+  // Asked over the socket, not GET /snapshot/frontier — that route was deleted
+  // in 2103e03 and now returns the SPA shell, so this block failed on a missing
+  // furthest_km while the invariant itself was fine. See
+  // docs/modules/check-harness.md.
+  const { askWs } = await import('./ws-ask.mjs');
+  const served = await askWs({ type: 'snapshot', days: 0 },
+                             m => m.type === 'snapshot' && Number(m.days) === 0)
+                       .catch(() => null);
+  const got = Number(served?.frontier?.furthest_km);
   if (!Number.isFinite(got)) {
     fail('reach invariant', '/snapshot/frontier returned no furthest_km');
   } else if (got + 0.15 < floor) {

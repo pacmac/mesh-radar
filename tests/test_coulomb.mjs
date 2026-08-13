@@ -9,17 +9,19 @@
 // Run: node tests/test_coulomb.mjs
 
 import assert from 'node:assert';
+import { buildCoulomb, coulombModel } from '../src/coulomb.js';
 
-// buildCoulomb calls getObs, so the module is loaded with pac-host stubbed.
-// Node's ESM loader has no cheap injection point, so the fetch layer is
-// intercepted instead: coulomb.js -> pac-host.getObs -> global fetch.
+// The model is reached DIRECTLY, through the pure entry point that exists for
+// exactly this reason (docs/modules/coulomb.md — "THIS SPLIT IS LOAD-BEARING").
+//
+// These tests used to stub global.fetch and call buildCoulomb, reaching the
+// model through getObs. On 2026-08-13 getObs became an unconditional 501 — the
+// history has no source and must not be faked (src/alarm-host.js:651-660) — and
+// all 8 tests failed on a refusal that is CORRECT. A test of the arithmetic had
+// been coupled to a transport it never meant to exercise.
+//
+// Spec: docs/modules/check-harness.md
 let FIXTURE = [];
-global.fetch = async () => ({
-  ok: true,
-  json: async () => FIXTURE,
-});
-
-const { buildCoulomb } = await import('../src/coulomb.js');
 
 let pass = 0;
 const fails = [];
@@ -37,7 +39,7 @@ const row = (at, field, value) => ({ id: 1, unit: '!test', at, field, value });
 // ── the arithmetic ──────────────────────────────────────────────────────────
 await t('rate is (n1-n0)/hours over the widest span', async () => {
   FIXTURE = [row(T0, 'n', 10), row(T0 + 2 * H, 'n', 30)];
-  const m = await buildCoulomb('!test');
+  const m = coulombModel('!test', FIXTURE);
   assert.strictEqual(m.state, 'has_samples');
   assert.strictEqual(m.current.refused, false);
   // (30-10)/2h = 10.0
@@ -46,7 +48,7 @@ await t('rate is (n1-n0)/hours over the widest span', async () => {
 
 await t('milliseconds are converted to seconds exactly once', async () => {
   FIXTURE = [row(T0, 'n', 1), row(T0 + H, 'n', 2)];
-  const m = await buildCoulomb('!test');
+  const m = coulombModel('!test', FIXTURE);
   // T0 ms -> seconds. A missed conversion leaves the ms value here.
   assert.strictEqual(m.latest.at, Math.floor((T0 + H) / 1000));
   assert.ok(m.latest.at < 2e10, `looks like milliseconds leaked through: ${m.latest.at}`);
@@ -59,7 +61,7 @@ await t('a span crossing a grst REFUSES rather than returning a number', async (
     row(T0 + 1 * H,   'grst', 1),   // gauge came back zeroed here
     row(T0 + 2 * H,   'n', 5),
   ];
-  const m = await buildCoulomb('!test');
+  const m = coulombModel('!test', FIXTURE);
   assert.strictEqual(m.current.refused, true, 'must refuse across a reset');
   assert.strictEqual(m.current.value_text, null, 'must not report a value');
   assert.match(m.current.refused_reason, /reset/i);
@@ -70,7 +72,7 @@ await t('without the reset the SAME endpoints do produce a number', async () => 
   // The negative control for the test above: if this also refused, the refusal
   // test would be passing for the wrong reason.
   FIXTURE = [row(T0, 'n', 100), row(T0 + 2 * H, 'n', 5)];
-  const m = await buildCoulomb('!test');
+  const m = coulombModel('!test', FIXTURE);
   assert.strictEqual(m.current.refused, false);
   assert.strictEqual(m.current.value_text, '-47.5 counts/h');
 });
@@ -78,13 +80,15 @@ await t('without the reset the SAME endpoints do produce a number', async () => 
 // ── the ordering guard ──────────────────────────────────────────────────────
 await t('a DESCENDING list throws instead of flipping the sign', async () => {
   FIXTURE = [row(T0 + 2 * H, 'n', 30), row(T0, 'n', 10)];
-  await assert.rejects(() => buildCoulomb('!test'), /out of order/i);
+  // assert.throws, NOT assert.rejects: coulombModel is synchronous, so rejects
+  // would be handed a non-promise and pass without the guard ever running.
+  assert.throws(() => coulombModel('!test', FIXTURE), /out of order/i);
 });
 
 // ── the states ──────────────────────────────────────────────────────────────
 await t('an empty series is unknown_gauge, NOT "not fitted"', async () => {
   FIXTURE = [];
-  const m = await buildCoulomb('!test');
+  const m = coulombModel('!test', FIXTURE);
   assert.strictEqual(m.state, 'unknown_gauge');
   assert.strictEqual(m.current, null);
   assert.strictEqual(m.latest, null);
@@ -95,7 +99,7 @@ await t('an empty series is unknown_gauge, NOT "not fitted"', async () => {
 
 await t('one sample refuses a rate and says why', async () => {
   FIXTURE = [row(T0, 'n', 7)];
-  const m = await buildCoulomb('!test');
+  const m = coulombModel('!test', FIXTURE);
   assert.strictEqual(m.state, 'has_samples');
   assert.strictEqual(m.latest.n, 7);
   assert.strictEqual(m.current.refused, true);
@@ -105,10 +109,20 @@ await t('one sample refuses a rate and says why', async () => {
 // ── cons is carried but never promoted ──────────────────────────────────────
 await t('cons is served for cross-check and is not the headline', async () => {
   FIXTURE = [row(T0, 'n', 10), row(T0, 'cons', 1), row(T0 + H, 'n', 20), row(T0 + H, 'cons', 2)];
-  const m = await buildCoulomb('!test');
+  const m = coulombModel('!test', FIXTURE);
   assert.strictEqual(m.cons_latest, 2);
   assert.strictEqual(m.latest.n, 20, 'the headline reading must be n');
   assert.strictEqual(m.series.length, 2, 'the series must be n only');
+});
+
+// ── the fetching entry point refuses, and that is behaviour ─────────────────
+await t('buildCoulomb refuses rather than inventing a series', async () => {
+  // getObs throws 501 by design: `record` is unbuilt, and accumulating the
+  // event stream here would draw a chart that starts at the last restart and
+  // looks like a measurement (src/alarm-host.js:651-660). Asserted rather than
+  // stubbed around — if this ever stops throwing, the refusal was removed and
+  // the fetching path needs tests of its own.
+  await assert.rejects(() => buildCoulomb('!test'), /no history store|record.*unbuilt/i);
 });
 
 console.log(fails.length ? `\n${fails.length} failure(s)` : `\n${pass} checks, coulomb model clean.`);

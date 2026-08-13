@@ -1,3 +1,13 @@
+// Every number on the Snapshot board, six windows, against SQL over the store.
+//
+// Spec: docs/modules/check-harness.md
+//
+// This asks the SOCKET, because that is what the page reads. It used to GET
+// /snapshot/frontier|new-ground|productivity|distribution, which 2103e03
+// deleted; unmatched paths return the SPA shell, so it crashed on `<` in
+// JSON.parse. A check that reads a transport the page does not use proves
+// nothing about the page and rots the moment the route goes.
+import { askWsMany } from './ws-ask.mjs';
 import { execSync } from 'node:child_process';
 const DB = 'data/node-dash.db';
 const q = sql => execSync(`sqlite3 -noheader "${DB}" "${sql.replace(/"/g,'\\"')}"`).toString().trim();
@@ -5,7 +15,6 @@ const HOME = `(SELECT CAST(value AS REAL) FROM config WHERE key='home.lat')`;
 const HOML = `(SELECT CAST(value AS REAL) FROM config WHERE key='home.lon')`;
 const KM = `6371*2*asin(sqrt(power(sin((radians(n.lat)-radians(${HOME}))/2),2)+cos(radians(${HOME}))*cos(radians(n.lat))*power(sin((radians(n.lon)-radians(${HOML}))/2),2)))`;
 const since = d => d > 0 ? `strftime('%s','now')-${d*86400}` : '0';
-const get = async (p) => (await fetch(`http://localhost:8000${p}`)).json();
 
 let bad = 0, checks = 0;
 const cmp = (win, field, live, sql) => {
@@ -17,12 +26,22 @@ const cmp = (win, field, live, sql) => {
   if (!ok) { bad++; console.log(`  MISMATCH  ${win.padEnd(4)} ${field.padEnd(16)} live=${a}  sql=${b}`); }
 };
 
-for (const d of [1,2,7,14,30,0]) {
+// One socket, six boards. Each connect costs a ~13.2 MB replay (ledger B92), so
+// six connections would move 80 MB to ask six questions. `days` is echoed by the
+// server, which is what lets a reply be matched back to its request.
+const WINDOWS = [1,2,7,14,30,0];
+const boards = await askWsMany(
+  WINDOWS.map(d => ({ type: 'snapshot', days: d })),
+  (msg, req) => msg.type === 'snapshot' && Number(msg.days) === Number(req.days));
+
+for (const [i, d] of WINDOWS.entries()) {
   const w = d === 0 ? 'all' : `${d}d`;
-  const f = await get(`/snapshot/frontier?days=${d}`);
-  const g = await get(`/snapshot/new-ground?days=${d}`);
-  const p = await get(`/snapshot/productivity?days=${d}`);
-  const b = await get(`/snapshot/distribution?days=${d}`);
+  const s = boards[i];
+  // board() returns {error, frontier:null, …} when a query fails
+  // (src/ws-relay.js:1207-1213). Without this, b.bands.reduce throws a
+  // TypeError that reads like a broken check rather than a broken board.
+  if (s.error) { console.log(`  BOARD ERROR ${w.padEnd(4)} ${s.error}`); bad++; continue; }
+  const f = s.frontier, g = s.new_ground, p = s.productivity, b = s.distribution;
 
   cmp(w,'furthest_km', f.furthest_km,
       q(`SELECT ROUND(MAX(${KM}),1) FROM nodes n WHERE n.lat IS NOT NULL AND n.lat!=0 AND n.last_heard>${since(d)} AND ${KM}<=500`));
