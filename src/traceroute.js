@@ -19,7 +19,7 @@ import { EventEmitter } from 'events';
 import { bridge }       from './bridge.js';
 import { nodeList }     from './node-list.js';
 import { stmts, getConfig, radioAirtime } from './db.js';
-import { pasvConfig, discoveryConfig } from './config-api.js';
+import { pasvConfig, discoveryConfig, DISCOVERY_LIMITS } from './config-api.js';
 import { getRotatorAddress } from './device-config.js';
 import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 import { rotator } from './rotator.js';
@@ -404,7 +404,31 @@ class TracerouteManager extends EventEmitter {
       // Anything unset falls through to the caller's opts, and only then to the
       // rotator's own defaults. Nothing here is a literal.
       const d = discoveryConfig();
-      const holdMs = opts.hold_ms ?? (Number(d.hold_sec) > 0 ? Number(d.hold_sec) * 1000 : undefined);
+      // THE CEILING BINDS THE CALLER TOO, NOT JUST THE CONFIG FORM.
+      //
+      // Peter, 2026-08-12, standing constraint: "the rotator has many users, not
+      // just node dash, it does NOT have exclusive access to it ... it is not
+      // permitted to issue very long hold periods to effectively lock out
+      // everything else from using the rotator."
+      //
+      // `hold_sec` is clamped [0,120] server-side in config-api.js, but
+      // `opts.hold_ms` went straight through unclamped — so the limit held for
+      // the operator editing a form and not for any code path that passed a
+      // hold. The garage alarm and every other user share this rotator; an
+      // unbounded hold from here is an exclusive lock on somebody else's
+      // instrument.
+      //
+      // Clamped to the SAME bound rather than a new number of my own: the
+      // ceiling is the operator's stated answer to "how long may we hold a
+      // shared beam", and inventing a second one here would be the literal this
+      // block already argues against.
+      const HOLD_CEILING_MS = DISCOVERY_LIMITS.hold_sec[1] * 1000;
+      const rawHoldMs = opts.hold_ms ?? (Number(d.hold_sec) > 0 ? Number(d.hold_sec) * 1000 : undefined);
+      let holdMs = rawHoldMs;
+      if (holdMs !== undefined && holdMs > HOLD_CEILING_MS) {
+        log.warn(`hold ${holdMs}ms exceeds the shared-rotator ceiling ${HOLD_CEILING_MS}ms — clamped`);
+        holdMs = HOLD_CEILING_MS;
+      }
       const aimMs  = opts.settle_ms ?? (Number(d.aim_timeout_sec) > 0 ? Number(d.aim_timeout_sec) * 1000 : undefined);
       let r = await rotator.point(az, {
         by: 'traceroute',

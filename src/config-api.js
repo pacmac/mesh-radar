@@ -205,7 +205,7 @@ const CALLOUT_LIMITS = {
   channel:        [0, 7],
 };
 
-const DISCOVERY_LIMITS = {
+export const DISCOVERY_LIMITS = {
   window_km:           [1, 250],
   attempts_per_target: [1, 50],
   cooldown_min:        [1, 1440],
