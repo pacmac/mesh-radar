@@ -302,7 +302,26 @@ async def collect_events(secs):
     events = []
     deadline = time.time() + secs
     try:
-        async with websockets.connect(WS_URL, open_timeout=5) as ws:
+        # max_size=None — DO NOT REMOVE, and do not read it as raising a product
+        # limit. `websockets.connect` defaults max_size to 1 MiB (websockets
+        # 16.0), and that cap belongs to THIS CLIENT LIBRARY alone. Browsers
+        # impose no such limit on an incoming message, so it describes nothing
+        # the real consumer experiences.
+        #
+        # Without it the connection dies on the first oversized frame and every
+        # frame after it is lost, which surfaced as four separate "required on
+        # connect but never received" failures — env_history, range_test_log,
+        # range_test_timer, traceroute_history — and was recorded for days as
+        # payloads "never reaching the browser". They reach the browser fine.
+        # Measured 2026-08-13, connect replay: node_list 1,327,981 B and
+        # env_history 1,097,569 B are both over the default, out of 4,274,469 B
+        # in 65 frames.
+        #
+        # THE SIZES ARE STILL WORTH ATTACKING — 4.27 MB of connect replay is
+        # real, and node_list at 1.33 MB for 328 nodes is the largest single
+        # frame. That is a payload-weight question with its own task, not a
+        # reason to leave a check red and teach everyone to skim past it.
+        async with websockets.connect(WS_URL, open_timeout=5, max_size=None) as ws:
             while time.time() < deadline:
                 try:
                     raw = await asyncio.wait_for(ws.recv(), timeout=min(deadline - time.time(), 5))
