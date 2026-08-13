@@ -120,6 +120,30 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const app = express();
+
+// -- NOTHING IS CACHED ------------------------------------------------------
+// Spec: docs/modules/no-cache.md
+//
+// Peter, 2026-08-13: "we should be browser cache free, that needs to be in the
+// headers and response so that NOTHING is cached."
+//
+// THE INCIDENT THAT FORCED THIS. /devices returned 410 in the browser and 200 to
+// curl, and no restart fixed it, because the browser was replaying a response
+// dated Thu, 16 Jul 2026 — four weeks old, with an Express ETag and no
+// Cache-Control at all. A cache had made a working server unreachable, on the
+// one page whose entire job is to say what is true now.
+//
+// Registered FIRST so no route can opt out by being added later, and ETag
+// generation is off because a conditional-cache validator is exactly the
+// machinery that kept that 410 alive.
+app.set('etag', false);
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.set('Pragma', 'no-cache');     // for intermediaries that predate no-store
+  res.set('Expires', '0');
+  next();
+});
+
 app.use(express.json());
 
 // -- real-time enforcement guard --------------------------------------------
@@ -145,7 +169,10 @@ app.use((req, res, next) => {
   const path = '/' + req.path.split('/')[1]; // first segment only
   if (!WS_ONLY_ROUTES.has(path) && !WS_ONLY_EXACT.has(req.path)) return next();
   if (req.headers['sec-fetch-dest'] !== 'empty') return next(); // server-side / curl — allow
-  return res.status(410).set('Cache-Control', 'no-store').json({
+  // Vary as well as no-store: this URL deliberately serves the SPA shell to a
+  // navigation and 410 to a browser fetch(), so a cache that keyed on the URL
+  // alone would conflate them — which is precisely what poisoned /devices.
+  return res.status(410).set('Vary', 'Sec-Fetch-Dest, Accept').json({
     error:   'ws_only',
     message: 'GET /devices is not available to browser clients. Subscribe to the WebSocket stream — device_list events carry real-time device state.',
     ws:      '/events',
@@ -162,7 +189,9 @@ app.get('/utils.js', (req, res) => {
     .replace(/^export\s+/gm, '');     // strip ESM export keywords
   const names = ['haversine', 'bearing', 'signalQuality', 'numToNodeId', 'nodeIdToNum'];
   const out = `(function(){\n${body}\nif(typeof window!=='undefined')Object.assign(window,{${names.join(',')}});\n})();`;
-  res.type('application/javascript').set('Cache-Control', 'no-cache').send(out);
+  // no-cache STORES and revalidates; the global middleware already set no-store,
+  // so this no longer overrides it back down. See docs/modules/no-cache.md.
+  res.type('application/javascript').send(out);
 });
 
 // -- HTML partial assembly ---------------------------------------------------
@@ -352,7 +381,12 @@ const opManager = new OpManager((msg) => _broadcast(msg), bridge);
 app.use('/ops', opManager.router);  // POST /ops, GET /ops/manifest, GET /ops/:op_id
 
 // -- static files -----------------------------------------------------------
-app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0, index: false }));
+// cacheControl:false leaves the global no-store middleware's header in place
+// rather than overwriting it with express.static's own; etag/lastModified off
+// because both are conditional-caching validators. See docs/modules/no-cache.md.
+app.use(express.static(PUBLIC_DIR, {
+  etag: false, lastModified: false, cacheControl: false, index: false,
+}));
 
 // Debug monitor — served directly, not through the SPA assembler
 app.get('/debug', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'debug.html')));

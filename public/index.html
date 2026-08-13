@@ -12,7 +12,19 @@
       document.documentElement.setAttribute('data-theme', e.matches ? 'business' : 'corporate');
     });
   })();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+  // NO SERVICE WORKER — a service worker is a cache, and nothing here is cached
+  // (docs/modules/no-cache.md). New visitors must never install one.
+  //
+  // Existing installs are NOT reached by removing this line: they keep running
+  // until the browser re-fetches /sw.js, which is now a kill switch that deletes
+  // every cache and unregisters itself. That is why /sw.js still exists. This
+  // unregister is the belt to its braces, for a tab that has one but never
+  // navigates.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations()
+      .then(rs => rs.forEach(r => r.unregister()))
+      .catch(() => {});
+  }
 </script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><text y=%22.9em%22 font-size=%2220%22>📡</text></svg>">
 <link href="/vendor/daisyui-4.12.14.min.css" rel="stylesheet" type="text/css" />

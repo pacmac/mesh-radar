@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: 55cbb75f1b6eace798e45c2569dac3539e67dd96a997eef3eb9e1cc7bc97ce57
+source_hash: 932d86b36e6d7e3957835505020751bc31f23bdcd92ca3fc660e29fc832d44a1
 updated: 2026-08-03
 ---
 
@@ -52,6 +52,14 @@ None exported — this is the top-level script (`node src/index.js`, run under P
 
 ## Route surface (mount order is the contract)
 
+0. **NO-STORE, and ETags off** — `app.set('etag', false)` plus a middleware
+   registered before everything else that sets `Cache-Control: no-store, no-cache,
+   must-revalidate, max-age=0`, `Pragma`, `Expires` on every response. First in
+   the stack so no later route can opt out. `express.static` is mounted with
+   `etag/lastModified/cacheControl` all off for the same reason. A four-week-old
+   cached 410 on `/devices` is why — see `docs/modules/no-cache.md`, and note that
+   the WS-only guard below is exactly the kind of route that MUST NOT be cached,
+   because it answers differently for the same URL.
 1. `express.json()`.
 2. **WS-only guard** — `GET` to a `WS_ONLY_ROUTES` first-segment (`/devices`,
    `/traceroute_history`, `/auto-purge`, `/geocode`) or exact `WS_ONLY_EXACT`

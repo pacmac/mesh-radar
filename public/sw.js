@@ -1,45 +1,38 @@
-// Service worker — cache app shell so the page loads even when the bridge
-// restarts or is temporarily unreachable.
-// API calls go cross-origin (MESH_API on port 8001) so the SW never
-// intercepts them — no exclusion list needed.
-const CACHE = 'mesh-gw-dash-v4';
-const SHELL = ['/', '/app.js', '/style.css', '/config.js'];
+// SERVICE WORKER KILL SWITCH. This file exists only to remove itself.
+//
+// Spec: docs/modules/no-cache.md
+//
+// It used to cache the app shell. Peter, 2026-08-13: "we should be browser cache
+// free ... NOTHING is cached." A service worker IS a cache — no-store response
+// headers do not restrain Cache Storage, so leaving this in place while claiming
+// the app is cache-free would have been false.
+//
+// WHY THIS FILE STILL EXISTS RATHER THAN BEING DELETED. Removing the
+// register() call from index.html stops NEW installs; it does nothing about the
+// browsers that already have this worker and will keep running it forever. A
+// browser re-fetches /sw.js on navigation within scope, so shipping a worker
+// that destroys itself is the only route that reaches them. Delete this file and
+// every existing install survives, serving month-old assets.
+//
+// There is deliberately NO fetch handler: while winding down it must intercept
+// nothing.
 
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)));
-  self.skipWaiting();
-});
+self.addEventListener('install', () => self.skipWaiting());
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
+self.addEventListener('activate', (e) => {
+  e.waitUntil((async () => {
+    // Every cache, not just this app's — the shell was stored under a versioned
+    // key ('mesh-gw-dash-v4') and older deployments left their own behind.
+    for (const key of await caches.keys()) await caches.delete(key);
 
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  // Navigation: network-first, and REFRESH the cached '/' on success so the
-  // shell never freezes at install time (a stale '/' referencing an old Alpine
-  // wedged the page after asset changes). Fall back to cache only on failure.
-  if (e.request.mode === 'navigate') {
-    e.respondWith(
-      fetch(e.request).then(res => {
-        if (res.ok) caches.open(CACHE).then(c => c.put('/', res.clone()));
-        return res;
-      }).catch(() => caches.match('/'))
-    );
-    return;
-  }
-  // Static shell assets: network-first so updates land immediately; cache as offline fallback
-  if (SHELL.includes(url.pathname)) {
-    e.respondWith(
-      fetch(e.request).then(res => {
-        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
-        return res;
-      }).catch(() => caches.match(e.request))
-    );
-  }
+    await self.registration.unregister();
+    await self.clients.claim();
+
+    // Controlled tabs are still holding a dead worker's page. Reload them so the
+    // user lands on a genuinely uncached document rather than whatever the
+    // worker last served. Without this the fix is invisible until they navigate.
+    for (const client of await self.clients.matchAll({ type: 'window' })) {
+      client.navigate(client.url).catch(() => {});
+    }
+  })());
 });

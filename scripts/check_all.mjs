@@ -26,6 +26,7 @@ const CHECKS = [
 
   { name: 'check_snapshot',         group: 'service', cmd: 'node',    args: ['scripts/check_snapshot.mjs'],       needs: 'node-dash up',        measured: '3.9 s',    timeoutMs: 30_000 },
   { name: 'check_contract',         group: 'service', cmd: 'node',    args: ['scripts/check_contract.mjs'],       needs: 'node-dash up',        measured: '5.1 s',    timeoutMs: 60_000 },
+  { name: 'no_cache',               group: 'service', cmd: 'node',    args: ['scripts/check_no_cache.mjs'],       needs: 'node-dash up',        measured: '200 ms',   timeoutMs: 30_000 },
   // Fails today for B92 (the ~13.2 MB WS connect replay disconnects any client
   // on default frame limits — five of its six failures are that one cause) and
   // B93 (typed traceroute event unhandled in index.js). The ledger ids are
