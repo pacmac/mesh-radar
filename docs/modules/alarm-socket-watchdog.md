@@ -1,7 +1,7 @@
 ---
 module: alarm-socket-watchdog
 source: src/alarm-host.js
-source_hash: 2011870ad522d92ee76e087463b22de2704a270181cc79df587e1c696e52dd25
+source_hash: fc67d7439f9693837cacf2d51bef469650e59f51304a54e63f5d28831528f541
 updated: 2026-08-13
 ---
 

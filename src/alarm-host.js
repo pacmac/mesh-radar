@@ -21,6 +21,7 @@ import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { log } from './log.js';
 import { fmtAgo } from './format.js';
+import { scheduleTime } from './served-time.js';
 import { numToNodeId, nodeIdToNum } from './utils.js';
 
 // NOT `BRIDGE_URL` — that name is TAKEN. It is mesh-gw's bridge
@@ -349,8 +350,91 @@ function _onDashLive(msg) {
   _units = next;
   _lastStatus = { available: msg?.bridge?.ok !== false, status: msg?.bridge?.ok === false ? 'degraded' : 'ready',
                   startedAt: _isoToMs(msg?.bridge?.startedAt), lastCheckedMs: Date.now(),
-                  servedAt: _servedAt, error: null, units: _units, sections: _sections };
+                  servedAt: _servedAt, link: _linkState(), error: null,
+                  units: _units, sections: _sections };
   events.emit('change');
+}
+
+// -- link freshness ----------------------------------------------------------
+//
+// THE PAGE COULD NOT TELL STALE FROM QUIET, and that is the fault Peter has been
+// working around by asking an agent instead of reading the screen: "I know the
+// data is shown, BUT I don't know if it's stale, and I suspect some of it is,
+// especially anything that is based on time."
+//
+// THE HARD PART IS THAT THE VERDICT CANNOT RIDE THE FEED. `servedAt` refreshes on
+// every /state push and proves the bridge is still BUILDING bodies — but when it
+// stops serving, no push arrives to carry the word "stale". The state that
+// matters most is precisely the one nothing will tell us about. So freshness is
+// derived from SILENCE, on our own clock, and it is the one thing in this module
+// that must keep working when every socket has gone quiet.
+//
+// WHY A VERDICT AND NOT AN AGE. Serving "served N seconds ago" continuously would
+// re-render every second (fmtAgo ticks per second under a minute, format.js:95),
+// which against a 10 s feed is a 1 Hz broadcast of the whole status payload — a
+// poll wearing a push's clothes, which is the exact thing served-time.js was
+// written to kill. Instead: ONE timer, armed for the instant the verdict flips,
+// re-armed by each push. While the bridge is healthy that timer never fires and
+// costs nothing. Once it has fired, scheduleTime takes over so the page can show
+// the outage growing — one wake per rendered change, and only while broken.
+let _linkFresh  = null;   // null until the first /state push: unknown, not "stale"
+let _staleAt    = null;   // timer for the flip
+let _staleAgeStop = null; // scheduleTime teardown, once stale
+
+/** Link freshness as a served fact. The browser renders `label` and decides
+ *  nothing — see docs/BROWSER_CONTRACT.md. */
+function _linkState() {
+  return {
+    fresh: _linkFresh,
+    servedAt: _servedAt,
+    // Rendered here, never in the browser. Null while fresh: there is nothing to
+    // say about a link that is working.
+    // "last state body 50s ago", not "bridge silent 50s ago" — fmtAgo renders an
+    // AGE ("50s ago"), so the sentence around it has to be about an instant. The
+    // first draft read "bridge silent 50s ago", which says the silence happened
+    // 50s ago rather than that it has lasted 50s. Measured and corrected before
+    // it reached a screen.
+    label: _linkFresh === false && _servedAt != null
+      ? `last state body ${fmtAgo(Math.floor(_servedAt / 1000))}`
+      : null,
+    // WHY, so a page never has to guess what an absence means. Each of these is a
+    // different situation and they must not render identically.
+    why: _linkFresh === null
+      ? (_servedAt == null ? 'no state body received yet' : 'tick clock unknown — silence cannot be judged')
+      : null,
+  };
+}
+
+/** Re-arm the flip timer. Called on every /state push, which is what makes this
+ *  free while the bridge is healthy: the timer is always in the future and is
+ *  always cancelled before it fires. */
+function _armFreshness() {
+  clearTimeout(_staleAt); _staleAt = null;
+  if (_staleAgeStop) { _staleAgeStop(); _staleAgeStop = null; }
+
+  const limit = silenceMs();
+  // No tick clock means silence proves nothing — device and plugins both say null
+  // is a real state. Report UNJUDGED rather than inventing a threshold; a false
+  // "stale" badge would train Peter to ignore the true one.
+  if (limit == null || _servedAt == null) { _linkFresh = null; return; }
+
+  if (_linkFresh !== true) { _linkFresh = true; }
+  const due = _servedAt + limit - Date.now();
+  _staleAt = setTimeout(() => {
+    _linkFresh = false;
+    log.warn('alarm-host',
+      `bridge link STALE — no state body for ${Math.round(limit / 1000)}s ` +
+      `(${MISSED_TICKS} ticks); last servedAt ${new Date(_servedAt).toISOString()}`);
+    // Now the age is worth serving: it is the size of the outage, it changes at
+    // computable instants, and each change is news. One wake per change.
+    _staleAgeStop = scheduleTime(Math.floor(_servedAt / 1000), () => {
+      if (_lastStatus) _lastStatus = { ..._lastStatus, link: _linkState() };
+      events.emit('change');
+    });
+    if (_lastStatus) _lastStatus = { ..._lastStatus, link: _linkState() };
+    events.emit('change');
+  }, Math.max(1, due));
+  if (typeof _staleAt.unref === 'function') _staleAt.unref();
 }
 
 /** device's CORE state feed: every unit keyed by `!hex`, plus the bridge's own
@@ -378,7 +462,8 @@ function _onState(msg) {
   // Re-map from the refreshed bodies so `unitForNum`/`connectMessage` carry the
   // new contact and measured figures rather than the ones mapped at connect.
   _units = _units.map(u => _mapUnit(u.id, _state[u.id] ?? null, u.present, _tx?.units?.[u.id] ?? null));
-  if (_lastStatus) _lastStatus = { ..._lastStatus, units: _units, servedAt: _servedAt };
+  _armFreshness();   // a body arrived: push the flip further out
+  if (_lastStatus) _lastStatus = { ..._lastStatus, units: _units, servedAt: _servedAt, link: _linkState() };
   events.emit('change');
 }
 
@@ -650,6 +735,11 @@ export function stop() {
   // would arm a silence threshold against a value nobody served.
   _state = {};
   _servedAt = null;
+  // The freshness timers outlive every socket by design — they are what reports
+  // the sockets being gone — so stop() is the only thing that may cancel them.
+  clearTimeout(_staleAt); _staleAt = null;
+  if (_staleAgeStop) { _staleAgeStop(); _staleAgeStop = null; }
+  _linkFresh = null;
   _declared = [];
   _heardIds = [];
   _feedTickMs = null;

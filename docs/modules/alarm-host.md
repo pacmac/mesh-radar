@@ -1,7 +1,7 @@
 ---
 module: alarm-host
 source: src/alarm-host.js
-source_hash: 2011870ad522d92ee76e087463b22de2704a270181cc79df587e1c696e52dd25
+source_hash: fc67d7439f9693837cacf2d51bef469650e59f51304a54e63f5d28831528f541
 updated: 2026-08-13
 ---
 
@@ -82,6 +82,84 @@ When an upstream gap closes, the entry changes on their side and the panel fills
 
 Anyone reading this expecting the alarm pages to come back whole should stop here.
 They do not, and no work in this repo makes them.
+
+## Link freshness — the page must be able to tell STALE from QUIET
+
+Peter, 2026-08-13: *"because I cannot rely on the dashboard, I have to repeatedly
+ask questions to the agent about the status of the device, when it was last
+heard, is its beat on schedule. I am doing this constantly because it is NOT
+available to me and/or I cannot trust it."*
+
+**The verdict cannot ride the feed.** `servedAt` refreshes on every `/state` push
+and proves the bridge is still *building* bodies — but when it stops serving, no
+push arrives to carry the word "stale". The state that matters most is precisely
+the one nothing will tell us about. So freshness is derived from **silence**, on
+our own clock, and it is the one thing in this module that must keep working when
+every socket has gone quiet.
+
+### Served on `pac_host_status.link`
+
+```
+fresh     true | false | null      null = unknown, NOT "stale"
+servedAt  epoch ms | null          the bridge's own build instant
+label     "last state body 1m ago" | null    rendered HERE, never in the browser
+why       null | "no state body received yet"
+                | "tick clock unknown — silence cannot be judged"
+```
+
+`label` is null while fresh: there is nothing to say about a link that works.
+`why` exists so a page never has to guess what an absence means — "not connected
+yet" and "connected but unjudgeable" are different situations and must not render
+identically. **The browser renders `label` and decides nothing** —
+`docs/BROWSER_CONTRACT.md`.
+
+### A verdict, not an age — and why that distinction is the whole design
+
+Serving *"served N seconds ago"* continuously would re-render every second
+(`fmtAgo` ticks per second under a minute, `format.js:95`), which against a 10 s
+feed is a **1 Hz broadcast of the whole status payload** — a poll wearing a
+push's clothes, the exact thing `served-time.js` exists to kill.
+
+Instead: **one timer, armed for the instant the verdict flips**, re-armed by every
+`/state` push. While the bridge is healthy that timer is always in the future and
+always cancelled before it fires, so freshness costs *nothing*. Measured over 32 s
+on a healthy link: 27 status pushes, **one** distinct link state.
+
+Once it has fired, `scheduleTime` takes over so the outage is visibly growing —
+one wake per rendered change, and only while broken. That is ~1 push/s for the
+first minute of an outage, then per-minute. Accepted deliberately: during an
+outage a counter that moves is the point, and it stops mattering the moment the
+link returns.
+
+The threshold is `silenceMs()` — `MISSED_TICKS × feedTickMs`, read from the wire.
+**When the tick clock is unknown or OFF, the verdict is `null`, never `false`.**
+A "stale" badge raised against a guessed threshold would be wrong on a bridge
+behaving exactly as configured, and would train the reader to ignore the true one.
+
+### Proven by breaking it
+
+The flip was measured end to end by making `_onState` deaf after one body,
+restarting, and watching the browser feed with nothing arriving:
+
+```
+t=44.3s  fresh=false  label="bridge silent 50s ago"   <- first draft's wording
+t=54.9s  fresh=false  label="bridge silent 1m ago"
+```
+
+Then the deafness was reverted and recovery confirmed: 27 pushes over 32 s, all
+`fresh=true`, one distinct state.
+
+That run also caught the wording. `fmtAgo` renders an **age** — "50s ago" — so
+*"bridge silent 50s ago"* says the silence *happened* 50 s ago rather than that it
+has *lasted* 50 s. Now `last state body 50s ago`, which is about the instant
+`fmtAgo` is actually describing.
+
+**Not yet proven the honest way**: a real wedged bridge — socket up, frames
+swallowed — was not used, because that means interfering with a peer's running
+service. A local stall-proxy was built for it and works, but node-dash could not
+be repointed at it: `pm2 restart --update-env` does not inject `ALARM_HOST_URL`
+and `ecosystem.config.cjs` declares no such key, so the end-to-end path exercised
+here is the deaf-handler one above.
 
 ## This module does not touch the dash mode — 2026-08-13
 
