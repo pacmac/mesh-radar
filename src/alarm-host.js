@@ -51,6 +51,19 @@ const ALARM_HOST_URL = process.env.ALARM_HOST_URL || 'http://127.0.0.1:8790';
 const WS_URL = (process.env.ALARM_HOST_URL || 'http://127.0.0.1:8790')
   .replace(/^http/, 'ws');
 const RECONNECT_MS = 5000;
+
+// DERIVED FROM THE BRIDGE'S OWN CONTRACT, not chosen. Device guarantees a `tick`
+// on /events and every core feed at least every 10 s even on a completely silent
+// mesh (their commit 41a2e6c, xsession [tick-contract-confirm]). The interval is
+// their `--feed-tick-ms`, default 10000 — a SETTING, so this must never be used
+// as a bare threshold.
+const FEED_TICK_MS = 10_000;   // their declared default; asked them to expose it
+const PING_MS      = FEED_TICK_MS;       // one probe per guaranteed tick
+// 3x, per device's instruction to use a multiple: 1x fires on scheduling jitter,
+// 2x on a GC pause, 3x is beyond any plausible pause and still bounds staleness
+// at ~30 s — against a 900 s beat that is 3% of a cycle, versus the 30+ minutes
+// actually observed on 2026-08-13.
+const SILENCE_MS   = FEED_TICK_MS * 3;
 export const events = new EventEmitter();
 
 let _lastStatus = null; // null until the first push arrives
@@ -406,12 +419,53 @@ function _bumpHeard(unit, decoded) {
  *  a socket that comes back without re-priming shows the state it had when it
  *  dropped, indefinitely, with no indication anything was missed. */
 function _socket(path, onMessage, onOpen) {
-  let ws = null, timer = null, closed = false;
+  let ws = null, timer = null, closed = false, watchdog = null;
   const connect = () => {
     if (closed) return;
     ws = new WebSocket(`${WS_URL}${path}`);
-    ws.on('open', () => { log.info('alarm-host', `${path} connected`); onOpen?.(); });
+
+    // -- liveness -----------------------------------------------------------
+    // WITHOUT THIS, A DEAD SOCKET IS INVISIBLE. A TCP connection that dies with
+    // no FIN — a restarted peer, an expiring NAT entry, a dropped route — emits
+    // neither 'close' nor 'error', so the reconnect below never fires and the
+    // page freezes with no end. On 2026-08-13 that showed the garage last heard
+    // 39 minutes ago when it had been heard 10.6 minutes ago; two beats were
+    // missed, the first of them BEFORE the bridge restarted, so the restart was
+    // not the cause. Spec: docs/modules/alarm-socket-watchdog.md.
+    let lastMsgAt = Date.now();
+    let awaitingPong = false;
+    // DELIBERATELY SEPARATE. A pong clears only the pong flag; it must NOT touch
+    // lastMsgAt, or a peer that answers pings while publishing nothing looks
+    // healthy forever — which is the exact fault this watchdog exists to catch,
+    // and the `ws` library auto-answers pings at the protocol layer, so that
+    // peer is the common case rather than a hypothetical.
+    const sawMessage = () => { lastMsgAt = Date.now(); awaitingPong = false; };
+    const sawPong    = () => { awaitingPong = false; };
+
+    watchdog = setInterval(() => {
+      const silentMs = Date.now() - lastMsgAt;
+      // BOTH checks, because they catch different faults: a pong proves the
+      // CONNECTION is alive but says nothing about data flowing, and the
+      // silence check catches an attached socket whose peer stopped publishing.
+      // /plugin/dash/live is a plugin feed and carries no core `tick`, so the
+      // pong is what protects that one.
+      if (silentMs > SILENCE_MS || awaitingPong) {
+        log.warn('alarm-host',
+          `${path} STALLED — no traffic for ${Math.round(silentMs / 1000)}s` +
+          `${awaitingPong ? ' and no pong' : ''}; terminating to force a reconnect`);
+        awaitingPong = false;
+        try { ws.terminate(); } catch { /* already gone */ }
+        return;   // terminate synthesises 'close'; that path reconnects and re-primes
+      }
+      awaitingPong = true;
+      try { ws.ping(); } catch { /* the close handler will pick it up */ }
+    }, PING_MS);
+
+    ws.on('pong', sawPong);
+
+    ws.on('open', () => { log.info('alarm-host', `${path} connected`); sawMessage(); onOpen?.(); });
     ws.on('message', buf => {
+      sawMessage();   // ANY frame proves attachment, `tick` included — that is its purpose
       let msg; try { msg = JSON.parse(buf); } catch { return; }
       try { onMessage(msg); }
       // A throw in a handler must not take the socket down with it. The stream
@@ -420,6 +474,7 @@ function _socket(path, onMessage, onOpen) {
       catch (e) { log.warn('alarm-host', `${path} handler failed: ${e.message}`); }
     });
     ws.on('close', () => {
+      clearInterval(watchdog); watchdog = null;   // or every reconnect adds another
       if (closed) return;
       log.warn('alarm-host', `${path} closed — reconnecting in ${RECONNECT_MS}ms`);
       timer = setTimeout(connect, RECONNECT_MS);
@@ -430,7 +485,12 @@ function _socket(path, onMessage, onOpen) {
     });
   };
   connect();
-  return () => { closed = true; clearTimeout(timer); try { ws?.close(); } catch {} };
+  return () => {
+    closed = true;
+    clearTimeout(timer);
+    clearInterval(watchdog);   // a stopped socket must not keep probing
+    try { ws?.close(); } catch {}
+  };
 }
 
 let _closers = [];

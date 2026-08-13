@@ -1,7 +1,7 @@
 ---
 module: alarm-host
 source: src/alarm-host.js
-source_hash: 7225c73fceffc0b614dec5f2e20c2bce587b108b88e8653f067733bed5f48a92
+source_hash: 7841a932be55cd523b0b4c9620026e9e51b20ea0e07f25a224e24c53f1a7eeed
 updated: 2026-08-12
 ---
 
@@ -329,6 +329,22 @@ only drift.
 taken at connect, re-taken on every reconnect because a reconnect means events
 were missed and a stale snapshot under a live socket is the worst of both. They
 answer *what is true now* once; the socket keeps it true.
+
+### A socket that dies without a FIN — the watchdog
+
+`_socket` reconnects on `'close'` and logs on `'error'`. A TCP connection that
+dies with no FIN emits **neither**, so before 2026-08-13 node-dash held a
+half-open socket indefinitely and the re-prime above never ran. Peter saw the
+garage "last heard 39 minutes ago" when it had been heard 10.6 minutes ago.
+
+Now: `ws.ping()` every `PING_MS` with a pong flag, plus a silence check, and
+`terminate()` — not `close()` — when either trips, because terminate synthesises
+the `'close'` this file already handles. **A pong deliberately does NOT reset the
+silence clock**: the `ws` library auto-answers pings, so a peer that pongs while
+publishing nothing would otherwise look healthy forever, which is the exact fault
+being hunted. Thresholds derive from the bridge's declared `tick` contract.
+
+Full reasoning, the derivation, and the incident: `docs/modules/alarm-socket-watchdog.md`.
 
 ### A failed decode must not erase what decoded
 
