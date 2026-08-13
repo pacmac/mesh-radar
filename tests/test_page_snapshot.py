@@ -41,9 +41,33 @@ fails: list[str] = []
 def fail(what, detail): fails.append(what); print(f"  FAIL  {what}\n        {detail}")
 def ok(what): print(f"  ok    {what}")
 
-def api(path):
-    with urllib.request.urlopen(f"{BASE}{path}") as r:
-        return json.load(r)
+WS_URL = BASE.replace("http", "ws", 1) + "/events"
+
+
+async def board(days):
+    """Ask the server for the board, the same way the page does.
+
+    Peter, 2026-08-13: "no HTTP GETS for live data, ws feeds for everything
+    except static data / forms." The five /snapshot/* GET routes are gone.
+
+    This matters for the test and not only for the page: a contract test that
+    reads a route the page no longer uses proves nothing about the page. TRUTH
+    below compares the screen against what the SERVER SENT THE BROWSER, which
+    is now this message.
+    """
+    import websockets
+    async with websockets.connect(WS_URL, open_timeout=5, max_size=8 * 1024 * 1024) as ws:
+        await ws.send(json.dumps({"type": "snapshot", "days": days}))
+        # Read past anything that is not OUR reply. Two things arrive that look
+        # like one: the socket REPLAYS the board on connect at the server's
+        # default window, and only then answers the window we asked for. Taking
+        # the first `snapshot` message compared the screen against the default
+        # window's numbers and failed on every window but that one.
+        for _ in range(80):
+            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+            if msg.get("type") == "snapshot" and int(msg.get("days", -1)) == int(days):
+                return msg
+    raise RuntimeError(f"no snapshot reply for days={days} on the socket")
 
 PANEL = """() => {
   const a = document.querySelector('[x-text*="furthest_km"]');
@@ -67,7 +91,7 @@ async def main():
 
         # 2. TRUTH — screen must equal what was served
         for days in (1, 7, 0):
-            served = api(f"/snapshot/frontier?days={days}")
+            served = (await board(days)).get("frontier") or {}
             await pg.evaluate("d => Alpine.$data(document.querySelector('[x-data]')).setSnapWindow(d)", days)
             await pg.wait_for_timeout(900)
             shown = await pg.evaluate("""() => {

@@ -15,7 +15,8 @@
 // it — a number that quietly disobeys the control above it is how the board
 // showed an all-time 189.1 km under a 7D badge.
 
-import { fetchJSON } from './app-helpers.js';
+// No fetch import. This module makes no HTTP request of any kind — the board
+// arrives over the socket.
 
 export const snapshotMixin = {
   snapWindow: 1,            // days; 0 = all-time, matching config-api WINDOW_DAYS
@@ -54,33 +55,56 @@ export const snapshotMixin = {
     await this.loadSnapshot();
   },
 
-  async loadSnapshot() {
+  /** Ask for the board. ONE message over the socket, not five GETs.
+   *
+   *  Peter, 2026-08-13: "no HTTP GETS for live data, ws feeds for everything
+   *  except static data / forms." This was five fetches on page load and five
+   *  more on every window change — the clearest violation on the page.
+   *
+   *  Fire-and-forget: the reply arrives as a `snapshot` message and is applied
+   *  by the handler below. Nothing here awaits, because a socket reply is not a
+   *  return value. */
+  loadSnapshot() {
     this.snapLoading = true;
     this.snapError = '';
-    try {
-      // ONE window for every band. The board previously mixed all-time, 30-day
-      // and today in a single view, so all four load with the same `days`.
-      const w = this.snapWindow;
-      const [dist, ng, prod] = await Promise.all([
-        fetchJSON(`/snapshot/distribution?days=${w}`),
-        fetchJSON(`/snapshot/new-ground?days=${w}`),
-        fetchJSON(`/snapshot/productivity?days=${w}`),
-      ]);
-      this.snapHealth = await fetchJSON('/snapshot/health');   // not window-scoped
-      this.snapDist = dist; this.snapNew = ng; this.snapProd = prod;
-      // The server owns the default; ?days only overrides for this call.
-      this.snapFrontier = await fetchJSON(`/snapshot/frontier?days=${this.snapWindow}`);
-      // Trust the payload's window over the local one — if the server clamped or
-      // rejected the value, the badge must show what was actually applied.
-      if (Number.isFinite(this.snapFrontier?.window_days)) {
-        this.snapWindow = this.snapFrontier.window_days;
-      }
-    } catch (e) {
-      this.snapError = e.message || 'Could not load the snapshot';
+    // ONE window for every band. The board previously mixed all-time, 30-day
+    // and today in a single view, so every band asks with the same `days`.
+    this.wsSend?.({ type: 'snapshot', days: this.snapWindow });
+  },
+
+  /** The board arrived. */
+  onSnapshot(msg) {
+    // A reply for a window we have already moved off is DROPPED — two rapid
+    // window clicks race, and the loser must not paint bands describing a
+    // window the badge no longer shows. Addressing, not a decision: the server
+    // said which window it answered.
+    //
+    // EXCEPT for the first board. The connect replay arrives at the SERVER's
+    // default window, which need not match the one this page happens to be
+    // showing; dropping it would leave the board empty until something else
+    // asked. So the first payload is accepted whatever its window, and the
+    // badge follows it — the server owns the default.
+    const haveBoard = !!this.snapFrontier;
+    if (haveBoard && msg?.days != null && Number(msg.days) !== Number(this.snapWindow)) return;
+    if (!haveBoard && Number.isFinite(Number(msg?.days))) this.snapWindow = Number(msg.days);
+
+    this.snapLoading = false;
+    if (msg?.error) {
+      this.snapError = msg.error;
       this.snapFrontier = null; this.snapDist = null;
       this.snapNew = null; this.snapProd = null; this.snapHealth = null;
-    } finally {
-      this.snapLoading = false;
+      return;
+    }
+    this.snapError = '';
+    this.snapFrontier = msg.frontier ?? null;
+    this.snapDist     = msg.distribution ?? null;
+    this.snapNew      = msg.new_ground ?? null;
+    this.snapProd     = msg.productivity ?? null;
+    this.snapHealth   = msg.health ?? null;
+    // Trust the payload's window over the local one — if the server clamped or
+    // rejected the value, the badge must show what was actually applied.
+    if (Number.isFinite(this.snapFrontier?.window_days)) {
+      this.snapWindow = this.snapFrontier.window_days;
     }
   },
 

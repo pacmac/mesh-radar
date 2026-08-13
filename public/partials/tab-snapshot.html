@@ -135,16 +135,16 @@
                          LoRa rather than via MQTT. Served since cf6bd24 and
                          invisible until now, which made the headline read as an
                          RF claim it was never making. -->
-                    <div class="text-xs font-mono mt-2 pt-2 border-t border-base-content/10"
+                    <!-- ONE LINE, no rule, no extra block. This band is
+                         `overflow-hidden` with a fixed flex ratio, and at
+                         1280x800 it was clipping 100px of its own content —
+                         a bordered two-line block here cost height the band
+                         does not have. Provenance earns a line, not a section. -->
+                    <div class="text-xs font-mono opacity-40 mt-1"
                          x-show="snapFrontier?.heard_lora != null" x-cloak>
-                      <span class="opacity-40">RF-confirmed</span>
-                      <span class="opacity-70" x-text="snapFrontier?.heard_lora"></span><span
-                            class="opacity-40"> of </span><span
-                            class="opacity-70" x-text="snapFrontier?.heard"></span>
-                      <span class="opacity-40"> · furthest </span><span
-                            class="opacity-70"
-                            x-text="snapKm(snapFrontier?.furthest_lora_km)"></span><span
-                            class="opacity-40">km</span>
+                      <span x-text="snapFrontier?.heard_lora"></span>/<span
+                            x-text="snapFrontier?.heard"></span> RF-confirmed ·
+                      <span x-text="snapKm(snapFrontier?.furthest_lora_km)"></span>km
                     </div>
 
                     <!-- THE EPOCH CAVEAT, AND IT CANNOT BE OMITTED. Provenance

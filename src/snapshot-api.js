@@ -384,35 +384,44 @@ export function health() {
                  + 'unknown rather than filled with a plausible value.' };
 }
 
-router.get('/snapshot/health', (req, res) => {
-  try { res.json(health()); } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// THE FIVE GET ROUTES ARE GONE — /snapshot/health, /distribution, /new-ground,
+// /productivity, /frontier. Every one served LIVE DATA over HTTP, which is
+// forbidden (Peter, 2026-08-13: "no HTTP GETS for live data, ws feeds for
+// everything except static data / forms").
+//
+// The board now arrives as one `snapshot` message on the socket — see board()
+// below and the RPC in ws-relay.js. They are DELETED rather than deprecated: a
+// route left standing is a route something reaches for, and the page contract
+// test was already reading one of them, testing a path the page no longer used.
 
-router.get('/snapshot/distribution', (req, res) => {
-  const d = req.query.days != null ? Number(req.query.days) : windowDays();
-  try { res.json(distribution(Number.isFinite(d) && d >= 0 ? d : windowDays())); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.get('/snapshot/new-ground', (req, res) => {
-  const d = req.query.days != null ? Number(req.query.days) : windowDays();
-  try { res.json(newGround(Number.isFinite(d) && d >= 0 ? d : windowDays())); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.get('/snapshot/productivity', (req, res) => {
-  const d = req.query.days != null ? Number(req.query.days) : windowDays();
-  try { res.json(productivity(Number.isFinite(d) && d >= 0 ? d : windowDays())); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.get('/snapshot/frontier', (req, res) => {
-  try {
-    const d = req.query.days != null ? Number(req.query.days) : windowDays();
-    res.json(frontier(Number.isFinite(d) && d >= 0 ? d : windowDays()));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+/** THE WHOLE BOARD FOR ONE WINDOW, in a single object.
+ *
+ *  Peter, 2026-08-13: "no HTTP GETS for live data, ws feeds for everything
+ *  except static data / forms."
+ *
+ *  The board was five browser GETs — frontier, distribution, new-ground,
+ *  productivity, health — fired on page load and again on every window change.
+ *  That is live data over GET, and it is forbidden.
+ *
+ *  ONE call rather than five, because they are one screen: five separate
+ *  replies can arrive interleaved with a window change and paint a board whose
+ *  bands disagree about which window they are describing. `days` is echoed back
+ *  so the browser can drop a reply for a window it is no longer showing —
+ *  which is not a decision, it is addressing.
+ *
+ *  `health` is not window-scoped and is included anyway: it belongs to the same
+ *  screen, and a second round trip to fetch it would reintroduce the split this
+ *  removes. */
+export function board(days = windowDays()) {
+  const d = Number.isFinite(Number(days)) && Number(days) >= 0 ? Number(days) : windowDays();
+  return {
+    days: d,
+    frontier:     frontier(d),
+    distribution: distribution(d),
+    new_ground:   newGround(d),
+    productivity: productivity(d),
+    health:       health(),
+  };
+}
 
 export default router;

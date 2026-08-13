@@ -60,6 +60,7 @@ import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 import { fmtAgo } from './format.js';
 import { buildCoulomb } from './coulomb.js';
+import { board } from './snapshot-api.js';
 
 // THE SNR EMIT BOUNDARY. Everything leaving for the browser carries dB, never
 // the raw quarter-dB the wire uses — see src/snr.js for why that module is
@@ -1061,6 +1062,23 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     }
     // Settings replay — page state never comes from a GET (settings-via-ws)
     if (ws.readyState === 1) ws.send(JSON.stringify(settingsEvent()));
+
+    // Snapshot board — REPLAYED ON CONNECT, at the server's default window.
+    //
+    // Without this the board is empty on a fresh load: the page asks for it in
+    // x-init, which runs before the socket is open, so the request is dropped
+    // and nothing retries. Measured — the page contract test read "—" for every
+    // window while the socket-driven update worked perfectly on a page that had
+    // already been open.
+    //
+    // Replay-on-connect is the rule the rest of this file already follows
+    // (BROWSER_CONTRACT: page data is replayed on connect and pushed on
+    // change), and it is what makes the browser's request a REFINEMENT — asking
+    // for a different window — rather than the only way to get any data at all.
+    if (ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: 'snapshot', ...board() })); }
+      catch (e) { console.error(`[snapshot] connect replay failed: ${e.message}`); }
+    }
     // Client→server RPC. geocode: on-demand address lookup — the Nominatim
     // queue in lookupGeocode serializes requests regardless of caller.
     ws.on('message', async (raw) => {
@@ -1116,6 +1134,33 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
           ws.send(JSON.stringify({ type: 'coulomb', ...payload }));
           rememberCoulombAge(payload);
         }
+      }
+
+      // snapshot: the whole board for one window.
+      //
+      // Replaces FIVE browser GETs — /snapshot/frontier, /distribution,
+      // /new-ground, /productivity, /health — which fired on page load and
+      // again on every window change. Peter, 2026-08-13: "no HTTP GETS for live
+      // data, ws feeds for everything except static data / forms."
+      //
+      // One reply rather than five: they are one screen, and five replies can
+      // interleave with a window change and paint bands that disagree about
+      // which window they describe. `days` is echoed so the browser can drop a
+      // reply for a window it has moved off — addressing, not a decision.
+      if (msg?.type === 'snapshot') {
+        let payload;
+        try {
+          payload = board(msg.days);
+        } catch (e) {
+          // The board is five queries over the whole store. A failure here is a
+          // real fault and the page must say so rather than render empty bands
+          // that read as "nothing has happened".
+          console.error(`[snapshot] board failed: ${e.message}`);
+          payload = { days: msg.days ?? null, error: `Could not build the board: ${e.message}`,
+                      frontier: null, distribution: null, new_ground: null,
+                      productivity: null, health: null };
+        }
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'snapshot', ...payload }));
       }
     });
     // Replay last-known BLE state for each device — no HTTP
