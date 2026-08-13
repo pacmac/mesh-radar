@@ -55,8 +55,9 @@ Re-queried at write-up time, not recalled.
 - **mt-alarm bridge** — `online`, `:8790/health` → `200`, `schemaHash 0xd339`. Both alarm sockets connected (`/plugin/dash/live`, `/events`).
 - **pac-host** — **STOPPED and pm2-saved**, permanently. Retired 2026-08-12 09:35Z. Will not return on reboot. This is intended.
 - **Config changed today:** none. No radio config written, nothing transmitted, no hardware moved.
-- **Tree:** clean except two untracked items — `doc` (a **symlink** to `../../pio/projects/pac-garage-alarm/docs/config-schema.json`, pre-existing, not mine) and `docs/handover/`.
-- **Branch:** `feat/alarm-transport-plugin`, **185 commits unpushed**. Pushing needs Peter.
+- **Tree:** clean except one untracked item — `doc`, a **symlink** to `../../pio/projects/pac-garage-alarm/docs/config-schema.json`. Pre-existing, not mine, dated 18 Jul.
+- **Branch:** `feat/alarm-transport-plugin`, **188 commits unpushed**. Pushing needs Peter.
+- **`docs/handover/`** holds three archived versions of this file from today; the current one is the third write (the skill gained a PEERS section mid-session, and services was deprecated after that).
 - **Context:** this session ran very long and was compacted twice. The last few edits deserve re-reading.
 
 ---
