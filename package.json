@@ -6,7 +6,11 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "check": "node scripts/check_all.mjs --group fast,service",
+    "check:all": "node scripts/check_all.mjs --group all",
+    "check:list": "node scripts/check_all.mjs --list",
+    "test": "npm run check"
   },
   "license": "ISC",
   "dependencies": {
