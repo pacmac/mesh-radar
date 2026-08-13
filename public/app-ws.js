@@ -130,6 +130,7 @@ export const wsMixin = {
     if (ev.type === 'event_log')           { this.applyEventLog(ev); return; }
     if (ev.type === 'event')               { this.applyEvent(ev); return; }
     if (ev.type === 'snapshot')           { this.onSnapshot(ev); return; }
+    if (ev.type === 'radar')              { this.onRadarOverlays(ev); this.drawRadar?.(); return; }
     if (ev.type === 'node_status')        { this.applyNodeStatus(ev); return; }
     if (ev.type === 'node_status_update') { this.onNodeStatusUpdate(ev.num); return; }
     if (ev.type === 'node_status_age')    { this.applyNodeStatusAge(ev); return; }

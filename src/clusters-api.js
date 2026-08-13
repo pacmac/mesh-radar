@@ -12,14 +12,13 @@ import { clusters, seedClusters, listAnchors, clusterConfig,
 
 const router = Router();
 
-// Every cluster with membership, hull and stats, plus the loners.
-router.get('/clusters', (req, res) => {
-  try {
-    res.json(clusters({ force: req.query.force === '1' }));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// GET /clusters IS GONE — live data over HTTP is forbidden (Peter,
+// 2026-08-13). Every cluster with membership, hull and stats now arrives in the
+// `radar` message on the socket. POST /clusters (seed) stays: that is an
+// action, not a feed.
+//
+// `?force=1` went with it. It forced a recompute on read, which is a WRITE
+// dressed as a GET — and nothing in the browser ever set it.
 
 router.get('/clusters/config', (req, res) => res.json(clusterConfig()));
 

@@ -26,20 +26,14 @@ import { visibility } from './terrain.js';
 
 const router = Router();
 
-router.get('/reach', (req, res) => {
-  try {
-    const achieved = reachBySector();
-    const vis = visibility();
-    res.json({
-      achieved,
-      potential: vis.ready
-        ? { bearings_deg: vis.bearings_deg, horizon_km: vis.horizon_km,
-            shadow_deg: vis.deepest_deg, observer_asl_m: vis.observer_asl_m,
-            basis: 'line-of-sight horizon from SRTM 30 m bare earth — excludes trees and buildings' }
-        : { unavailable: vis.reason },
-    });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+// GET /reach IS GONE. It served live data over HTTP, which is forbidden
+// (Peter, 2026-08-13). The radar's three overlays — reach, clusters, terrain —
+// now arrive together in one `radar` message on the socket, replayed on
+// connect: see radarOverlays() in ws-relay.js.
+//
+// The achieved/potential split moved with it unchanged. What we have PROVEN
+// and what the GROUND ALLOWS remain two different kinds of claim and are still
+// never merged.
 
 router.get('/reach/links', (req, res) => {
   try { res.json({ proven: provenLinks(), heard: heardDirect() }); }

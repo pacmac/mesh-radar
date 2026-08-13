@@ -61,6 +61,50 @@ import { traceroute } from './traceroute.js';
 import { fmtAgo } from './format.js';
 import { buildCoulomb } from './coulomb.js';
 import { board } from './snapshot-api.js';
+// Composed HERE rather than in any one of the three API files: reach does not
+// own clusters, and terrain does not own reach. ws-relay is already the place
+// that assembles a page's data from modules that do not know each other, the
+// same way it does for node_status.
+import { reachBySector } from './reach.js';
+import { clusters } from './clusters.js';
+import { visibility } from './terrain.js';
+
+/** The radar's three overlays, in one payload.
+ *
+ *  EACH ONE FAILS ON ITS OWN. Terrain needs an SRTM sample that may never have
+ *  been taken, and clusters need an anchor set that may not exist yet; letting
+ *  either throw would take the reach ring down with it and leave a bare radar
+ *  with no indication why. A missing overlay is null and the radar simply does
+ *  not draw it — which is what the browser already does for a failed fetch,
+ *  preserved here rather than reinvented.
+ *
+ *  Shapes are IDENTICAL to what the three GET routes returned, so the drawing
+ *  code did not change: `reach` keeps its achieved/potential split, because
+ *  what we have PROVEN and what the GROUND ALLOWS are different kinds of claim
+ *  and merging them was already ruled out (reach-api.js, Peter 2026-08-05). */
+function radarOverlays() {
+  const out = { reach: null, clusters: null, terrain: null };
+
+  try {
+    const vis = visibility();
+    out.reach = {
+      achieved: reachBySector(),
+      potential: vis.ready
+        ? { bearings_deg: vis.bearings_deg, horizon_km: vis.horizon_km,
+            shadow_deg: vis.deepest_deg, observer_asl_m: vis.observer_asl_m,
+            basis: 'line-of-sight horizon from SRTM 30 m bare earth — excludes trees and buildings' }
+        : { unavailable: vis.reason },
+    };
+  } catch (e) { console.error(`[radar] reach failed: ${e.message}`); }
+
+  try { out.clusters = clusters({ force: false }); }
+  catch (e) { console.error(`[radar] clusters failed: ${e.message}`); }
+
+  try { out.terrain = visibility(); }
+  catch (e) { console.error(`[radar] terrain failed: ${e.message}`); }
+
+  return out;
+}
 
 // THE SNR EMIT BOUNDARY. Everything leaving for the browser carries dB, never
 // the raw quarter-dB the wire uses — see src/snr.js for why that module is
@@ -1079,6 +1123,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       try { ws.send(JSON.stringify({ type: 'snapshot', ...board() })); }
       catch (e) { console.error(`[snapshot] connect replay failed: ${e.message}`); }
     }
+
+    // Radar overlays — reach ring, clusters, terrain mask. Replayed for the
+    // same reason as the board: the page asks in x-init, before the socket is
+    // open, so a request-only design renders an empty radar on every fresh load.
+    if (ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: 'radar', ...radarOverlays() })); }
+      catch (e) { console.error(`[radar] connect replay failed: ${e.message}`); }
+    }
     // Client→server RPC. geocode: on-demand address lookup — the Nominatim
     // queue in lookupGeocode serializes requests regardless of caller.
     ws.on('message', async (raw) => {
@@ -1161,6 +1213,16 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
                       productivity: null, health: null };
         }
         if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'snapshot', ...payload }));
+      }
+
+      // radar: the three overlays the radar draws over the node plot.
+      //
+      // Replaces GET /reach, GET /clusters and GET /terrain/visibility. One
+      // reply rather than three: they are drawn onto the same canvas in the
+      // same frame, and three replies can land across a redraw leaving a ring,
+      // a hull set and a terrain mask that describe different moments.
+      if (msg?.type === 'radar') {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'radar', ...radarOverlays() }));
       }
     });
     // Replay last-known BLE state for each device — no HTTP

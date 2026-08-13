@@ -12,10 +12,12 @@ const router = Router();
 
 // The VISIBILITY mask is what the radar draws — see terrain.js. The raw relief
 // grid stays available for anything that wants the elevations themselves.
-router.get('/terrain/visibility', (req, res) => {
-  try { res.json(visibility()); }
-  catch (err) { res.status(500).json({ error: err.message }); }
-});
+// GET /terrain/visibility IS GONE — it arrives in the `radar` message now.
+//
+// It was the most defensible of the three to leave: the mask changes only when
+// the home position or the terrain grid does. Moved anyway, because
+// BROWSER_CONTRACT names page data as WS-only without carving out slow-moving
+// data, and one endpoint keeping a second transport alive is how a rule erodes.
 
 router.get('/terrain', (req, res) => {
   try { res.json(grid()); }

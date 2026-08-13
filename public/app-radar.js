@@ -178,9 +178,24 @@ export const radarMixin = {
       // The VISIBILITY MASK, not the relief. Peter, 2026-08-05: "invert it so
       // that I see an outline and anything outside that outline should be
       // shaded, maybe according to the severity."
-      const d = await fetchJSON('/terrain/visibility');
-      this.terrainData = d?.ready ? d : null;
-    } catch { this.terrainData = null; }
+      // Kept as a no-op entry point so existing callers and x-init do not have
+      // to change: the overlays arrive on the socket, replayed on connect and
+      // applied by onRadarOverlays below. Asking is now a refinement, not the
+      // only way to get data.
+      this.wsSend?.({ type: 'radar' });
+    } catch { /* the socket replay is the primary path; a failed nudge is not fatal */ }
+  },
+
+  /** The three radar overlays arrived together.
+   *
+   *  Each is applied on its own: terrain needs an SRTM sample that may never
+   *  have been taken and clusters need anchors that may not exist, so one being
+   *  null must not blank the other two. Same gates the fetches used —
+   *  `achieved.ready` and `ready` — kept verbatim so the drawing is unchanged. */
+  onRadarOverlays(msg) {
+    this.reachData   = msg?.reach?.achieved?.ready ? msg.reach : null;
+    this.clusterData = msg?.clusters ?? null;
+    this.terrainData = msg?.terrain?.ready ? msg.terrain : null;
   },
 
   _drawRadarTerrain(maxKm) {
@@ -285,11 +300,11 @@ export const radarMixin = {
   // A sector with no evidence draws NOTHING. Not a zero-radius wedge — nothing.
   // Unknown is not unreachable, and a shoreline where we have never looked would
   // be a lie in the same class as the 400 km theoretical circle this replaced.
+  // All three overlays arrive in ONE `radar` message — see onRadarOverlays.
+  // These remain as entry points so the existing lazy-load call sites keep
+  // working; each just nudges the socket.
   async _loadReach() {
-    try {
-      const d = await fetchJSON('/reach');
-      this.reachData = d?.achieved?.ready ? d : null;
-    } catch { this.reachData = null; }
+    this.wsSend?.({ type: 'radar' });
   },
 
   _drawRadarReach(maxKm) {
@@ -338,10 +353,7 @@ export const radarMixin = {
   },
 
   async _loadClusters() {
-    try {
-      const d = await fetchJSON('/clusters');
-      this.clusterData = d || null;
-    } catch { this.clusterData = null; }
+    this.wsSend?.({ type: 'radar' });
   },
 
   // ── Cluster hover card ─────────────────────────────────────────────────────

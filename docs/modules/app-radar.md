@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: 683fcea6bd399d433e8c4af624e838799f89c10f4d03c751f22e504cf1f731d5
+source_hash: a9bca94e6c09bcdb531c0ae4b763f6f24b72efd2b6227d5deb1de7942396ea91
 updated: 2026-08-04
 ---
 
