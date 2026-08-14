@@ -6,27 +6,44 @@ Written from `/usr/share/pac/dev/projects/mt-radar/node-dash`, branch
 over from, four hours ago** — I ran `/handover read` against it, and three of its
 claims turned out to be wrong. Expect the same of this one.
 
-**LEAD WITH THE DEFECT — Peter's live config is still corrupted, and it is worse
-than the last handover said.** A test wrote **15** Class-1 example payloads into
-production config, not the 12 that document accounts for. `radar.log_scale=false`
-(rings are equi-spaced right now), `tilt.zero=0`/`tilt.north_angle=0` (calibration
-wiped), `alerts.smtp_port=587`, `radar.max_range_km=100`, `radar.crosshair=true`,
-OMNI `gain_dbi=8 cable_loss_db=1 color=blue is_primary=true`, auto-purge on at
-02:00, **and mesh-gw's own `ble.admin_passkey_refresh_s=240`** — a write into a
-peer's live config. `range_test_log` is empty (a Class-1 op is a DELETE).
-**Peter's real values are still unknown and only he can supply them.**
+**LEAD WITH THE DEFECT — B114: mesh-gw's `signal_update` events are being silently
+discarded by the browser.** Two producers emit the same event type with different
+shapes. Ours is `{type, data:{signal_num, rssi, snr, ts}}`
+(`active-tracker.js:124` → `ws-relay.js:854`); **mesh-gw's is FLAT** —
+`{type, __ble_addr, addr, from_num, snr, rssi, hops}`, measured on both `:8001`
+and our own `:8000`. `public/app-ws.js:559` reads `ev.data`, so for every
+gw-originated one the guard fails and the event is dropped with no error and no
+log. Full detail under REMAINS. It was invisible until `2db85be` because the test
+connection died before the event ever arrived.
 
-I disabled the two alert rules that were firing on corrupted thresholds
-(`node_offline` threshold 0.0, `tilt_high` on a zeroed calibration). To reverse:
-`node_offline enabled=1 threshold=0.0 cooldown=60`, `tilt_high enabled=1
-threshold=(null) cooldown=30`.
+**Second: `npm run check` is RED, honestly so.** 9 of 10; `node_api` has **2**
+real failures — B114 above and B93 — down from 5.
 
-**Second: `npm run check` is still RED, honestly so.** 9 of 10; `node_api` has
-**2** real failures (was 5 — see SHIPPED).
+**Third: read GOT WRONG before trusting anything here.** I ran `/handover read` on
+the previous document and then repeated one of its unverified claims to Peter as
+my own within the hour.
 
-**Third: a defect I introduced and fixed inside one hour is worth reading before
-you trust anything else here — see GOT WRONG / "I repeated the last handover's
-framing without checking it".**
+**Fourth — the config damage, which is NOT breaking and is deliberately not the
+lead.** Peter, 2026-08-14: *"none of these are breaking."* A test wrote **15**
+Class-1 example payloads into production config, not the 12 the previous handover
+accounted for. It is a **restore-when-convenient**, not a fault:
+
+- **Wrong, needs Peter's values:** `radar.log_scale=false` (rings equi-spaced;
+  the requirement is compressive/quantile), `tilt.zero=0`/`tilt.north_angle=0`
+  (a calibration that is exactly zero on both axes is not one), OMNI `color=blue`
+  (the YAGI holds `info`, a DaisyUI token — `blue` is the test's literal).
+- **Indistinguishable from correct:** `alerts.smtp_port=587`,
+  `radar.max_range_km=100`, `radar.crosshair=true`, OMNI `gain_dbi=8`,
+  `cable_loss_db=1`, `is_primary=true`, auto-purge `02:00`. Each is plausible and
+  happens to equal the example payload. **There is no before-snapshot, and that
+  is the real damage** — not the values themselves.
+- **Gone regardless:** `range_test_log` is 0 rows (a Class-1 op is a DELETE).
+- **Not ours:** it also wrote mesh-gw's `ble.admin_passkey_refresh_s=240`.
+
+The two that *did* have effects are already stopped: `tilt_high` was firing on the
+zeroed calibration and `node_offline` was emailing hourly on threshold 0.0 — both
+rules disabled. To reverse: `node_offline enabled=1 threshold=0.0 cooldown=60`,
+`tilt_high enabled=1 threshold=(null) cooldown=30`.
 
 ---
 
