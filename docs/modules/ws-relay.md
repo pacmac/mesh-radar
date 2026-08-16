@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 4b54cacfd2c109b6df2fbb7102f8f95795ea21b777cdc6c863f5fb7003000129
-updated: 2026-08-14
+source_hash: 0909a23821158213953554e33e930966da389575fac5e970bfbc390c812f8589
+updated: 2026-08-16
 ---
 
 # Module: ws-relay

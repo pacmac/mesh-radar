@@ -1,111 +1,145 @@
-// channels — the one place that answers "which channel is this".
+// channels — THE single source of truth for "which channel is this, and which
+// slot do I send it on". Nothing else may decide a channel. Spec:
+// docs/modules/channels.md.
 //
-// A Meshtastic channel's identity is its PRE-SHARED KEY. Not its index, and not
-// its name. Spec: docs/modules/channels.md.
+// Peter, 2026-08-16: "the resolver needs to resolve this, needs an arg passed to
+// it 'pub or pri' ... I suspect there are lots of other places where the wrong
+// channel is used. resolve should be the SSOT", and "so 2 args (RADIO,PUB/PRI)".
+// Earlier: "you CANNOT use channel index and assume that channel 1 is the
+// private channel on all devices."
 //
-// Peter, 2026-08-14: "it should be a global func, that selects the private
-// channel based on a shared key (which may be in a config file) you CANNOT use
-// channel index and assume that channel 1 is the private channel on all devices."
+// A CHANNEL'S IDENTITY IS ITS NAME **AND** ITS KEY, and getting that wrong cost
+// five days of the YAGI. An earlier version of this module keyed on the PSK alone
+// and therefore called our two PRIMARYs the same channel — same key, one unnamed
+// and one named `Public`. Meshtastic hashes the name AND the key, so they are
+// not: from 2026-08-12 the YAGI transmitted into a channel nobody was listening
+// to, completed ZERO traceroutes in 2,778 attempts, and the OMNI two metres away
+// stopped hearing it. Measured 2026-08-16:
 //
-// HE IS RIGHT, AND BOTH OBVIOUS ALTERNATIVES ARE WRONG. Measured on our two
-// radios, 2026-08-14 (fingerprints truncated here; the key is never printed):
+//   OMNI  E9:B0  0 PRIMARY   (unnamed)   865e781a56f3
+//                1 SECONDARY mqtt        (no key)
+//                2 SECONDARY Private     fffb995be728
+//   YAGI  F4:12  0 PRIMARY   Public      b7ecd210d6cd   <- differs. the fault.
+//                1 SECONDARY Private     fffb995be728   <- matches, at a different index
 //
-//   E9:B0:3F:17:27:91   0 PRIMARY   (unnamed)   5d4dc0ce1ab5
-//                       1 SECONDARY mqtt        (no key — unencrypted)
-//                       2 SECONDARY Private     1ee0ab2c7a2b
-//   F4:12:FA:39:F7:B6   0 PRIMARY   Public      5d4dc0ce1ab5
-//                       1 SECONDARY Private     1ee0ab2c7a2b
-//
-//   INDEX FAILS  Private is 2 on one radio and 1 on the other. Index 1 on E9:B0
-//                is `mqtt` — unencrypted, and the one channel that is emphatically
-//                NOT private. Hard-coding 1 broadcasts to MQTT from that radio.
-//   NAME FAILS   the two PRIMARYs are the SAME channel by key, but one is named
-//                `Public` and the other is UNNAMED. A name is decoration.
-//   KEY WORKS    the fingerprint matches across radios in both cases.
-//
-// THE KEY IS NEVER STORED. `psk` is already in the browser's SENSITIVE_FIELDS and
-// the audit spec lets only `psk_present` and a length leave the system. A sha256
-// fingerprint answers every question here exactly as well — it is what proved the
-// two `Private` channels are one channel — while being safe to persist and log.
+// THE KEY ITSELF IS NEVER STORED, only its hash: `psk` is in the browser's
+// SENSITIVE_FIELDS and the audit spec lets only psk_present and a length out.
 
 import { createHash } from 'node:crypto';
 import { getConfig } from './db.js';
 
-// Config key naming the designated private channel, by fingerprint.
-//
-// IT CANNOT BE DERIVED, which is why it is configured. "The key both radios
-// share" does not single it out — the two PRIMARYs are shared too.
-export const PRIVATE_FP_KEY = 'channels.private_psk_fp';
+/** The roles a caller may ask for. Closed set — an open one invites `resolve(dev,
+ *  'primary')` and a silent undefined. */
+export const ROLES = ['pub', 'pri'];
 
-// device (MAC, upper) -> [{ index, name, role, psk_fp }]
+// Config keys naming the designated channels, by identity hash.
+//
+// CONFIGURED, NOT INFERRED. "The channel both radios share" singles neither out,
+// and inferring `pub` from "index 0" is precisely the assumption that hid the
+// YAGI fault: index 0 on the YAGI IS a primary, it is just the wrong one.
+export const ROLE_CONFIG_KEY = { pub: 'channels.pub_key', pri: 'channels.pri_key' };
+
+// device (MAC, upper) -> [{ index, name, role, key }]
 const _byDevice = new Map();
 
-/** sha256 of a channel's pre-shared key.
+/** A channel's identity: name AND key.
  *
- *  NULL FOR AN ABSENT OR EMPTY KEY, deliberately. An unencrypted channel must
- *  never compare equal to a configured one — `mqtt` above is exactly that case,
- *  and `null === null` returning "same channel" would put a private-channel
- *  broadcast onto an open one. Every comparison below therefore tests for a
- *  non-null fingerprint FIRST. */
-export function pskFingerprint(psk) {
+ *  NULL WHEN THERE IS NO KEY, deliberately. `mqtt` above is unencrypted; if this
+ *  returned a constant then `null === null` would match it against a designated
+ *  channel and a private broadcast would go out in clear. Every comparison below
+ *  therefore requires a non-null identity on BOTH sides. */
+export function channelKey(name, psk) {
   if (typeof psk !== 'string' || psk === '') return null;
-  return createHash('sha256').update(psk).digest('hex');
+  return createHash('sha256').update(`${name ?? ''}\0${psk}`).digest('hex');
 }
 
-const _key = device => (typeof device === 'string' ? device.toUpperCase() : null);
+const _dev = d => (typeof d === 'string' ? d.toUpperCase() : null);
 
 /** Record a radio's channel table. Called by ws-relay's refreshDeviceChannels on
- *  every device READY — this module does NO HTTP of its own, because a second
- *  fetcher for the same question is a second source of truth that can drift. */
+ *  every device READY. This module does NO HTTP of its own — a second fetcher is
+ *  a second source of truth for one question, and they drift. */
 export function setDeviceChannels(device, channels) {
-  const k = _key(device);
+  const k = _dev(device);
   if (!k) return;
   _byDevice.set(k, (channels || []).map(c => ({
-    index:  c.index,
-    name:   c.name ?? '',
-    role:   c.role ?? null,
-    psk_fp: c.psk_fp ?? null,
+    index: c.index,
+    name:  c.name ?? '',
+    role:  c.role ?? null,        // the RADIO's PRIMARY/SECONDARY, not our pub/pri
+    key:   c.key ?? null,
   })));
 }
 
-/** The configured private-channel fingerprint, or null if none is designated. */
-export function privateFp() {
-  const fp = getConfig(PRIVATE_FP_KEY, null);
-  return (typeof fp === 'string' && fp !== '') ? fp : null;
-}
-
-/** Every known channel on a radio. Empty array if the radio has not reported. */
+/** Every known channel on a radio. */
 export function channelsFor(device) {
-  return _byDevice.get(_key(device)) ?? [];
+  return _byDevice.get(_dev(device)) ?? [];
 }
 
-/** THE ONLY PERMITTED "is this private" TEST.
- *
- *  False when nothing is designated, when the radio is unknown, or when the slot
- *  carries no key. Never guesses. */
-export function isPrivate(device, index) {
-  const want = privateFp();
-  if (!want) return false;
-  const ch = channelsFor(device).find(c => c.index === index);
-  return !!(ch && ch.psk_fp && ch.psk_fp === want);
+/** The configured identity for a role, or null if undesignated. */
+export function designatedKey(role) {
+  const cfgKey = ROLE_CONFIG_KEY[role];
+  if (!cfgKey) return null;
+  const v = getConfig(cfgKey, null);
+  return (typeof v === 'string' && v !== '') ? v : null;
 }
 
-/** The slot to transmit the private channel on, for THIS radio.
+/** THE SLOT TO TRANSMIT `role` ON, FOR THIS RADIO. Two args, as Peter specified:
+ *  (radio, 'pub'|'pri').
  *
- *  RETURNS NULL RATHER THAN A DEFAULT. A caller that fell back to 0 on null would
- *  transmit on PRIMARY — the public mesh — which is the single worst outcome this
- *  module exists to prevent. Callers must treat null as "cannot send", not as
- *  "send anyway". */
-export function privateIndexFor(device) {
-  const want = privateFp();
+ *  RETURNS NULL RATHER THAN A DEFAULT, and callers must treat null as "cannot
+ *  send" rather than "send anyway". A fallback to 0 transmits on whatever that
+ *  radio's primary happens to be — which on the YAGI is the misnamed channel, and
+ *  on any radio is the PUBLIC MESH when you asked for private. */
+export function indexFor(device, role) {
+  const want = designatedKey(role);
   if (!want) return null;
-  const ch = channelsFor(device).find(c => c.psk_fp && c.psk_fp === want);
+  const ch = channelsFor(device).find(c => c.key && c.key === want);
   return ch ? ch.index : null;
 }
 
-/** Full identity of one slot: {index, name, role, psk_fp, is_private}, or null. */
+/** What a RECEIVED channel actually is: 'pub', 'pri', or null for neither. */
+export function roleOf(device, index) {
+  const ch = channelsFor(device).find(c => c.index === index);
+  if (!ch || !ch.key) return null;
+  for (const role of ROLES) {
+    const want = designatedKey(role);
+    if (want && ch.key === want) return role;
+  }
+  return null;
+}
+
+/** The only permitted membership test. False when undesignated, when the radio is
+ *  unknown, or when the slot carries no key. Never guesses. */
+export function isRole(device, index, role) {
+  return roleOf(device, index) === role;
+}
+
+/** Full identity of one slot, or null. */
 export function resolveChannel(device, index) {
   const ch = channelsFor(device).find(c => c.index === index);
   if (!ch) return null;
-  return { ...ch, is_private: isPrivate(device, index) };
+  return { ...ch, designated: roleOf(device, index) };
+}
+
+/** WHERE A DESIGNATED CHANNEL IS MISSING FROM A RADIO.
+ *
+ *  This is the check that would have caught the YAGI on 2026-08-12 rather than
+ *  five days later. A radio with no slot carrying the public channel is not a
+ *  quiet edge case: every public transmission it makes goes nowhere, silently,
+ *  while the dashboard shows a plausible combined success rate carried by the
+ *  other radio.
+ *
+ *  Reports nothing when a role is undesignated — that is a configuration gap, not
+ *  a radio divergence, and conflating them would cry wolf on a fresh install. */
+export function divergences() {
+  const out = [];
+  for (const [device, chans] of _byDevice) {
+    for (const role of ROLES) {
+      const want = designatedKey(role);
+      if (!want) continue;
+      if (!chans.some(c => c.key && c.key === want)) {
+        out.push({ device, role, reason: 'no slot carries the designated key' });
+      }
+    }
+  }
+  return out;
 }

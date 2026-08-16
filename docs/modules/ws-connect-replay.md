@@ -3,8 +3,8 @@ module: ws-connect-replay
 source:
   - src/db.js
   - src/ws-relay.js
-source_hash: bdb5756afff9121ac9f930934c261dacb0201aef7308502e8f0517aaed693279
-updated: 2026-08-13
+source_hash: b7fc5b99526fea0dfcf9da731a1997b9172513be97b12162d6c338a07d794f11
+updated: 2026-08-16
 ---
 
 # Module: ws-connect-replay

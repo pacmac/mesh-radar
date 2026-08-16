@@ -1,133 +1,128 @@
 ---
 module: channels
 source: src/channels.js
-source_hash: 4e6a3906b605d8fb264fe84e4d34ade4d7ab27cb7a7453a84c2493f7234b228c
-updated: 2026-08-14
+source_hash: 24f1169061cf2f7ecc563251edc8c0d62ac6886515d358582dd5061376ae3bce
+updated: 2026-08-16
 ---
 
 # Module: channels
 
 ## Purpose
 
-**The one place that answers "which channel is this".** A Meshtastic channel's
-identity is its pre-shared key. Not its index, and not its name. Every consumer
-that needs to know whether traffic is on the private channel, or which slot to
-transmit on, asks this module.
+**The single source of truth for "which channel is this, and which slot do I send
+it on".** Nothing else in the codebase may decide a channel.
 
-Peter, 2026-08-14: *"it should be a global func, that selects the private channel
-based on a shared key (which may be in a config file) you CANNOT use channel index
+Peter, 2026-08-16: *"the resolver needs to resolve this, needs an arg passed to it
+'pub or pri' ... I suspect there are lots of other places where the wrong channel
+is used. resolve should be the SSOT"*, and earlier: *"you CANNOT use channel index
 and assume that channel 1 is the private channel on all devices."*
 
-## Why index and name both fail
+## A channel's identity is its NAME **and** its key
 
-Measured 2026-08-14, `GET localhost:8001/<addr>/channels` on both our radios.
-Fingerprint is the first 12 hex of sha256(psk); the key itself is never printed,
-logged or stored.
+`channelKey(name, psk)` = `sha256(name + NUL + psk)`, and `null` when there is no
+key.
 
-| radio | idx | role | name | psk_fp |
+**Key alone is not enough, and getting that wrong cost five days of the YAGI.** An
+earlier version of this module identified a channel by its PSK fingerprint and
+concluded that our two PRIMARYs — same key, one unnamed and one named `Public` —
+were the same channel. Meshtastic derives the transmitted channel hash from the
+name *and* the key, so they are **not**: a primary renamed `Public` is a channel
+nothing else on the mesh is listening to.
+
+Measured 2026-08-16, and this is the whole argument for the identity function:
+
+| radio | idx | role | name | `channelKey` |
 |---|---|---|---|---|
-| `E9:B0:3F:17:27:91` | 0 | PRIMARY | *(none)* | `5d4dc0ce1ab5` |
-| | 1 | SECONDARY | `mqtt` | *(no key — unencrypted)* |
-| | 2 | SECONDARY | `Private` | `1ee0ab2c7a2b` |
-| `F4:12:FA:39:F7:B6` | 0 | PRIMARY | `Public` | `5d4dc0ce1ab5` |
-| | 1 | SECONDARY | `Private` | `1ee0ab2c7a2b` |
+| OMNI `E9:B0` | 0 | PRIMARY | *(unnamed)* | `865e781a56f3…` |
+| | 1 | SECONDARY | `mqtt` | *(no key)* |
+| | 2 | SECONDARY | `Private` | `fffb995be728…` |
+| YAGI `F4:12` | 0 | PRIMARY | `Public` | `b7ecd210d6cd…` |
+| | 1 | SECONDARY | `Private` | `fffb995be728…` |
 
-- **INDEX FAILS.** Private is `2` on one radio and `1` on the other. Index `1` on
-  `E9:B0` is `mqtt` — unencrypted, and the one channel that is emphatically *not*
-  private. Code that hard-codes `1` broadcasts to MQTT from that radio.
-- **INDEX ALONE FAILS.** Whatever else is true, an index cannot be assumed.
-- **KEY ALONE IS NOT THE WHOLE STORY EITHER — I got this wrong first time.**
-  I originally wrote here that "the two PRIMARYs are the same channel by key,
-  despite different names; a name is decoration, not identity". That is very
-  probably FALSE on air. Meshtastic derives a channel's transmitted hash from the
-  name **and** the key, so an unnamed primary (standard LongFast) and one named
-  `Public` with the same key are **different channels to the radios**, even though
-  this module's fingerprint says they match.
+The two `Private` slots come out **identical** at different indices — that is the
+resolution the automation depends on. The two primaries come out **different**,
+which is the fault, and under the old key-only identity they looked the same.
 
-  This is not academic: on 2026-08-12 the YAGI's primary is named `Public` while
-  the OMNI's is unnamed, and from that date the YAGI's traceroutes went to exactly
-  zero and the OMNI stopped hearing its transmissions. See the ledger entry
-  "the YAGI has completed ZERO traceroutes since 2026-08-12".
+**`null` for an unencrypted channel, deliberately.** `mqtt` has no key. If it
+returned a constant, `null === null` would make it match a designated channel and
+a private broadcast would go out in clear.
 
-  **UNVERIFIED against firmware.** The hash rule is stated from Meshtastic
-  semantics, not measured on our radios, and this project's standing rule is to
-  ask the device rather than trust a doc. The confirming test is to make the two
-  primaries' names match and see whether the YAGI recovers — a live radio config
-  write, and therefore Peter's call.
+## Roles: `pub` and `pri`
 
-**WHAT THIS MODULE IS AND IS NOT.** It resolves WHICH LOCAL SLOT carries a channel
-we have designated, per radio. Both `Private` slots share a name *and* a key, so
-that resolution is sound and the automation module can rely on it. It does **not**
-claim two channels are the same channel on air — for that, the name matters too,
-and `psk_fp` alone must not be used to argue it.
+Callers ask for a **role**, never an index and never a name:
 
-## The key is never stored
+| config key | role | what it is |
+|---|---|---|
+| `channels.pub_key` | `pub` | the public mesh — LongFast, the channel strangers are on |
+| `channels.pri_key` | `pri` | our own private channel |
 
-`psk` is already in `public/app-forms.js` `SENSITIVE_FIELDS`, and
-`docs/modules/browser-playwright-audit.md` permits only `psk_present` and a length
-to leave the system. This module holds a **sha256 fingerprint** and nothing else.
+The designation is **configured, not inferred**. "The channel both radios share"
+does not single either out, and inferring `pub` from "index 0" is exactly the
+assumption that hid the YAGI fault — index 0 on the YAGI *is* a primary, it is
+just the wrong one.
 
-A fingerprint matches exactly as well as the key for every question this module
-answers — it is what proved both `Private` channels are one channel — while being
-safe to persist, log and serve. Putting a live mesh key in the SQLite config table
-would be a step backwards from the rule the browser already follows.
-
-`pskFingerprint(psk)` returns `null` for an absent or empty key, so an unencrypted
-channel can never accidentally compare equal to a configured one — `mqtt` above is
-exactly that case, and `null === null` must not mean "same channel".
-
-## Which channel is private is CONFIGURED, not inferred
-
-Config key **`channels.private_psk_fp`** holds the fingerprint of the designated
-private channel.
-
-It cannot be derived. "The key both radios share" does not single it out — the two
-PRIMARYs are shared too, and a third shared channel would be equally ambiguous. So
-the designation is a stated fact, not a deduction.
-
-When the key is unset, every predicate below returns `null`/`false` rather than
-guessing. **An unknown private channel must never resolve to index 0**, which is
-PRIMARY, which is the public mesh.
+**Automations run on `pri`.** Peter, 2026-08-16: *"FYI for the time being
+automations will work on private channel."*
 
 ## API
 
 | function | returns | notes |
 |---|---|---|
-| `pskFingerprint(psk)` | `string \| null` | sha256 hex of the key; `null` if absent/empty |
-| `privateFp()` | `string \| null` | the configured designation, or `null` if unset |
-| `isPrivate(device, index)` | `boolean` | **the only permitted "is this private" test** |
-| `privateIndexFor(device)` | `number \| null` | the slot to transmit on for that radio |
-| `resolveChannel(device, index)` | `object \| null` | `{index, name, role, psk_fp, is_private}` |
+| `channelKey(name, psk)` | `string \| null` | identity: name **and** key |
+| `designatedKey(role)` | `string \| null` | the configured key for `pub`/`pri` |
+| `indexFor(device, role)` | `number \| null` | **the slot to transmit on** |
+| `roleOf(device, index)` | `'pub' \| 'pri' \| null` | what a received channel IS |
+| `isRole(device, index, role)` | `boolean` | the only permitted membership test |
 | `channelsFor(device)` | `array` | every known channel on that radio |
+| `divergences()` | `array` | radios missing a designated channel — see below |
+| `setDeviceChannels(device, chans)` | — | fed by ws-relay; this module does no HTTP |
 
-`device` is MAC vocabulary, case-insensitive — the same key `lastDeviceChannels`
-uses, and the same `device` column the `messages` table records against a received
-packet. **The pair (device, index) is the only thing that identifies a slot**;
-neither half alone is sufficient.
+`device` is MAC vocabulary, case-insensitive. **The pair (device, index) is the
+only thing that identifies a slot**; neither half alone is sufficient.
 
-## Where the table comes from
+### `indexFor` returns `null`, never a default
 
-`src/ws-relay.js` `refreshDeviceChannels()` already fetches `/<addr>/channels` on
-every device READY and caches `{index, name, role}` per radio. It now also computes
-`psk_fp` and calls `setDeviceChannels()` here, so this module holds the same table
-the send form is built from and the two can never disagree.
+A caller that fell back to `0` would transmit on whatever that radio's primary
+happens to be. On the YAGI that is the misnamed channel; on any radio it is the
+public mesh when you asked for private. **Null means "cannot send", not "send
+anyway".**
 
-This module does **no** HTTP of its own. A second fetcher would be a second source
-of truth for the same question, and they would drift.
+### `divergences()` — the SSOT reports its own gaps
 
-## What this module deliberately does not do
+For each radio, any designated role with no matching slot. This is the check that
+would have caught the YAGI on 12 August instead of five days later:
 
-- **It does not decide policy.** "Never transmit on PRIMARY" is a caller's rule;
-  this module only says which slot is which. `src/callout.js` transmits on channel
-  `0` on purpose and correctly — a public callout is its entire point.
-- **It does not resolve by name.** No function takes a channel name. Adding one
-  would reintroduce the failure documented above.
-- **It does not cache across restarts.** The table is rebuilt from the radios on
-  every READY, so a channel edited on the radio is picked up without a migration.
+```
+[{ device: 'F4:12:FA:39:F7:B6', role: 'pub', reason: 'no slot carries the designated key' }]
+```
 
-## Known consumer still to convert
+A radio that cannot reach the public mesh is not a quiet edge case — it is a radio
+whose every public transmission goes nowhere, silently, while the dashboard shows
+a plausible combined success rate carried by the other radio.
 
-`public/app-messages.js:34` classifies traffic with
-`privateChannel: (r.channel ?? 0) !== 0`. On `E9:B0` that labels the `mqtt` channel
-private, and it is mislabelling live traffic today. Converting it is Domain 2 and
-tracked separately — the browser must receive a served boolean, not compute one.
+## Known callers that still choose a channel themselves
+
+Found 2026-08-16 while making this the SSOT. **Not migrated in this task** — each
+needs its own change and its own proof, and Peter's "lots of other places" is a
+scope warning, not an invitation to do them all at once:
+
+| site | today | why it matters |
+|---|---|---|
+| `src/callout.js:85` | `channel: 0` hardcoded | the public callout. On the YAGI, index 0 is the misnamed slot, so a callout would go nowhere while the ledger recorded it sent |
+| `src/imap-receiver.js:112` | `ctx.channel ?? 0` | email-to-mesh falls back to index 0 |
+| `src/messages-api.js:14` | `req.body.channel ?? 0` | the browser send form's default |
+| `src/mesh-send.js:28` | `channel ?? 0` | records 0 when unstated — a recording default, not a transmit decision |
+
+`src/alerts.js` and `src/persist.js` echo the channel a packet *arrived* on. That
+is not choosing, and is correct as it stands.
+
+## What this module does not do
+
+- **No policy.** "Never transmit on `pub` unattended" is a caller's rule.
+  `callout.js` transmits publicly on purpose and correctly.
+- **No name lookup.** No function takes a channel name; a name is half an
+  identity, and half an identity is how this went wrong.
+- **No HTTP.** `ws-relay`'s `refreshDeviceChannels()` feeds it on every device
+  READY. A second fetcher would be a second source of truth for one question.
+- **No persistence across restarts.** The table is rebuilt from the radios, so a
+  channel edited on a radio is picked up without a migration.

@@ -15,7 +15,7 @@ import { snrDbList } from './snr.js';
 import { scheduleTime } from './served-time.js';
 import { nodeKind, provenDoors, rolesByNum } from './node-kind.js';
 import { ownDeviceNums } from './node-filter.js';
-import { pskFingerprint, setDeviceChannels, isPrivate } from './channels.js';
+import { channelKey, setDeviceChannels, roleOf } from './channels.js';
 import { signalVerdict, marginHealth, hopsTone, blePctTone, verdictBands,
          gapTone, excessLossTone, heardTone } from './signal-verdict.js';
 import { signalQuality as sigQualityPct } from './utils.js';
@@ -587,18 +587,19 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     try {
       const r = await bridge.get(`/${addr}/channels`);
       if (Array.isArray(r?.channels)) {
-        // psk_fp is the channel's IDENTITY — see docs/modules/channels.md. Index
-        // and name both fail across radios: Private is index 2 on one of ours and
-        // 1 on the other, and our two PRIMARYs share a key while one is named
-        // `Public` and the other is unnamed. The KEY ITSELF IS NEVER KEPT, only
-        // its sha256; `psk` is in the browser's SENSITIVE_FIELDS for the same
-        // reason and this must not be the place that walks it back.
+        // IDENTITY IS NAME + KEY — see docs/modules/channels.md. Index fails
+        // (Private is 2 on one of our radios and 1 on the other), and key alone
+        // fails too: our two PRIMARYs share a key while one is unnamed and one is
+        // named `Public`, and they are NOT the same channel on air. That mistake
+        // cost five days of the YAGI. The KEY ITSELF IS NEVER KEPT, only the
+        // hash; `psk` is in the browser's SENSITIVE_FIELDS for the same reason
+        // and this must not be the place that walks it back.
         lastDeviceChannels[addr.toUpperCase()] = r.channels
           .map((c, i) => ({
-            index:  c.index ?? i,
-            name:   c.settings?.name ?? '',
-            role:   c.role ?? null,
-            psk_fp: pskFingerprint(c.settings?.psk),
+            index: c.index ?? i,
+            name:  c.settings?.name ?? '',
+            role:  c.role ?? null,
+            key:   channelKey(c.settings?.name, c.settings?.psk),
           }))
           .filter(c => c.role === 'PRIMARY' || c.role === 'SECONDARY');
         // One table, two readers. The resolver holds exactly what the send form is
@@ -626,17 +627,17 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       link_budget: d.addr && lastDeviceLora[d.addr.toUpperCase()]
         ? linkBudget(lastDeviceLora[d.addr.toUpperCase()], lbDeviceCfg(d.addr))
         : null,
-      // The browser gets a SERVED `is_private`, never the fingerprint it was
-      // derived from. Two reasons, and the second is the one that matters:
-      // a fingerprint is a key-derived secret with no business leaving the
-      // backend, and the browser decides nothing — it must not be handed the
-      // raw material to compute a channel's identity for itself. See
-      // docs/BROWSER_CONTRACT.md and docs/modules/channels.md.
+      // The browser gets a SERVED `designated` ('pub' | 'pri' | null), never the
+      // identity hash it was derived from. Two reasons, and the second matters
+      // more: the hash is key-derived and has no business leaving the backend,
+      // and the browser decides nothing — it must not be handed the raw material
+      // to work out a channel's identity for itself. See docs/BROWSER_CONTRACT.md
+      // and docs/modules/channels.md.
       // `null` when the radio has not reported yet is PRESERVED, not flattened to
       // []: the send form distinguishes "no channels known" from "none configured".
       channels: (d.addr && lastDeviceChannels[d.addr.toUpperCase()])
         ? lastDeviceChannels[d.addr.toUpperCase()].map(
-            ({ psk_fp, ...c }) => ({ ...c, is_private: isPrivate(d.addr, c.index) }))
+            ({ key, ...c }) => ({ ...c, designated: roleOf(d.addr, c.index) }))
         : null,
       // BLE link tone — app-components.js:80 held >=50/25. This is the BLE
       // percentage the gateway reports, NOT a LoRa measurement, so it keeps its

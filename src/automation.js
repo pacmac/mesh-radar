@@ -11,7 +11,10 @@
 // short form time stamp: 12:15 XXXX and they should be REPLIES to the command").
 
 import { getConfig } from './db.js';
-import { isPrivate, privateIndexFor } from './channels.js';
+// Automations run on the PRIVATE channel. Peter, 2026-08-16: "FYI for the time
+// being automations will work on private channel." The role is asked for by name
+// — `indexFor(radio, 'pri')` — never by index, and never by assuming index 1.
+import { isRole, indexFor } from './channels.js';
 import { sendMeshText } from './mesh-send.js';
 import { nodeList } from './node-list.js';
 import { rotator } from './rotator.js';
@@ -92,7 +95,7 @@ function replyBudgetLeft() {
  *  fallback to channel 0 is PRIMARY — the public mesh — so answering a private
  *  command there would be the worst outcome this whole path can produce. */
 async function reply(device, toPktId, body) {
-  const channel = privateIndexFor(device);
+  const channel = indexFor(device, 'pri');
   if (channel == null) {
     H.refused.emit({
       summary: `automation reply dropped — no private channel resolves on ${resolveDeviceLabel(device) || device}`,
@@ -222,7 +225,7 @@ export function handleAutomationEvent(ev) {
   // THE ONLY PERMITTED PRIVACY TEST — channels.js, never an index literal.
   // Private is index 2 on one of our radios and 1 on the other, and index 1 on
   // the first is `mqtt`, which is unencrypted.
-  if (!isPrivate(device, pkt.channel ?? 0)) return;
+  if (!isRole(device, pkt.channel ?? 0, 'pri')) return;
 
   const text = pkt.decoded?.payload
     ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8').trim() : '';

@@ -1,8 +1,8 @@
 ---
 module: automation
 source: src/automation.js
-source_hash: 7baa3f96d2cc378e55ef4e16c9991e82ad3f75dce3426e763453c9e13f4909d2
-updated: 2026-08-14
+source_hash: 655441b8015946ae32f8765cf08bca74db29efd9711450362e49d95070a28c8c
+updated: 2026-08-16
 ---
 
 # Module: automation
@@ -65,13 +65,18 @@ lands in the message log like any other traffic.
 
 1. `ev.type === 'packet'`, portnum `TEXT_MESSAGE_APP`
 2. **broadcast, not a DM** — `packet.to === BROADCAST_NUM`
-3. `isPrivate(device, packet.channel)` — `channels.js`, never an index literal
+3. `isRole(device, packet.channel, 'pri')` — `channels.js`, never an index literal
 4. text begins `@`
 5. the packet id has not already been handled
 
-The reply goes out on `privateIndexFor(device)` for the radio that heard it. **If
-that returns null the reply is dropped, not sent on 0.** Channel 0 is PRIMARY, the
-public mesh; answering a private command in public is the worst outcome available.
+The reply goes out on `indexFor(device, 'pri')` for the radio that heard it — the
+role is asked for by name, two args, `(radio, 'pri')`. **If that returns null the
+reply is dropped, not sent on 0.** Channel 0 is a PRIMARY, which is the public
+mesh; answering a private command in public is the worst outcome available.
+
+**Automations run on `pri` and only `pri`** — Peter, 2026-08-16: *"FYI for the
+time being automations will work on private channel."* `channels.js` is the SSOT
+for which slot that is on each radio, and this module never decides it.
 
 ### Both radios hear the same broadcast
 
