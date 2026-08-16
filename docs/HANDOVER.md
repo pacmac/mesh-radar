@@ -160,6 +160,54 @@ within a minute of my answer.
 
 ## REMAINS — with the exact next action
 
+### THE NEXT TASK — `remove-alarm-from-node-dash`
+
+**Peter decided this at the end of the session.** The previous handover carried it
+as *"Peter is considering moving the alarm out of node-dash entirely"*; asked
+directly, he said **"he has decided"**. The alarm page and the backend module that
+manages it leave node-dash. Start here.
+
+**No such task existed.** He believed one did. I searched every mcpp task — open,
+completed and parked — for `alarm`/`garage`; the nearest are *boundary* tasks
+(`browser-plugin-boundary`, `custom-app-extension-point`), not removal, and
+`purge-custom-alarm-code` is completed and was about alarm **node management**.
+Either it was never written or it is mis-filed in another project — and
+`active-project-flipped-mid-session` is an open item where nine tasks were
+mis-filed, so check there before concluding it never existed.
+
+**The coupling, measured 2026-08-16 — and the previous handover had this wrong.**
+It said *"core references the alarm in 17 files but 15 are comments"*. Actual:
+**seven** core files, and in **six of them every reference is a comment**
+(`browser-plugins.js:61`, `format.js:106`, `node-status.js:36`,
+`observatory.js:202`, `observatory-ws.js:3,11`, `ws-relay.js:233,250,1242`).
+
+```bash
+for f in $(grep -rl "alarm-\|pac-host\|pac-command\|pac-align" src/*.js \
+           | grep -vE "src/(alarm-|pac-|coulomb)"); do
+  echo "== $f"; grep -n "alarm-\|pac-host\|pac-command\|pac-align" $f; done
+```
+
+So the **only** real code coupling in core is `src/index.js`, 12 lines: `:7`
+import, `:32-34` three routers, `:59-62` four side-effect imports, `:344-346`
+three `app.use()`, `:470` `pacHost.start()`, plus `'/control'` in the page list at
+`:240`. Line `:346` already carries the comment *"delete this line and the plugin
+is gone"*.
+
+**The browser is already clean.** Two references in core `public/` and **both are
+prose** — a comment at `app-ws.js:68` and label text at `tab-cfg.html:600`. There
+is **no `tab-control.html`**; the Control page is served by the plugin. Whoever
+did the plugin-boundary work did it properly.
+
+**The one thing that will bite — `src/coulomb.js`.** It imports `getObs` from
+`alarm-host.js` (`:13`, used at `:60`), and it is imported by **both** sides:
+`alarm-sections.js:34` (`coulombModel`) and **`ws-relay.js:64` (`buildCoulomb`) —
+core**. So core depends on a module that depends on the alarm; deleting
+`alarm-host.js` breaks `ws-relay.js`. Split it, move it, or retire the core
+consumer — **that decision is step 1, before anything is deleted.**
+
+**Also unresolved:** `obs_observation` and `obs_fact` — ownership not established.
+`relay_observation` is core (packet provenance) despite the similar name.
+
 ### BUG - the YAGI is NOT confirmed recovered
 
 Re-run the query at the top of this file. If YAGI `ok` is still ~1, it is not
@@ -332,6 +380,7 @@ A `/specboard` skill appeared mid-session and was never used.
 
 | task | phase | note |
 |---|---|---|
+| **`remove-alarm-from-node-dash`** | **NEXT — step 1, nothing started** | Peter's decision, taken at the end of this session. See REMAINS / THE NEXT TASK |
 | `send-form-default-channel` | **closed** | last work done |
 | `channel-callers-onto-resolver` | **closed** | |
 | `channel-resolver-ssot-pub-pri` | **closed** | |
