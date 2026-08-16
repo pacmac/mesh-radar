@@ -3,8 +3,8 @@ module: check-all
 source:
   - scripts/check_all.mjs
   - package.json
-source_hash: 6ae1d2939ff80798e609d88f7af82175834e3ebdb8f94d1842366246130c3dcd
-updated: 2026-08-13
+source_hash: 1d9c39466f3b1a20629d00d637a61797e59b01c195b935f335159bcf706cc77c
+updated: 2026-08-16
 ---
 
 # Module: check-all
@@ -56,6 +56,7 @@ Runtimes measured 2026-08-13 on this machine, service up, warm 700 MB store.
 | `tests/test_coulomb.mjs` | fast | — | 158 ms | 30 s |
 | `tests/test_served_time.mjs` | fast | — | 120 ms | 30 s |
 | `tests/test_channels.mjs` | fast | — | 67 ms | 30 s |
+| `tests/test_send_channel.mjs` | fast | — | 212 ms | 30 s |
 | `scripts/check_snapshot.mjs` | service | node-dash up | 3,889 ms | 30 s |
 | `scripts/check_contract.mjs` | service | node-dash up | 5,148 ms | 60 s |
 | `scripts/check_no_cache.mjs` | service | node-dash up | 200 ms | 30 s |

@@ -1,8 +1,8 @@
 ---
 module: callout
 source: src/callout.js
-source_hash: 4d30e68b0b332393739310bf2efdfa6eef1ecf5f9e1234526e3be9e3ab385262
-updated: 2026-08-03
+source_hash: 4646fcc2b11f98fc9311561da845c7d3c84743bd60f241922fafa1411b05e015
+updated: 2026-08-16
 ---
 
 # Module: callout
@@ -118,11 +118,33 @@ template list must not make the engine think a node never heard a sentence it
 heard yesterday. A different node may hear that wording tomorrow — the TTL bounds
 repetition to *one listener*, it does not retire the phrase globally.
 
-## Channel
+## Channel — resolved, not numbered (task `channel-callers-onto-resolver`, 2026-08-16)
 
-`channel` is passed **explicitly** at the call site and defaults to `0`
-(PRIMARY), which is the entire point of a *public* callout. No path here may
-select a channel by omission.
+The intent was always right: a *public* callout belongs on the public channel, and
+no path here may select a channel by omission. The mechanism was wrong.
+
+`channel: 0` is an **index**, and an index means different things on different
+radios. Measured 2026-08-16: index 0 on the OMNI is the unnamed primary — the
+LongFast everyone else is on — while index 0 on the YAGI is a primary named
+`Public`, which is a **different channel on air** and which nothing was listening
+to. A callout sent from the YAGI would have gone nowhere while `callout_log`
+recorded a packet id and the `callout-sent` hook reported "called out to X at Nkm".
+
+So the channel is now **resolved by role, for the transmitting radio**:
+
+```
+indexFor(gatewayNodeId, 'pub')
+```
+
+**And a callout that cannot resolve `pub` is REFUSED, not sent on 0.** Silence is
+the correct outcome: a callout is the most expensive probe we have — it spends
+social capital, not just airtime — and one that transmits into an empty channel
+spends it for nothing while logging a success. The refusal is recorded on the
+`callout-withheld` hook, which already exists precisely so that silence is
+explainable.
+
+`config.channel` is retired. It was a number standing in for a decision, and the
+decision now belongs to `channels.js`.
 
 ## The reply is the evidence
 

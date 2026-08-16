@@ -23,6 +23,8 @@
 
 import db, { getConfig } from './db.js';
 import { sendMeshText } from './mesh-send.js';
+import { indexFor } from './channels.js';
+import { resolveDeviceLabel } from './node-label.js';
 import { haversine, bearing as bearingOf } from './utils.js';
 import { defineHook } from './hooks.js';
 
@@ -82,7 +84,13 @@ const DEFAULT_TEMPLATES = [
 
 const DEFAULTS = {
   enabled:        false,   // §10 — Peter's switch, not mine
-  channel:        0,       // PRIMARY. Explicit, never inferred. See below.
+  // NO `channel` KEY. It used to be `channel: 0` — "PRIMARY, explicit, never
+  // inferred". The intent was right and the mechanism was wrong: 0 is an INDEX,
+  // and an index means different things on different radios. Measured 2026-08-16,
+  // index 0 on the OMNI is the unnamed primary (the LongFast everyone is on)
+  // while index 0 on the YAGI is a primary named `Public` — a different channel
+  // on air, which nothing was listening to. The channel is resolved by ROLE at
+  // the send site now: channels.indexFor(radio, 'pub').
   min_km:         50,      // a callout to a neighbour proves nothing about reach
   max_per_day:    6,
   cooldown_days:  7,
@@ -256,12 +264,27 @@ export async function callout(node, { home, gatewayNodeId, dryRun = false } = {}
   }
   if (dryRun) return { ...verdict, dryRun: true };
 
+  // THE PUBLIC CHANNEL, RESOLVED FOR THIS RADIO — never the number 0.
+  //
+  // A callout that cannot resolve `pub` is REFUSED. Silence is the correct
+  // outcome: a callout is the most expensive probe we have (§7 — it spends social
+  // capital, not just airtime), and one transmitted into a channel nobody is on
+  // spends it for nothing while logging a success. That is not hypothetical — it
+  // is exactly what the YAGI has been doing since 2026-08-12.
+  const channel = indexFor(gatewayNodeId, 'pub');
+  if (channel == null) {
+    H.held.emit({
+      severity: 'warn',
+      summary: `callout withheld — no public channel resolves on ${resolveDeviceLabel(gatewayNodeId) || gatewayNodeId}`,
+      detail: { guard: 'no-public-channel', device: gatewayNodeId, num: node.num },
+    });
+    return { ...verdict, ok: false, held: 'no-public-channel' };
+  }
+
   _inFlight = true;
   try {
-    // channel is passed EXPLICITLY. PRIMARY is the point of a public callout,
-    // but no code path here may choose a channel by omission.
     const res = await sendMeshText({
-      gatewayNodeId, text: verdict.text, channel: c.channel, category: 'callout',
+      gatewayNodeId, text: verdict.text, channel, category: 'callout',
     });
     db.prepare(`INSERT INTO callout_log (ts, num, template_hash, text, packet_id)
                 VALUES (?, ?, ?, ?, ?)`)
@@ -270,7 +293,7 @@ export async function callout(node, { home, gatewayNodeId, dryRun = false } = {}
     H.sent.emit({
       severity: 'notice',
       summary: `called out to ${node.short_name || node.num} at ${verdict.km}km — "${verdict.text}"`,
-      detail: { num: node.num, km: verdict.km, channel: c.channel, text: verdict.text },
+      detail: { num: node.num, km: verdict.km, channel, text: verdict.text },
     });
     return { ...verdict, sent: true };
   } finally {

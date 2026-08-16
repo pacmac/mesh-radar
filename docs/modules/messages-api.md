@@ -1,8 +1,8 @@
 ---
 module: messages-api
 source: src/messages-api.js
-source_hash: cbc71f8f7e4c119111f1fb7b204435fc159bde5f647bccd8813000dbb1485cc7
-updated: 2026-07-20
+source_hash: 1e546e16a7ab5947389908ae59d0dc638bd0eece5cb11a7854a20b7cfe3106c8
+updated: 2026-08-16
 ---
 
 # Module: messages-api
@@ -44,6 +44,13 @@ export default router  // Express Router — app.use(messagesRouter) in index.js
   here would reintroduce the bypass this refactor removed.
 - A failed gateway send returns its status and records nothing (enforced by
   `sendMeshText`).
+- **A request without a channel is refused with 400** (task
+  `channel-callers-onto-resolver`, 2026-08-16). This was `req.body.channel ?? 0`,
+  so a caller that omitted the field broadcast to the **public mesh**. The browser
+  form always supplies it, which is exactly what made the default dangerous: it
+  could only ever fire for a caller that had forgotten, and the consequence of
+  forgetting was a public transmission. There is no safe default for "which
+  channel"; the honest answer to an unstated one is to refuse.
 - Device vocabulary, `message_key = 't-<id>'`, broadcast-after-send, and the
   MAC-vs-node_id resolution are all `mesh-send`'s responsibility now — see that spec.
 

@@ -605,7 +605,13 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         // One table, two readers. The resolver holds exactly what the send form is
         // built from, so "which channel is this" and "what is in the dropdown" can
         // never disagree.
-        setDeviceChannels(addr, lastDeviceChannels[addr.toUpperCase()]);
+        //
+        // The live node id is passed as an ALIAS because this is the one place
+        // that knows both halves. Callers such as callout are handed a node id by
+        // dash-mode.transmitterForMode() and never see a MAC; registering both
+        // here keeps the conversion at one boundary instead of at every call site.
+        setDeviceChannels(addr, lastDeviceChannels[addr.toUpperCase()],
+                          getLiveNodeIdByMac(addr));
         broadcastDeviceList();
       }
     } catch (e) { /* device not ready yet — next READY transition retries */ }

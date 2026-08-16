@@ -39,7 +39,24 @@ export const ROLES = ['pub', 'pri'];
 // YAGI fault: index 0 on the YAGI IS a primary, it is just the wrong one.
 export const ROLE_CONFIG_KEY = { pub: 'channels.pub_key', pri: 'channels.pri_key' };
 
-// device (MAC, upper) -> [{ index, name, role, key }]
+// device key (MAC **or** node id, upper-cased) -> [{ index, name, role, key }]
+//
+// BOTH VOCABULARIES ARE ACCEPTED, AND THAT IS ENFORCEMENT OF docs/IDENTITY.md
+// RATHER THAN A SOFTENING OF IT. The MAC is canonical — `__ble_addr`, present
+// from first scan, surviving reboots and factory resets, while `node_id` is an
+// attribute that is null until first sync (measured 2026-08-16: across 34 live gw
+// events `addr` and `__ble_addr` never differed and were never absent; `node_id`
+// was missing on 3).
+//
+// But callers legitimately hold different vocabularies:
+// dash-mode.transmitterForMode() returns macToNodeId(mac), so callout is handed
+// `!fa39f7b4` and never sees a MAC. A resolver that took MACs only would grow a
+// conversion at every call site — which is how eleven identity helpers across
+// five modules came to exist. ONE boundary converts; nothing past it does.
+//
+// Short forms are NOT accepted. Across 1,056 nodes last-4 hex collides 20 times
+// and short names 26 times: unambiguous only within our own radios, and a
+// resolver that is safe for two devices and unsafe for the mesh is a trap.
 const _byDevice = new Map();
 
 /** A channel's identity: name AND key.
@@ -58,15 +75,21 @@ const _dev = d => (typeof d === 'string' ? d.toUpperCase() : null);
 /** Record a radio's channel table. Called by ws-relay's refreshDeviceChannels on
  *  every device READY. This module does NO HTTP of its own — a second fetcher is
  *  a second source of truth for one question, and they drift. */
-export function setDeviceChannels(device, channels) {
+export function setDeviceChannels(device, channels, alias = null) {
   const k = _dev(device);
   if (!k) return;
-  _byDevice.set(k, (channels || []).map(c => ({
+  const table = (channels || []).map(c => ({
     index: c.index,
     name:  c.name ?? '',
     role:  c.role ?? null,        // the RADIO's PRIMARY/SECONDARY, not our pub/pri
     key:   c.key ?? null,
-  })));
+  }));
+  _byDevice.set(k, table);
+  // The same table under the radio's other name, so a caller holding a node id
+  // resolves identically to one holding a MAC. ws-relay passes it because ws-relay
+  // is where both halves are known.
+  const a = _dev(alias);
+  if (a && a !== k) _byDevice.set(a, table);
 }
 
 /** Every known channel on a radio. */
@@ -133,6 +156,10 @@ export function resolveChannel(device, index) {
 export function divergences() {
   const out = [];
   for (const [device, chans] of _byDevice) {
+    // ONE ROW PER RADIO. Each radio is registered under both its MAC and its node
+    // id, so iterating every key would report each divergence twice. The MAC is
+    // the canonical key (docs/IDENTITY.md), so it is the one that reports.
+    if (!device.includes(':')) continue;
     for (const role of ROLES) {
       const want = designatedKey(role);
       if (!want) continue;

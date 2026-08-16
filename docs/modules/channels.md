@@ -1,7 +1,7 @@
 ---
 module: channels
 source: src/channels.js
-source_hash: 24f1169061cf2f7ecc563251edc8c0d62ac6886515d358582dd5061376ae3bce
+source_hash: 80d506059077eb1b453d49b48cb30fb9db9d1de94816b0fa8248fb302e538b62
 updated: 2026-08-16
 ---
 
@@ -77,8 +77,43 @@ automations will work on private channel."*
 | `divergences()` | `array` | radios missing a designated channel — see below |
 | `setDeviceChannels(device, chans)` | — | fed by ws-relay; this module does no HTTP |
 
-`device` is MAC vocabulary, case-insensitive. **The pair (device, index) is the
-only thing that identifies a slot**; neither half alone is sufficient.
+### The resolver absorbs the vocabulary; callers do not convert
+
+`device` may be a **BLE MAC** (`E9:B0:3F:17:27:91`) or a **node id**
+(`!2687afb1`), case-insensitive. `ws-relay` registers each radio's table under
+both, because it holds both.
+
+`docs/IDENTITY.md` is LAW that the MAC is canonical — `__ble_addr`, present from
+first scan, surviving reboots and factory resets, while `node_id` is an attribute
+that is null until first sync. Measured 2026-08-16 across 34 live gw events:
+`addr` and `__ble_addr` never differed and were never absent; `node_id` was
+missing on 3 of them.
+
+**Accepting both is not a softening of that law, it is enforcement of it.**
+Callers legitimately hold different vocabularies — `dash-mode.transmitterForMode()`
+returns a node id via `macToNodeId()`, so `callout` is handed `!fa39f7b4` and never
+sees a MAC. If the resolver took MACs only, every caller would grow its own
+conversion, which is how eleven identity helpers across five modules came to exist.
+One boundary converts; nothing beyond it does.
+
+Short forms (`27:91`, `TA2o`) are **not** accepted. Across 1,056 nodes, last-4 hex
+collides 20 times and short names 26 times; they are unambiguous only within our
+own radios, and a resolver that is safe for two devices and unsafe for the mesh is
+a trap. `IDENTITY.md`: *"The 4-char suffix is NOT an identifier."*
+
+**The pair (device, index) is the only thing that identifies a slot**; neither half
+alone is sufficient.
+
+### Where the data comes from is behind this boundary
+
+Peter, 2026-08-16: *"whether or not the resolver gets its data from cache or
+directly from mesh-gw could be changed provided that resolver is the SSOT for
+antenna / channel selection."*
+
+Today `ws-relay` feeds it on device READY. It could feed from `GET /devices` on
+every call instead, and no caller would change. That is the property worth
+protecting: callers ask for a **role on a radio**, never for an index, so the
+source can move without a sweep.
 
 ### `indexFor` returns `null`, never a default
 
@@ -106,15 +141,23 @@ Found 2026-08-16 while making this the SSOT. **Not migrated in this task** — e
 needs its own change and its own proof, and Peter's "lots of other places" is a
 scope warning, not an invitation to do them all at once:
 
-| site | today | why it matters |
-|---|---|---|
-| `src/callout.js:85` | `channel: 0` hardcoded | the public callout. On the YAGI, index 0 is the misnamed slot, so a callout would go nowhere while the ledger recorded it sent |
-| `src/imap-receiver.js:112` | `ctx.channel ?? 0` | email-to-mesh falls back to index 0 |
-| `src/messages-api.js:14` | `req.body.channel ?? 0` | the browser send form's default |
-| `src/mesh-send.js:28` | `channel ?? 0` | records 0 when unstated — a recording default, not a transmit decision |
+**MIGRATED 2026-08-16**, task `channel-callers-onto-resolver`:
 
-`src/alerts.js` and `src/persist.js` echo the channel a packet *arrived* on. That
-is not choosing, and is correct as it stands.
+| site | was | now |
+|---|---|---|
+| `src/callout.js` | `channel: 0` hardcoded | `indexFor(dev,'pub')`, and **refused** when it will not resolve |
+| `src/messages-api.js` | `req.body.channel ?? 0` | **400** when the channel is unstated |
+| `src/mesh-send.js` | `channel ?? 0`, and undefined dropped from the body | **throws** `channel required` — the chokepoint every sender crosses |
+
+**`src/imap-receiver.js:112` is deliberately NOT migrated.** Its `ctx.channel ?? 0`
+reads a reply token built in `alerts.js:169/:185` from `pkt.channel` — it **echoes
+the channel the original message arrived on**, which is the same shape as
+`alerts.js` and `persist.js`. Echoing is not choosing. Routing it through the
+resolver would replace a correct answer (reply where they spoke) with a guess
+(reply on whichever role we think fits).
+
+`src/alerts.js` and `src/persist.js` likewise echo the arrival channel and are
+correct as they stand.
 
 ## What this module does not do
 

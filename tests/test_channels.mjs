@@ -119,6 +119,23 @@ try {
   eq(indexFor(OMNI, 'nonsense'),           null,  'an unknown role resolves to null');
   eq(indexFor(OMNI.toLowerCase(), 'pri'),  2,     'device key is case-insensitive');
 
+  // ── THE RESOLVER ABSORBS THE VOCABULARY ──────────────────────────────────
+  // callout is handed a node id by dash-mode.transmitterForMode(), never a MAC.
+  // If only MACs resolved, callout would silently stop transmitting — so a node
+  // id must give the SAME answer as the MAC, and a short form must give none.
+  setDeviceChannels(YAGI, channelsFor(YAGI), '!fa39f7b4');
+  eq(indexFor('!fa39f7b4', 'pri'), indexFor(YAGI, 'pri'),
+     'a node id resolves identically to the MAC');
+  eq(indexFor('!FA39F7B4', 'pri'), 1, 'and is case-insensitive');
+  eq(indexFor('!fa39f7b4', 'pub'), null,
+     'the YAGI has no public slot under EITHER vocabulary');
+  eq(roleOf('!fa39f7b4', 1), 'pri', 'roleOf works through the alias too');
+  eq(indexFor('F7:B6', 'pri'), null,
+     'a SHORT form must not resolve — last-4 collides 20x across 1056 nodes');
+  eq(indexFor('TA2y', 'pri'), null, 'nor a short name — 26 collisions');
+  eq(divergences().filter(d => d.device === YAGI).length, 1,
+     'the aliased radio is reported ONCE, not twice — divergences keys on the MAC');
+
   // ── FAILS SAFE ───────────────────────────────────────────────────────────
   // Undesignated: nothing is anything, and there is no slot to send on. A
   // fallback to 0 here is PRIMARY — the public mesh — when private was asked for.

@@ -25,7 +25,9 @@ function recordOutbound({ gatewayNodeId, text, channel, to, reply_id, category, 
     from_num:    fromNum,
     to_num:      toNum,
     text:        text ?? '',
-    channel:     channel ?? 0,
+    // No `?? 0` — sendMeshText refuses an unstated channel before it gets here,
+    // so by this point it is always an integer the caller chose on purpose.
+    channel,
     is_dm:       toNum !== BROADCAST_NUM ? 1 : 0,
     hop_limit:   null,
     snr:         null,
@@ -49,6 +51,23 @@ function recordOutbound({ gatewayNodeId, text, channel, to, reply_id, category, 
 // Transmit `text` from `gatewayNodeId` and record it. Throws on a gateway error
 // (a send that failed must not appear as sent). Returns the gw result { id, to }.
 export async function sendMeshText({ gatewayNodeId, text, channel, to = null, reply_id = null, category = null }) {
+  // A SEND THAT DOES NOT NAME ITS CHANNEL IS REFUSED.
+  //
+  // This was `const body = { text, channel }` with no check, and JSON.stringify
+  // DROPS an undefined key — so a caller who forgot the argument sent a body with
+  // no channel at all and the gateway applied its own default of 0. Zero is a
+  // PRIMARY, which is the public mesh. The failure mode was: omit an argument,
+  // broadcast to strangers, and record it as a normal send.
+  //
+  // This module does not RESOLVE the channel — that is channels.js's job,
+  // indexFor(radio, 'pub'|'pri'). It only refuses to guess. Keeping the two apart
+  // is what lets the resolver's data source change without touching this path.
+  //
+  // 0 stays perfectly legal when a caller MEANS it (callout transmits publicly on
+  // purpose). The rule is that it must be stated, not that it must be non-zero.
+  if (!Number.isInteger(channel)) {
+    throw new Error(`channel required: sendMeshText got ${JSON.stringify(channel)} — resolve it with channels.indexFor(radio, 'pub'|'pri')`);
+  }
   const body = { text, channel };
   if (to != null)       body.to = to;
   if (reply_id != null) body.reply_id = reply_id;
