@@ -67,12 +67,26 @@ So the only contract between them is **arbitration of shared hardware** — whic
 radio is transmitting, and a rotator hold with a timeout. Not modes, not state,
 not data, in either direction.
 
-`applyAlignModel()` in `src/alarm-host.js` currently violates this by calling
-`dashMode.set(0)` to force PASV for an align session. It is the 2026-08-06 rule
-— *modes use the pointer, they must not control or gate it* — broken from the
-plugin's end, and it is dead code besides: the function returns early because
-section `align` is `ok:false`. Ledger **B112**; it should be deleted rather than
-moved when `park-align-ownership` is settled.
+**This was broken once, and the fix is what the rule now rests on.**
+`applyAlignModel()` in `src/alarm-host.js` used to call `dashMode.set(0)` to force
+PASV for an align session, and restore the mode on stop — the 2026-08-06 rule
+(*modes use the pointer, they must not control or gate it*) broken from the
+plugin's end. It was deleted in `21e2432` on 2026-08-13.
+
+Verified 2026-08-14, and this is the check to re-run rather than trust the
+sentence above:
+
+```
+grep -n dashMode src/alarm-host.js     -> one COMMENT at :295, no call
+grep -rn "dashMode.set" src/*.js       -> lifecycle.js, rotator-api.js only
+                                          (core, legitimate); no alarm file
+```
+
+`applyAlignModel()` still exists (`src/alarm-host.js`) and still returns early,
+because section `align` is `ok:false` while ownership is parked. When
+`park-align-ownership` is settled it should be **deleted rather than moved** — the
+align routes have no home on the bridge, and carrying dead code across a boundary
+is how a violation gets reinstated by accident.
 
 ## See also
 
