@@ -11,6 +11,25 @@ import { calloutConfig, renderTemplate } from './callout.js';
 const router = Router();
 
 export const DEFAULTS = {
+  // ── automation (@verb listener, task `automation-verb-listener`) ──────────
+  // OFF BY DEFAULT, callout.js's rule: merging the feature transmits nothing,
+  // and turning it on is Peter's action rather than a session's.
+  'automation.enabled':               false,
+  // The ceiling is HARD-CODED in automation.js and this may only LOWER it —
+  // src/automation.js takes Math.min of the two. There is deliberately no way
+  // to raise it without a commit, because an unattended transmitter answering
+  // a shared channel forever is the fault a config edit must not be able to
+  // create.
+  'automation.max_replies_per_hour':  60,
+  // Which channel is the private one, as a sha256 fingerprint of its key —
+  // NEVER the key. See docs/modules/channels.md; index and name both fail
+  // across radios. Null means "not designated", and every predicate in
+  // channels.js then fails closed rather than guessing at index 0.
+  //
+  // The read-path contract check did NOT catch this one, because channels.js
+  // reads it through a const (`PRIVATE_FP_KEY`) rather than a string literal.
+  // Declared here anyway, and the checker's blind spot is in the bug ledger.
+  'channels.private_psk_fp':          null,
   'node_filters.max_age':     0,
   'node_filters.max_hops':    99,
   'node_filters.named_only':  false,

@@ -3,7 +3,7 @@ module: check-all
 source:
   - scripts/check_all.mjs
   - package.json
-source_hash: cf1e52b613d6d8697488e11dcf5df1c5a6e050a3b955f3aa4f0f7c42d79905c8
+source_hash: 6ae1d2939ff80798e609d88f7af82175834e3ebdb8f94d1842366246130c3dcd
 updated: 2026-08-13
 ---
 
@@ -54,12 +54,20 @@ Runtimes measured 2026-08-13 on this machine, service up, warm 700 MB store.
 | `tests/test_channel_write.mjs` | fast | — | 30 ms | 30 s |
 | `tests/test_op_manager.mjs` | fast | — | 140 ms | 30 s |
 | `tests/test_coulomb.mjs` | fast | — | 158 ms | 30 s |
+| `tests/test_served_time.mjs` | fast | — | 120 ms | 30 s |
+| `tests/test_channels.mjs` | fast | — | 67 ms | 30 s |
 | `scripts/check_snapshot.mjs` | service | node-dash up | 3,889 ms | 30 s |
 | `scripts/check_contract.mjs` | service | node-dash up | 5,148 ms | 60 s |
+| `scripts/check_no_cache.mjs` | service | node-dash up | 200 ms | 30 s |
 | `tests/test_node.py` | service | node-dash up | ~35 s | 180 s |
 | `tests/test_page_snapshot.py` | slow | node-dash + browser | measured in Observe | 600 s |
 | `tests/test_playwright.py` | slow | node-dash + browser | measured in Observe | 600 s |
 | `tests/test_ops.py` | **unsafe** | **a live radio** | not run | — |
+
+> `test_served_time.mjs` and `check_no_cache.mjs` were registered in
+> `check_all.mjs` but missing from this table, and `test_channels.mjs` was added
+> 2026-08-14. A table that claims to list the checks and does not is the same
+> failure as a check nothing invokes — the reader trusts it and stops looking.
 
 **Timeouts are derived, with a floor.** Each is ~6-12x the measured runtime,
 except that anything under a second gets a 30 s floor: below that, process
