@@ -8,12 +8,19 @@ import { broadcastMessageHistory } from './ws-relay.js';
 import { ownDeviceNums } from './node-filter.js';
 import { isListenerForMode } from './dash-mode.js';
 import { FF } from './feature-flags.js';
+import { handleAutomationEvent } from './automation.js';
 
 const _lastEnvTs = new Map(); // num → last inserted ts (env metrics dedup)
 
 export function registerBridgeEvents(bridge) {
   bridge.on('event', (ev) => {
     handleEvent(ev);
+
+    // @verb commands broadcast on the private channel. AFTER handleEvent so the
+    // command is already in the message log before we act on it — a verb that
+    // moved the rotator but left no record of arriving would be undiagnosable.
+    // It dedups by packet id internally: both radios hear the same broadcast.
+    handleAutomationEvent(ev);
 
     // A received text message is now authoritative-history-driven exactly like a
     // sent one: push the enriched history so the browser never constructs a

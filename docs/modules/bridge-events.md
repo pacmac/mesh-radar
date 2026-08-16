@@ -1,8 +1,8 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: 37d2814129124437000dc06b32d2365966578e8057c5f8ffaee47bfade8c381e
-updated: 2026-07-09
+source_hash: 556b7cdd49c1a0b09e2069e010653f0f6bfa88d5106f347447f408ecf03911e5
+updated: 2026-08-14
 ---
 
 # Module: bridge-events
@@ -21,6 +21,12 @@ the single dispatch point for all live mesh-gw events entering the backend.
 - For `traceroute` typed event: route to traceroute.js (V2) or inline `nodeList.setTraceroute` (V1)
 - For `rangetest` typed event: call `insertRangeTestEntry`
 - Accept injected dependencies (bridge instance, broadcastAll, nodeList, etc.) to avoid circular imports
+- Call `handleAutomationEvent(ev)` (task `automation-verb-listener`, 2026-08-14) —
+  `@verb` commands broadcast on the private channel. **Placed after `handleEvent`
+  deliberately**, so the command is already in the message log before anything acts
+  on it: a verb that moved the rotator but left no record of having arrived would be
+  undiagnosable. The automation module dedups by packet id internally, because both
+  radios hear the same broadcast. See `docs/modules/automation.md`.
 
 ## Dependencies
 
