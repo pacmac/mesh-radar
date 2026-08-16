@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 3031f07519c4ea8fc187b35dfe3910d23f24ef2700d3f7e253fac1b22ca0e160
-updated: 2026-08-08
+source_hash: 8b2e7387593b19295096a242d383eb4c03977bbc265973d4d1f3f89165078c7d
+updated: 2026-08-14
 ---
 
 # Module: ws-relay
@@ -139,6 +139,47 @@ Updates `lastDeviceState[ev.addr]` with the new state and `ble_state`. Triggers 
 ### `device_data`
 
 Updates `lastDeviceState[evAddr]` with `data_event`. Updates `_liveNodeIds` if `ev.node_id` present. Calls `broadcastDeviceList()`.
+
+### `signal_update` — the gw's is consumed here and never reaches the browser (task `signal-update-shape-collision`, 2026-08-14)
+
+**TWO PRODUCERS EMIT THIS TYPE NAME WITH INCOMPATIBLE SHAPES.** This module is
+where the collision is resolved, because this module is the domain boundary.
+
+| producer | shape | when |
+|---|---|---|
+| mesh-gw AppRouter | **FLAT** — `{type, __ble_addr, addr, from_num, snr, rssi, hops}` | every packet carrying `rx_rssi` or `rx_snr` |
+| our YAGI tracker | **NESTED** — `{type, data:{signal_num, rssi, snr, ts}}` | only while the tracker is aimed at a node |
+
+mesh-gw's is documented at `docs/gw/API_SSE.md` §`signal_update` and
+`docs/gw/modules/app_router.md` ("Emit `signal_update` for every packet that
+carries rx_rssi or rx_snr"); `__ble_addr` is added by its identity layer.
+Ours is emitted by `active-tracker.js` via the rotator proxy bus.
+
+**The browser reads `ev.data`** (`public/app-ws.js`, `yagiSignal`). A flat one
+therefore failed the guard and returned with no error and no log — measured
+2026-08-14 as 9 discarded in a 60 s window with no scan running, and visible only
+because `test_node.py` validates the shape on our own socket.
+
+**Resolution: the gw's is consumed here and NOT broadcast.** On this socket the
+name `signal_update` means the YAGI tracker's event and nothing else.
+
+- discrimination is on `ev.data === undefined` — the presence of the wrapper, not
+  a field list, so a new field on either side never needs a change here
+- **`_hintNodeStatus` has already run** at the top of the handler, so the node's
+  status hint still fires for these packets. Nothing is lost by not forwarding.
+- **do NOT wrap the gw's payload in `data`.** The two carry different things —
+  `from_num` is the node the packet came FROM, `signal_num` is the node the YAGI
+  is AIMED AT. Merging them would silently mis-attribute a reading.
+
+Its per-packet rssi/snr is real data with no consumer today. If a consumer is ever
+wanted, it gets its OWN type name owned by node-dash — never this one.
+
+> This is one instance of a wider defect: the handler's final `broadcast(ev)`
+> forwards every unrecognised gw event to the browser verbatim, which breaks
+> CLAUDE.md's rule that the browser has "zero gw API knowledge". `packet`,
+> `node_info` and `message_status` still cross that way and are read by `public/`
+> in mesh-gw's raw shapes. Tracked separately — fixing those spans both domains
+> and may not be one task.
 
 ### Tilt ingest — PRIVATE_APP (task `tilt-ingest-v2`, 2026-07-03)
 

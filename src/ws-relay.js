@@ -745,6 +745,30 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // -- AppRouter typed event translations ----------------------------------
     // AppRouter emits generic events; translate to legacy names for browser compat.
 
+    // signal_update — TWO PRODUCERS, ONE NAME, INCOMPATIBLE SHAPES.
+    //
+    //   mesh-gw   FLAT    {type, __ble_addr, addr, from_num, snr, rssi, hops}
+    //                     one per packet carrying rx_rssi or rx_snr, so constantly
+    //   ours      NESTED  {type, data:{signal_num, rssi, snr, ts}}
+    //                     active-tracker.js, only while the YAGI is aimed at a node
+    //
+    // The browser reads ev.data, so every flat one failed its guard and was
+    // dropped with no error and no log — 9 in a 60 s window, measured 2026-08-14.
+    // On THIS socket the name belongs to the tracker's event, so the gw's is
+    // consumed here rather than left to be discarded silently one layer later.
+    //
+    // Discriminate on the WRAPPER, not on a field list, so a new field on either
+    // side never needs a change here. _hintNodeStatus has already run above, so
+    // the node's status hint still fires for these packets and nothing is lost.
+    //
+    // DO NOT wrap the gw's payload in `data` to "fix" the shape: `from_num` is the
+    // node the packet came FROM, `signal_num` is the node the YAGI is AIMED AT.
+    // Merging them mis-attributes a reading. A consumer for the gw's per-packet
+    // rssi/snr gets its own node-dash-owned type name, never this one.
+    if (ev.type === 'signal_update' && ev.data === undefined) {
+      return;
+    }
+
     // Tilt — V1 typed event (legacy replay shape); fully consumed here
     if (ev.type === 'private_app' && ev.portnum === 256) {
       _handleTiltPayload(ev.payload_b64, ev.node_id ?? ev.addr ?? ev.device ?? '?',
