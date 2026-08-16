@@ -15,7 +15,7 @@ import { snrDbList } from './snr.js';
 import { scheduleTime } from './served-time.js';
 import { nodeKind, provenDoors, rolesByNum } from './node-kind.js';
 import { ownDeviceNums } from './node-filter.js';
-import { channelKey, setDeviceChannels, roleOf } from './channels.js';
+import { channelKey, setDeviceChannels, roleOf, indexFor } from './channels.js';
 import { signalVerdict, marginHealth, hopsTone, blePctTone, verdictBands,
          gapTone, excessLossTone, heardTone } from './signal-verdict.js';
 import { signalQuality as sigQualityPct } from './utils.js';
@@ -645,6 +645,23 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         ? lastDeviceChannels[d.addr.toUpperCase()].map(
             ({ key, ...c }) => ({ ...c, designated: roleOf(d.addr, c.index) }))
         : null,
+      // WHICH CHANNEL THE SEND FORM STARTS ON, DECIDED HERE.
+      //
+      // The browser is a presentation layer: it does not choose a channel. It
+      // was choosing one — `msgChannel: '0'` at app.js:215, a fallback to 0 in
+      // tab-messages.html, and no validation at all in tab-shared.html — and a
+      // channel INDEX means different things on different radios. On the YAGI,
+      // index 0 is a primary named `Public` that nothing is listening to, and it
+      // EXISTS, so a "is this index valid" check passes and the send silently
+      // goes nowhere.
+      //
+      // PRIVATE, not public. `pri` resolves on every radio we have, and an
+      // accidental send must never land on the public mesh. Public stays
+      // available by deliberately selecting it, which is the point.
+      //
+      // null when it cannot be resolved — the form must then refuse rather than
+      // fall back to a number, exactly as sendMeshText now does.
+      default_channel: d.addr ? indexFor(d.addr, 'pri') : null,
       // BLE link tone — app-components.js:80 held >=50/25. This is the BLE
       // percentage the gateway reports, NOT a LoRa measurement, so it keeps its
       // own two bands rather than signalVerdict's 76/51/26.

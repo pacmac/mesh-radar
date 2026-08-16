@@ -212,7 +212,17 @@ function dashboard() {
     mentionPos: 0,
     mentionIdx: 0,
     unreadMessages: 0,
-    msgChannel: '0',
+    // NOT '0'. The browser does not pick a channel — index 0 means different
+    // things on different radios, and on the YAGI it is a dead slot. The value
+    // arrives from device_list.default_channel, served by the backend through
+    // channels.js. null until it does.
+    msgChannel: null,
+    // WHICH RADIO msgChannel WAS CHOSEN FOR. A channel index is only meaningful
+    // for one radio — index 1 is Private on the YAGI and `mqtt` on the OMNI — so
+    // the selection is re-taken from the served default whenever the radio
+    // changes. Without this, switching radio silently re-points the same number
+    // at a different channel.
+    msgChannelFor: null,
     msgFilter: 'all',
     msgText: '',
     msgSent: false,

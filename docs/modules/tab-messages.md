@@ -1,8 +1,8 @@
 ---
 module: tab-messages
 source: public/partials/tab-messages.html
-source_hash: 60ae32a9f2c037d20d9196823003284f40b5dae825b925c3d71d90190123f3f6
-updated: 2026-07-24
+source_hash: 5186707765de29edbd08bde6adbacfd071f41856e8b94112553c2dcf0134d6a1
+updated: 2026-08-16
 ---
 
 # Module: tab-messages
@@ -91,6 +91,11 @@ reconciled via the `pkt_id` hint sent to the gw, so status events match).
 ## Invariants
 
 - Send flow remains untouched by the viewer filter.
+- **The channel `<select>` lists the SELECTED RADIO's real channels and nothing
+  else**, each labelled with its served designation (`· PUB` / `· PRI`), and its
+  value comes from `default_channel`. It previously fell back to a literal `0`;
+  `tab-shared.html`'s copy was worse — **eight hardcoded options, 0-7**, unrelated
+  to the radio, with index 0 labelled "Primary". Both are the same source now.
 - The feed iterates `displayMessages()` and keeps the stable server `m.key`.
 - Filter buttons never fetch page data and never mutate message rows.
 - No raw colors; the only remaining `text-[...]` arbitrary sizes are removed
@@ -117,12 +122,26 @@ The Ch select offered static indexes 0–7 regardless of configuration —
 sending on an unconfigured channel silently fails, and bare numbers mean
 nothing. It now iterates `msgFromChannels()` (the sending radio's
 `dev.channels` from the device_list, backend task `device-channels-on-list`),
-rendering `ch.name` UPPERCASED for display (values stay numeric indexes), with "Primary" for an unnamed index 0 and
-"Channel N" for other unnamed entries; unconfigured slots don't appear.
-An `x-effect` resets `msgChannel` to 0 when the From radio changes to one
-that lacks the selected index. Fallback before the first channels fetch:
-`[{index:0}]` (Primary only). Helper `msgFromChannels()` lives in
-`app-messages.js` (display convenience, no decisions).
+rendering `ch.name` UPPERCASED for display (values stay numeric indexes);
+unconfigured slots don't appear. Fallback before the first channels fetch:
+`[{index:0}]`. Helper `msgFromChannels()` lives in `app-messages.js` (display
+convenience, no decisions).
+
+> **SUPERSEDED 2026-08-16, task `send-form-default-channel`.** Two things above
+> are no longer true and were actively harmful:
+>
+> - *"'Primary' for an unnamed index 0"* — labelling index 0 "Primary" asserts a
+>   role from a number. On the YAGI index 0 is a primary named `Public` that
+>   nothing on the mesh is listening to. Options now carry the **served**
+>   designation (`· PUB` / `· PRI`) and never infer one.
+> - *"An `x-effect` resets `msgChannel` to 0 when the From radio changes to one
+>   that lacks the selected index."* — the reset target was a literal, and the
+>   trigger was wrong. "Lacks the index" is not the failure: selecting Private on
+>   the YAGI (index 1) then switching to the OMNI **kept** index 1, which on the
+>   OMNI is `mqtt` and unencrypted. The index existed, so nothing fired.
+>
+> The trigger is now "was this selection made for a different radio"
+> (`msgChannelFor`), and the value comes from `device_list.default_channel`.
 
 ## Per-viewer feed filter (task `message-feed-filters`, step 3, 2026-07-20)
 

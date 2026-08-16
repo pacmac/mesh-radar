@@ -49,6 +49,31 @@ export const messagesMixin = {
   // The sending radio's configured channels (device_list dev.channels,
   // backend task device-channels-on-list). Fallback before the first fetch:
   // Primary only. Display convenience — no decisions.
+  // The SERVED starting channel for the selected radio. The browser does not
+  // choose one — a channel index means different things on different radios, and
+  // choosing here is what let the form sit on the YAGI's dead `Public` slot.
+  // `null` means the backend could not resolve it, and the form must say so
+  // rather than substitute a number.
+  msgDefaultChannel() {
+    const d = this.availableDevices.find(x => x.node_id === this.msgFrom);
+    return d?.default_channel ?? null;
+  },
+
+  // True when the current selection does not belong to the selected radio.
+  //
+  // THIS IS NOT "DOES THE INDEX EXIST", AND THE DIFFERENCE IS THE WHOLE BUG.
+  // The original code asked whether the index existed on the new radio and kept
+  // it if so. Caught live 2026-08-16: selecting Private on the YAGI (index 1),
+  // then switching to the OMNI, left the form on index 1 — which on the OMNI is
+  // `mqtt`, an UNENCRYPTED channel. The index existed, so the check passed, and
+  // a private message would have gone out in clear.
+  //
+  // A channel selection is only meaningful for the radio it was made on. So the
+  // question is which radio it was made on, not whether the number fits.
+  msgChannelStale() {
+    return this.msgChannelFor !== this.msgFrom;
+  },
+
   msgFromChannels() {
     return this.availableDevices.find(d => d.node_id === this.msgFrom)?.channels
         || [{ index: 0, name: '', role: 'PRIMARY' }];
@@ -72,6 +97,15 @@ export const messagesMixin = {
       return;
     }
     this.msgSent = false;
+    // NO `Number(null)` — IT IS 0, AND 0 IS THE PUBLIC MESH.
+    // The unresolved case must refuse, not coerce. This is the same rule the
+    // backend now enforces in sendMeshText: a channel is stated or the send does
+    // not happen. Coercing here would have quietly reintroduced the defect this
+    // whole change exists to remove.
+    if (!Number.isInteger(Number(this.msgChannel)) || this.msgChannel === null || this.msgChannel === '') {
+      this.showToast('No channel resolved for this radio — nothing sent', 'error', 0);
+      return;
+    }
     const text = this.msgText, channel = Number(this.msgChannel), time = new Date().toLocaleTimeString();
     const fromId = this.msgFrom;
     if (!fromId) {
