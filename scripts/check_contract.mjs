@@ -50,14 +50,30 @@ const uiFiles = [
 ];
 const THRESH = /(>=|<=|>|<)\s*-?\d+(\.\d+)?\s*\?[^?]*?['"](text-|badge-|bg-|oklch|rgba|Excellent|Good|Fair|Poor|Usable|Fragile|Failing|high|medium|better|worse)/;
 const ALLOW = /opacity|i \* 25|bars > i|width|height|scrollHeight/;
+// THE ONE ALLOWED CASE IS MATCHED BY ITS CODE, NOT BY ITS LINE NUMBER.
+//
+// This used to read `!/app-perf\.js:39[0-9]/` — an allowlist keyed to lines
+// 390-399. On 2026-08-14 an eight-line COMMENT was added above that function,
+// the line became 405, and this check went red for a file whose logic had not
+// changed at all. A line number is not an identity: it moves whenever anything
+// above it moves, so the check fails on edits that are not the thing it guards.
+//
+// What is actually allowed is the expression: `perfTrendDirection` compares the
+// delta against `trend_dead_band_db`, which is SERVED by the backend
+// (verdict_bands) and merely tested for sign here. That is reading a served
+// threshold, not deciding one — which is the whole distinction this check exists
+// to enforce. Matched on the served field's name, so it stays correct wherever
+// the function moves and stops being correct if someone swaps in a literal.
+const ALLOWED_SERVED_THRESHOLD = /trend_dead_band_db|\bdead\b/;
 const offenders = [];
 for (const f of uiFiles) {
   R(f).split('\n').forEach((line, i) => {
-    if (THRESH.test(line) && !ALLOW.test(line)) offenders.push(`${f}:${i + 1}`);
+    if (THRESH.test(line) && !ALLOW.test(line) && !ALLOWED_SERVED_THRESHOLD.test(line)) {
+      offenders.push(`${f}:${i + 1}`);
+    }
   });
 }
-// app-perf.js:397 reads the SERVED dead-band then tests a sign — allowed.
-const real = offenders.filter(o => !/app-perf\.js:39[0-9]/.test(o));
+const real = offenders;
 real.length
   ? fail('no threshold decides a class in public/', real.join('\n        '))
   : pass(`no threshold decides a class in public/ (${uiFiles.length} files)`);

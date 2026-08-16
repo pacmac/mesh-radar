@@ -5,7 +5,7 @@ source:
   - scripts/check_snapshot.mjs
   - scripts/check_contract.mjs
   - tests/test_coulomb.mjs
-source_hash: 4126f679477ec68fa5546e5409637d7e78552c8cc1791da68d87195823ef4d00
+source_hash: b7e1339608cf9004e37855953be77acda019912c0d84fd49305019678bd42dca
 updated: 2026-08-13
 ---
 
@@ -91,6 +91,17 @@ _N/A_
 - **A refusal is behaviour and gets a test.** `getObs` throwing 501 is a
   deliberate contract (`src/alarm-host.js:651-660`), not an outage, so it is
   asserted rather than stubbed around.
+- **An allowlist is keyed by CODE, never by a line number** (2026-08-14). The
+  "no threshold decides a class" check exempted its one legitimate case with
+  `!/app-perf\.js:39[0-9]/`. An eight-line comment was added above that function,
+  the line became 405, and the check went red for a file whose logic had not
+  changed. A line number is not an identity — it moves whenever anything above it
+  moves, so the check fires on edits that are not the thing it guards, and the
+  cheap way to silence it is to widen the range and wait for it to happen again.
+  It now matches on `trend_dead_band_db`, the SERVED field being read, so it
+  follows the function wherever it goes and correctly starts failing if someone
+  swaps the served value for a literal. Verified both ways: clean on the real
+  tree, and still catching a planted `v > 5 ? 'text-error'` offender.
 
 ## Test notes
 
