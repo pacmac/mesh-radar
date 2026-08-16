@@ -86,12 +86,25 @@ try {
   eq(isPrivate(OMNI, 2), true,  'OMNI index 2 is private');
   eq(isPrivate(YAGI, 1), true,  'YAGI index 1 is private');
 
-  // NAME IS NOT IDENTITY: both PRIMARYs are the same channel by key while only
-  // one of them is named. Neither is private.
+  // Neither PRIMARY is private, whatever it is called.
   eq(isPrivate(OMNI, 0), false, 'unnamed PRIMARY is not private');
   eq(isPrivate(YAGI, 0), false, '"Public" PRIMARY is not private');
+
+  // THE TWO PRIMARYS SHARE A KEY BUT NOT A NAME, AND THAT IS NOT THE SAME AS
+  // BEING THE SAME CHANNEL. An earlier version of this test asserted "the two
+  // PRIMARYs are ONE channel by key, despite different names". That claim is
+  // very probably wrong on air: Meshtastic derives the transmitted channel hash
+  // from the name AND the key, so an unnamed primary and one named `Public` are
+  // different channels to the radios. On 2026-08-12 our YAGI's primary was named
+  // `Public` while the OMNI's was unnamed, and from that day the YAGI completed
+  // zero traceroutes and the OMNI stopped hearing it.
+  //
+  // So the assertion is inverted: matching fingerprints with DIFFERENT NAMES is
+  // exactly the situation to notice, not to wave through.
   eq(resolveChannel(OMNI, 0).psk_fp, resolveChannel(YAGI, 0).psk_fp,
-     'the two PRIMARYs are ONE channel by key, despite different names');
+     'the two PRIMARYs share a key');
+  ok(resolveChannel(OMNI, 0).name !== resolveChannel(YAGI, 0).name,
+     'and DIFFER by name — same key + different name is NOT the same channel on air');
 
   // resolveChannel carries the verdict, so no caller has to recompute it.
   eq(resolveChannel(OMNI, 2).is_private, true,  'resolveChannel reports is_private');

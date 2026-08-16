@@ -35,9 +35,31 @@ logged or stored.
 - **INDEX FAILS.** Private is `2` on one radio and `1` on the other. Index `1` on
   `E9:B0` is `mqtt` — unencrypted, and the one channel that is emphatically *not*
   private. Code that hard-codes `1` broadcasts to MQTT from that radio.
-- **NAME FAILS.** The two PRIMARYs are the same channel by key, but one is named
-  `Public` and the other is **unnamed**. A name is decoration, not identity.
-- **KEY WORKS.** The fingerprint matches across radios in both cases.
+- **INDEX ALONE FAILS.** Whatever else is true, an index cannot be assumed.
+- **KEY ALONE IS NOT THE WHOLE STORY EITHER — I got this wrong first time.**
+  I originally wrote here that "the two PRIMARYs are the same channel by key,
+  despite different names; a name is decoration, not identity". That is very
+  probably FALSE on air. Meshtastic derives a channel's transmitted hash from the
+  name **and** the key, so an unnamed primary (standard LongFast) and one named
+  `Public` with the same key are **different channels to the radios**, even though
+  this module's fingerprint says they match.
+
+  This is not academic: on 2026-08-12 the YAGI's primary is named `Public` while
+  the OMNI's is unnamed, and from that date the YAGI's traceroutes went to exactly
+  zero and the OMNI stopped hearing its transmissions. See the ledger entry
+  "the YAGI has completed ZERO traceroutes since 2026-08-12".
+
+  **UNVERIFIED against firmware.** The hash rule is stated from Meshtastic
+  semantics, not measured on our radios, and this project's standing rule is to
+  ask the device rather than trust a doc. The confirming test is to make the two
+  primaries' names match and see whether the YAGI recovers — a live radio config
+  write, and therefore Peter's call.
+
+**WHAT THIS MODULE IS AND IS NOT.** It resolves WHICH LOCAL SLOT carries a channel
+we have designated, per radio. Both `Private` slots share a name *and* a key, so
+that resolution is sound and the automation module can rely on it. It does **not**
+claim two channels are the same channel on air — for that, the name matters too,
+and `psk_fp` alone must not be used to argue it.
 
 ## The key is never stored
 
