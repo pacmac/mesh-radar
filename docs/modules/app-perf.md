@@ -1,8 +1,8 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: ac07c87644b514390c96f8b450eff9701ddf4e76e96cc7eb7bdec317d5fedf56
-updated: 2026-08-04
+source_hash: 092744978c92c44c0e9f075080de9580c188da338a2bddf28daf26b68f5f0500
+updated: 2026-08-14
 ---
 
 # Module: app-perf

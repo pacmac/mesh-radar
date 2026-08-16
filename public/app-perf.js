@@ -1,6 +1,14 @@
 // Performance mixin: link budget calculator, traceroute history, RF analytics.
 // Chart instances live outside Alpine's reactive scope to prevent proxy recursion.
 import { bandFor, toneCls, toneBadge } from './app-helpers.js';
+// Imported rather than taken off `window`. This module was the ONLY one reaching
+// persistSet through the global that app.js:26 sets for app-node-status.js; the
+// other eight (app-radar, app-devices, app-config, app-nav, app-ws, app-messages,
+// app.js, app-observatory) all import it. It worked — which is why the bug ledger
+// recording it as a "latent ReferenceError" was wrong — but it made this file
+// silently dependent on a line in another module that exists for a third module's
+// benefit, and tidying that line away would have broken six call sites here.
+import { persistSet } from './app-persist.js';
 let _charts = {}; // reassigned by destroyPerfCharts() on tab-leave (lazy tabs)
 
 
