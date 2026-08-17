@@ -3,7 +3,6 @@ import { dashMode, transmitterForMode } from './dash-mode.js';
 import { rotator } from './rotator.js';
 import { activeTracker } from './active-tracker.js';
 import { nodeList } from './node-list.js';
-import { passiveTracer } from './passive-tracer.js';
 import { FF } from './feature-flags.js';
 import { getRotatorAddress, onHomePosChange } from './device-config.js';
 import { bridge } from './bridge.js';
@@ -49,9 +48,10 @@ export function initLifecycle() {
   // Resume active mode if it was persisted before restart
   if (dashMode.value === 1) activeTracker.start();
 
-  // Passive tracer — must init after bridge.on('event') so nodeList.setTraceroute
-  // runs before the 'traced' emit is broadcast.
-  passiveTracer.init();
+  // src/passive-tracer.js is DELETED — 2026-08-17, task
+  // `traceroute-remove-backend-remainder`. Its whole job was to traceroute a
+  // node it had just heard, so once the dispatch was removed the module was an
+  // empty listener. PASV mode still exists and still listens; it no longer acts.
 
   // -- rotator lifecycle -------------------------------------------------------
   rotator.on('connected', () => {});

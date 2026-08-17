@@ -9,18 +9,19 @@ import { listFavourites } from './db.js';
 import { queryMessages } from './filters.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.js';
-import { passiveTracer } from './passive-tracer.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
-import { snrDbList } from './snr.js';
 import { scheduleTime } from './served-time.js';
 import { nodeKind, provenDoors, rolesByNum } from './node-kind.js';
 import { ownDeviceNums } from './node-filter.js';
 import { channelKey, setDeviceChannels, roleOf, indexFor } from './channels.js';
-import { signalVerdict, marginHealth, hopsTone, blePctTone, verdictBands,
-         gapTone, excessLossTone, heardTone } from './signal-verdict.js';
+// marginHealth and gapTone dropped 2026-08-17 — both scored a traceroute row.
+import { signalVerdict, hopsTone, blePctTone, verdictBands,
+         excessLossTone, heardTone } from './signal-verdict.js';
 import { signalQuality as sigQualityPct } from './utils.js';
-import { budget as linkBudget, marginDb, snrGapDb, theoreticalSnrDb,
-         expectedRssiDbm, excessLossDb } from './link-budget.js';
+// marginDb / snrGapDb / theoreticalSnrDb dropped with withLinkBudget, the only
+// caller. link-budget.js itself is untouched and still serves the per-RADIO
+// budget via `budget`.
+import { budget as linkBudget, expectedRssiDbm, excessLossDb } from './link-budget.js';
 import { getDeviceCfg as lbDeviceCfg } from './device-config.js';
 import { haversine as lbHaversine } from './utils.js';
 import lbDb from './db.js';
@@ -59,7 +60,6 @@ import { DEFAULTS as CONFIG_DEFAULTS } from './config-api.js';
 import { getAutoPurgeCfg } from './auto-purge-api.js';
 import { lookupGeocode } from './geocode.js';
 import { FF } from './feature-flags.js';
-import { traceroute } from './traceroute.js';
 import { fmtAgo } from './format.js';
 import { board } from './snapshot-api.js';
 // Composed HERE rather than in any one of the three API files: reach does not
@@ -107,74 +107,24 @@ function radarOverlays() {
   return out;
 }
 
-// THE SNR EMIT BOUNDARY. Everything leaving for the browser carries dB, never
-// the raw quarter-dB the wire uses — see src/snr.js for why that module is
-// backend-only. Applied here rather than at storage: the store holds what the
-// wire said.
-const withSnrDb = (o) => (o && typeof o === 'object')
-  ? { ...o, snr_towards: snrDbList(o.snr_towards), snr_back: snrDbList(o.snr_back) }
-  : o;
-
-// THE LINK BUDGET IS COMPUTED HERE, NOT IN THE BROWSER. Friis, FSPL, thermal
-// noise floor and EIRP moved to src/link-budget.js (task perf-maths-to-backend);
-// public/ no longer carries radio physics.
+// withSnrDb() and withLinkBudget() are REMOVED — 2026-08-17, task
+// `traceroute-remove-backend-remainder`. Both took a traceroute_history row:
+// the first converted snr_towards/snr_back from the wire's quarter-dB to dB at
+// the emit boundary, the second attached the per-row link budget (margin, gap,
+// theoretical SNR, metric distance, valid_tx) attributed to that row's OWN
+// tx_device. Every caller went with the feeds that carried the rows.
 //
-// Attributed to the row's OWN tx_device, which is more correct than what the
-// browser did: it applied whichever radio the user had selected to every row.
-// docs/modules/app-perf.md already says marginTx "measures the DISPATCHING
-// radio's TX chain" — now it actually does.
-function withLinkBudget(row, loraFor) {
-  if (!row || typeof row !== 'object') return row;
-  const lora = loraFor(row.tx_device);
-  if (!lora) return row;                       // no config for that radio yet
-  const dev  = row.tx_device ? lbDeviceCfg(row.tx_device) : null;
-  const home = { lat: getConfig('home.lat'), lon: getConfig('home.lon') };
-
-  // Distance to the FIRST HOP where there is one, else the target — the same
-  // metric distance the perf page has always used, decided here now.
-  const route  = Array.isArray(row.route) ? row.route.filter(n => n != null && n !== 0xffffffff) : [];
-  const hopNum = route.length ? route[0] : row.to_num;
-  // From the STORE, not nodeList._cache: the cache is a display projection and
-  // was returning entries without lat, so every distance came back null and
-  // valid_tx was false for all 500 rows.
-  const pos    = hopNum != null ? lbNodePos(hopNum) : null;
-  const distKm = (pos?.lat && pos.lat !== 0 && Number.isFinite(home.lat) && home.lat !== 0)
-    ? lbHaversine(home.lat, home.lon, pos.lat, pos.lon) : null;
-
-  const direct = route.length === 0;
-  const snrTx = Array.isArray(row.snr_towards) && row.snr_towards.length ? row.snr_towards[0] : null;
-  const back  = Array.isArray(row.snr_back) ? row.snr_back : [];
-  const snrRx = back.length ? (route.length ? back[back.length - 1] : back[0]) : null;
-  const r2 = (v) => v == null ? null : +v.toFixed(2);
-  const validTx = snrTx != null && distKm != null && distKm > 0.1;
-
-  return {
-    ...row,
-    snr_tx_db:      r2(snrTx),
-    snr_rx_db:      r2(snrRx),
-    margin_tx_db:   r2(marginDb(snrTx, lora)),
-    gap_tx_db:      r2(snrGapDb(snrTx, distKm, lora, dev)),
-    theo_snr_db:    r2(theoreticalSnrDb(distKm, lora, dev)),
-    metric_dist_km: distKm == null ? null : +distKm.toFixed(1),
-    // Enough evidence to plot: a reading, a real distance, and not on our doorstep.
-    valid_tx:       validTx,
-    // VERDICTS, decided here. The page derived confidence, route kind and the
-    // distance label from `direct` and `validTx` itself — BROWSER_CONTRACT: "if
-    // a display differs based on a condition, that condition is evaluated in
-    // Node.js". `direct` means the target WAS the first hop, i.e. no relay.
-    direct,
-    route_kind:     direct ? 'direct' : 'first-hop',
-    dist_label:     direct ? 'target' : 'first hop',
-    confidence:     !validTx ? 'low' : direct ? 'high' : 'medium',
-    // HEADROOM VERDICT, decided here. app-perf.js:308-315 turned this same
-    // margin into Excellent/Good/Usable/Fragile/Failing, and :333-344 chose the
-    // bar count from one band table and the colour from a DIFFERENT one. Both
-    // now come from marginHealth(). `bars` is a count; the browser draws them.
-    health:         marginHealth(r2(marginDb(snrTx, lora))),
-    // tab-perf.html:243 held <15/<35 for the SNR gap. Lower is better.
-    gap_tone:       gapTone(r2(snrGapDb(snrTx, distKm, lora, dev))),
-  };
-}
+// TWO RULES IN THEM ARE WORTH RE-READING BEFORE ANY REWRITE, both bought with
+// real bugs:
+//   - convert to dB ONCE, at the emit boundary, never at storage — the store
+//     holds what the wire said. Three consumers each doing their own /4 is how
+//     an unmeasured hop got drawn as a confident -32.0 dB.
+//   - take positions from the STORE, not nodeList._cache — the cache is a
+//     display projection and was returning entries with no lat, so every
+//     distance came back null and valid_tx was false for all 500 rows.
+//
+// src/link-budget.js is untouched and still serves the per-RADIO budget the
+// Performance page shows. Only the per-ROW attachment is gone.
 
 function makeRotatorThrottle(sendFn) {
   let lastMs    = 0;
@@ -485,15 +435,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const _ownNums = ownDeviceNums();
       const _roleMap = rolesByNum();
       return { ...ev, favourites: listFavourites(), nodes: (ev.nodes || []).map(n => {
-        // First-hop relay bundle (IDENTITY.md §3) — a traceroute-context
-        // fact the browser renders without resolving (task radar-list-via)
-        const viaNum = n.last_traceroute?.route?.[0];
-        const via = (viaNum != null && viaNum !== 0xffffffff)
-          ? { num: viaNum, node_id: '!' + (viaNum >>> 0).toString(16).padStart(8, '0'), short_name: resolveNodeLabel(viaNum) }
-          : null;
+        // `via` — the first-hop relay bundle (IDENTITY.md §3) — is now always
+        // null. It was read from last_traceroute.route[0], and nothing writes
+        // last_traceroute (2026-08-17, task
+        // `traceroute-remove-backend-remainder`). It is still SENT, as null,
+        // because the radar list renders a column for it and a missing key and
+        // an unknown first hop are different statements.
+        const via = null;
         // Hops-away DISPLAY decision (backend-owned; UI is presentation only).
-        // Verified (traceroute relay count; 0 = direct) takes priority over
-        // reported (live packet hops). See ws-relay.md "hops-display".
         // SIGNAL VERDICT, decided here. The browser turned a percentage into
         // "Excellent / Good / Fair / Poor" using >=76/51/26 while the colour ramp
         // beside it used >=75/50/25 — a node at 75% read "Good" in the excellent
@@ -501,20 +450,20 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         const hasSig = n.rssi != null || n.snr != null;
         const signal = signalVerdict(hasSig ? sigQualityPct(n.rssi, n.snr) : null,
                                      { hasReading: hasSig });
-        const route = n.last_traceroute?.route;
-        const hops_verified = Array.isArray(route) ? route.length : null;
-        const hops_display = hops_verified ?? (n.hops_away ?? n.hops ?? null);
-        // Freshness of the verification: true while the traceroute is within the
-        // passive auto-tracer's staleness window (pasv_config.stale_sec, ms ts) —
-        // i.e. NOT fresh == old enough that we'd re-trace it. UI shows a green
-        // (fresh) vs amber (stale) dot; the threshold decision stays here.
-        const staleMs = (getConfig('pasv_config', {}).stale_sec ?? 1800) * 1000;
-        const traceTs = n.last_traceroute?.ts;
-        const hops_fresh = hops_verified != null && traceTs != null && (Date.now() - traceTs) <= staleMs;
-        // Hop-count TONE decided here — app-components.js:43-45 held the
-        // 0/1/2 thresholds. The badge's TEXT (Direct vs "n hops", the
-        // verified/reported suffix) is display composition and stays there.
-        return { ...n, display_name: resolveNodeLabel(n.num), via, hops_verified, hops_display, hops_fresh, signal,
+        // hops_display is now the REPORTED count and nothing else — 2026-08-17,
+        // task `traceroute-remove-backend-remainder`.
+        //
+        // It used to prefer hops_verified (the traceroute relay count, 0 =
+        // direct) over the live packet hops, and hops_fresh said whether that
+        // verification was still inside the passive tracer's staleness window.
+        // Both are gone with the tracer: a "verified" claim that can never be
+        // renewed decays into a lie, and the browser was drawing a green dot to
+        // assert it.
+        const hops_display = n.hops_away ?? n.hops ?? null;
+        // Hop-count TONE decided here — app-components.js held the 0/1/2
+        // thresholds. The badge's TEXT (Direct vs "n hops") is display
+        // composition and stays there.
+        return { ...n, display_name: resolveNodeLabel(n.num), via, hops_display, signal,
                  hops_tone: hopsTone(hops_display),
                  // WHAT THIS NODE IS TO US — own / door / router / endpoint.
                  // Decided here so the radar can draw a different icon per kind
@@ -936,24 +885,20 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   scanner.on('progress', (data) => broadcast({ type: 'scan_progress', data }));
   scanner.on('contact',  (data) => broadcast({ type: 'scan_contact',  data }));
   scanner.on('end',      (data) => broadcast({ type: 'scan_end',      data }));
-  passiveTracer.on('tracing', (data) => broadcast({ type: 'passive_trace_start', ...data }));
-  // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────────
-  if (!FF.SSOT_TRACEROUTE) {
-    passiveTracer.on('traced', (data) => broadcast({ type: 'route_discovered', ...withLinkBudget(withSnrDb(data), mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null) }));
-  // ── [V2] SSOT — all traceroute results emit route_discovered, not PASV only
-  } else {
-    traceroute.on('result', (data) => broadcast({ type: 'route_discovered', ...withLinkBudget(withSnrDb(data), mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null) }));
-  }
-  // ──────────────────────────────────────────────────────────────────────────
+  // 'passive_trace_start' and 'route_discovered' broadcasts REMOVED 2026-08-17,
+  // task `traceroute-remove-backend-remainder`, along with the SSOT_TRACEROUTE
+  // V1/V2 fork that chose between passiveTracer and traceroute as their source.
+  // Neither emitter exists now. The browser handlers went in 86400ab.
   nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
 
   // ── [V2] SSOT_ROUTE_RENDER — backend-derived radar display state ──────────
   let _getRadarContext = null; // set below when FF active; used by connection replay
   if (FF.SSOT_ROUTE_RENDER) {
-    // Local state for radar_context derivation
-    let _rcTracerouteNode     = null;   // node currently being traced (or last traced)
-    let _rcActive             = false;  // true while a traceroute dispatch is in flight
-    let _rcPassiveTracingNode = null;   // node currently being traced (PASV card spinner)
+    // Local state for radar_context derivation.
+    //
+    // _rcTracerouteNode / _rcActive / _rcPassiveTracingNode are GONE — 2026-08-17,
+    // task `traceroute-remove-backend-remainder`. All three were written only by
+    // traceroute.js and passiveTracer events, and nothing dispatches now.
 
     // Quantile control points for the radar's adaptive scale.
     //
@@ -1005,37 +950,38 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const targetNum = lastPointTarget?.point_target ?? null;
       const armAz     = (mode !== 0) ? (rotator.status?.target ?? null) : null;
 
-      // tracerouteNode: which node gets crosshairs; traceroute_active: animate its route
-      let tracerouteNode = null;
-      let activeCard     = null;
+      // focus_node: WHICH NODE GETS CROSSHAIRS. Renamed from traceroute_node —
+      // 2026-08-17, task `traceroute-remove-backend-remainder`.
+      //
+      // The old name was wrong, and removing the traceroute surface is what
+      // exposed it: in ACTV this has always carried the TRACKER's target, which
+      // is where the rotator is pointing. It has nothing to do with a
+      // traceroute, and deleting the field along with everything else
+      // traceroute-shaped would have taken ACTV's crosshair and its signal
+      // overlay with it.
+      //
+      // In PASV and SCAN it used to carry the last TRACED node, which no longer
+      // exists, so those modes now have no focus node. `traceroute_active`,
+      // which only ever animated a dispatch in flight, is gone outright.
+      let focusNode  = null;
+      let activeCard = null;
 
       if (mode === 1) {
-        // ACTV: crosshairs always on target; animate while traceroute in flight
-        tracerouteNode = targetNum;
+        focusNode = targetNum;
         activeCard = targetNum ? {
           mode: 'actv', node_num: targetNum, label: 'TARGET',
           border: 'rgba(255,30,30,0.40)', accent: 'rgba(255,30,30,0.75)',
           nameclr: 'rgba(255,30,30,0.95)', divider: 'rgba(255,30,30,0.18)',
         } : null;
-      } else if (mode === 0) {
-        // PASV: crosshairs on last traced node; card while actively tracing
-        tracerouteNode = _rcTracerouteNode;
-        activeCard = _rcPassiveTracingNode ? {
-          mode: 'pasv', node_num: _rcPassiveTracingNode, label: 'TRACING',
-          border: 'rgba(0,255,80,0.35)', accent: 'rgba(0,255,80,0.75)',
-          nameclr: 'rgba(0,255,80,0.95)', divider: 'rgba(0,255,80,0.15)',
-        } : null;
-      } else if (mode === 2) {
-        // SCAN: crosshairs on last traced node, no card
-        tracerouteNode = _rcTracerouteNode;
-        activeCard     = null;
       }
+      // PASV (mode 0) and SCAN (mode 2): no focus node and no card. PASV's
+      // "TRACING" card named the node the passive tracer was working on; with
+      // no tracer the card could only misrepresent what the station is doing.
 
       return {
         type:              'radar_context',
         mode,
-        traceroute_node:   tracerouteNode,
-        traceroute_active: _rcActive,
+        focus_node:        focusNode,
         target_arm_az:     armAz,
         active_card:       activeCard,
         // THE SCALE'S CONTROL POINTS. Quantiles of the plotted node distances —
@@ -1050,41 +996,23 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     }
     _getRadarContext = buildRadarContext;
 
-    // Wire up triggers
-    // THE AIMING ANIMATION, from EVERY path. Peter: "the beauty and refinement
-    // of the radar is it actually animates the whole traceroute — the antenna
-    // aiming, the target node, and an animated route." That was fed only by
-    // rotator's point_target, emitted only by active-tracker in ACTV, so any
-    // other path animated nothing. run() emits these for all of them.
-    traceroute.on('aiming', (d) => broadcast({ type: 'trace_aiming', ...d }));
-    traceroute.on('aimed',  (d) => broadcast({ type: 'trace_aimed',  ...d }));
-
-    traceroute.on('start', ({ to }) => {
-      _rcTracerouteNode = to;
-      _rcActive         = true;
-      broadcastRadarContext();
-    });
-    traceroute.on('result', (data) => {
-      _rcTracerouteNode = data.from;
-      _rcActive         = false;
-      if (dashMode.value === 0) _rcPassiveTracingNode = null;
-      broadcastRadarContext();
-    });
-    traceroute.on('cancel', ({ row } = {}) => {
-      _rcActive = false;
-      broadcastRadarContext();
-      // Failed attempts reach the perf page live — same channel as results
-      if (row) broadcast({ type: 'traceroute_failed', row: withLinkBudget(withSnrDb(row), mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null) });
-    });
-    passiveTracer.on('tracing', (data) => {
-      _rcPassiveTracingNode = data.from;
-      broadcastRadarContext();
-    });
+    // Wire up triggers.
+    //
+    // Five traceroute-fed triggers were REMOVED here 2026-08-17 (task
+    // `traceroute-remove-backend-remainder`): traceroute.on('aiming'/'aimed')
+    // broadcasting trace_aiming/trace_aimed, on('start')/on('result') moving
+    // the focus node, on('cancel') broadcasting traceroute_failed, and
+    // passiveTracer.on('tracing') raising the PASV card.
+    //
+    // Peter, 2026-08-04, on what the first two were for: "the beauty and
+    // refinement of the radar is it actually animates the whole traceroute —
+    // the antenna aiming, the target node, and an animated route." Worth
+    // rebuilding on the replacement; the animation was never the broken part.
+    //
+    // What remains is what never depended on a traceroute: the rotator's own
+    // target, the mode, and the scan.
     rotator.on('point_target', () => broadcastRadarContext());
-    dashMode.on('change', () => {
-      if (dashMode.value !== 0) _rcPassiveTracingNode = null;
-      broadcastRadarContext();
-    });
+    dashMode.on('change', () => broadcastRadarContext());
     scanner.on('contact', () => broadcastRadarContext());
   }
   // ─────────────────────────────────────────────────────────────────────────
@@ -1330,21 +1258,12 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const timer = getRangeTimer();
       ws.send(JSON.stringify({ type: 'range_test_timer', ...timer }));
 
-      // Sole transport for perf-page history (C1: page data is WS-only; the
-      // REST GET is browser-blocked). failure_epoch rides along so the
-      // success-rate stat never needs a config GET.
-      const traceRows = stmts.queryTracerouteHistory.all({ to_num: null, limit: 500 }).map(r => ({
-        ...r,
-        route:           JSON.parse(r.route           || '[]'),
-        route_back:      JSON.parse(r.route_back      || '[]'),
-        // CONVERTED HERE, at the emit boundary. The store keeps raw wire
-        // units; the browser is handed dB and decides nothing.
-        snr_towards:     snrDbList(JSON.parse(r.snr_towards || '[]')),
-        snr_back:        snrDbList(JSON.parse(r.snr_back    || '[]')),
-        relay_positions: JSON.parse(r.relay_positions || '{}'),
-      })).map(r => withLinkBudget(r, mac => mac ? (lastDeviceLora[mac.toUpperCase()] ?? null) : null));
-      ws.send(JSON.stringify({ type: 'traceroute_history', rows: traceRows,
-                               failure_epoch: getConfig('perf.failure_epoch', null) }));
+      // The traceroute_history replay is REMOVED — 2026-08-17, task
+      // `traceroute-remove-backend-remainder`. Peter kept the 37,425 rows and
+      // dropped the reads: they stay in the table for the redesign, and no
+      // surface serves them. It read 500 rows, decoded SNR to dB at this emit
+      // boundary and attached each row's link budget; that decode-once-at-the-
+      // boundary rule is worth keeping when something reads them again.
       // The band tables themselves. Per-row `health` covers rows; the perf
       // page's HEADLINE figures are client-side medians (perfSummary ->
       // _perfMedian over the user's selected radio/kind) and so have no row to

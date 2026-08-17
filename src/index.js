@@ -28,7 +28,6 @@ import clustersRouter from './clusters-api.js';
 import terrainRouter from './terrain-api.js';
 import reachRouter from './reach-api.js';
 import messagesRouter from './messages-api.js';
-import tracerouteRouter from './traceroute-api.js';
 import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
@@ -152,7 +151,9 @@ app.use(express.json());
 // be forged by JavaScript. Server-side calls, curl, and Postman never send it.
 // Endpoints listed here must only be consumed via WebSocket /events — any
 // browser polling attempt is rejected hard so the violation is unmissable.
-const WS_ONLY_ROUTES = new Set(['/devices', '/traceroute_history', '/auto-purge', '/geocode']);
+// '/traceroute_history' was listed here until 2026-08-17; the route no longer
+// exists at all, so there is nothing left to protect from browser polling.
+const WS_ONLY_ROUTES = new Set(['/devices', '/auto-purge', '/geocode']);
 // Exact-path entries: '/config' alone is page state (WS settings event);
 // '/config/radar' etc. are form reads and stay allowed.
 const WS_ONLY_EXACT = new Set(['/config']);
@@ -347,7 +348,10 @@ app.use('/geocode', geocodeRouter);
 
 app.use('/range_test', rangeTestRouter);
 
-app.use(tracerouteRouter);
+// src/traceroute-api.js is DELETED — 2026-08-17, task
+// `traceroute-remove-backend-remainder`. Its POST dispatch went in 2ef5611 and
+// its GET /traceroute_history goes here: Peter kept the rows and dropped the
+// reads, so no surface serves them.
 
 app.use(autoPurgeRouter);
 
@@ -415,25 +419,16 @@ function broadcastAll(msg) {
 _broadcast = broadcastAll;  // wire forward reference
 startAutoPurgeScheduler(broadcastAll);
 
-// One-shot: attribute historic traceroutes to the primary radio — it was the
-// only dispatcher before tx_device existed. Guarded so post-migration NULLs
-// (overheard, unattributable results) are never backfilled.
-if (!getConfig('migrations.traceroute_tx_device', false)) {
-  const primary = resolvePrimaryNodeId();
-  if (primary) {
-    const n = stmts.backfillTracerouteTxDevice.run({ device: primary }).changes;
-    setConfig('migrations.traceroute_tx_device', true);
-    console.log(`[migrate] traceroute_history tx_device backfilled: ${n} rows → ${primary}`);
-  }
-}
-
-// One-shot: mark when traceroute failure recording began. Success-rate stats
-// must treat windows before this as "n/a" — no failure rows existed to count,
-// so pre-epoch rates would read a fake 100%.
-if (getConfig('perf.failure_epoch', null) == null) {
-  setConfig('perf.failure_epoch', Math.floor(Date.now() / 1000));
-  console.log('[migrate] perf.failure_epoch stamped');
-}
+// Two one-shot traceroute migrations REMOVED here 2026-08-17, task
+// `traceroute-remove-backend-remainder`: the tx_device backfill (attributing
+// historic rows to the primary radio, the only dispatcher before tx_device
+// existed) and the perf.failure_epoch stamp (the point after which failures
+// were recorded, so earlier windows could not fake a 100% success rate).
+//
+// Both had ALREADY RUN — their config guards are set, so on this database they
+// were no-ops on every boot since. They are removed rather than kept because
+// each exists to prepare traceroute rows for a reader, and there is no reader.
+// The stored values stay in config; a rewrite that wants them can read them.
 
 // One-shot (identity Phase B): rewrite legacy !hex device ids to MACs in
 // traceroute_history.tx_device, messages.device and messages.rx_devices —

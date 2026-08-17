@@ -106,16 +106,10 @@ def static_checks():
     else:
         report("PASS", "index.js: node_info", "not referenced")
 
-    # ── passive-tracer.js ──────────────────────────────────────────────────────
-    tracer = read_src("passive-tracer.js")
-
-    # 3. !ev.device guard in passive-tracer V1 path blocks all dispatches
-    if "!ev.device" in tracer:
-        report("FAIL", "passive-tracer.js: !ev.device guard",
-               "Line 95: `if (!pkt?.from || !ev.device)` — ev.device always undefined with new gw; "
-               "V1 passive trace dispatch is permanently blocked")
-    else:
-        report("PASS", "passive-tracer.js: !ev.device guard", "not found")
+    # 3. The passive-tracer.js !ev.device check is gone with the module —
+    #    deleted 2026-08-17, task `traceroute-remove-backend-remainder`.
+    #    read_src() would raise on a missing file, which is a test failure that
+    #    says nothing about node-dash.
 
     # ── traceroute.js ──────────────────────────────────────────────────────────
     traceroute = read_src("traceroute.js")

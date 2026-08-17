@@ -1,11 +1,26 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 9592cdf4cb3583e0ad17878316b7b6b79e7674cd3fe5a0a77948a315f0c11e40
+source_hash: f57d448f99a9f15c4cae7fe87e759268e04233ae71757e50debbee8b071b8ed4
 updated: 2026-08-17
 ---
 
 # Module: ws-relay
+
+> **2026-08-17 — the traceroute feeds are GONE.** See
+> `traceroute-removal-backend.md`. Removed: `route_discovered`,
+> `passive_trace_start`, `trace_aiming`, `trace_aimed`, `traceroute_failed`, the
+> `traceroute_history` connect replay, `withSnrDb()` and `withLinkBudget()`.
+>
+> **WIRE CHANGE:** `radar_context.traceroute_node` → **`focus_node`**, and
+> `traceroute_active` is gone. The old name was wrong — in ACTV it has always
+> carried the *tracker's* target, i.e. where the rotator is pointing.
+>
+> **NODE PAYLOAD CHANGE:** `hops_verified` and `hops_fresh` are gone, and
+> `hops_display` is now the reported packet-hop count and nothing else. `via` is
+> always `null` (it was read from `last_traceroute.route[0]`) but is still sent,
+> because the radar renders a column for it and a missing key and an unknown
+> first hop are different statements.
 
 ## Purpose
 

@@ -30,7 +30,17 @@ function enrichFromCache(node) {
   const now   = Math.floor(Date.now() / 1000);
   const isNew = cached.first_heard != null && (now - cached.first_heard) < NEW_NODE_TTL;
 
-  const traceroute = cached.last_traceroute ? JSON.parse(cached.last_traceroute) : undefined;
+  // last_traceroute IS NO LONGER ATTACHED to the node payload — 2026-08-17,
+  // task `traceroute-remove-backend-remainder`. The column and its stored rows
+  // are kept (Peter: keep the data, drop the reads), but nothing writes a fresh
+  // one, so serving it would hand the browser a route that ages forever with no
+  // signal that it is doing so.
+  //
+  // NOTE THE ASYMMETRY, it is deliberate: nodeList.setTraceroute() — the WRITER
+  // — stays. Its only caller is src/traceroute.js, which Peter chose to keep
+  // intact and unwired ("the scar tissue stays readable in place"). Deleting
+  // the writer would quietly break the one file this whole exercise is
+  // preserving.
   // Warm the persisted hops-away onto a COLD entry (no live value yet) so the
   // badge + max_hops filter start populated after a restart. A live node.hops
   // always wins — this only fills the gap.
@@ -44,8 +54,8 @@ function enrichFromCache(node) {
   // Node already has identity — just tag _new and attach stored traceroute + warm hops
   if (node.user?.short_name || node.user?.long_name) {
     return isNew
-      ? { ...node, _new: true, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra }
-      : { ...node, ...(traceroute ? { last_traceroute: traceroute } : {}), ...hopsExtra, ...favExtra };
+      ? { ...node, _new: true, ...hopsExtra, ...favExtra }
+      : { ...node, ...hopsExtra, ...favExtra };
   }
 
   // Backfill identity + position from cache
@@ -71,7 +81,6 @@ function enrichFromCache(node) {
     ),
     _from_cache: true,
     _new: isNew,
-    ...(traceroute ? { last_traceroute: traceroute } : {}),
     ...hopsExtra,
   };
 }

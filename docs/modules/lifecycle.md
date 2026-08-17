@@ -1,7 +1,7 @@
 ---
 module: lifecycle
 source: src/lifecycle.js
-source_hash: bee1d4878d92de0b5621883d6cc49f5c6d4c5f958ede03bb8b0e59558410f7ad
+source_hash: c660dfb52a2943e08bbc59222c5de5fb09fc6a9d1dd13a83d2d39a2dda2f92e6
 updated: 2026-07-09
 ---
 

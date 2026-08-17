@@ -2,12 +2,10 @@ import { handleEvent } from './persist.js';
 import { nodeList, hopsAway } from './node-list.js';
 import { activeTracker } from './active-tracker.js';
 import { scanner } from './scanner.js';
-import { traceroute } from './traceroute.js';
-import { stmts, insertRangeTestEntry, insertEnvHistory, touchRfHeard } from './db.js';
+import { insertRangeTestEntry, insertEnvHistory, touchRfHeard } from './db.js';
 import { broadcastMessageHistory } from './ws-relay.js';
 import { ownDeviceNums } from './node-filter.js';
 import { isListenerForMode } from './dash-mode.js';
-import { FF } from './feature-flags.js';
 import { handleAutomationEvent } from './automation.js';
 
 const _lastEnvTs = new Map(); // num → last inserted ts (env metrics dedup)
@@ -69,57 +67,21 @@ export function registerBridgeEvents(bridge) {
         // Guarded hops-away, updated per packet (firmware NodeDB updateFrom analog)
         nodeList.setHopsAway(pkt.from, hopsAway(pkt.hop_start, pkt.hop_limit));
       }
-      // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
-      if (!FF.SSOT_TRACEROUTE) {
-        if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery && pkt?.from) {
-          const rd = pkt.decoded.route_discovery;
-          const relay_positions = {};
-          for (const num of rd.route ?? []) {
-            const info = stmts.getNodeinfoByNum.get(num);
-            if (info?.lat != null && info?.lon != null) {
-              relay_positions[num] = { latitude_i: Math.round(info.lat * 1e7), longitude_i: Math.round(info.lon * 1e7) };
-            }
-          }
-          nodeList.setTraceroute(pkt.from, {
-            route:       rd.route       ?? [],
-            route_back:  rd.route_back  ?? [],
-            snr_towards: rd.snr_towards ?? [],
-            snr_back:    rd.snr_back    ?? [],
-            relay_positions,
-            ts: Date.now(),
-          }, pkt.to ?? null, rxDevice);
-        }
-      // ── [V2] SSOT — traceroute.js owns decode, relay_positions, storage ──────
-      } else {
-        traceroute.handlePacket(pkt, rxDevice);
-      }
-      // ─────────────────────────────────────────────────────────────────────────
+      // TRACEROUTE DECODE REMOVED — 2026-08-17, task
+      // `traceroute-remove-backend-remainder`. Both paths went: the [V1] legacy
+      // branch that decoded route_discovery here and resolved relay positions
+      // itself, and the [V2] traceroute.handlePacket() that owned decode,
+      // relay_positions and storage.
+      //
+      // This one is a genuine LOSS, and it is Peter's instruction: "all traces
+      // of it removed". We overhear other people's traceroute replies on the
+      // mesh, and decoding them cost us no transmission at all. That passive
+      // data is no longer captured. Whatever replaces the dispatcher should
+      // take this back first — it is the cheapest route information available,
+      // and the only kind that does not put a frame on air.
     }
-    if (ev.type === 'traceroute' && ev.from_num) {
-      const rd = ev.data ?? {};
-      if (FF.SSOT_TRACEROUTE) {
-        const syntheticPkt = {
-          from: ev.from_num, to: ev.to_num,
-          decoded: { portnum: 'TRACEROUTE_APP', route_discovery: rd },
-        };
-        traceroute.handlePacket(syntheticPkt, ev.addr || ev.device || null);
-      } else {
-        if (Object.keys(rd).length) {
-          const relay_positions = {};
-          for (const num of rd.route ?? []) {
-            const info = stmts.getNodeinfoByNum.get(num);
-            if (info?.lat != null && info?.lon != null) {
-              relay_positions[num] = { latitude_i: Math.round(info.lat * 1e7), longitude_i: Math.round(info.lon * 1e7) };
-            }
-          }
-          nodeList.setTraceroute(ev.from_num, {
-            route: rd.route ?? [], route_back: rd.route_back ?? [],
-            snr_towards: rd.snr_towards ?? [], snr_back: rd.snr_back ?? [],
-            relay_positions, ts: Date.now(),
-          }, ev.to_num ?? null, ev.addr || ev.device || null);
-        }
-      }
-    }
+    // The `ev.type === 'traceroute'` branch — mesh-gw's own decoded traceroute
+    // event, fed through the same handlePacket — is removed for the same reason.
     if (ev.type === 'range_test') {
       try {
         const seq = parseInt((ev.data?.text || '').replace(/[^0-9]/g, '')) || null;

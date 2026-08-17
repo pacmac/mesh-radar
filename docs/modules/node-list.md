@@ -1,11 +1,21 @@
 ---
 module: node-list
 source: src/node-list.js
-source_hash: 1a3be1abce248980a71f2fcb36697fbce0f1b06a79d570a9ebe88d57b8b21126
+source_hash: c01fd5e62190e59d098c6c9219b37fd065ca0c6a8c02da35fa6d3ed92cffad99
 updated: 2026-08-03
 ---
 
 # Module: node-list
+
+> **2026-08-17 — `last_traceroute` is no longer attached to the node payload.**
+> See `traceroute-removal-backend.md`. The column and its stored rows are kept;
+> nothing writes a fresh one, so serving it would hand the browser a route that
+> ages forever with no signal that it is doing so.
+>
+> **`setTraceroute()` — the WRITER — STAYS, and the asymmetry is deliberate.**
+> Its only caller is `src/traceroute.js`, which Peter chose to keep intact and
+> unwired. Deleting the writer would quietly break the one file the whole
+> exercise is preserving.
 
 ## Purpose
 

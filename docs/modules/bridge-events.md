@@ -1,11 +1,22 @@
 ---
 module: bridge-events
 source: src/bridge-events.js
-source_hash: 556b7cdd49c1a0b09e2069e010653f0f6bfa88d5106f347447f408ecf03911e5
+source_hash: 32a691bc21dba157ba64787a56bae4db79418d4e15b0eea0addad8420efcdf85
 updated: 2026-08-14
 ---
 
 # Module: bridge-events
+
+> **2026-08-17 — traceroute decode removed.** See
+> `traceroute-removal-backend.md`. Both the in-place `route_discovery` decode
+> and `traceroute.handlePacket()` are gone, along with the
+> `ev.type === 'traceroute'` branch.
+>
+> This is a genuine loss, taken deliberately on Peter's "all traces of it
+> removed": we overhear other people's traceroute replies and decoding them
+> costs no transmission at all. A rewrite should take this back FIRST — it is
+> the cheapest route information available and the only kind that puts nothing
+> on air.
 
 ## Purpose
 

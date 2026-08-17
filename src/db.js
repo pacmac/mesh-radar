@@ -806,31 +806,17 @@ export const stmts = {
     VALUES (@ts, @from_num, @to_num, @tx_device, @rotator_az, @status, @rtt_ms, @channel_util, @air_util_tx, @aim_mode, @aim_target, @beam_deg, @aim_az_req, @plan_class, @step_index)
   `),
 
-  queryTracerouteHistory: db.prepare(`
-    SELECT th.*,
-           n.lat    AS to_lat,
-           n.lon    AS to_lon,
-           n.short_name AS to_short_name
-    FROM traceroute_history th
-    LEFT JOIN nodes n ON n.num = th.to_num
-    WHERE (@to_num IS NULL OR th.to_num = @to_num)
-    ORDER BY th.ts DESC LIMIT @limit
-  `),
-
-  queryTracerouteHistoryByDevice: db.prepare(`
-    SELECT th.*,
-           n.lat    AS to_lat,
-           n.lon    AS to_lon,
-           n.short_name AS to_short_name
-    FROM traceroute_history th
-    LEFT JOIN nodes n ON n.num = th.to_num
-    WHERE th.tx_device = @device
-    ORDER BY th.ts DESC LIMIT @limit
-  `),
-
-  backfillTracerouteTxDevice: db.prepare(`
-    UPDATE traceroute_history SET tx_device = @device WHERE tx_device IS NULL
-  `),
+  // queryTracerouteHistory, queryTracerouteHistoryByDevice and
+  // backfillTracerouteTxDevice are REMOVED — 2026-08-17, task
+  // `traceroute-remove-backend-remainder`. These were THE READS Peter dropped
+  // while keeping the data: "keep the data, drop the reads".
+  //
+  // THE TABLE AND ITS 37,425 ROWS ARE UNTOUCHED, and the writers above
+  // (insertTracerouteHistory, insertTracerouteFailure, upsertTraceroute) stay —
+  // their caller, src/traceroute.js, is deliberately preserved unwired.
+  //
+  // Both queries LEFT JOIN nodes for to_lat/to_lon/to_short_name. Whatever
+  // reads these rows next needs that join or every distance comes back null.
 
   upsertNodeEnvMetrics: db.prepare(`
     INSERT INTO nodes (num, temperature, relative_humidity, barometric_pressure, last_heard, updated_at)
