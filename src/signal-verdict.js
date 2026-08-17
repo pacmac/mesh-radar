@@ -63,7 +63,7 @@ const MARGIN_BANDS = [
  */
 export function marginHealth(marginDb) {
   if (marginDb == null || !Number.isFinite(marginDb)) {
-    return { label: 'No data', desc: 'Need valid traceroute samples', tone: 'muted', bars: 0, none: true };
+    return { label: 'No data', desc: 'No measured samples', tone: 'muted', bars: 0, none: true };
   }
   const b = MARGIN_BANDS.find(x => marginDb >= x.min) ?? MARGIN_BANDS[MARGIN_BANDS.length - 1];
   return { label: b.label, desc: b.desc, tone: b.tone, bars: b.bars, none: false };
@@ -230,16 +230,18 @@ export function verdictBands() {
     // that live percentage up against the SAME numbers the server uses.
     signal: BANDS.map(b => ({ min: b.min, label: b.label, tone: b.tone })),
     signal_none: signalVerdict(null, { hasReading: false }),
-    margin: MARGIN_BANDS.map(b => ({
-      min: Number.isFinite(b.min) ? b.min : null,
-      label: b.label, desc: b.desc, tone: b.tone, bars: b.bars,
-    })),
-    margin_none: marginHealth(null),
-    confidence: CONFIDENCE_BANDS.map(b => ({ min: b.min, level: b.level })),
-    trend_dead_band_db: TREND_DEAD_BAND_DB,
-    // Both of these lived in TEMPLATES, which is why the first sweep of
-    // app-*.js missed them: tab-perf.html:42-43 and tab-radar.html:278.
-    success_rate: SUCCESS_RATE_BANDS.map(b => ({ min: b.min, tone: b.tone })),
+    // FIVE ENTRIES DROPPED FROM THIS PAYLOAD 2026-08-17, task
+    // `traceroute-remove-backend-remainder`: `margin`, `margin_none`,
+    // `confidence`, `trend_dead_band_db` and `success_rate`. Every one scored a
+    // traceroute measurement (link-budget margin, sample confidence, trend
+    // direction, dispatch success rate) and every consumer went with the perf
+    // page. Serving a band table nothing looks anything up in is a fragment.
+    //
+    // THE TABLES THEMSELVES STAY in this module, and that is not an oversight:
+    // they score general RF quantities, not traceroute machinery, and
+    // trendVerdict()/marginHealth()/successRateTone() are the SSOT that exists
+    // precisely so a threshold cannot drift into a template again. The
+    // replacement should serve them once it has something to score.
     live_signal_fresh_sec: LIVE_SIGNAL_FRESH_SEC,
     // LOWER IS BETTER, so these carry `max` rather than `min` and the browser
     // must not reuse the ascending lookup on them. app-range's median is

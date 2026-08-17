@@ -1,7 +1,7 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: f101ef78e78cb01d83b61f4d81b34513c94dcfdf0d5a5e28d1c6b9acd4ce998c
+source_hash: c4d246d0d314326bbf0deaa20ee07a040205bc10116bdd48a01760fced27550c
 updated: 2026-08-14
 ---
 
@@ -22,7 +22,7 @@ updated: 2026-08-14
 > `perfDevCfg()`, `perfSetDevice()`, `perfSignedDb()`. Radio scope, antenna
 > chain, and the SERVED link budget — theory only.
 >
-> The 37,425 stored rows are kept. The attribution model below (`tx_device` is
+> The 37,424 stored rows are kept. The attribution model below (`tx_device` is
 > the dispatching radio, SNR already in dB with `null` for unmeasured hops) is
 > preserved deliberately: it is what the replacement has to be correct against.
 

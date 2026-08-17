@@ -1,7 +1,7 @@
 ---
 module: signal-verdict
 source: src/signal-verdict.js
-source_hash: d459bde98abacd451f04774422089607d200e22eb063a9afff6c657e9ed7d86b
+source_hash: 24713e0240d616b98e331ce51b86c81f83eb11f03f391b4f720830bd72476924
 updated: 2026-08-04
 ---
 

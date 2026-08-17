@@ -811,7 +811,7 @@ export const stmts = {
   // `traceroute-remove-backend-remainder`. These were THE READS Peter dropped
   // while keeping the data: "keep the data, drop the reads".
   //
-  // THE TABLE AND ITS 37,425 ROWS ARE UNTOUCHED, and the writers above
+  // THE TABLE AND ITS 37,424 ROWS ARE UNTOUCHED, and the writers above
   // (insertTracerouteHistory, insertTracerouteFailure, upsertTraceroute) stay —
   // their caller, src/traceroute.js, is deliberately preserved unwired.
   //

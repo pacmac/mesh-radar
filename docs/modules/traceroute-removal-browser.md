@@ -16,7 +16,7 @@ source:
   - public/feature-flags.js
   - public/partials/tab-perf.html
   - public/partials/tab-shared.html
-source_hash: 6995590cf66d4cd531b83a830b6ad158ff32318c95f0912391fd8bfd9a48a34b
+source_hash: 38f30e722d5439691380465f4bb43f1a4684cd95781f3cc6f2029972d69389c5
 updated: 2026-08-17
 ---
 
@@ -63,7 +63,7 @@ Removing the browser half stops transmission. Everything after it is tidying.
 | question | answer |
 |---|---|
 | does `src/traceroute.js` go? | **kept, unwired** — zero importers. The scar tissue stays readable in place |
-| `traceroute_history` (37,425 rows) | **rows kept, reads dropped** — the GET, the WS feed, and the browser history panel go |
+| `traceroute_history` (37,424 rows) | **rows kept, reads dropped** — the GET, the WS feed, and the browser history panel go |
 
 ## What is removed, file by file
 
@@ -157,7 +157,7 @@ animation.
 only behaviour was passive tracing. It becomes a mode that does nothing. Naming
 that is the backend task's job; this spec only stops the browser describing it.
 
-The 37,425 stored rows are untouched and remain queryable in
+The 37,424 stored rows are untouched and remain queryable in
 `data/node-dash.db`. Nothing in the UI reads them.
 
 ## Invariants

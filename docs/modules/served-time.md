@@ -3,7 +3,7 @@ module: served-time
 source:
   - src/served-time.js
   - src/ws-relay.js
-source_hash: e8b237f841ae7a0b48ca841f130a82576ea1c074fdb6058f9d19814a5d65ab68
+source_hash: 9158d68e408bc04bdc82896ae604cabe140fcd15dfd574f10cb35717b656e495
 updated: 2026-08-17
 ---
 

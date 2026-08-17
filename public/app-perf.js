@@ -12,7 +12,7 @@
 // scheduler that produced the rows in the first place. With nothing dispatching
 // a traceroute, every one of those was an empty widget with a confident title.
 //
-// The 37,425 stored rows are UNTOUCHED in traceroute_history — Peter kept the
+// The 37,424 stored rows are UNTOUCHED in traceroute_history — Peter kept the
 // data and dropped the reads. Whatever replaces the dispatcher can read them
 // again, and the deleted arithmetic is in git, not lost.
 //

@@ -7,7 +7,7 @@ source:
   - src/lifecycle.js
   - src/index.js
   - src/db.js
-source_hash: ffaed14b322280498dd8f2d1ba71e7710b93c1e1aebb468c9f1d1ba3038ead92
+source_hash: 507e12b02662c8b5c681631dcb68ee7f1bbf3f17f440980ffc677dc6ecf21596
 updated: 2026-08-17
 ---
 
@@ -109,7 +109,7 @@ preserving.
 | kept | why |
 |---|---|
 | `src/traceroute.js` | Peter's decision: kept, unwired, zero importers. The scar tissue stays readable in place |
-| `traceroute_history` + its 37,425 rows | Peter's decision: keep the data, drop the reads |
+| `traceroute_history` + its 37,424 rows | Peter's decision: keep the data, drop the reads |
 | `insertTracerouteHistory`, `insertTracerouteFailure`, `upsertTraceroute`, `nodeList.setTraceroute` | the writers `traceroute.js` calls |
 | `src/link-budget.js` | serves the per-RADIO budget the Performance page still shows. Only the per-ROW attachment went |
 | `app-helpers.js` `TRACEROUTE_APP` label | a RECEIVED packet type; the event feed still names it |

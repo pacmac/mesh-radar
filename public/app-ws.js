@@ -113,7 +113,9 @@ export const wsMixin = {
       this.radarLogScale  = cfg['radar.log_scale']  ?? false;
       this.radarCrosshair = cfg['radar.crosshair']  ?? true;
       this.packetSources  = cfg['packet_sources']   ?? [];
-      if (cfg['perf.failure_epoch'] != null) this.perfFailureEpoch = cfg['perf.failure_epoch'];
+      // perf.failure_epoch is no longer adopted — the success-rate stat it fed
+      // went with the traceroute history (2026-08-17). The config key itself
+      // stays in the store for whatever replaces it.
       if (cfg['range_test.duration']) this.rangeDuration = cfg['range_test.duration'];
       if (this.tab === 'radar' && this.homePos) this.refreshRadar();
       return;
@@ -530,7 +532,7 @@ export const wsMixin = {
 
     // 'traceroute_history' and 'traceroute_failed' handlers REMOVED 2026-08-17,
     // spec docs/modules/traceroute-removal-browser.md. They fed the perf page's
-    // history store. Peter kept the 37,425 stored rows and dropped the reads:
+    // history store. Peter kept the 37,424 stored rows and dropped the reads:
     // the data is still in traceroute_history for the redesign to use, but
     // nothing serves it and nothing here consumes it.
 

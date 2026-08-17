@@ -1,7 +1,7 @@
 ---
 module: feature-flags
 source: src/feature-flags.js
-source_hash: f702769c2aa284dc9883d62b15e0a089ddd50dc9e825bafacae7b1a62d33e08d
+source_hash: 5db8d39e35c42422d945bfdf7f45509ca7cbc25d2bb7bd2e0093779be2d82ed8
 updated: 2026-06-30
 ---
 

@@ -1259,7 +1259,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       ws.send(JSON.stringify({ type: 'range_test_timer', ...timer }));
 
       // The traceroute_history replay is REMOVED — 2026-08-17, task
-      // `traceroute-remove-backend-remainder`. Peter kept the 37,425 rows and
+      // `traceroute-remove-backend-remainder`. Peter kept the 37,424 rows and
       // dropped the reads: they stay in the table for the redesign, and no
       // surface serves them. It read 500 rows, decoded SNR to dB at this emit
       // boundary and attached each row's link budget; that decode-once-at-the-
