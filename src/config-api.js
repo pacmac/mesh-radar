@@ -11,6 +11,19 @@ import { calloutConfig, renderTemplate } from './callout.js';
 const router = Router();
 
 export const DEFAULTS = {
+  // ── observatory / DISC discovery / snapshot — OFF ────────────────────────
+  // Peter, 2026-08-17: "I do not want to see this in the dashboard and I do not
+  // want it taking up resources and populating the database."
+  //
+  // Measured before switching it off: obs_observation was writing ONE ROW PER
+  // RECEIVED PACKET (30 rows in 90 s, ~29k/day) and obs_fact ~1,218 rows every
+  // 15 minutes — ~120,000 rows/day between them, 2.3M rows accumulated.
+  //
+  // This gates BEHAVIOUR, never loading. The modules still import: their schema
+  // is created on load and index.js warns that "a registration made later inside
+  // listen() silently never fires". Nothing is deleted — Peter may reuse parts.
+  // Flip to true and the whole subsystem comes back.
+  'observatory.enabled':              false,
   // ── automation (@verb listener, task `automation-verb-listener`) ──────────
   // OFF BY DEFAULT, callout.js's rule: merging the feature transmits nothing,
   // and turning it on is Peter's action rather than a session's.

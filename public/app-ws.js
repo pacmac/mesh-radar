@@ -92,6 +92,11 @@ export const wsMixin = {
       // connect and re-broadcast after every config write, so filter/radar
       // changes are live in every tab. Replaces the deleted loadConfig GET.
       const cfg = ev.config || {};
+      // SERVED, not decided. Whether the observatory exists is the backend's
+      // answer; the nav renders it and nothing here works it out. Defaults FALSE
+      // so a settings frame that has not arrived yet hides the entries rather
+      // than flashing pages that 404.
+      this.observatoryEnabled = cfg['observatory.enabled'] === true;
       this.nodeFilters = {
         maxHops:   cfg['node_filters.max_hops']   ?? 99,
         maxAge:    cfg['node_filters.max_age']    ?? 0,

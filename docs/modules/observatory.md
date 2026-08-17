@@ -139,8 +139,65 @@ resolving to something plausible. A silently mis-ordered inference produces a
 value that looks correct and was computed from stale inputs — the worst failure
 available here.
 
+## DISABLED 2026-08-17 — `observatory.enabled`, default `false`
+
+Peter: *"it needs to ve decoupled / disabled NOT deleted. I may re-use parts of it
+in the future."* and *"I do not want to see this in the dashboard and I do not
+want it taking up resources and populating the database."*
+
+**Nothing is deleted. Every file stays on disk.** One config key switches the
+whole subsystem off, and flipping it back on is the entire reverse procedure.
+
+### Why — measured, not assumed
+
+| | |
+|---|---|
+| `obs_observation` | 549,937 rows — **one per received packet** |
+| `obs_fact` | 1,796,469 rows — ~1,218 per batch, every 15 min |
+| growth | **~120,000 rows/day**, steady across 08-11 → 08-17 |
+| `reach.target` | 1,055,039 rows on its own |
+
+```sql
+select date(ts,'unixepoch') day, count(*) from obs_fact group by day;
+select key, count(*) from obs_fact group by key order by 2 desc;
+```
+
+Measured live at 22:20 with the alarm already removed: `obs_observation` grew
+**30 rows in 90 seconds** (~29,000/day). That measurement matters because the
+belief on the day was that the alarm generated these tables — it does not, and
+never did. `observatory.js:51/:95` create them, `:118/:193` write them,
+`observatory.js` and `inferences.js` read them, and no alarm module ever named
+them.
+
+### The seams — four, all reading one key
+
+| seam | file | stops |
+|---|---|---|
+| packet observer | `index.js` `registerPacketObserver` | `obs_observation` writes — the per-packet row |
+| recompute timer | `observatory-ws.js` | `obs_fact` writes and every observatory WS feed |
+| standing tasks | `standing-tasks.js` `startStandingTasks()` | the hourly history mining |
+| surface | `index.js` page list + routers, `drawer-sidebar.html` nav | the pages, so it is not visible |
+
+The static imports STAY. `index.js` already warned why: the schema is created on
+load and *"a registration made later inside listen() silently never fires"* — so
+the guard is on what the modules **do**, never on whether they load. A dynamic
+import here would reintroduce a failure that is invisible from the UI.
+
+### The suspected stall — NOT proven, and stated that way
+
+The Observatory was the prime suspect for node-dash going deaf in bursts (six
+HTTP `000`s with five connections queued unaccepted while SQLite writes
+continued). The mechanism fits: synchronous SQLite over a 700 MB store on a
+timer. **But the timing did not line up** — the fact batches landed 12:40:15 and
+12:55:15, standing tasks run on the :56, and the observed stall was ~12:49–12:51,
+between all of them.
+
+Disabling it is the experiment: **if the stalls stop, that was it.** Watch
+`/health` across a full 15-minute cycle before claiming either way.
+
 ## Invariants
 
+- **`observatory.enabled` gates behaviour, never loading.**
 - The engine never learns what a node, packet, bearing or mesh is.
 - Observations are append-only. No `UPDATE`, no `DELETE`.
 - `ts` is epoch **seconds**. Callers holding milliseconds divide once, at their

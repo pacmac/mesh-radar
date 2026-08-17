@@ -916,6 +916,14 @@ function recompute(broadcast) {
 }
 
 registerWsWiring(({ broadcast }) => {
+  // DISABLED 2026-08-17 (`observatory.enabled`, default false). Peter: "I do not
+  // want it taking up resources and populating the database." recompute() wrote
+  // ~1,218 obs_fact rows every 15 minutes — ~120k/day with the per-packet
+  // observations. The WIRING still registers (registerWsWiring is read once at
+  // attach time, so skipping it here would be unrecoverable without a restart);
+  // what stops is the work and the feeds.
+  if (!getConfig('observatory.enabled', false)) return;
+
   setTimeout(() => recompute(broadcast), timing().first_recompute_ms);
   // Settable (discovery.recompute_min): selection latency is a timing that
   // changes what the operator sees, so it needs a bounded knob like the rest.

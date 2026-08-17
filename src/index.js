@@ -78,10 +78,16 @@ import { packetObservation } from './observations.js';
 // The wiring lives here because persist.js is core and may not name a plugin,
 // and observations.js is kept pure so it can be tested with plain objects. The
 // composition root is the one place allowed to know about all three.
-registerPacketObserver((packet, device, ts, replay) => {
-  const o = packetObservation(packet, device, ts, replay, rotator.status, getAllDeviceCfgs());
-  if (o) observe(o);
-});
+// DISABLED 2026-08-17 (`observatory.enabled`, default false). This callback wrote
+// ONE ROW PER RECEIVED PACKET — measured at 30 rows in 90 s, ~29,000/day, and
+// 549,937 accumulated. The registration is skipped entirely rather than the
+// callback returning early, so a disabled observatory costs nothing per packet.
+if (getConfig('observatory.enabled', false)) {
+  registerPacketObserver((packet, device, ts, replay) => {
+    const o = packetObservation(packet, device, ts, replay, rotator.status, getAllDeviceCfgs());
+    if (o) observe(o);
+  });
+}
 // The catalogue of domain calculations. Separate from the engine on purpose:
 // this file knows what a bearing is, the engine must never learn. It is the ONE
 // place every inference is registered, so the whole of what node-dash works out
@@ -234,7 +240,11 @@ const _servePage = (req, res, next) =>
 
 // '/control' was the alarm's page. It left with the plugin on 2026-08-17 —
 // mt-alarm-1 serves its own Control page on :8791.
-for (const p of ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range','/performance','/observatory']) {
+// '/observatory' and '/snapshot' are added only when the observatory is enabled —
+// Peter, 2026-08-17: "I do not want to see this in the dashboard."
+const PAGES = ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range','/performance'];
+if (getConfig('observatory.enabled', false)) PAGES.push('/observatory', '/snapshot');
+for (const p of PAGES) {
   app.get(p, _servePage);
 }
 
@@ -313,12 +323,16 @@ app.put('/home_pos', (req, res) => {
 });
 
 app.use('/rotator', rotatorRouter);
-// Mounted at root: the routes carry their own /clusters prefix, matching the
-// traceroute router's convention rather than inventing a second one.
-app.use('/', clustersRouter);
 app.use('/', terrainRouter);
-app.use('/', reachRouter);
-app.use('/', snapshotRouter);
+// The observatory's own routers. Not mounted while it is disabled, so its routes
+// 404 rather than serving a board built from a frozen table. Mounted at root
+// because they carry their own prefixes, matching the traceroute router's
+// convention rather than inventing a second one.
+if (getConfig('observatory.enabled', false)) {
+  app.use('/', clustersRouter);
+  app.use('/', reachRouter);
+  app.use('/', snapshotRouter);
+}
 
 app.get('/schema/rotator_config', (req, res) => res.json(ROTATOR_CONFIG_SCHEMA));
 

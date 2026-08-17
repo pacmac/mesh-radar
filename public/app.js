@@ -223,6 +223,10 @@ function dashboard() {
     // changes. Without this, switching radio silently re-points the same number
     // at a different channel.
     msgChannelFor: null,
+    // Whether the observatory/DISC/snapshot subsystem exists at all.
+    // SERVED on the settings frame (`observatory.enabled`), never decided
+    // here. False until told, so the nav does not offer a page that 404s.
+    observatoryEnabled: false,
     msgFilter: 'all',
     msgText: '',
     msgSent: false,

@@ -969,6 +969,12 @@ export function runStandingTasks() {
  *  running often — hourly by default, and once shortly after boot so a fresh
  *  start has findings without waiting an hour. */
 export function startStandingTasks() {
+  // DISABLED 2026-08-17 (`observatory.enabled`, default false). These mine the
+  // stored history hourly and write findings as facts. No airtime, but real CPU
+  // and real rows over a 700 MB store. Nothing is deleted — flip the key back on
+  // and the cadence returns exactly as it was.
+  if (!getConfig('observatory.enabled', false)) return;
+
   const mins = Math.min(1440, Math.max(5, Number(getConfig('standing_tasks.every_min', 60)) || 60));
   setTimeout(runStandingTasks, timing().first_run_ms);
   setInterval(runStandingTasks, mins * 60_000);
