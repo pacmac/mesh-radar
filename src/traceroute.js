@@ -23,11 +23,18 @@ import { pasvConfig } from './config-api.js';
 import { getRotatorAddress } from './device-config.js';
 import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 import { rotator } from './rotator.js';
-import { dashMode, modeName, modeAim } from './dash-mode.js';
+// dash-mode is NO LONGER IMPORTED HERE, and that is the point rather than tidying.
+//
+// `modeAim(modeKey)` used to supply the aim policy when a caller did not, and
+// `transmitterForMode()` used to supply the radio. Both are now the CALLER's
+// arguments: run(radio, node, timeout). Peter, 2026-08-06: the mode SSOT "does
+// NOT own the pointer — modes use it, they must not control or gate it." This
+// closes the standing `mode-must-not-control-aim` item at the source: there is
+// no path left by which a mode can decide where the beam goes.
 // THE TWO MODULES THIS ONE CALLS INSTEAD OF RE-IMPLEMENTING. Peter, 2026-08-17:
 // "traceroute should call and not duplicate what the other functions provide."
 import { resolveRadio } from './resolve.js';
-import { resolveAim } from './aim.js';
+import { aimForNode } from './aim.js';
 // provenDoors, getDeviceCfg, doorAim, discoveryConfig, DISCOVERY_LIMITS and
 // transmitterForMode are no longer imported here — every one of them was a
 // dependency of the aiming or the radio-resolution this file used to do itself.
@@ -126,50 +133,70 @@ class TracerouteManager extends EventEmitter {
   // benefits ... it should not be removed, it is an asset." So it stays,
   // configurable, and now records enough to prove itself when the yagi goes
   // from 3 to 5 to 7 elements.
-  async run(target, opts = {}) {
-    const to = Number(target);
-    if (!to) throw new Error('target required');
+  async run(radio, node, timeoutMs, opts = {}) {
+    const to = Number(node);
+    if (!to) throw new Error('node required');
+    const timeout = Number(timeoutMs);
+    if (!Number.isFinite(timeout) || timeout <= 0) throw new Error('timeout required (ms)');
 
-    // WHICH RADIO — RESOLVED, NOT DECIDED HERE. Peter, 2026-08-17: "traceroute
-    // should call and not duplicate what the other functions provide."
+    // 1. RESOLVE THE RADIO. Peter: "it then resolves the radio."
     //
-    // This was `this._resolveRadio(opts.radio, modeKey)`, traceroute's private
-    // resolver with its own auto|yagi|omni vocabulary — a third naming scheme
-    // for radios beside dash-mode's roles and raw MAC/node_id. Its 'omni' branch
-    // returned the mode's transmitter from BOTH arms of a ternary, so asking for
-    // the omni could hand you the YAGI. src/resolve.js is the SSOT now.
-    const modeKey = modeName(dashMode.value);
-    const radio   = resolveRadio(opts.radio, { rxDevice: opts.rxDevice });
-    if (!radio) throw new Error('no radio for this mode');
-    const device  = radio.node_id;
+    // resolve.js is the SSOT — this function does not decide which radio, it
+    // asks. What used to be here was traceroute's own resolver, with an
+    // auto|yagi|omni vocabulary of its own and an 'omni' branch that returned
+    // the mode's transmitter from BOTH arms of a ternary, so asking for the omni
+    // could hand you the YAGI.
+    const resolved = resolveRadio(radio, { rxDevice: opts.rxDevice });
+    if (!resolved) throw new Error(`no radio resolves for '${radio ?? 'auto'}'`);
+    const device = resolved.node_id;
 
-    // ONE AIM PER MISSION. Task `mission-runner-single-aim`.
+    // 2. OMNI SKIPS EVERYTHING TO DO WITH POINTING. Peter: "of course some of
+    //    this is skipped if the radio is an omni directional", the test being
+    //    "beam width 360 degrees".
     //
-    // A caller that has ALREADY pointed the beam supplies its aim context here
-    // and we do not point again. Two commands to a SHARED rotator is not free
-    // even when the second is a no-op: it widens the window for the neighbouring
-    // app to take the beam between our aim and our transmit, and it lets this
-    // function silently override a decision the caller made — mission-runner
-    // declines to move when the door is inside omni reach, and _resolveAim has
-    // no such rule.
+    // 3+4. DIRECTIONAL: look up what we last knew about this node, aim at the
+    //      node or at its relay, and WAIT FOR CONFIRMATION.
     //
-    // The context must be the same shape _resolveAim returns, so the recorded
-    // provenance is identical either way.
-    // beam_deg is ALWAYS ours, even on a supplied context. It describes the
-    // TRANSMITTING antenna, and only this function knows which radio the dispatch
-    // resolved to — mission-runner's context is built around the ROTATOR, so
-    // taking its beam_deg verbatim would stamp 35 on rows the OMNI transmitted.
-    // (Introduced and caught here, before it reached a row.)
-    // AIMING — CALLED, NOT PERFORMED HERE. src/aim.js owns the four-rule target
-    // policy, the bearings, the rotator call and the retry loop; it is also the
-    // only caller of rotator.point() in this path.
-    const aim = opts.aimCtx
-      ? { ...opts.aimCtx, beam_deg: radio.beam_deg }
-      : await resolveAim(to, opts.aim ?? modeAim(modeKey) ?? 'none', radio, opts);
+    // A caller that has already pointed the beam passes opts.aimCtx and we do
+    // not point again — two commands to a SHARED rotator is not free even when
+    // the second is a no-op, because it widens the window for the neighbouring
+    // app to take the beam between our aim and our transmit. beam_deg is always
+    // OURS even on a supplied context: it describes the TRANSMITTING antenna,
+    // and a context built around the rotator would otherwise stamp 35 on rows
+    // the OMNI sent.
+    let aim = { mode: 'none', target: null, az: null, beam_deg: resolved.beam_deg, settled: false };
+    if (opts.aimCtx) {
+      aim = { ...opts.aimCtx, beam_deg: resolved.beam_deg };
+    } else if (resolved.directional) {
+      // HOLD FOR THE WHOLE TIMEOUT. Peter, 2026-08-18: "aim accepts min 2 args
+      // bearing and hold time (ms ???) which is the same as the timeout passed
+      // to traceroute." rotator.js clamps to its own shared-rotator ceiling, so
+      // this cannot become a lockout however large a timeout is passed.
+      aim = await aimForNode(to, resolved, timeout);
 
+      // 4b. CONFIRMATION IS A PRECONDITION, NOT A NICETY. Peter: "once the
+      //     rotator has confirmed it is aimed it starts the traceroute."
+      //
+      // This REVERSES the older rule ("a rotator that will not move must not
+      // stop a trace, it must be recorded as unaimed"). The reason for the
+      // reversal is the measurement that killed the old behaviour: 303 YAGI
+      // attempts at aim_mode='none' covered 246 DISTINCT azimuths spanning
+      // 0.85-359.98 degrees, because the tracker and the scanner move the beam
+      // for their own reasons. Transmitting a 35 degree beam at an azimuth
+      // nobody chose is worse than not transmitting.
+      //
+      // The attempt is still RECORDED, so a rotator that is never free is
+      // visible rather than silent.
+      if (!aim.settled) {
+        this._recordFailure(to, device, 'aim_failed', Date.now(), aim, opts);
+        throw new Error(`aim not confirmed (${aim.note ?? aim.mode}) — not dispatching`);
+      }
+    }
+
+    // 5. DISPATCH, await the reply or the timeout, and save.
     return this.dispatch({
       to, device,
-      timeoutMs:   opts.timeoutMs,
+      timeoutMs:   timeout,
       cooldownMs:  opts.cooldownMs,
       cooldownKey: opts.cooldownKey,
       manual:      opts.manual ?? false,

@@ -26,6 +26,7 @@ const CHECKS = [
   { name: 'send_channel',           group: 'fast',    cmd: 'node',    args: ['tests/test_send_channel.mjs'],      needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
   { name: 'resolve',                group: 'fast',    cmd: 'node',    args: ['tests/test_resolve.mjs'],           needs: '—',                   measured: '180 ms',   timeoutMs: 30_000 },
   { name: 'aim',                    group: 'fast',    cmd: 'node',    args: ['tests/test_aim.mjs'],               needs: '—',                   measured: '210 ms',   timeoutMs: 30_000 },
+  { name: 'traceroute_flow',        group: 'fast',    cmd: 'node',    args: ['tests/test_traceroute_flow.mjs'],   needs: '—',                   measured: '2.6 s',    timeoutMs: 60_000 },
 
   { name: 'check_snapshot',         group: 'service', cmd: 'node',    args: ['scripts/check_snapshot.mjs'],       needs: 'node-dash up',        measured: '3.9 s',    timeoutMs: 30_000 },
   { name: 'check_contract',         group: 'service', cmd: 'node',    args: ['scripts/check_contract.mjs'],       needs: 'node-dash up',        measured: '5.1 s',    timeoutMs: 60_000 },

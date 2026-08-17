@@ -28,8 +28,9 @@
 import { stmts, getConfig } from './db.js';
 import { discoveryConfig } from './config-api.js';
 import { rotator } from './rotator.js';
-import { doorAim } from './doors.js';
-import { provenDoors } from './node-kind.js';
+// doorAim (doors.js) and provenDoors (node-kind.js) are no longer imported: both
+// served the two rules retired 2026-08-18 when the target reduced to
+// node-or-relay. doors.js is untouched and still used elsewhere.
 import { EventEmitter } from 'events';
 
 const log = {
@@ -106,70 +107,57 @@ export function bearingToNode(num) {
 //                                    contact, which is the only thing that
 //                                    creates a new door.
 //
-//   3b. Known route, door close, NO bypass, but WE TRANSMIT ON THE ROTATOR
-//                                 -> aim at the door anyway.
+// REDUCED TO TWO BRANCHES 2026-08-18, on Peter's instruction: "aims the antenna
+// EITHER at the node or it's relay node." Spec: docs/modules/traceroute-flow.md.
 //
-// Rule 3 said "do not rotate, the beam is theatre". That was true while the OMNI
-// transmitted. Once disc.tx became the rotator (2026-08-05, event_log 4242) it
-// stopped meaning "we radiate omnidirectionally anyway" and started meaning
-// "fire a 35 degree beam wherever somebody else left the antenna".
+//   relayed          -> aim at the relay (route[0])          mode 'relay'
+//   direct/unknown   -> aim at the node itself               mode 'node'
 //
-// Measured over the 24 h after the flip: 303 YAGI attempts at aim_mode=none,
-// 7.9% answered, and those shots covered 246 DISTINCT azimuths spanning
-// 0.85-359.98 degrees. The beam was not stale-but-constant, it was scattered
-// across the whole circle — the active tracker and the scanner move it for their
-// own reasons and traceroute never reclaimed it.
+// TWO RULES WERE RETIRED TO GET HERE, and their measurements are recorded so
+// re-adding either is an informed choice rather than a rediscovery:
+//
+//   BYPASS — when the relay was close and hop 2 was a proven direct contact
+//   better aligned to the endpoint, aim past the relay at hop 2. 155 measured
+//   cases; PJ1 alone had 44 (endpoint 62deg/3km, hop1 T4 at 274deg, hop2 WLCD at
+//   62deg/3km). Reaching hop 2 directly removes a hop permanently.
+//
+//   DO-NOT-ROTATE — when the relay was inside omni reach, spend no movement.
+//   That rule was correct while the OMNI transmitted and became wrong once the
+//   rotator did: it stopped meaning "we radiate omnidirectionally anyway" and
+//   started meaning "fire a 35 degree beam wherever somebody else left the
+//   antenna". Measured over the 24 h after that flip: 303 YAGI attempts at
+//   aim_mode='none', 7.9% answered, covering 246 DISTINCT azimuths spanning
+//   0.85-359.98 degrees.
+//
+// That second measurement is also why traceroute.run() now REFUSES to dispatch
+// on an unconfirmed aim rather than transmitting unaimed.
 //
 // Every branch records its own mode, so the row says which rule fired.
 //
-// TAKES A RESOLVED RADIO BUNDLE, not a device string. `radio.steerable` replaces
-// the local `_txIsRotator()` MAC comparison that used to live in traceroute —
-// which had its own scar: a node_id-vs-MAC compare is always false, and it once
-// reported "not on the rotator" about the rotator itself.
+// TAKES A RESOLVED RADIO BUNDLE, not a device string — `radio.steerable` replaced
+// a local MAC comparison that once reported "not on the rotator" about the
+// rotator itself.
 export function decideAim(to, radio) {
   const none = { az: null, aimTarget: null, mode: 'none' };
   let route = null;
   try { route = JSON.parse(stmts.latestRouteTo.get(to)?.route ?? 'null'); } catch { /* no route */ }
 
-  // 4. Nothing known: bet on a direct contact.
-  if (!Array.isArray(route) || !route.length) {
-    const b = bearingToNode(to);
-    return b == null ? none : { az: b, aimTarget: to, mode: 'endpoint' };
+  const relay = Array.isArray(route) && route.length ? route[0] : null;
+
+  // RELAYED: aim at the relay. It is the node our transmission actually has to
+  // reach, and the measurement above is why this is not the endpoint.
+  if (relay != null && relay !== 0xffffffff) {
+    const b = bearingToNode(relay);
+    if (b != null) return { az: b, aimTarget: relay, mode: 'relay' };
+    // The relay's position is unknown, so its bearing cannot be computed. Fall
+    // through to the node rather than refusing: a deliberate bearing beats none.
   }
 
-  const d = doorAim(to);
-  // 1. The door is far enough that the beam buys something.
-  if (d && d.az != null && d.needsBeam) return { az: d.az, aimTarget: d.door, mode: 'door' };
-
-  // 2. The door is close. Can we skip it?
-  const hop2 = route[1];
-  if (hop2 != null && hop2 !== 0xffffffff && provenDoors().has(Number(hop2))) {
-    const b2 = bearingToNode(hop2), be = bearingToNode(to);
-    if (b2 != null && be != null) {
-      const sep = (x, y) => Math.abs(((x - y + 540) % 360) - 180);
-      const b1 = d?.az;
-      // Only worth it if hop2 points nearer the endpoint than the door does —
-      // otherwise we are just aiming somewhere else for no reason.
-      if (b1 == null || sep(b2, be) < sep(b1, be)) {
-        return { az: b2, aimTarget: hop2, mode: 'bypass' };
-      }
-    }
-  }
-  // 3b. Close door, no bypass — but if WE are the ones radiating through the
-  // yagi, "don't rotate" points a 35 degree beam at nothing. Aim at the door.
-  // Gated on whether the transmitting radio can be steered at all: moving an
-  // antenna we are not transmitting through is exactly the theatre rule 3
-  // correctly refused.
-  if (radio?.steerable) {
-    if (d && d.az != null) return { az: d.az, aimTarget: d.door, mode: 'door_near' };
-    // No door bearing resolves — fall back to the endpoint for the same reason
-    // rule 4 does: a deliberate bearing beats an arbitrary one.
-    const b = bearingToNode(to);
-    if (b != null) return { az: b, aimTarget: to, mode: 'endpoint_near' };
-  }
-
-  // 3. Close door, no bypass, and we are not on the rotator: do not spend the beam.
-  return none;
+  // DIRECT, or no route known: aim at the node itself. With no route this is not
+  // following a path — there isn't one — it is a bet on DIRECT contact, which is
+  // the only thing that creates a new relay.
+  const b = bearingToNode(to);
+  return b == null ? none : { az: b, aimTarget: to, mode: 'node' };
 }
 
 /** Point the beam and WAIT FOR IT TO GET THERE.
@@ -180,8 +168,30 @@ export function decideAim(to, radio) {
  *  @param radio  a resolved bundle from resolve.js. Must be `steerable`.
  *  @param az     degrees.
  *  @param opts   hold_ms / settle_ms / patience_ms / aim_retries overrides. */
-export async function aimAt(radio, az, opts = {}) {
-  if (!radio?.steerable || az == null) return { settled: false, azActual: null };
+export async function aimAt(bearing, holdMs_, opts = {}) {
+  // NULL IS NOT ZERO, AND ZERO IS DUE NORTH.
+  //
+  // `Number(null) === 0` and `Number('') === 0`, both finite — so a
+  // Number.isFinite() guard alone accepts "no bearing" and points the antenna
+  // north. Caught by tests/test_aim.mjs on the day this was written, and it is
+  // the same coercion that would have put traffic on channel 0 (PRIMARY, the
+  // public mesh) if indexFor() had been allowed to return 0 for an unresolved
+  // role. Reject the absent value BEFORE coercing it.
+  if (bearing == null || bearing === '') return { settled: false, azActual: null };
+  const az = Number(bearing);
+  if (!Number.isFinite(az)) return { settled: false, azActual: null };
+
+  // WHICH ROTATOR. `aimAt(bearing, hold)` is Peter's signature, so this resolves
+  // its own rotator rather than being told — unambiguous while exactly one is
+  // connected. Verified 2026-08-18: connected v4, active_target v4; v5
+  // (ws://192.168.10.195:81) is a CONFIGURED target and not live — Peter: "v5 is
+  // NOT live ATM." When v5 returns this needs telling which, and resolve.js
+  // already carries `rotatorId` for exactly that.
+  //
+  // opts.beam_deg is the TRANSMITTING antenna's beamwidth, used only as the
+  // retry tolerance below. Null means "cannot judge, do not retry" — never a
+  // guessed default, which would merge a 3-element and a 7-element yagi.
+  const beam_deg = opts.beam_deg ?? null;
 
   const d = discoveryConfig();
   let settled = false, azActual = null;
@@ -214,7 +224,22 @@ export async function aimAt(radio, az, opts = {}) {
     //
     // THE CEILING IS NOT APPLIED HERE ANY MORE. rotator.point() clamps it, so it
     // binds every caller and not just this one.
-    const holdMs = opts.hold_ms ?? (Number(d.hold_sec) > 0 ? Number(d.hold_sec) * 1000 : undefined);
+    // THE HOLD IS THE CALLER'S SECOND ARGUMENT. Peter, 2026-08-18: "aim accepts
+    // min 2 args bearing and hold time (ms ???) which is the same as the timeout
+    // passed to traceroute."
+    //
+    // That is a 4-6x longer hold than the `discovery.hold_sec` = 15 s it
+    // replaces, on a rotator shared with the garage alarm — raised with Peter
+    // before he gave the instruction, and recorded in
+    // docs/modules/traceroute-flow.md rather than argued again here. The
+    // backstop is unchanged and independent: rotator.point() clamps every caller
+    // to its own HOLD_CEILING_MS, so no timeout however large becomes a lockout.
+    //
+    // Falls back to the config only when the caller passes nothing, which keeps
+    // aimAt() usable on its own.
+    const holdMs = Number.isFinite(Number(holdMs_)) && Number(holdMs_) > 0
+      ? Number(holdMs_)
+      : (Number(d.hold_sec) > 0 ? Number(d.hold_sec) * 1000 : undefined);
     const aimMs  = opts.settle_ms ?? (Number(d.aim_timeout_sec) > 0 ? Number(d.aim_timeout_sec) * 1000 : undefined);
 
     let r = await rotator.point(az, {
@@ -245,7 +270,7 @@ export async function aimAt(radio, az, opts = {}) {
     // CONFIGURED BEAMWIDTH — from device config, and null means "cannot judge, do
     // not retry". It stops the moment the aim is inside the half-beam, so a good
     // first move costs nothing extra.
-    const half  = radio.beam_deg != null ? radio.beam_deg / 2 : null;
+    const half  = beam_deg != null ? beam_deg / 2 : null;
     const errOf = (got) => Math.abs(((Number(got) - az + 540) % 360) - 180);
     const maxRetries = Number.isFinite(Number(d.aim_retries)) ? Number(d.aim_retries) : 0;
     for (let i = 0; i < maxRetries; i++) {
@@ -268,34 +293,35 @@ export async function aimAt(radio, az, opts = {}) {
   return { settled, azActual };
 }
 
-/** Decide, then point, and return the provenance that goes on a stored row.
+/** Decide where to point for a TARGET NODE, point there, and return the
+ *  provenance that goes on the stored row.
  *
- *  This is the one call a dispatcher makes. Returns
- *  { mode, target, az, az_actual, beam_deg, settled } and never throws.
+ *  This is the one call traceroute makes, and it is the composition of the two
+ *  functions above — decideAim() picks the bearing, aimAt() moves the beam. Both
+ *  remain callable on their own, which is the whole point of the split.
  *
- *  @param want  'auto' | 'door' | 'endpoint' | 'none' | a number (degrees). */
-export async function resolveAim(to, want, radio, opts = {}) {
+ *  Returns { mode, target, az, az_actual, beam_deg, settled } and NEVER THROWS:
+ *  the caller decides what an unconfirmed aim means. traceroute.run() treats it
+ *  as fatal; something else may not.
+ *
+ *  @param to       target node num
+ *  @param radio    a resolved bundle from resolve.js
+ *  @param holdMs   how long to hold the beam — traceroute passes its timeout */
+export async function aimForNode(to, radio, holdMs, opts = {}) {
   const beam_deg = radio?.beam_deg ?? null;
   const unaimed  = (note) => ({ mode: 'none', target: null, az: null, beam_deg, settled: false, ...(note ? { note } : {}) });
 
-  if (!want || want === 'none') return unaimed();
-
-  let az = null, aimTarget = null, mode = 'none';
-  if (typeof want === 'number')  { az = want; mode = 'endpoint'; }
-  else if (want === 'auto')      ({ az, aimTarget, mode } = decideAim(to, radio));
-  else if (want === 'door')      { const d = doorAim(to); if (d?.az != null) { az = d.az; aimTarget = d.door; mode = 'door'; } }
-  else if (want === 'endpoint')  { const b = bearingToNode(to); if (b != null) { az = b; aimTarget = to; mode = 'endpoint'; } }
-
-  if (az == null) return unaimed();
-
-  // ONLY A STEERABLE RADIO CAN BE AIMED. Recorded as 'none' rather than
-  // pretending, so the row is honest about what actually happened. This is a
-  // field read on the resolved bundle — the old code did a MAC comparison here
-  // and got it wrong (see decideAim's note).
+  // ONLY A STEERABLE RADIO CAN BE AIMED. Recorded rather than pretended, so the
+  // row is honest about what actually happened. A directional antenna that is
+  // NOT on a rotator lands here — which is a real configuration resolve.js can
+  // now express, and which the old code could not.
   if (!radio?.steerable) return unaimed('radio is not on a rotator');
 
+  const { az, aimTarget, mode } = decideAim(to, radio);
+  if (az == null) return unaimed('no bearing resolves for the node or its relay');
+
   aimEvents.emit('aiming', { to, az, via: aimTarget, mode });
-  const { settled, azActual } = await aimAt(radio, az, opts);
+  const { settled, azActual } = await aimAt(az, holdMs, { ...opts, beam_deg });
   aimEvents.emit('aimed', { to, az, az_actual: azActual, via: aimTarget, mode, settled });
   return { mode, target: aimTarget, az, az_actual: azActual, beam_deg, settled };
 }

@@ -26,6 +26,7 @@ import alertsRouter from './alerts-api.js';
 import rotatorRouter from './rotator-api.js';
 import clustersRouter from './clusters-api.js';
 import terrainRouter from './terrain-api.js';
+import tracerouteRouter from './traceroute-api.js';
 import reachRouter from './reach-api.js';
 import messagesRouter from './messages-api.js';
 import { createPerformanceRouter } from './performance-api.js';
@@ -348,10 +349,16 @@ app.use('/geocode', geocodeRouter);
 
 app.use('/range_test', rangeTestRouter);
 
-// src/traceroute-api.js is DELETED — 2026-08-17, task
-// `traceroute-remove-backend-remainder`. Its POST dispatch went in 2ef5611 and
-// its GET /traceroute_history goes here: Peter kept the rows and dropped the
-// reads, so no surface serves them.
+// traceroute-api — RESTORED 2026-08-18 with a NEW path. Peter: "you should be
+// able to call this via post but no dashboard automation will be added for this
+// yet."
+//
+// MOUNTED BEFORE THE `/!hex` PROXY BELOW, and the path deliberately carries no
+// node id: `POST /traceroute` with a body. The old `POST /:nodeId/traceroute`
+// matched the catch-all at the bottom of this file once its handler was deleted,
+// so requests fell through to mesh-gw and transmitted with no guards and no row.
+// A path the proxy regex cannot match is the fix that cannot regress.
+app.use(tracerouteRouter);
 
 app.use(autoPurgeRouter);
 

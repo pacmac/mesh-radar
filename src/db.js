@@ -806,17 +806,28 @@ export const stmts = {
     VALUES (@ts, @from_num, @to_num, @tx_device, @rotator_az, @status, @rtt_ms, @channel_util, @air_util_tx, @aim_mode, @aim_target, @beam_deg, @aim_az_req, @plan_class, @step_index)
   `),
 
-  // queryTracerouteHistory, queryTracerouteHistoryByDevice and
-  // backfillTracerouteTxDevice are REMOVED — 2026-08-17, task
-  // `traceroute-remove-backend-remainder`. These were THE READS Peter dropped
-  // while keeping the data: "keep the data, drop the reads".
+  // RESTORED 2026-08-18. This read was dropped on 2026-08-17 under Peter's "keep
+  // the data, drop the reads", which was correct while NOTHING dispatched. The
+  // POST /traceroute route dispatches again, and a dispatch you cannot read back
+  // is not testable — so the history read comes back with it.
   //
-  // THE TABLE AND ITS 37,424 ROWS ARE UNTOUCHED, and the writers above
-  // (insertTracerouteHistory, insertTracerouteFailure, upsertTraceroute) stay —
-  // their caller, src/traceroute.js, is deliberately preserved unwired.
+  // queryTracerouteHistoryByDevice and backfillTracerouteTxDevice stay removed:
+  // both served the perf page's per-radio history, which is still gone.
   //
-  // Both queries LEFT JOIN nodes for to_lat/to_lon/to_short_name. Whatever
-  // reads these rows next needs that join or every distance comes back null.
+  // THE LEFT JOIN IS LOAD-BEARING. Without to_lat/to_lon every distance a
+  // consumer computes comes back null, which is how valid_tx read false for all
+  // 500 rows once before.
+  queryTracerouteHistory: db.prepare(`
+    SELECT th.*,
+           n.lat        AS to_lat,
+           n.lon        AS to_lon,
+           n.short_name AS to_short_name
+    FROM traceroute_history th
+    LEFT JOIN nodes n ON n.num = th.to_num
+    WHERE (@to_num IS NULL OR th.to_num = @to_num)
+    ORDER BY th.ts DESC LIMIT @limit
+  `),
+
 
   upsertNodeEnvMetrics: db.prepare(`
     INSERT INTO nodes (num, temperature, relative_humidity, barometric_pressure, last_heard, updated_at)
