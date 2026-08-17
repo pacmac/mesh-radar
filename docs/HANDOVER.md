@@ -162,10 +162,22 @@ within a minute of my answer.
 
 ### THE NEXT TASK — `remove-alarm-from-node-dash`
 
+**REMOVE MEANS MOVE. IT DOES NOT MEAN DELETE.** Peter, correcting me after I wrote
+this task up as a deletion: *"remove DOE NOT MEAN DESTROY. the intention is it
+will run as it's own pm2 service"*. The alarm becomes its own pm2 service
+alongside node-dash, bridge and timelapse-pull. **The eight alarm/pac modules are
+the new service's source, not scrap. Nothing is deleted until it is running
+somewhere else and proven.** The task slug still says "remove" — read the title,
+not the slug.
+
 **Peter decided this at the end of the session.** The previous handover carried it
 as *"Peter is considering moving the alarm out of node-dash entirely"*; asked
-directly, he said **"he has decided"**. The alarm page and the backend module that
-manages it leave node-dash. Start here.
+directly, he said **"he has decided"**. Start here.
+
+The new service needs its **own pm2 entry, its own port, and a decision about its
+store** — the alarm currently shares `data/node-dash.db` (`obs_observation`,
+`obs_fact` live there). A separate service sharing one SQLite file is a choice,
+not a default; `alarm-db-ownership` asked this once already.
 
 **No such task existed.** He believed one did. I searched every mcpp task — open,
 completed and parked — for `alarm`/`garage`; the nearest are *boundary* tasks
@@ -201,9 +213,10 @@ did the plugin-boundary work did it properly.
 **The one thing that will bite — `src/coulomb.js`.** It imports `getObs` from
 `alarm-host.js` (`:13`, used at `:60`), and it is imported by **both** sides:
 `alarm-sections.js:34` (`coulombModel`) and **`ws-relay.js:64` (`buildCoulomb`) —
-core**. So core depends on a module that depends on the alarm; deleting
-`alarm-host.js` breaks `ws-relay.js`. Split it, move it, or retire the core
-consumer — **that decision is step 1, before anything is deleted.**
+core**. So core depends on a module that depends on the alarm. Once the alarm is a
+separate service this stops being "who owns the file" and becomes an **API
+question**: if node-dash still shows a coulomb reading it must *ask* the new
+service, not import a module. **That decision is step 1, before anything moves.**
 
 **Also unresolved:** `obs_observation` and `obs_fact` — ownership not established.
 `relay_observation` is core (packet provenance) despite the similar name.
