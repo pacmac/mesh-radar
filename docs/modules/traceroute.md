@@ -1,11 +1,31 @@
 ---
 module: traceroute
 source: src/traceroute.js
-source_hash: b8bf367f20dda2523e5535057c4384b62fa58b935274b406dc3d1503d52561fd
+source_hash: ccdbd49f3a09a29945e94ba3b18ac16768879e4dd467bc6c0941bd4aa89ac4f0
 updated: 2026-08-03
 ---
 
 # Module: traceroute
+
+> **2026-08-17 — traceroute no longer resolves radios or aims antennas.** See
+> `radio-resolve-and-aim.md`. Peter: "traceroute should call and not duplicate
+> what the other functions provide."
+>
+> Moved out: `_resolveRadio` (→ `src/resolve.js`), `_decideAim`, `_resolveAim`,
+> `_txIsRotator`, `bearingToNode` (→ `src/aim.js`), `toMac` and `beamwidthFor`
+> (→ fields on the resolved bundle), and the shared-rotator hold ceiling
+> (→ `src/rotator.js`, so it binds every caller and not just this one).
+>
+> `run()` now calls `resolveRadio()` and `resolveAim()`. What stays is
+> traceroute's own job: dispatch, `_pending`, cooldown, timeout, `handlePacket`
+> decode and storage, the `send_failed`/`timeout` taxonomy, and row provenance.
+>
+> A defect went with `_resolveRadio`: its `'omni'` branch returned the mode's
+> transmitter from **both** arms of a ternary, so asking for the omni could
+> return the YAGI. `tests/test_resolve.mjs` fails if that behaviour returns.
+>
+> This module is still **unwired** — nothing calls `run()`. That is deliberate
+> and is why the restructure was safe to do.
 
 ## Purpose
 

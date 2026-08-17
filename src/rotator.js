@@ -77,6 +77,19 @@ const BEAM = defineHook({
 //   ping_ms       websocket keepalive interval. Basis: must be shorter than the
 //                 far end's idle timeout, which is what closes a silent socket.
 const ROTATOR_TIMING_DEFAULTS = { cfg_reply_ms: 3000, ping_ms: 5000 };
+
+/** The longest hold ANY caller may ask this rotator for, in ms.
+ *
+ *  120 s, unchanged from the value that was already enforced on the config form
+ *  as `DISCOVERY_LIMITS.hold_sec[1]`. It is the operator's answer to "how long
+ *  may we hold a beam that other applications share", so it is not mine to
+ *  re-pick — config-api.js imports it FROM HERE rather than restating it, which
+ *  is the only way the form and the pointer cannot disagree.
+ *
+ *  It lives in this module and not in config-api because `config-api ->
+ *  ws-relay -> rotator` is an import cycle; and because it is rotator policy,
+ *  not discovery policy. See point(). */
+export const HOLD_CEILING_MS = 120 * 1000;
 const rotTiming = () => ({ ...ROTATOR_TIMING_DEFAULTS, ...(getConfig('rotator_timing', {}) || {}) });
 const cfgReplyMs = () => Number(rotTiming().cfg_reply_ms) || ROTATOR_TIMING_DEFAULTS.cfg_reply_ms;
 const pingMs     = () => Number(rotTiming().ping_ms)      || ROTATOR_TIMING_DEFAULTS.ping_ms;
@@ -295,6 +308,26 @@ class RotatorClient extends EventEmitter {
   // `true` means "wait out the hold it stated", not "wait forever": the retry
   // below runs once. A caller that must fail fast passes patienceMs: 0.
   async point(az, { timeoutMs = 60_000, hold = 0, patienceMs = true, by = 'mission' } = {}) {
+    // THE HOLD CEILING BINDS EVERY CALLER, AND IT LIVES HERE NOW.
+    //
+    // Peter, 2026-08-12: "the rotator has many users, not just node dash, it
+    // does NOT have exclusive access to it ... it is not permitted to issue very
+    // long hold periods to effectively lock out everything else from using the
+    // rotator."
+    //
+    // It used to be enforced in traceroute.js (`HOLD_CEILING_MS`, :425-431),
+    // which meant the limit held for that ONE caller and for the config form,
+    // and for nobody else — this method's own signature took `hold = 0` with no
+    // upper bound. Moved here 2026-08-17 for the reason stated twelve lines
+    // above by Peter himself: the pointer is the thing that needs fixing.
+    //
+    // Same number as before, not a new one of my own: it is the operator's
+    // stated answer to "how long may we hold a shared beam", and config-api.js
+    // imports it from here so the form and the pointer cannot drift apart.
+    if (Number(hold) > HOLD_CEILING_MS) {
+      console.log(`[rotator] warn: hold ${hold}ms from '${by}' exceeds the shared-rotator ceiling ${HOLD_CEILING_MS}ms — clamped`);
+      hold = HOLD_CEILING_MS;
+    }
     const started = this._now();
     let r = await this._pointOnce(az, timeoutMs, by);
 

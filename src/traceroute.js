@@ -19,81 +19,41 @@ import { EventEmitter } from 'events';
 import { bridge }       from './bridge.js';
 import { nodeList }     from './node-list.js';
 import { stmts, getConfig, radioAirtime } from './db.js';
-import { pasvConfig, discoveryConfig, DISCOVERY_LIMITS } from './config-api.js';
+import { pasvConfig } from './config-api.js';
 import { getRotatorAddress } from './device-config.js';
 import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 import { rotator } from './rotator.js';
-import { dashMode, modeName, modeAim, transmitterForMode } from './dash-mode.js';
-import { doorAim } from './doors.js';
-// Proven direct-reach set — the bypass branch may only aim at a relay we have
-// actually transmitted to, never at one we merely know about.
-import { provenDoors } from './node-kind.js';
-import { getDeviceCfg } from './device-config.js';
+import { dashMode, modeName, modeAim } from './dash-mode.js';
+// THE TWO MODULES THIS ONE CALLS INSTEAD OF RE-IMPLEMENTING. Peter, 2026-08-17:
+// "traceroute should call and not duplicate what the other functions provide."
+import { resolveRadio } from './resolve.js';
+import { resolveAim } from './aim.js';
+// provenDoors, getDeviceCfg, doorAim, discoveryConfig, DISCOVERY_LIMITS and
+// transmitterForMode are no longer imported here — every one of them was a
+// dependency of the aiming or the radio-resolution this file used to do itself.
+// They are imports of src/aim.js and src/resolve.js now.
 
-/** ONE DEVICE VOCABULARY FOR EVERY LOOKUP AND COMPARE. Task
- *  `aim-provenance-requested-az`.
- *
- *  `transmitterForMode()` returns a NODE_ID (it ends in `macToNodeId(mac)`).
- *  `getRotatorAddress()` returns a MAC. `getDeviceCfg()` keys on uppercase MAC.
- *  Handing a node_id to either the config lookup or the rotator identity compare
- *  silently fails — and both were being handed one:
- *
- *    getDeviceCfg('!39f7b6')                  -> {...DEFAULT}, beam_deg 360
- *    '!39F7B6' !== 'F4:12:FA:39:F7:B6'        -> "radio is not on the rotator"
- *
- *  ...said about the rotator's own radio, so every `radio: 'auto'` dispatch went
- *  out unaimed, in every mode. The recorded beam_deg of 360 on a device configured
- *  35 was the fingerprint; the discovery loop never pointing the antenna was the
- *  defect. Same resolution rule already used by the row recorder below.
- *
- *  NOT applied to the device passed on to dispatch() — that value goes to the
- *  bridge REST call, and the transmit path is deliberately left untouched. */
-function toMac(device) {
-  if (!device) return null;
-  const s = String(device);
-  return s.includes(':') ? s.toUpperCase() : (getLiveMacByNodeId(device) ?? s);
-}
-
-/** The transmitting antenna's beamwidth, so a 3-element and a 7-element yagi
- *  stay separable in the data when Peter upgrades. Null when unknown — never a
- *  guessed default, which would silently merge the two. */
-function beamwidthFor(device) {
-  const mac = toMac(device);
-  if (!mac) return null;
-  const cfg = getDeviceCfg(mac);
-  const d = Number(cfg?.beam_deg);
-  return Number.isFinite(d) && d > 0 ? d : null;
-}
-
-/** Bearing from home to a node, for aim:'endpoint'. Deliberately separate from
- *  doorAim: pointing at the endpoint is a DIFFERENT and usually worse choice,
- *  and the two must never quietly substitute for one another. */
-function bearingToNode(num) {
-  // `nodeList.get(num)` DOES NOT EXIST — the class has getters `homePos`,
-  // `nodes`, `ownDeviceNodes` and no `get(num)` method. Written as
-  // `nodeList.get?.(num)`, the optional call swallowed that silently: it
-  // evaluated to undefined every single time, so this returned null on every
-  // call and `aim: 'endpoint'` could NEVER aim. Verified 2026-08-04 by
-  // dispatching on the yagi with aim=endpoint and getting aim_mode='none'.
-  //
-  // That also invalidates the claim in run()'s header that endpoint-aiming
-  // "underperforms not aiming at all in every distance band" — it was never
-  // measured against anything, because it never ran.
-  //
-  // Read the same source doors.js uses (`nodes` table via db), so the two aim
-  // modes cannot silently disagree about where a node is.
-  const n = stmts.getNodeByNum.get(num) ?? null;
-  const lat = n?.lat;
-  const lon = n?.lon;
-  if (!lat || !lon) return null;
-  const h = { lat: getConfig('home.lat'), lon: getConfig('home.lon') };
-  if (h.lat == null || h.lon == null) return null;
-  const r = Math.PI / 180;
-  const y = Math.sin((lon - h.lon) * r) * Math.cos(lat * r);
-  const x = Math.cos(h.lat * r) * Math.sin(lat * r)
-          - Math.sin(h.lat * r) * Math.cos(lat * r) * Math.cos((lon - h.lon) * r);
-  return Math.round((Math.atan2(y, x) / r + 360) % 360);
-}
+// toMac(), beamwidthFor() and bearingToNode() MOVED 2026-08-17 — the first two
+// into src/resolve.js (which returns `mac` and `beam_deg` on the resolved
+// bundle), the third into src/aim.js. Task `traceroute-calls-resolve-and-aim`.
+//
+// THE SCAR THEY CARRIED, kept here because it is about IDENTITY and identity
+// bugs recur. Task `aim-provenance-requested-az`:
+//
+//   `transmitterForMode()` returns a NODE_ID (it ends in `macToNodeId(mac)`).
+//   `getRotatorAddress()` returns a MAC. `getDeviceCfg()` keys on uppercase MAC.
+//   Handing a node_id to either the config lookup or the rotator identity
+//   compare silently fails — and both were being handed one:
+//
+//     getDeviceCfg('!39f7b6')             -> {...DEFAULT}, beam_deg 360
+//     '!39F7B6' !== 'F4:12:FA:39:F7:B6'   -> "radio is not on the rotator"
+//
+//   ...said about the rotator's own radio, so every `radio: 'auto'` dispatch
+//   went out unaimed, in every mode. The recorded beam_deg of 360 on a device
+//   configured 35 was the fingerprint.
+//
+// resolve.js now hands back BOTH forms (`mac` and `node_id`) on one object, so
+// there is nothing left to convert at a call site and nothing left to get wrong.
 
 const log = {
   info: (...a) => console.log('[traceroute]',      ...a),
@@ -170,9 +130,18 @@ class TracerouteManager extends EventEmitter {
     const to = Number(target);
     if (!to) throw new Error('target required');
 
-    const modeKey  = modeName(dashMode.value);
-    const device   = this._resolveRadio(opts.radio, modeKey);
-    if (!device) throw new Error('no radio for this mode');
+    // WHICH RADIO — RESOLVED, NOT DECIDED HERE. Peter, 2026-08-17: "traceroute
+    // should call and not duplicate what the other functions provide."
+    //
+    // This was `this._resolveRadio(opts.radio, modeKey)`, traceroute's private
+    // resolver with its own auto|yagi|omni vocabulary — a third naming scheme
+    // for radios beside dash-mode's roles and raw MAC/node_id. Its 'omni' branch
+    // returned the mode's transmitter from BOTH arms of a ternary, so asking for
+    // the omni could hand you the YAGI. src/resolve.js is the SSOT now.
+    const modeKey = modeName(dashMode.value);
+    const radio   = resolveRadio(opts.radio, { rxDevice: opts.rxDevice });
+    if (!radio) throw new Error('no radio for this mode');
+    const device  = radio.node_id;
 
     // ONE AIM PER MISSION. Task `mission-runner-single-aim`.
     //
@@ -191,9 +160,12 @@ class TracerouteManager extends EventEmitter {
     // resolved to — mission-runner's context is built around the ROTATOR, so
     // taking its beam_deg verbatim would stamp 35 on rows the OMNI transmitted.
     // (Introduced and caught here, before it reached a row.)
+    // AIMING — CALLED, NOT PERFORMED HERE. src/aim.js owns the four-rule target
+    // policy, the bearings, the rotator call and the retry loop; it is also the
+    // only caller of rotator.point() in this path.
     const aim = opts.aimCtx
-      ? { ...opts.aimCtx, beam_deg: beamwidthFor(device) }
-      : await this._resolveAim(to, opts.aim, modeKey, device, opts);
+      ? { ...opts.aimCtx, beam_deg: radio.beam_deg }
+      : await resolveAim(to, opts.aim ?? modeAim(modeKey) ?? 'none', radio, opts);
 
     return this.dispatch({
       to, device,
@@ -208,286 +180,31 @@ class TracerouteManager extends EventEmitter {
     });
   }
 
-  /** Which radio. An ARGUMENT, not a side-effect of the mode — that is the
-   *  defect that let DISC compute a door bearing and then transmit omni. */
-  _resolveRadio(radio, modeKey) {
-    if (!radio || radio === 'auto') return transmitterForMode(modeKey);
-    const rot = getRotatorAddress();
-    if (radio === 'yagi') return rot;
-    if (radio === 'omni') {
-      const tx = transmitterForMode(modeKey);
-      // The non-rotator radio. If the mode's tx IS the rotator, we cannot infer
-      // the other one here without device config; fall back rather than guess.
-      return (rot && tx && tx.toUpperCase() === rot.toUpperCase()) ? tx : tx;
-    }
-    return radio;   // an explicit MAC or node id
-  }
+  // _resolveRadio() REMOVED 2026-08-17 — src/resolve.js is the SSOT. It carried
+  // a real defect: the 'omni' branch returned the mode's transmitter from BOTH
+  // arms of its ternary, so `radio: 'omni'` could return the YAGI. Its comment
+  // said it "cannot infer the other one here without device config" while
+  // device-config was imported at the top of this file; resolve.js's
+  // 'non-rotator' spec is that lookup done properly.
 
-  // ── _decideAim(to) ─────────────────────────────────────────────────────────
+  // _decideAim() and _txIsRotator() MOVED to src/aim.js 2026-08-17 — decideAim()
+  // there, with all four rules and their evidence intact. _txIsRotator became a
+  // field read on the resolved bundle (`radio.steerable`), which also retires
+  // the MAC-space comparison that once reported "not on the rotator" about the
+  // rotator itself.
+
+  // _resolveAim() MOVED to src/aim.js as resolveAim() — 2026-08-17. Everything
+  // it did belongs to aiming, not to dispatching: the target policy, the
+  // bearings, the discovery.* config reads, the rotator.point() call, the
+  // half-beam retry loop, the aiming/aimed events, and the hold ceiling (which
+  // went further still, into rotator.js, so it binds every caller).
   //
-  // THE DECISION THE REWORK WAS FOR. Peter, 2026-08-05: "right now traceroute
-  // still points at eps".
-  //
-  // Until now _resolveAim was a flat switch on a static per-mode setting —
-  // whatever the config said, every time, regardless of what we know about the
-  // target. That shipped the instrumentation and skipped the intelligence.
-  //
-  // WHY AIMING AT THE ENDPOINT IS WRONG. Measured over 2726 completed traces:
-  // the first hop is inside the endpoint's 35 degree beam only 12.9% of the
-  // time, and more than 135 degrees away — behind the antenna — 53.4% of the
-  // time. Mean separation 102.6 degrees. We transmit to the DOOR, not to the
-  // destination, so the destination's bearing is the wrong thing to point at.
-  //
-  // THE RULE, in evidence order:
-  //
-  //   1. Known route, door FAR      -> aim at the door. It is the node our
-  //                                    transmission actually has to reach, and
-  //                                    it is far enough for gain to matter.
-  //   2. Known route, door CLOSE    -> try to BYPASS it: aim at hop 2, if we
-  //                                    provably reach hop 2 directly and it is
-  //                                    better aligned to the endpoint. Reaching
-  //                                    it removes a hop permanently.
-  //                                    Measured: 155 such cases. PJ1 alone has
-  //                                    44 — endpoint 62deg/3km, hop1 T4 at
-  //                                    274deg, hop2 WLCD at 62deg/3km.
-  //   3. Known route, door close,
-  //      no bypass candidate        -> do not rotate. The door is inside omni
-  //                                    reach and the beam is theatre.
-  //   4. No known route             -> aim at the endpoint. NOT to follow a
-  //                                    route — there isn't one — but as a bet on
-  //                                    DIRECT contact, which is the only thing
-  //                                    that creates a new door.
-  //
-  // Every branch records its own mode, so the row says which rule fired.
-  //   3b. Known route, door close,
-  //       NO bypass, but WE TRANSMIT   -> aim at the door anyway.
-  //       ON THE ROTATOR
-  //
-  // Rule 3 said "do not rotate, the beam is theatre". That was true while the
-  // OMNI transmitted. Once disc.tx became the rotator (2026-08-05, event_log
-  // 4242) it stopped meaning "we radiate omnidirectionally anyway" and started
-  // meaning "fire a 35 degree beam wherever somebody else left the antenna".
-  //
-  // Measured over the 24 h after the flip: 303 YAGI attempts at aim_mode=none,
-  // 7.9% answered, and those shots covered 246 DISTINCT azimuths spanning
-  // 0.85-359.98 degrees. The beam was not stale-but-constant, it was scattered
-  // across the whole circle — the active tracker and the scanner move it for
-  // their own reasons and traceroute never reclaimed it.
-  //
-  // The door is who actually receives the transmission, which is the entire
-  // basis of rules 1-2, so that is what we point at. "Beam not needed" was an
-  // argument for saving movement, never one for pointing somewhere arbitrary.
-  _decideAim(to, device) {
-    const none = { az: null, aimTarget: null, mode: 'none' };
-    let route = null;
-    try { route = JSON.parse(stmts.latestRouteTo.get(to)?.route ?? 'null'); } catch { /* no route */ }
-
-    // 4. Nothing known: bet on a direct contact.
-    if (!Array.isArray(route) || !route.length) {
-      const b = bearingToNode(to);
-      return b == null ? none : { az: b, aimTarget: to, mode: 'endpoint' };
-    }
-
-    const d = doorAim(to);
-    // 1. The door is far enough that the beam buys something.
-    if (d && d.az != null && d.needsBeam) return { az: d.az, aimTarget: d.door, mode: 'door' };
-
-    // 2. The door is close. Can we skip it?
-    const hop2 = route[1];
-    if (hop2 != null && hop2 !== 0xffffffff && provenDoors().has(Number(hop2))) {
-      const b2 = bearingToNode(hop2), be = bearingToNode(to);
-      if (b2 != null && be != null) {
-        const sep = (x, y) => Math.abs(((x - y + 540) % 360) - 180);
-        const b1 = d?.az;
-        // Only worth it if hop2 points nearer the endpoint than the door does —
-        // otherwise we are just aiming somewhere else for no reason.
-        if (b1 == null || sep(b2, be) < sep(b1, be)) {
-          return { az: b2, aimTarget: hop2, mode: 'bypass' };
-        }
-      }
-    }
-    // 3b. Close door, no bypass — but if WE are the ones radiating through the
-    // yagi, "don't rotate" points a 35 degree beam at nothing. Aim at the door.
-    // Gated on the transmitting radio: moving an antenna we are not transmitting
-    // through is exactly the theatre rule 3 correctly refused.
-    if (this._txIsRotator(device)) {
-      if (d && d.az != null) return { az: d.az, aimTarget: d.door, mode: 'door_near' };
-      // No door bearing resolves — fall back to the endpoint for the same reason
-      // rule 4 does: a deliberate bearing beats an arbitrary one.
-      const b = bearingToNode(to);
-      if (b != null) return { az: b, aimTarget: to, mode: 'endpoint_near' };
-    }
-
-    // 3. Close door, no bypass, and we are not on the rotator: do not spend the beam.
-    return none;
-  }
-
-  /** Is the radio we are about to transmit on the one bolted to the rotator?
-   *
-   *  BOTH SIDES IN MAC SPACE — a node_id-vs-MAC compare is always false, which is
-   *  the bug toMac() exists to prevent (it once reported "not on the rotator"
-   *  about the rotator itself). */
-  _txIsRotator(device) {
-    const rot = getRotatorAddress();
-    const mac = toMac(device);
-    return !!(rot && mac && mac.toUpperCase() === rot.toUpperCase());
-  }
-
-  /** Where to point, and WAIT FOR IT TO GET THERE.
-   *
-   *  Returns { mode, target, az, beam_deg, settled } — the provenance that goes
-   *  on the row. Never throws: a rotator that will not move must not stop a
-   *  trace, it must be recorded as unaimed. */
-  async _resolveAim(to, aimOpt, modeKey, device, opts = {}) {
-    const beam_deg = beamwidthFor(device);
-    const want = aimOpt ?? modeAim(modeKey) ?? 'none';
-
-    if (want === 'none' || want == null) return { mode: 'none', target: null, az: null, beam_deg, settled: false };
-
-    let az = null, aimTarget = null, mode = 'none';
-    if (typeof want === 'number') { az = want; mode = 'endpoint'; }
-    else if (want === 'auto')     ({ az, aimTarget, mode } = this._decideAim(to, device));
-    else if (want === 'door') {
-      const d = doorAim(to);
-      if (d && d.az != null) { az = d.az; aimTarget = d.door; mode = 'door'; }
-    } else if (want === 'endpoint') {
-      const b = bearingToNode(to);
-      if (b != null) { az = b; aimTarget = to; mode = 'endpoint'; }
-    }
-    if (az == null) return { mode: 'none', target: null, az: null, beam_deg, settled: false };
-
-    // ONLY THE ROTATOR RADIO CAN BE AIMED. Recorded as 'none' rather than
-    // pretending, so the row is honest about what actually happened.
-    // BOTH SIDES IN MAC SPACE. A node_id-vs-MAC compare here is always false, so
-    // this returned "not on the rotator" about the rotator itself — see toMac().
-    const rot = getRotatorAddress();
-    const devMac = toMac(device);
-    if (!rot || !devMac || devMac.toUpperCase() !== rot.toUpperCase())
-      return { mode: 'none', target: null, az: null, beam_deg, settled: false, note: 'radio is not on the rotator' };
-
-    this.emit('aiming', { to, az, via: aimTarget, mode });
-    let settled = false, azActual = null;
-    try {
-      // point(), NOT move(). Peter, 2026-08-04: "remember that the pointer has a
-      // hold and handshakes when it is moving."
-      //
-      // point() IS that handshake — are you free, move now, maybe hold; if it is
-      // busy it says so and waits out the other holder's window. move() fires
-      // and forgets, so the first version of this polled status on a timer and
-      // could still transmit mid-slew. It also HOLDS the beam through the reply,
-      // which is the whole reason the antenna is pointed in the first place.
-      //
-      // THE ROTATOR IS SHARED, AND IT TELLS YOU SO. Peter, 2026-08-04: "the
-      // rotator is also being used by a different app, every 15 minutes it might
-      // point and hold the rotator for up to 15 seconds, but the pointer will
-      // tell you that if you know how to ask."
-      //
-      // NOT SPECIFIED HERE. Peter: "that is an issue with the node-dash pointer
-      // code and not really traceroute. traceroute calls the pointer code, it is
-      // the one that needs fixing." Waiting out a neighbour's hold is the
-      // rotator's policy and now its default — this asks, it does not dictate.
-      // NO INVENTED NUMBERS. Peter, 2026-08-04: "stop setting arbitrary timings
-      // and stop hard coding timings ... what is the basis for your 5 second
-      // calculation, why not use 2 days instead of 5 seconds ... they are simply
-      // just a random number you pick. STOP DOING THAT."
-      //
-      // He is right, and every value I had invented already existed as config
-      // with a stated meaning. Each one below names its source and its basis:
-      //
-      //   hold      discovery.hold_sec       the operator's answer to "how long
-      //                                      may we hold a SHARED beam" — this
-      //                                      is a policy about the neighbour,
-      //                                      not about us, so it is config
-      //   timeoutMs discovery.aim_timeout_sec  the existing budget for an aim
-      //   patience  NOT PASSED — the rotator honours the hold it was told about
-      //
-      // Anything unset falls through to the caller's opts, and only then to the
-      // rotator's own defaults. Nothing here is a literal.
-      const d = discoveryConfig();
-      // THE CEILING BINDS THE CALLER TOO, NOT JUST THE CONFIG FORM.
-      //
-      // Peter, 2026-08-12, standing constraint: "the rotator has many users, not
-      // just node dash, it does NOT have exclusive access to it ... it is not
-      // permitted to issue very long hold periods to effectively lock out
-      // everything else from using the rotator."
-      //
-      // `hold_sec` is clamped [0,120] server-side in config-api.js, but
-      // `opts.hold_ms` went straight through unclamped — so the limit held for
-      // the operator editing a form and not for any code path that passed a
-      // hold. The garage alarm and every other user share this rotator; an
-      // unbounded hold from here is an exclusive lock on somebody else's
-      // instrument.
-      //
-      // Clamped to the SAME bound rather than a new number of my own: the
-      // ceiling is the operator's stated answer to "how long may we hold a
-      // shared beam", and inventing a second one here would be the literal this
-      // block already argues against.
-      const HOLD_CEILING_MS = DISCOVERY_LIMITS.hold_sec[1] * 1000;
-      const rawHoldMs = opts.hold_ms ?? (Number(d.hold_sec) > 0 ? Number(d.hold_sec) * 1000 : undefined);
-      let holdMs = rawHoldMs;
-      if (holdMs !== undefined && holdMs > HOLD_CEILING_MS) {
-        log.warn(`hold ${holdMs}ms exceeds the shared-rotator ceiling ${HOLD_CEILING_MS}ms — clamped`);
-        holdMs = HOLD_CEILING_MS;
-      }
-      const aimMs  = opts.settle_ms ?? (Number(d.aim_timeout_sec) > 0 ? Number(d.aim_timeout_sec) * 1000 : undefined);
-      let r = await rotator.point(az, {
-        by: 'traceroute',
-        ...(holdMs !== undefined ? { hold: holdMs } : {}),
-        ...(aimMs  !== undefined ? { timeoutMs: aimMs } : {}),
-        ...(opts.patience_ms !== undefined ? { patienceMs: opts.patience_ms } : {}),
-      });
-      settled = !!(r && r.ok && !r.busy);
-      if (r && r.az != null && Number.isFinite(Number(r.az))) azActual = Number(r.az);
-
-      // ASK IT A SECOND TIME IF IT LANDED OUTSIDE THE BEAM. Peter, 2026-08-04:
-      // "if it's so far out you can ask it a second time. this issue is resolved
-      // in v5 but you have to make do with what you have for now."
-      //
-      // Measured on the first five door aims: the v4 either lands within 0-2
-      // degrees or misses by 112-140. A miss leaves a 9 dBi beam pointing at
-      // nothing, which is WORSE than not aiming — so one re-issue is worth the
-      // seconds. Long arcs overshoot; a second, shorter move usually lands.
-      //
-      // The threshold is HALF THE CONFIGURED BEAMWIDTH — from device config,
-      // never a literal, and null means "cannot judge, do not retry".
-      // One retry, never a loop: mission-runner already settled on that rule.
-      const half = beam_deg != null ? beam_deg / 2 : null;
-      const errOf = (got) => Math.abs(((Number(got) - az + 540) % 360) - 180);
-      // ONE RE-ISSUE IS USUALLY ENOUGH, AND SOMETIMES IT IS NOT. Measured
-      // 2026-08-04 over seven aims with deliberately long slews:
-      //
-      //   first attempt inside the 35 deg beam:  2/7   (29%)
-      //   after one re-issue:                    6/7   (86%)
-      //
-      // The one that still missed was a 121->351 slew: it stopped at 276, and the
-      // re-issue overshot to 59. Both outside the beam, so that shot went out
-      // pointed at nothing — worse than not aiming, because the gain is real.
-      //
-      // So the count is a KNOB, not a literal, and its default has the numbers
-      // above as its basis (`discovery.aim_retries`). It stops the moment the aim
-      // is inside the half-beam, so a good first move costs nothing extra.
-      const maxRetries = Number.isFinite(Number(d.aim_retries)) ? Number(d.aim_retries) : 0;
-      for (let i = 0; i < maxRetries; i++) {
-        if (half == null || !r || r.az == null || r.busy || errOf(r.az) <= half) break;
-        r = await rotator.point(az, {
-          by: 'traceroute',
-          ...(holdMs !== undefined ? { hold: holdMs } : {}),
-          ...(aimMs  !== undefined ? { timeoutMs: aimMs } : {}),
-        });
-        if (r && r.az != null) { settled = !!(r.ok && !r.busy) && errOf(r.az) <= half; azActual = Number(r.az); }
-      }
-      // WHERE IT SAYS IT GOT TO. Peter, 2026-08-04: "the yagi rotates at about
-      // 60rpm, point and settle should never take more than about 1.5 seconds,
-      // but the point is, the pointer will tell you when it has reached, you do
-      // not have to guess."
-      //
-      // point() already waits for the rotator's `done` handshake, and that
-      // message carries the arrived azimuth. Captured HERE, at the moment of
-      // arrival — see _recordFailure for why sampling it later was wrong.
-    } catch { /* a rotator failure must not stop the trace — record unsettled */ }
-    this.emit('aimed', { to, az, az_actual: azActual, via: aimTarget, mode, settled });
-    return { mode, target: aimTarget, az, az_actual: azActual, beam_deg, settled };
-  }
+  // DELETED-BUT-NOT-LOST, in aim.js and worth reading before any rewrite:
+  //   point() not move(), because move() fires and forgets and the first version
+  //   could transmit mid-slew; the one re-issue on a miss (2/7 inside the beam
+  //   first try, 6/7 after); the half-beam tolerance taken from device config
+  //   rather than a literal; and recording the ARRIVED azimuth at the moment of
+  //   arrival rather than sampling it later.
 
   // ── dispatch({ to, device, timeoutMs?, cooldownMs?, cooldownKey?, manual? }) ─
   // Returns a Promise that resolves with the result or rejects on timeout/error.

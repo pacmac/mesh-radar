@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 1c0ec853694823f1053f4e90e245386fb7648b7584a4717dd951b0c7229a244e
+source_hash: 91daddee64da882bfa3f9e9f36f51d0d2eb727b34c5d2984a253881caf96bb78
 updated: 2026-08-17
 ---
 

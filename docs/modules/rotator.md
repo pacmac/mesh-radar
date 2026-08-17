@@ -1,11 +1,26 @@
 ---
 module: rotator
 source: src/rotator.js
-source_hash: 053bada83050298866dabd32d193866e8e6ac2e27b8fdb6ba7f530deeeff98f0
+source_hash: 8e63bf57b2bb50bfa544c77e4030993722eee0829a4475a6ab31891102aebba6
 updated: 2026-08-03
 ---
 
 # Module: rotator
+
+> **2026-08-17 — this module now owns the shared-hold ceiling.** Exports
+> `HOLD_CEILING_MS` (120 s) and clamps `hold` inside `point()`, warning when it
+> does. See `radio-resolve-and-aim.md`.
+>
+> It used to be enforced in `traceroute.js`, which meant the limit bound that one
+> caller and the config form and **nobody else** — `point()`'s own signature took
+> `hold = 0` with no upper bound. Peter, 2026-08-04, quoted in the file that had
+> it wrong: "that is an issue with the node-dash pointer code and not really
+> traceroute. traceroute calls the pointer code, it is the one that needs
+> fixing."
+>
+> `config-api.js` imports the constant for `DISCOVERY_LIMITS.hold_sec`, so the
+> form and the pointer cannot drift apart. The dependency runs that way round
+> because `config-api → ws-relay → rotator` is a cycle.
 
 ## Purpose
 

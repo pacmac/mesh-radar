@@ -7,6 +7,7 @@ import { logEvent } from './hooks.js';
 import { nodeList } from './node-list.js';
 import { modeConfigAll, isValidRole, isValidAim, isValidRadio, modeVocabulary, MODE_KEYS } from './dash-mode.js';
 import { calloutConfig, renderTemplate } from './callout.js';
+import { HOLD_CEILING_MS } from './rotator.js';
 
 const router = Router();
 
@@ -242,7 +243,10 @@ export const DISCOVERY_LIMITS = {
   attempts_per_target: [1, 50],
   cooldown_min:        [1, 1440],
   max_silence_days:    [1, 365],
-  hold_sec:            [0, 120],
+  // IMPORTED, NOT RESTATED. The shared-rotator hold ceiling is rotator policy
+  // and rotator.js owns it (2026-08-17). It was the literal 120 here and a
+  // separate literal in traceroute.js; the form and the pointer could drift.
+  hold_sec:            [0, HOLD_CEILING_MS / 1000],
   proven_min_hits:     [1, 50],
   proven_min_rate:     [0, 100],
   new_node_hours:      [0, 720],

@@ -1,0 +1,125 @@
+// resolve: ONE answer to "which radio, and what is it capable of".
+// Spec: docs/modules/radio-resolve-and-aim.md.
+//
+// THE TEST THAT ENCODES THE DEFECT THIS MODULE REPLACES. traceroute.js:217-222,
+// before removal:
+//
+//     if (radio === 'omni') {
+//       const tx = transmitterForMode(modeKey);
+//       return (rot && tx && tx.toUpperCase() === rot.toUpperCase()) ? tx : tx;
+//     }
+//
+// Both arms returned `tx`, so asking for the omni could return the YAGI — the
+// exact radio the caller asked not to use. `resolveRadio('non-rotator')` is that
+// branch done properly, and the assertion below fails if it ever regresses.
+//
+// FIXTURES, NOT LIVE RADIOS. The shapes below mirror the live pair as measured
+// 2026-08-17 (OMNI beam 360 / not rotator, YAGI beam 35 / rotator), but they are
+// written into config here so the test keeps its meaning when the radios are
+// unreachable, re-labelled, or reconfigured.
+import assert from 'node:assert/strict';
+
+const { resolveRadio, isDirectional, rotatorFor, RADIO_SPECS }
+  = await import('../src/resolve.js');
+const { setConfig, getConfig } = await import('../src/db.js');
+
+const OMNI = 'E9:B0:3F:17:27:91';
+const YAGI = 'F4:12:FA:39:F7:B6';
+const PREFIX = 'device_cfg.';
+
+let checks = 0;
+const ok = (c, w) => { assert.ok(c, w); checks++; };
+const eq = (a, b, w) => { assert.equal(a, b, w); checks++; };
+
+// Snapshot whatever the machine really holds, so the test never leaves the live
+// config altered — this runs on the same box as the running dashboard.
+const saved = {};
+for (const mac of [OMNI, YAGI]) saved[mac] = getConfig(PREFIX + mac, null);
+
+function restore() {
+  for (const mac of [OMNI, YAGI]) {
+    if (saved[mac] === null) setConfig(PREFIX + mac, {});
+    else                     setConfig(PREFIX + mac, saved[mac]);
+  }
+}
+
+try {
+  setConfig(PREFIX + OMNI, { label: 'OMNI', is_rotator: false, is_primary: true,  beam_deg: 360 });
+  setConfig(PREFIX + YAGI, { label: 'YAGI', is_rotator: true,  is_primary: false, beam_deg: 35  });
+
+  // ── the rotator radio ──────────────────────────────────────────────────────
+  const yagi = resolveRadio('rotator');
+  ok(yagi != null,            'the rotator radio resolves');
+  eq(yagi.mac, YAGI,          'resolved to the YAGI');
+  eq(yagi.beam_deg, 35,       'beam width comes from device config, not a default');
+  eq(yagi.directional, true,  'beam < 360 is directional');
+  eq(yagi.steerable, true,    'on the rotator, so steerable');
+  eq(yagi.rotatorId, YAGI,    'names WHICH rotator serves it');
+
+  // ── THE REGRESSION TEST FOR THE OMNI DEFECT ───────────────────────────────
+  // The old branch could return the rotator here. If this ever comes back as the
+  // YAGI, a caller asking for the omni is transmitting on a 35-degree beam
+  // pointed wherever somebody else left it.
+  const omni = resolveRadio('non-rotator');
+  ok(omni != null,             'the non-rotator radio resolves');
+  eq(omni.mac, OMNI,           'non-rotator must NOT return the rotator — the 2026-08-17 defect');
+  ok(omni.mac !== yagi.mac,    'non-rotator and rotator are different radios');
+  eq(omni.beam_deg, 360,       'omni beam width');
+  eq(omni.directional, false,  '360 degrees is not directional — Peter\'s own test');
+  eq(omni.steerable, false,    'not on the rotator');
+  eq(omni.rotatorId, null,     'no rotator serves it');
+
+  // ── directional and steerable are DIFFERENT questions ─────────────────────
+  // The old code answered "directional?" with beam_deg for the recorded
+  // provenance and with is_rotator for the behavioural gate — two fields for one
+  // fact. A fixed yagi is directional and NOT steerable; that must be sayable.
+  setConfig(PREFIX + OMNI, { label: 'FIXEDYAGI', is_rotator: false, is_primary: true, beam_deg: 40 });
+  const fixed = resolveRadio('non-rotator');
+  eq(fixed.directional, true,  'a fixed yagi IS directional');
+  eq(fixed.steerable,  false,  '...and is NOT steerable. The old code could not say both.');
+  setConfig(PREFIX + OMNI, { label: 'OMNI', is_rotator: false, is_primary: true, beam_deg: 360 });
+
+  // ── unknown beam width must not become a guessed default ──────────────────
+  // A 3-element and a 7-element yagi have to stay separable in the data.
+  setConfig(PREFIX + OMNI, { label: 'OMNI', is_rotator: false, is_primary: true, beam_deg: null });
+  const unknown = resolveRadio('non-rotator');
+  eq(unknown.beam_deg, null,     'unknown beam width stays null, never a default');
+  eq(unknown.directional, false, 'we do not claim a radio needs aiming on a missing number');
+  setConfig(PREFIX + OMNI, { label: 'OMNI', is_rotator: false, is_primary: true, beam_deg: 360 });
+
+  // ── explicit addresses ────────────────────────────────────────────────────
+  eq(resolveRadio(YAGI)?.mac, YAGI,          'an explicit MAC resolves');
+  eq(resolveRadio(YAGI.toLowerCase())?.mac, YAGI, 'MAC match is case-insensitive');
+
+  // ── a bundle is whole or it is null ───────────────────────────────────────
+  // A caller that gets an object must be able to trust every field in it.
+  eq(resolveRadio('!ffffffff'), null, 'an unknown node id resolves to null, not a partial bundle');
+  eq(resolveRadio('AA:AA:AA:AA:AA:AA'), null, 'an unknown MAC resolves to null');
+  eq(resolveRadio('nonsense-spec'), null, 'an unrecognised spec resolves to null');
+
+  // ── channels are DELEGATED, and never 0 by accident ───────────────────────
+  // `Number(null) === 0`, and channel 0 is PRIMARY — the public mesh. indexFor
+  // must return null for an unresolved role so a caller cannot fall into it.
+  const ch = resolveRadio('primary').channels;
+  ok('pub' in ch && 'pri' in ch, 'both channel roles are reported');
+  for (const role of ['pub', 'pri']) {
+    ok(ch[role] === null || Number.isInteger(ch[role]),
+       `channels.${role} is an integer or null — never undefined, never 0-by-coercion`);
+  }
+
+  // ── the convenience wrappers agree with the bundle ────────────────────────
+  eq(isDirectional('rotator'), true,      'isDirectional agrees with the bundle');
+  eq(isDirectional('non-rotator'), false, 'isDirectional agrees for the omni');
+  eq(rotatorFor('rotator'), YAGI,         'rotatorFor names the rotator');
+  eq(rotatorFor('non-rotator'), null,     'rotatorFor is null for an unsteerable radio');
+
+  // ── the vocabulary is shared, not a fourth one ────────────────────────────
+  // 'omni' and 'yagi' were traceroute's private words for radios that dash-mode
+  // already called 'non-rotator' and 'rotator'. They must not come back.
+  ok(!RADIO_SPECS.includes('omni'), "'omni' is not a spec — 'non-rotator' says it, and dash-mode already did");
+  ok(!RADIO_SPECS.includes('yagi'), "'yagi' is not a spec — 'rotator' says it");
+
+  console.log(`test_resolve: ${checks} checks passed`);
+} finally {
+  restore();
+}
