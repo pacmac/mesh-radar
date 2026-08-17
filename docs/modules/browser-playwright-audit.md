@@ -12,9 +12,6 @@ source:
   - public/index.html
   - public/sw.js
   - public/partials/drawer-sidebar.html
-  - public/plugins/alarm/plugin.js
-  - public/plugins/alarm/nav.html
-  - public/plugins/alarm/header.html
   - public/partials/tab-cfg.html
   - public/partials/tab-devices.html
   - public/partials/tab-messages.html
@@ -31,8 +28,8 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 4122976b40884b693e783576859d61f0460963272e52e5d42ae3a556051d37d6
-updated: 2026-08-16
+source_hash: 44f4a11f5987ef80f273ef8bcb0d69415a3185301ce828f4bbeec8b9ce7337e8
+updated: 2026-08-17
 ---
 
 # Module: browser-playwright-audit

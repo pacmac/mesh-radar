@@ -4,9 +4,8 @@ source:
   - scripts/ws-ask.mjs
   - scripts/check_snapshot.mjs
   - scripts/check_contract.mjs
-  - tests/test_coulomb.mjs
-source_hash: b7e1339608cf9004e37855953be77acda019912c0d84fd49305019678bd42dca
-updated: 2026-08-13
+source_hash: 439f175270d902ec5b23e84401f5fe1c1cd7dc7b713df8805a163d2210c8c248
+updated: 2026-08-17
 ---
 
 # Module: check-harness
@@ -35,8 +34,6 @@ absent — the same gap that hid the missing spec-index.
 - `scripts/check_contract.mjs` — repo-wide contract assertions. Only its **reach
   invariant** block is in scope here; its config-key and persistence blocks are
   untouched.
-- `tests/test_coulomb.mjs` — the coulomb display model, pure, no network and no
-  database.
 
 ## Dependencies
 
@@ -46,7 +43,6 @@ absent — the same gap that hid the missing spec-index.
   frame of 4,358,807 bytes (`B92`). A client on default limits is disconnected
   with `1009 message too big` before it ever sees its reply. `ws` lets
   `maxPayload` be stated explicitly; the global does not.
-- `src/coulomb.js` — `coulombModel`, the pure entry point.
 
 ## Public interface
 
@@ -85,12 +81,12 @@ _N/A_
   board on connect at its own default window, then answers the window asked for.
   Matching the first reply compares the screen against the wrong window — it has
   already bitten the browser and `tests/test_page_snapshot.py`.
-- **`test_coulomb.mjs` performs no I/O.** It targets `coulombModel`, not
-  `buildCoulomb`. Stubbing `global.fetch` to reach a model through two layers of
-  transport was what tied the test to a fetch path that no longer exists.
-- **A refusal is behaviour and gets a test.** `getObs` throwing 501 is a
-  deliberate contract (`src/alarm-host.js:651-660`), not an outage, so it is
-  asserted rather than stubbed around.
+> `test_coulomb.mjs` and its two invariants were removed on 2026-08-17 with the
+> alarm (task `remove-alarm-from-node-dash`). They said a test must perform no
+> I/O and target the pure entry point rather than the transport, and that a
+> deliberate refusal is behaviour that gets asserted rather than stubbed around.
+> **Both rules still apply to every check here** — they are recorded because the
+> reasoning outlives the module it was learnt on.
 - **An allowlist is keyed by CODE, never by a line number** (2026-08-14). The
   "no threshold decides a class" check exempted its one legitimate case with
   `!/app-perf\.js:39[0-9]/`. An eight-line comment was added above that function,
@@ -110,11 +106,9 @@ Run from the repo root, with node-dash running:
 ```
 node scripts/check_snapshot.mjs       # 54 checks across 6 windows, 0 mismatches
 node scripts/check_contract.mjs       # 0 contract failure(s)
-node tests/test_coulomb.mjs           # 9 checks, coulomb model clean
 ```
 
-`check_snapshot` and `check_contract` need the service up; `test_coulomb` does
-not and must never need it.
+Both need the service up.
 
 ## Out of scope
 
@@ -132,7 +126,7 @@ not and must never need it.
 
 Did not exist. ~45 lines. Two exports, `askWs` and `askWsMany`, per the interface
 above. Written once because both checks need the same replay rule, and a rule
-implemented twice drifts — the same argument `docs/modules/coulomb.md` makes for
+implemented twice drifts — the same argument the (now removed) coulomb spec made for
 the `coulombModel` split.
 
 ### `scripts/check_snapshot.mjs`
@@ -208,92 +202,20 @@ Plus the import. Lines 186–194 — the `Number.isFinite` guard, the
 The failure message stays accurate: if the socket answers without a
 `furthest_km`, that is still the thing to report.
 
-### `tests/test_coulomb.mjs`
+### `tests/test_coulomb.mjs` — REMOVED 2026-08-17
 
-**Lines 13–22, before**
+The file and the module it tested (`src/coulomb.js`) left with the alarm, task
+`remove-alarm-from-node-dash`. The before/after diff that stood here described a
+file that no longer exists; it is in git history if it is ever wanted.
 
-```js
-// buildCoulomb calls getObs, so the module is loaded with pac-host stubbed.
-// Node's ESM loader has no cheap injection point, so the fetch layer is
-// intercepted instead: coulomb.js -> pac-host.getObs -> global fetch.
-let FIXTURE = [];
-global.fetch = async () => ({
-  ok: true,
-  json: async () => FIXTURE,
-});
-
-const { buildCoulomb } = await import('../src/coulomb.js');
-```
-
-**after**
-
-```js
-import { buildCoulomb, coulombModel } from '../src/coulomb.js';
-
-// The model is reached DIRECTLY, through the pure entry point that exists for
-// exactly this reason (docs/modules/coulomb.md — "THIS SPLIT IS LOAD-BEARING").
-//
-// These tests used to stub global.fetch and call buildCoulomb, reaching the
-// model through getObs. On 2026-08-13 getObs became an unconditional 501 — the
-// history has no source and must not be faked (src/alarm-host.js:651-660) — and
-// all 8 tests failed on a refusal that is CORRECT. A test of the arithmetic had
-// been coupled to a transport it never meant to exercise.
-let FIXTURE = [];
-```
-
-The import sits at the top rather than below `FIXTURE`, where the first draft of
-this spec put it: ESM hoists imports either way, so the lower position would have
-read as though the stub had to be installed first — which is precisely the
-misreading this change removes.
-
-**Six call sites** — lines 40, 49, 62, 73, 87, 98, 108, before
-
-```js
-  const m = await buildCoulomb('!test');
-```
-
-**after**
-
-```js
-  const m = coulombModel('!test', FIXTURE);
-```
-
-**Line 81, the ordering guard, before**
-
-```js
-  await assert.rejects(() => buildCoulomb('!test'), /out of order/i);
-```
-
-**after** — `coulombModel` is SYNCHRONOUS, so `assert.rejects` would pass on any
-throw-free call and prove nothing:
-
-```js
-  assert.throws(() => coulombModel('!test', FIXTURE), /out of order/i);
-```
-
-**NEW test, appended after the `cons` test** — covers the refusal instead of
-merely stepping around it:
-
-```js
-await t('buildCoulomb refuses rather than inventing a series', async () => {
-  // getObs throws 501 by design: `record` is unbuilt, and accumulating the
-  // event stream here would draw a chart that starts at the last restart and
-  // looks like a measurement. If this ever resolves, the refusal was removed
-  // and the fetching path needs its own tests.
-  await assert.rejects(() => buildCoulomb('!test'),
-                       /no history store|record.*unbuilt/i);
-});
-```
-
-The eight existing assertions are otherwise unchanged, including the two-line
-negative control at lines 69–76 that stops the refusal test passing for the
-wrong reason.
+What is worth carrying forward is why it was rewritten in the first place: the
+test reached the model through two layers of transport by stubbing `global.fetch`,
+which tied it to a fetch path that was later deleted. **Target the pure entry
+point, not the transport** — that rule applies to every check in this file and
+outlives the module it was learnt on.
 
 ## Files deliberately NOT changed
 
-- `src/coulomb.js` — the model is correct; only the test's entry point was wrong.
-- `src/alarm-host.js` — the 501 at `getObs` is the intended contract and is now
-  asserted rather than removed.
 - `src/ws-relay.js`, `src/snapshot-api.js` — the `snapshot` RPC already serves
   every field needed; nothing server-side is missing.
 - `tests/test_page_snapshot.py` — already converted; it is the reference this

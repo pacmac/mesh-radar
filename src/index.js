@@ -4,7 +4,6 @@ import { fileURLToPath } from 'url';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { bridge } from './bridge.js';
-import * as pacHost from './alarm-host.js';
 import configRouter from './config-api.js';
 import snapshotRouter from './snapshot-api.js';
 import { logEvent } from './hooks.js';
@@ -29,9 +28,6 @@ import clustersRouter from './clusters-api.js';
 import terrainRouter from './terrain-api.js';
 import reachRouter from './reach-api.js';
 import messagesRouter from './messages-api.js';
-import pacCommandRouter from './pac-command-api.js';
-import pacAlignRouter from './pac-align-api.js';
-import alarmImageRouter from './alarm-image-api.js';
 import tracerouteRouter from './traceroute-api.js';
 import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
@@ -52,14 +48,13 @@ import { renderPluginTabs, renderPluginNav, renderPluginHeader, renderPluginScri
 // core references either file. Delete these two lines and the alarm's own files
 // and node-dash is unchanged (docs/PLUGIN_BOUNDARY_SPEC.md).
 //
-// STATIC, not dynamic-inside-listen(): registerWsWiring is read ONCE by
-// attachWsRelay (line ~250), so a late registration silently never fires.
-// Measured when it was late — connect replays still worked, but ZERO live
-// pac_host_* broadcasts arrived in 110s. Load order is load-bearing here.
-import './alarm-sections.js';
-import './alarm-ws.js';
-import './alarm-images.js';
-import './alarm-browser.js';
+// The alarm plugin's four side-effect imports stood here until 2026-08-17. It
+// runs as its own service now (mt-alarm-1/html, pm2 `html`, :8791) and node-dash
+// names it nowhere. The load-order rule they illustrated still applies to any
+// future plugin: registerWsWiring is read ONCE by attachWsRelay, so a
+// registration arriving after that silently never fires — measured when it was
+// late, connect replays still worked while ZERO live broadcasts arrived in 110s,
+// which makes the failure invisible from the UI.
 
 // ─── OBSERVATORY ─────────────────────────────────────────────────────────────
 // The observations store and inference registry (docs/MESH_REACH_SPEC.md §7f).
@@ -237,7 +232,9 @@ function serveIndex(req, res) {
 const _servePage = (req, res, next) =>
   req.headers.accept?.includes('text/html') ? serveIndex(req, res) : next();
 
-for (const p of ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range','/performance','/control','/observatory']) {
+// '/control' was the alarm's page. It left with the plugin on 2026-08-17 —
+// mt-alarm-1 serves its own Control page on :8791.
+for (const p of ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range','/performance','/observatory']) {
   app.get(p, _servePage);
 }
 
@@ -341,9 +338,6 @@ app.use(tracerouteRouter);
 app.use(autoPurgeRouter);
 
 app.use(messagesRouter);
-app.use(pacCommandRouter);
-app.use(pacAlignRouter);
-app.use(alarmImageRouter);   // ALARM PLUGIN — image bytes; delete this line and the plugin is gone
 
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 
@@ -467,7 +461,6 @@ server.listen(PORT, () => {
     logEvent({ kind: 'deploy', source: 'index', summary: 'started (revision unknown)' });
   }
   bridge.start();
-  pacHost.start();
   rotator.start();
   startAlertPoller(nodeList);
   // Standing analysis tasks — mine the stored data for findings, no airtime.

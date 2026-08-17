@@ -21,7 +21,6 @@ const CHECKS = [
   { name: 'observatory_boundary',   group: 'fast',    cmd: 'node',    args: ['tests/test_observatory_boundary.mjs'], needs: '—',                measured: '40 ms',    timeoutMs: 30_000 },
   { name: 'channel_write',          group: 'fast',    cmd: 'node',    args: ['tests/test_channel_write.mjs'],     needs: '—',                   measured: '30 ms',    timeoutMs: 30_000 },
   { name: 'op_manager',             group: 'fast',    cmd: 'node',    args: ['tests/test_op_manager.mjs'],        needs: '—',                   measured: '140 ms',   timeoutMs: 30_000 },
-  { name: 'coulomb',                group: 'fast',    cmd: 'node',    args: ['tests/test_coulomb.mjs'],           needs: '—',                   measured: '158 ms',   timeoutMs: 30_000 },
   { name: 'served_time',            group: 'fast',    cmd: 'node',    args: ['tests/test_served_time.mjs'],       needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
   { name: 'channels',               group: 'fast',    cmd: 'node',    args: ['tests/test_channels.mjs'],          needs: '—',                   measured: '190 ms',   timeoutMs: 30_000 },
   { name: 'send_channel',           group: 'fast',    cmd: 'node',    args: ['tests/test_send_channel.mjs'],      needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },

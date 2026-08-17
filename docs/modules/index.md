@@ -1,8 +1,8 @@
 ---
 module: index
 source: src/index.js
-source_hash: 932d86b36e6d7e3957835505020751bc31f23bdcd92ca3fc660e29fc832d44a1
-updated: 2026-08-03
+source_hash: 32b7d6ed8538d07acd83766c373015b139596aa331f5f9b6299d62202c321b6b
+updated: 2026-08-17
 ---
 
 # Module: index
@@ -37,8 +37,8 @@ the mesh-gw except to proxy (see `bridge.js`), or hold runtime state beyond the
 
 Routers mounted: `config-api`, `nodes-api`, `device-config`,
 `device-remove`, `rotator-api`, `performance-api`, `geocode`,
-`range-test-api`, `traceroute-api`, `auto-purge-api`, `messages-api`, `pac-command-api`, `pac-align-api`, `alerts-api`,
-`op-manager`. Infrastructure: `bridge`, `pac-host` (`start`), `ws-relay` (`attachWsRelay`),
+`range-test-api`, `traceroute-api`, `auto-purge-api`, `messages-api`, `alerts-api`,
+`op-manager`. Infrastructure: `bridge`, `ws-relay` (`attachWsRelay`),
 `db` (config + migration statements), `rotator`, `scanner`,
 `node-list`, `alerts` (`startAlertPoller`), `imap-receiver`, `startup`,
 `lifecycle`, `node-filter`, `node-label`, `device-config`
@@ -126,25 +126,26 @@ once the rotator reports status). After the listener: `registerBridgeEvents(brid
   must be added to `WS_ONLY_ROUTES`/`WS_ONLY_EXACT`.
 - **`broadcastAll` is defined after `wss`**; the `_broadcast` closure bridges the
   forward reference for `OpManager`.
-- **Alarm-plugin side-effect imports are STATIC and top-level, and that is
-  load-bearing.** `./alarm-sections.js`, `./alarm-ws.js` and `./alarm-images.js`
-  are imported as bare side-effect imports near the top of the file, above
-  `attachWsRelay`. `registerWsWiring` is read exactly ONCE at attach time, so a
-  registration arriving later silently never fires — measured 0 live broadcasts
-  in 110 s with a dynamic import, while the connect replay still worked, which
-  makes the failure invisible from the UI.
-- **This file is the composition root, and it is the ONLY core file permitted to
-  name the alarm plugin.** As of 2026-07-31 it names it eight times: three
-  side-effect imports above, plus `pacCommandRouter`, `pacAlignRouter` and
-  `alarmImageRouter` (import + `app.use` for each). Every one of those must stay
-  a **bare wiring line, deletable on its own**, leaving node-dash fully
-  functional — that is the property that matters, not the count.
+- **THE ALARM IS GONE — it runs as its own service** (task
+  `remove-alarm-from-node-dash`, 2026-08-17). Peter: *"you can delete it all. I
+  will re-add it necessary in the new dash."* It lives at
+  `/usr/share/pac/dev/projects/mt-alarm-1/html`, pm2 service `html`, serving on
+  **`:8791`** (`/health`, `/state`, `/control`, `/api`, `/schema` all 200 when
+  this was written). node-dash names it nowhere.
 
-  > An earlier version of this invariant claimed the three side-effect imports
-  > were the *only* alarm reference in core. That was false when written —
-  > `pacCommandRouter`/`pacAlignRouter` were already here — and a false
-  > invariant is worse than none, because the next reader either trusts it or
-  > stops trusting the spec. Bug ledger B48.
+  > **The wiring invariant that used to live here was DISCHARGED, not deleted.**
+  > It said every alarm reference must stay "a bare wiring line, deletable on its
+  > own, leaving node-dash fully functional — that is the property that matters".
+  > That property was tested on 2026-08-17 by actually deleting them, and it
+  > held: the twelve lines came out with no core change required. The invariant
+  > did its job; it is recorded here because a discipline that pays off should be
+  > visible after the fact, not silently dropped.
+  >
+  > It also carried a correction (ledger B48) about an earlier version being
+  > false. That history is kept in git, not repeated here.
+
+  **Nothing may re-import it.** If the alarm ever needs to reach node-dash, or
+  node-dash it, that is an HTTP/WS call between two services — never an import.
 
   Core modules that are **not** the composition root — `ws-relay.js`,
   `node-status.js`, `db.js`, everything else — must not import, name or branch

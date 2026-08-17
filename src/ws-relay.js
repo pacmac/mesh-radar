@@ -61,7 +61,6 @@ import { lookupGeocode } from './geocode.js';
 import { FF } from './feature-flags.js';
 import { traceroute } from './traceroute.js';
 import { fmtAgo } from './format.js';
-import { buildCoulomb } from './coulomb.js';
 import { board } from './snapshot-api.js';
 // Composed HERE rather than in any one of the three API files: reach does not
 // own clusters, and terrain does not own reach. ws-relay is already the place
@@ -1134,38 +1133,13 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
 
     ws.once('close', stopNodeStatusAge);
 
-    // The coulomb reading's "12 minutes ago" is a SERVER-FORMATTED value and it
-    // changes with wall time even when the unit is silent. BROWSER_CONTRACT:
-    // "browser timers that recompute server facts ... are forbidden freshness
-    // mechanisms" — so the server pushes the changed string, exactly as
-    // node_status_age does above. Same shape deliberately: one mechanism to
-    // understand, not two.
-    let coulombAge = null;
-    let coulombAgeTimer = null;
-
-    function stopCoulombAge() {
-      if (coulombAgeTimer) coulombAgeTimer();
-      coulombAgeTimer = null;
-      coulombAge = null;
-    }
-
-    function rememberCoulombAge(payload) {
-      // No reading means nothing to age. An absent gauge must not leave a timer
-      // running that pushes "ago" for a sample that does not exist.
-      if (payload?.latest?.at == null) { stopCoulombAge(); return; }
-      coulombAge = { unit: payload.unit, at: payload.latest.at, ago: payload.latest.ago };
-      if (coulombAgeTimer) return;
-      // Same mechanism as node_status_age above — one mechanism to understand,
-      // not two, which was already the intent here. It is now a SCHEDULED
-      // TRANSITION rather than a 1 s cadence.
-      coulombAgeTimer = scheduleTime(coulombAge.at, (ago) => {
-        if (!coulombAge || ws.readyState !== 1) return;
-        coulombAge.ago = ago;
-        ws.send(JSON.stringify({ type: 'coulomb_age', unit: coulombAge.unit, at: coulombAge.at, ago }));
-      });
-    }
-
-    ws.once('close', stopCoulombAge);
+    // The coulomb age-push lived here until 2026-08-17. It served the alarm's
+    // Control panel, which is now mt-alarm-1's own service. The pattern it used
+    // survives directly above in node_status_age, and that is the one to copy:
+    // a server-formatted "12 minutes ago" changes with wall time even when the
+    // subject is silent, so the SERVER pushes the changed string on a scheduled
+    // transition. BROWSER_CONTRACT: "browser timers that recompute server facts
+    // … are forbidden freshness mechanisms."
 
     // Send current bridge connection state immediately
     if (ws.readyState === 1) {
@@ -1235,38 +1209,17 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
         }
       }
 
-      // coulomb: one unit's charge-counter series, as a DISPLAY MODEL.
+      // The `coulomb` WS RPC lived here until 2026-08-17 and left with the alarm.
+      // Its ONLY consumers were public/plugins/alarm/{app-control.js,
+      // tab-control.html,plugin.js} — nothing in core ever read it — and the
+      // series it served could not be built anyway: alarm-host's getObs always
+      // threw ("no history store — the series needs `record`, which is unbuilt").
       //
-      // WS RPC and not a GET route. BROWSER_CONTRACT's transport rule names
-      // "histories" as page data, and a GET for exactly this shape of thing was
-      // added to pac-command-api once and was a real bug (Peter, 2026-07-25):
-      // the browser fetched on click, which is neither real-time nor permitted.
-      // On-demand page data goes over the socket — same as geocode and
-      // node_status.
-      //
-      // Every derivation is in coulomb.js. Nothing here decides anything, and
-      // the browser decides even less.
-      if (msg?.type === 'coulomb' && msg.unit) {
-        let payload;
-        try {
-          payload = await buildCoulomb(String(msg.unit), { spanHours: msg.span_hours ?? null });
-        } catch (e) {
-          // A gauge that is absent, or a unit with no samples, is a STATE and is
-          // handled inside buildCoulomb. Reaching here means the fetch or the
-          // ascending-order assertion failed — a real fault, and the page must
-          // say so rather than render an empty panel that looks like "no data".
-          console.error(`[coulomb] build failed for ${msg.unit}: ${e.message}`);
-          payload = {
-            unit: String(msg.unit), state: 'error',
-            empty_reason: `Could not read the coulomb series: ${e.message}`,
-            latest: null, current: null, series: [], breaks: [], cons_latest: null, caveat: null,
-          };
-        }
-        if (ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'coulomb', ...payload }));
-          rememberCoulombAge(payload);
-        }
-      }
+      // The rule it demonstrated stands for whatever replaces it: on-demand page
+      // data goes over the SOCKET, never a GET. A GET for exactly this shape was
+      // added once and was a real bug (Peter, 2026-07-25) — the browser fetched
+      // on click, which is neither real-time nor permitted. See geocode and
+      // node_status for the surviving examples.
 
       // snapshot: the whole board for one window.
       //

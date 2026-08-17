@@ -3,8 +3,8 @@ module: check-all
 source:
   - scripts/check_all.mjs
   - package.json
-source_hash: 1d9c39466f3b1a20629d00d637a61797e59b01c195b935f335159bcf706cc77c
-updated: 2026-08-16
+source_hash: 896d050f9328fd713f5dae05853bd0f4294265def4abaa96be0bc4f1b367aa7b
+updated: 2026-08-17
 ---
 
 # Module: check-all
@@ -53,7 +53,6 @@ Runtimes measured 2026-08-13 on this machine, service up, warm 700 MB store.
 | `tests/test_observatory_boundary.mjs` | fast | — | 40 ms | 30 s |
 | `tests/test_channel_write.mjs` | fast | — | 30 ms | 30 s |
 | `tests/test_op_manager.mjs` | fast | — | 140 ms | 30 s |
-| `tests/test_coulomb.mjs` | fast | — | 158 ms | 30 s |
 | `tests/test_served_time.mjs` | fast | — | 120 ms | 30 s |
 | `tests/test_channels.mjs` | fast | — | 67 ms | 30 s |
 | `tests/test_send_channel.mjs` | fast | — | 212 ms | 30 s |
