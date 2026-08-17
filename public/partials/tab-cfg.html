@@ -207,7 +207,7 @@
           <div x-show="cfgTab==='modes'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
 
             <p class="text-sm text-base-content/60">
-              For each mode, choose which radio <b>listens</b> for nodes (RX) and which <b>transmits</b> the traceroute (TX).
+              For each mode, choose which radio <b>listens</b> for nodes (RX) and which <b>transmits</b> (TX).
               These drive the backend directly; the RX/TX badges on the Devices page reflect the live roles.
             </p>
 
@@ -320,27 +320,14 @@
             <!-- PASV mode -->
             <div class="card bg-base-100 shadow">
               <div class="card-body py-3">
-                <h2 class="card-title">PASV — Passive traceroute</h2>
-                <p class="text-sm text-base-content/60 mb-2">When a node is heard, automatically traceroute it if its route data is stale.</p>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
-                  <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Stale after (success)</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
-                    <input type="number" min="60" step="60" class="input input-bordered input-sm w-full font-mono"
-                           x-model.number="radarCfg.pasv.stale_sec">
-                    <div class="label py-0"><span class="label-text-alt text-xs opacity-40" x-text="radarCfg.pasv.stale_sec ? (radarCfg.pasv.stale_sec / 60).toFixed(0) + ' min' : ''"></span></div>
-                  </label>
-                  <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Retry after (fail/timeout)</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
-                    <input type="number" min="30" step="30" class="input input-bordered input-sm w-full font-mono"
-                           x-model.number="radarCfg.pasv.stale_fail_sec">
-                    <div class="label py-0"><span class="label-text-alt text-xs opacity-40" x-text="radarCfg.pasv.stale_fail_sec ? (radarCfg.pasv.stale_fail_sec / 60).toFixed(0) + ' min' : ''"></span></div>
-                  </label>
-                  <label class="form-control w-full">
-                    <div class="label py-1"><span class="label-text text-xs">Trace timeout</span><span class="label-text-alt text-xs opacity-50">sec</span></div>
-                    <input type="number" min="10" max="300" step="5" class="input input-bordered input-sm w-full font-mono"
-                           x-model.number="radarCfg.pasv.timeout_sec">
-                  </label>
-                </div>
+                <h2 class="card-title">PASV — Passive</h2>
+                <p class="text-sm text-base-content/60 mb-2">
+                  PASV listens; it no longer does anything when it hears. Its three
+                  settings — stale-after, retry-after and trace timeout — configured
+                  the passive tracer, removed 2026-08-17 with the rest of the
+                  traceroute surface. They are not shown because nothing would read
+                  them.
+                </p>
               </div>
             </div>
 

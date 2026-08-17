@@ -1,7 +1,7 @@
 ---
 module: tab-perf
 source: public/partials/tab-perf.html
-source_hash: 8255c509ffd88d565b3f74eb6e5643416b5e9e01a39494d5e31c920dfe8ae3ba
+source_hash: 41fc8fc6c657978811bbf3e1c83ace41f23f6b9373afa02e76fa341a8d53498f
 updated: 2026-08-04
 ---
 
@@ -9,9 +9,18 @@ updated: 2026-08-04
 
 ## Purpose
 
-Performance page: setup-health stat grid (Simple/Expert), headroom trend and
-distance charts, traceroute history table, auto-traceroute controls.
-Presentation only.
+**REWRITTEN 2026-08-17** — see `traceroute-removal-browser.md`.
+
+The page is now: radio scope selector, a warning card stating plainly that
+there are no measurements and why, and the SERVED link budget (frequency, SF
+SNR limit, noise floor, RX sensitivity, EIRP, theoretical max range).
+
+Gone with the traceroute surface: the setup-health stat grid, the Simple/Expert
+toggle, the headroom trend chart, the headroom-vs-distance scatter, the
+traceroute history table and the auto-traceroute controls. Every one of them
+read `traceroute_history`.
+
+Presentation only, as before — nothing on this page is computed in the browser.
 
 ## Mobile containment (2026-07-23)
 

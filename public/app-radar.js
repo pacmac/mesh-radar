@@ -82,10 +82,9 @@ export const radarMixin = {
     return this.nodes.find(n => n.num === this.yagiPointTarget) || null;
   },
 
-  get passiveNode() {
-    if (!this.passiveTraceNum) return null;
-    return this.nodes.find(n => n.num === this.passiveTraceNum) || null;
-  },
+  // passiveNode getter REMOVED 2026-08-17 — it resolved passiveTraceNum, which
+  // was set only by the passive_trace_start / route_discovered WS events.
+  // Spec: docs/modules/traceroute-removal-browser.md.
 
   async initRadar() {
     if (this._initRadarRunning) return;
@@ -140,7 +139,6 @@ export const radarMixin = {
     this._drawRadarBg(maxKm);
     this._drawTargetArm(ctx);
     this._drawRadarBeam();
-    this._drawRadarTraceroute(maxKm, ctx);
     this._drawRadarTerrain(maxKm);
     this._drawRadarReach(maxKm);
     this._drawRadarClusters(maxKm);
@@ -528,7 +526,6 @@ export const radarMixin = {
   _withTargetsVisible(filtered, all, ctx) {
     const want = new Set([
       this.yagiPointTarget,
-      ctx?.tracerouteNode,
       this.radarSelected?.num,
     ].filter(n => n != null));
     if (!want.size) return filtered;
@@ -708,8 +705,14 @@ export const radarMixin = {
     const rc = this.radarCtx ?? {};
     return {
       mode:             rc.mode             ?? this.rotatorMode,
-      tracerouteNode:   rc.traceroute_node   ?? null,
-      tracerouteActive: rc.traceroute_active ?? false,
+      // WAS `tracerouteNode`, from radar_context.traceroute_node. The name was
+      // wrong and the removal exposed it: in ACTV the backend put the TRACKER's
+      // target here, which is where the rotator is pointing and has nothing to
+      // do with a traceroute. Renamed to focus_node on both sides rather than
+      // deleted with the traceroute surface, because deleting it would have
+      // taken ACTV's crosshair and signal overlay with it.
+      // 2026-08-17, spec docs/modules/traceroute-removal-browser.md.
+      focusNode:        rc.focus_node       ?? null,
       targetArmAz:      (rc.mode ?? this.rotatorMode) !== 0
                           ? (this.rotatorStatus?.target ?? null)
                           : null,
@@ -743,129 +746,20 @@ export const radarMixin = {
     ag.appendChild(line);
   },
 
-  _drawRadarTraceroute(maxKm, ctx) {
-    const tg = document.getElementById('radar-traceroute-g');
-    if (!tg) return;
-    tg.innerHTML = '';
-    const home = this.homePos;
-    if (!home) return;
-
-    const CX = 300, CY = 300, R = 256;
-
-    const numToXY = (num, trRelayPos) => {
-      if (num == null) return { x: CX, y: CY };
-      const node = this.nodes.find(n => n.num === num);
-      const pos  = node?.position ?? trRelayPos?.[String(num)];
-      if (!pos?.latitude_i) return null;
-      const lat = pos.latitude_i / 1e7, lon = pos.longitude_i / 1e7;
-      const km = haversine(home.lat, home.lon, lat, lon);
-      const az = bearing(home.lat, home.lon, lat, lon);
-      const norm = this._radarNorm(km, maxKm);
-      const rad = az * Math.PI / 180;
-      return { x: CX + Math.sin(rad) * norm * R, y: CY - Math.cos(rad) * norm * R };
-    };
-
-    const nodeColor = (num) => `hsl(${((num * 137.508) % 360).toFixed(0)},80%,65%)`;
-
-    for (const node of this.nodes) {
-      const tr = node.last_traceroute;
-
-      // ── [V1] LEGACY — remove when SSOT_ROUTE_RENDER verified ─────────────
-      let isHighlighted, isLocked, isAnimated;
-      if (!ctx) {
-        if (this.rotatorMode === 2) return; // SCAN: no overlays
-        const isTargeted = this.rotatorMode === 1 && node.num === this.yagiPointTarget;
-        if (this.rotatorMode === 1 && !isTargeted) continue; // ACTV: targeted only
-        const isPassive  = this.rotatorMode === 0 && node.num === this.passiveTraceNum;
-        if (!tr && !isPassive) continue;
-        isHighlighted = isTargeted || isPassive;
-        isLocked      = isTargeted;
-        isAnimated    = isHighlighted;
-      // ── [V2] SSOT — static route always drawn; animate only while in flight
-      } else {
-        if (!tr) continue;
-        isHighlighted = node.num === ctx.tracerouteNode; // opacity/stroke boost when focused
-        isLocked      = isHighlighted;
-        isAnimated    = isHighlighted && ctx.tracerouteActive;
-      }
-      // ───────────────────────────────────────────────────────────────────────
-
-      const ageSec = tr?.ts ? (Date.now() - tr.ts) / 1000 : 0;
-      const fade = isHighlighted ? 0.90
-        : (ageSec < 3600 ? 0.30 : Math.max(0.10, 0.30 - (ageSec - 3600) / (23 * 3600) * 0.20));
-
-      const col = nodeColor(node.num);
-
-      const rg = svgElem('g', { style: `opacity:${fade.toFixed(2)};cursor:crosshair` });
-      if (!isLocked) {
-        rg.addEventListener('mouseenter', () => { rg.style.opacity = 1; });
-        rg.addEventListener('mouseleave', () => { rg.style.opacity = fade; });
-      }
-
-      const chain  = [null, ...(tr?.route ?? []), node.num];
-      const snrs   = tr?.snr_towards ?? [];
-      const points = chain.map(n => numToXY(n, tr?.relay_positions));
-      const known  = chain.map((_, i) => points[i] ? i : -1).filter(i => i >= 0);
-      const sw     = isHighlighted ? 2.5 : 2;
-
-      for (let k = 0; k < known.length - 1; k++) {
-        const ai = known[k], bi = known[k + 1];
-        const p1 = points[ai], p2 = points[bi];
-        const adjacent = (bi === ai + 1);
-        rg.appendChild(svgElem('line', {
-          x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
-          x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
-          style: `stroke:${col};stroke-width:${sw};stroke-linecap:round;stroke-dasharray:${adjacent ? '0,4' : '0,7'}`,
-        }));
-        if (adjacent) {
-          const snrHopDb = snrs[ai] ?? null;   // null == unmeasured hop, already filtered at ingest
-          if (snrHopDb != null) {
-            const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
-            const lbl = svgElem('text', {
-              x: mx.toFixed(1), y: (my - 4).toFixed(1),
-              style: `fill:${col};font-size:8px;font-family:'Oxanium',monospace;text-anchor:middle`,
-            });
-            // Already dB (decoded once at WS ingest, B72). Previously this
-            // divided by 4 here but had no sentinel guard, so an unmeasured
-            // hop was drawn as a confident "-32.0".
-            lbl.textContent = `${snrHopDb >= 0 ? '+' : ''}${snrHopDb.toFixed(1)}`;
-            rg.appendChild(lbl);
-          }
-        }
-      }
-
-      for (let i = 1; i < chain.length - 1; i++) {
-        const p = points[i];
-        if (!p) continue;
-        rg.appendChild(svgElem('circle', {
-          cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: 3,
-          style: `fill:${col};stroke:${col};stroke-width:1`,
-        }));
-      }
-
-      if (isAnimated) {
-        const knownPts = known.map(i => points[i]);
-        if (knownPts.length >= 2) {
-          const pathD = 'M ' + knownPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
-          const N = 3, dur = 1.8;
-          const phase0 = (Date.now() / 1000) % dur;
-          for (let d = 0; d < N; d++) {
-            const phase = (phase0 + d * dur / N) % dur;
-            const dot = svgElem('circle', { r: '2.5', cx: '0', cy: '0', style: `fill:${col}` });
-            const anim = svgElem('animateMotion', {
-              path: pathD, dur: `${dur}s`,
-              begin: `-${phase.toFixed(3)}s`,
-              repeatCount: 'indefinite', calcMode: 'linear',
-            });
-            dot.appendChild(anim);
-            rg.appendChild(dot);
-          }
-        }
-      }
-
-      tg.appendChild(rg);
-    }
-  },
+  // _drawRadarTraceroute() REMOVED — 2026-08-17, spec
+  // docs/modules/traceroute-removal-browser.md.
+  //
+  // It drew every node's last_traceroute as a chain home -> relays -> node,
+  // with per-hop SNR labels, an age fade, and three dots animating along the
+  // path while a trace was in flight. Nothing writes last_traceroute now, so
+  // it had nothing to draw.
+  //
+  // WORTH REBUILDING, and worth reading the git history before you do — this
+  // was the part Peter singled out (2026-08-04): "the beauty and refinement of
+  // the radar is it actually animates the whole traceroute". Two details in it
+  // were bug fixes, not decoration: the per-hop SNR label skipped nulls rather
+  // than drawing an unmeasured hop as a confident "-32.0", and the dash pattern
+  // distinguished an adjacent hop from a gap where a relay position was unknown.
 
   // Piecewise-linear quantile scale: control points at the node-distance
   // quartiles so screen space follows the actual distribution (the cluster
@@ -996,7 +890,7 @@ export const radarMixin = {
     // honest for everything else while making the target unhideable.
     //
     // Both senses of "target" count: what the engine is currently aiming at
-    // (yagiPointTarget / ctx.tracerouteNode) and what the operator has selected.
+    // (yagiPointTarget / ctx.focusNode) and what the operator has selected.
     const allNodes = this.radarNodes || [];
     const nodes = this._withTargetsVisible(this._layerFiltered(allNodes), allNodes, ctx);
     const CX = 300, CY = 300, R = 256;
@@ -1008,7 +902,7 @@ export const radarMixin = {
     const pointTarget   = !ctx ? this.yagiPointTarget  : null;
     const isActv        = !ctx ? this.rotatorMode === 1 : false;
     // ── [V2] SSOT ────────────────────────────────────────────────────────────
-    const ctxTraceNode  = ctx?.tracerouteNode ?? null;
+    const ctxFocusNode  = ctx?.focusNode ?? null;
     const ctxCardMode   = ctx?.activeCard?.mode ?? null; // 'actv' | 'pasv' | null
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1088,7 +982,7 @@ export const radarMixin = {
       // currently being targeted" — and the dashed marker was gated on the
       // selection alone, so a node the rotator was pointing at got re-admitted
       // past the layer filter and then drawn as an ordinary dot.
-      const isEngineTarget = node.num === pointTarget || node.num === ctxTraceNode;
+      const isEngineTarget = node.num === pointTarget || node.num === ctxFocusNode;
       const isLastHeard  = node.num === lastHeardNum;
       const g = svgElem('g', { class: 'radar-node'
         + (isSelected ? ' radar-node-selected' : '')
@@ -1123,11 +1017,12 @@ export const radarMixin = {
             sigTxt.textContent = parts.join(' · ');
             g.appendChild(sigTxt);
           }
-        } else if (node.num === this.passiveTraceNum && this.rotatorMode === 0) {
-          this.appendCrosshair(g, x, y, 'rgba(0,255,80,0.80)');
         }
-      // ── [V2] SSOT — colour from ctx.activeCard.mode, node from ctx.tracerouteNode
-      } else if (node.num === ctxTraceNode) {
+        // The PASV green crosshair that sat here keyed on passiveTraceNum,
+        // set only by the passive_trace_start event. Removed 2026-08-17 with
+        // the passive tracer — spec docs/modules/traceroute-removal-browser.md.
+      // ── [V2] SSOT — colour from ctx.activeCard.mode, node from ctx.focusNode
+      } else if (node.num === ctxFocusNode) {
         const xhColor = ctxCardMode === 'actv' ? undefined : 'rgba(0,255,80,0.80)';
         this.appendCrosshair(g, x, y, xhColor);
         if (ctxCardMode === 'actv') {
@@ -1215,7 +1110,6 @@ export const radarMixin = {
     const lat = node.position?.latitude_i  != null ? node.position.latitude_i  / 1e7 : null;
     const lon = node.position?.longitude_i != null ? node.position.longitude_i / 1e7 : null;
     this.nodeInfo = { ...(radarNode ?? node), _lat: lat, _lon: lon };
-    this.tracerouteResult = null;
     this.$nextTick(() => this.$refs.nodeInfoDialog?.showModal());
     if (!this.nodeInfo._address && node.num) {
       this.wsGeocode(node.num).then(addr => {
@@ -1225,17 +1119,12 @@ export const radarMixin = {
     }
   },
 
-  async sendTraceroute(node) {
-    if (!node?.num) return;
-    this.tracerouteResult  = null;
-    this.traceroutePending = true;
-    const nodeId = '!' + (node.num >>> 0).toString(16).padStart(8, '0');
-    fetchJSON(`/${nodeId}/traceroute`, 'POST', {}).catch(() => { this.traceroutePending = false; });
-  },
-
-  tracerouteNodeName(num) {
-    return this.nodeLabel(num);
-  },
+  // sendTraceroute() and tracerouteNodeName() REMOVED 2026-08-17, spec
+  // docs/modules/traceroute-removal-browser.md. sendTraceroute was the node
+  // dialog's TRACE button: it POSTed the station into transmitting, which is a
+  // decision the browser is not allowed to make and, after the backend route
+  // was deleted, one it made straight through index.js:379's proxy to mesh-gw
+  // with no guards and no record.
 
   toggleRadarCrosshair() {
     this.radarCrosshair = !this.radarCrosshair;

@@ -4,7 +4,7 @@ source:
   - src/index.js
   - public/sw.js
   - public/index.html
-source_hash: 64416043d00ecd203255265005e0c12a72b8c2236b766abecbec81981d33b672
+source_hash: a960812985991740a0a0d2af4d10170c0b9875f18989d97737a289d64b3b4062
 updated: 2026-08-17
 ---
 

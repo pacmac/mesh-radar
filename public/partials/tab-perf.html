@@ -1,10 +1,28 @@
         <!-- ===================== PERFORMANCE ===================== -->
-        <div x-show="tab==='perf'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto lg:overflow-hidden">
+        <!--
+          STRIPPED 2026-08-17 — spec docs/modules/traceroute-removal-browser.md.
+
+          Everything this page MEASURED was computed from traceroute_history
+          rows: the success rate, the signal-headroom trend, the headroom-vs-
+          distance scatter with its reference curve, the history table, and the
+          auto-traceroute scheduler that produced the rows. Peter: "I want all
+          traces of it removed, browser and backend. it will be re-designed with
+          no fragments remaining."
+
+          What is left is the half that never needed a traceroute: which radio
+          you are looking at, its antenna/chain configuration, and the link
+          budget the BACKEND computes from them (src/link-budget.js). That is
+          theory — what this chain could do — and it is still true.
+
+          The 37,425 stored rows are untouched in traceroute_history. Nothing
+          reads them. The deleted charts are in git.
+        -->
+        <div x-show="tab==='perf'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto">
 
           <div class="flex items-center gap-3 shrink-0 flex-wrap">
             <div class="min-w-0 flex-1">
               <h1 class="text-lg font-display font-bold tracking-wide leading-tight">Performance</h1>
-              <p class="text-sm text-base-content/70">One RF chain at a time — measurements and theory for the selected radio only.</p>
+              <p class="text-sm text-base-content/70">One RF chain at a time — theory for the selected radio.</p>
             </div>
             <!-- Device scope: headroom is a property of one radio+coax+antenna chain -->
             <div class="join">
@@ -17,285 +35,67 @@
             </div>
             <span x-show="perfDevCfg()?.is_rotator"
                   class="badge badge-sm badge-warning gap-1"
-                  title="Directional antenna on a rotator — every sample is azimuth-qualified; compare only samples taken at similar bearings">
+                  title="Directional antenna on a rotator — any future sample is azimuth-qualified; compare only samples taken at similar bearings">
               directional — azimuth-qualified
             </span>
-            <div class="join">
-              <button class="btn btn-sm join-item"
-                      :class="!perfExpert ? 'btn-primary' : 'btn-outline btn-neutral'"
-                      @click="perfSetExpert(false)">Simple</button>
-              <button class="btn btn-sm join-item"
-                      :class="perfExpert ? 'btn-primary' : 'btn-outline btn-neutral'"
-                      @click="perfSetExpert(true)">Expert</button>
+          </div>
+
+          <!-- ── No measurements, and say so ───────────────────────────────── -->
+          <div class="alert alert-warning shrink-0">
+            <div>
+              <h2 class="font-bold">No measurements</h2>
+              <p class="text-sm">
+                Every figure this page used to show was derived from traceroutes,
+                and node-dash no longer dispatches any. Stored history is kept but
+                not read. This page will have measurements again when the
+                replacement is designed.
+              </p>
             </div>
           </div>
 
-          <!-- ── Setup Health Stats ────────────────────────────────────────── -->
-          <div class="perf-stats-grid shrink-0">
-            <!-- Lead stat: success rate — the one number margins can't fake
-                 (margins are right-censored; failures were invisible until
-                 status recording landed — perf-honesty step 2) -->
-            <div class="stat bg-base-100 shadow">
-              <div class="stat-title">Success Rate</div>
-              <div class="stat-value"
-                   :class="perfSuccessRateClass()"
-                   x-text="perfSuccessRate() != null ? perfSuccessRate().rate + '%' : 'n/a'"></div>
-              <div class="stat-desc"
-                   x-text="perfSuccessRate() != null
-                           ? perfSuccessRate().ok + ' of ' + perfSuccessRate().n + ' attempts'
-                           : 'no attempts since ' + (perfFailureEpoch ? new Date(perfFailureEpoch*1000).toLocaleDateString() : 'recording began')"></div>
-            </div>
-            <div class="stat bg-base-100 shadow">
-              <div class="stat-title">Setup Health</div>
-              <div class="stat-value"
-                   :class="perfHealthClass(perfScore())"
-                   x-html="perfHealthBars(perfScore())"></div>
-              <div class="stat-desc"
-                   x-text="perfHealthDesc(perfScore())"></div>
-            </div>
-            <div class="stat bg-base-100 shadow">
-              <div class="stat-title">Signal Headroom</div>
-              <div class="stat-value"
-                   :class="perfHealthClass(perfScore())"
-                   x-text="perfSignedDb(perfScore())"></div>
-              <div class="stat-desc"
-                   x-text="perfScore() != null ? 'above the decode limit · ' + perfScoreKind() : 'no valid samples yet'"></div>
-            </div>
-            <div class="stat bg-base-100 shadow">
-              <div class="stat-title">Direct Links</div>
-              <div class="stat-value"
-                   :class="perfHealthClass(perfSummary('direct').medianMargin)"
-                   x-html="perfHealthBars(perfSummary('direct').medianMargin)"></div>
-              <div class="stat-desc"
-                   x-text="perfSummary('direct').n + ' samples · ' + (perfSummary('direct').medianMargin != null ? perfSignedDb(perfSummary('direct').medianMargin) + ' headroom' : 'no score')"></div>
-            </div>
-            <div class="stat bg-base-100 shadow">
-              <div class="stat-title">First Hop</div>
-              <div class="stat-value"
-                   :class="perfHealthClass(perfSummary('first-hop').medianMargin)"
-                   x-html="perfHealthBars(perfSummary('first-hop').medianMargin)"></div>
-              <div class="stat-desc"
-                   x-text="perfSummary('first-hop').n + ' samples · ' + (perfSummary('first-hop').medianMargin != null ? perfSignedDb(perfSummary('first-hop').medianMargin) + ' headroom' : 'no score')"></div>
-            </div>
-            <div class="stat bg-base-100 shadow">
-              <div class="stat-title">Recent Change</div>
-              <div class="stat-value"
-                   :class="perfTrendChangeClass()"
-                   x-text="perfTrendChange() == null ? '–' : perfSignedDb(perfTrendChange())"></div>
-              <div class="stat-desc inline-flex items-center gap-1.5">
-                <span class="badge badge-xs" :class="perfTrendDirectionBadge()" x-text="perfTrendDirection()"></span>
-                <span x-text="perfConfidence('all')"></span>
-              </div>
-            </div>
-
-            <div class="stat bg-base-100 shadow" x-show="perfExpert">
-              <div class="stat-title">EIRP</div>
-              <div class="stat-value"
-                   x-text="perfBudget().eirp_dbm != null ? perfBudget().eirp_dbm.toFixed(1) + ' dBm' : '—'"></div>
-              <div class="stat-desc font-mono"
-                   x-text="(loraCfg?.tx_power??'–') + ' + ' + (perfDevCfg()?.gain_dbi??0) + ' - ' + (perfDevCfg()?.cable_loss_db??0) + ' dB'"></div>
-            </div>
-            <div class="stat bg-base-100 shadow" x-show="perfExpert">
-              <div class="stat-title">Sensitivity</div>
-              <div class="stat-value"
-                   x-text="perfBudget().rx_sensitivity_dbm != null ? perfBudget().rx_sensitivity_dbm.toFixed(1) + ' dBm' : '—'"></div>
-              <div class="stat-desc font-mono"
-                   x-text="'SF' + (loraCfg?.spread_factor??'?') + ' BW' + (loraCfg?.bandwidth??'?') + 'k · ' + (loraCfg?.sx126x_rx_boosted_gain ? 'boosted' : 'normal')"></div>
-            </div>
-            <div class="stat bg-base-100 shadow" x-show="perfExpert">
-              <div class="stat-title">Link Budget</div>
-              <div class="stat-value text-success"
-                   x-text="perfBudget().eirp_dbm != null ? (perfBudget().eirp_dbm - perfBudget().rx_sensitivity_dbm).toFixed(0) + ' dB' : '—'"></div>
-              <div class="stat-desc font-mono"
-                   x-text="(loraCfg?.region ?? '–') + (perfBudget().freq_mhz != null ? ' · ' + perfBudget().freq_mhz.toFixed(0) + ' MHz · n=3 ' + perfBudget().max_range_km.toFixed(0) + ' km' : '')"></div>
-            </div>
-            <div class="stat bg-base-100 shadow" x-show="perfExpert">
-              <div class="stat-title">Median SNR</div>
-              <div class="stat-value"
-                   x-text="perfSummary('all').medianSnr != null ? perfSummary('all').medianSnr.toFixed(1) + ' dB' : '–'"></div>
-              <div class="stat-desc font-mono"
-                   x-text="'excess loss ' + (perfSummary('all').medianGap != null ? '+' + perfSummary('all').medianGap.toFixed(0) + ' dB' : '–')"></div>
+          <!-- ── Link budget: SERVED, and independent of traceroute ────────── -->
+          <div class="card bg-base-200 shadow shrink-0">
+            <div class="card-body">
+              <h2 class="card-title">Link budget — theory</h2>
+              <p class="text-sm text-base-content/60">
+                Computed by the backend (<span class="font-mono">src/link-budget.js</span>)
+                from this radio's LoRa settings and antenna chain. Nothing here is
+                measured, and nothing here is computed in the browser.
+              </p>
+              <template x-if="!perfBudget()?.freq_mhz">
+                <p class="text-sm text-base-content/50">No link budget served for this radio.</p>
+              </template>
+              <template x-if="perfBudget()?.freq_mhz">
+                <div class="perf-stats-grid">
+                  <div class="stat bg-base-100 shadow">
+                    <div class="stat-title">Frequency</div>
+                    <div class="stat-value text-2xl font-mono" x-text="perfBudget().freq_mhz + ' MHz'"></div>
+                  </div>
+                  <div class="stat bg-base-100 shadow">
+                    <div class="stat-title">SF SNR limit</div>
+                    <div class="stat-value text-2xl font-mono" x-text="perfSignedDb(perfBudget().sf_snr_limit_db)"></div>
+                    <div class="stat-desc">below this, the radio cannot decode</div>
+                  </div>
+                  <div class="stat bg-base-100 shadow">
+                    <div class="stat-title">Noise floor</div>
+                    <div class="stat-value text-2xl font-mono" x-text="perfBudget().noise_floor_dbm + ' dBm'"></div>
+                  </div>
+                  <div class="stat bg-base-100 shadow">
+                    <div class="stat-title">RX sensitivity</div>
+                    <div class="stat-value text-2xl font-mono" x-text="perfBudget().rx_sensitivity_dbm + ' dBm'"></div>
+                  </div>
+                  <div class="stat bg-base-100 shadow">
+                    <div class="stat-title">EIRP</div>
+                    <div class="stat-value text-2xl font-mono" x-text="perfBudget().eirp_dbm + ' dBm'"></div>
+                  </div>
+                  <div class="stat bg-base-100 shadow">
+                    <div class="stat-title">Theoretical max range</div>
+                    <div class="stat-value text-2xl font-mono" x-text="perfBudget().max_range_km + ' km'"></div>
+                    <div class="stat-desc">free space, unobstructed — not a claim about this site</div>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
 
-          <!-- ── Two-column grid — fills remaining viewport height ──────────── -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
-
-            <!-- ── Left column: aggregate trend + SNR distance chart ──────── -->
-            <div class="flex flex-col gap-4 min-h-0">
-
-            <!-- ── Signal headroom over time ──────────────────────────────── -->
-            <div class="bg-base-100 rounded-lg border border-base-300 shadow flex flex-col min-h-0 flex-1">
-
-              <div class="flex items-center gap-3 px-3 py-2 shrink-0 border-b border-base-300 flex-wrap">
-                <div class="min-w-0 flex-1">
-                  <h2 class="text-sm font-semibold leading-tight">Signal Headroom Over Time</h2>
-                  <p class="text-xs text-base-content/70 leading-tight">Higher is better; zero means close to the radio decode limit</p>
-                </div>
-                <div class="join">
-                  <template x-for="w in [4,8,24,72]" :key="w">
-                    <button class="btn btn-xs join-item font-mono"
-                            :class="perfTrendWindowHours === w ? 'btn-primary' : 'btn-outline btn-neutral'"
-                            @click="perfTrendSetWindow(w)"
-                            x-text="w + 'HR'"></button>
-                  </template>
-                </div>
-              </div>
-
-              <div class="relative flex-1 min-h-0 p-1">
-                <canvas x-ref="perfTrendChart" class="perf-chart w-full h-full min-h-64"></canvas>
-                <div x-show="!perfLoading && perfTrendBuckets().length===0"
-                     class="absolute inset-0 flex items-center justify-center pointer-events-none font-mono text-sm text-base-content/40">
-                  no valid samples in selected window
-                </div>
-              </div>
-
-            </div>
-
-            <!-- ── Headroom vs Distance ───────────────────────────────────── -->
-            <div class="bg-base-100 rounded-lg border border-base-300 shadow flex flex-col min-h-0 flex-1">
-
-              <!-- header bar -->
-              <div class="flex items-center gap-3 px-3 py-2 shrink-0 border-b border-base-300 flex-wrap">
-                <div class="min-w-0 flex-1">
-                  <h2 class="text-sm font-semibold leading-tight">Headroom vs Distance</h2>
-                  <p class="text-xs text-base-content/70 leading-tight">Shows how much spare signal remains at each scored hop distance</p>
-                </div>
-                <div class="flex items-center gap-2 text-xs font-mono">
-                  <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-success"></span> direct</span>
-                  <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-info"></span> first-hop</span>
-                  <span x-show="perfExpert" class="flex items-center gap-1"><span class="inline-block w-8 h-0.5 bg-primary"></span> ideal</span>
-                </div>
-              </div>
-
-              <div class="relative flex-1 min-h-0 p-1">
-                <canvas x-ref="perfScatterChart" class="perf-chart w-full h-full min-h-64"></canvas>
-                <div x-show="!perfLoading && perfValidRows('all').length===0"
-                     class="absolute inset-0 flex items-center justify-center pointer-events-none font-mono text-sm text-base-content/40">
-                  no traceroute data — run a traceroute to populate
-                </div>
-              </div>
-
-            </div><!-- /chart panel -->
-
-            </div><!-- /left column -->
-
-            <!-- ── Right column: history + auto traceroute ────────────────── -->
-            <div class="flex flex-col gap-4 min-h-0">
-
-              <!-- Traceroute history — fills remaining height, scrollable -->
-              <div class="card bg-base-100 shadow flex-1 min-h-0 flex flex-col overflow-hidden">
-                <div class="card-body py-3 px-4 flex flex-col flex-1 min-h-0">
-                  <div class="flex items-center gap-2 shrink-0 mb-2">
-                    <h2 class="card-title flex-1">Traceroute History</h2>
-                    <span x-show="perfLoading" class="loading loading-spinner loading-xs"></span>
-                    <button class="btn btn-sm btn-ghost"
-                            @click="loadPerfHistory()" :disabled="perfLoading">↺ Refresh</button>
-                  </div>
-                  <div class="flex-1 min-h-0 overflow-auto">
-                    <table class="table table-xs whitespace-nowrap">
-                      <thead class="sticky top-0 bg-base-100 z-10 backdrop-blur-sm">
-                        <tr>
-                          <th>Time</th>
-                          <th>Node</th>
-                          <th>Type</th>
-                          <th title="First relay — the hop the Headroom column actually measures">Via</th>
-                          <th class="text-right">Target</th>
-                          <th class="text-right" x-show="perfDevCfg()?.is_rotator">Az</th>
-                          <th class="text-right">Health</th>
-                          <th class="text-right">Headroom</th>
-                          <th class="text-right" x-show="perfExpert">SNR -></th>
-                          <th class="text-right" x-show="perfExpert">Excess</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <template x-for="row in perfHistory.map(r => perfEnrich(r)).slice(0,200)" :key="row.id">
-                          <tr class="hover:bg-base-200/40" :class="row.failed && 'opacity-50'">
-                            <td class="font-mono text-base-content/45"
-                                x-text="perfHistoryTime(row.ts)"></td>
-                            <td class="font-mono font-semibold"
-                                x-text="row.to_short_name || nodeLabel(row.to_num)"></td>
-                            <td class="font-mono text-xs">
-                              <span class="badge badge-xs"
-                                    :class="row.failed ? 'badge-error badge-outline' : row.direct ? 'badge-success' : 'badge-info'"
-                                    x-text="row.failed ? 'failed' : row.direct ? 'direct' : '1st hop'"></span>
-                            </td>
-                            <td class="font-mono text-xs text-base-content/70"
-                                :title="row.direct ? 'Direct — Headroom is measured at the target itself' : 'First relay — the Headroom column measures THIS hop, not the target'"
-                                x-text="(row.failed || row.direct) ? '—' : ((row.firstHopName || (row.firstHopNum != null ? '!' + (row.firstHopNum >>> 0).toString(16).slice(-4) : '?')) + (row.firstHopDistKm != null ? ' · ' + row.firstHopDistKm.toFixed(1) + 'km' : ''))"></td>
-                            <td class="font-mono text-right text-base-content/60"
-                                :title="row.direct
-                                  ? 'target distance'
-                                  : 'target distance; first hop is ' + (row.firstHopDistKm != null ? row.firstHopDistKm.toFixed(1) + ' km away' : 'unknown distance')"
-                                x-text="row.targetDistKm != null ? row.targetDistKm.toFixed(1)+' km' : (row.metricDistKm != null ? row.metricDistKm.toFixed(1)+' km' : '–')"></td>
-                            <td class="font-mono text-right text-base-content/60" x-show="perfDevCfg()?.is_rotator"
-                                x-text="row.rotator_az != null ? Math.round(row.rotator_az) + '°' : '–'"></td>
-                            <td class="text-right">
-                              <span x-show="!row.failed" x-html="perfHealthBars(row.marginTx, 1.1)"></span>
-                            </td>
-                            <td class="font-mono text-right font-semibold"
-                                :class="row.failed ? 'text-error' : perfHealthClass(row.marginTx)"
-                                :title="row.failed ? 'No response — the attempt itself is the data point' : ''"
-                                x-text="row.failed ? (row.status === 'timeout' ? 'TIMEOUT' : 'SEND FAIL') : perfSignedDb(row.marginTx)"></td>
-                            <td class="font-mono text-right" x-show="perfExpert"
-                                x-text="row.snrTx != null ? row.snrTx.toFixed(1)+' dB' : '–'"></td>
-                            <td class="font-mono text-right" x-show="perfExpert"
-                                :class="toneCls(row.gap_tone)"
-                                x-text="row.gapTx != null ? '+' + row.gapTx.toFixed(0)+' dB' : '–'"></td>
-                          </tr>
-                        </template>
-                        <tr x-show="!perfLoading && perfHistory.length === 0">
-                          <td colspan="10" class="text-center text-base-content/30 italic py-8">No history yet</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Auto traceroute — compact, anchored to bottom of right column -->
-              <div class="card bg-base-100 shadow shrink-0">
-                <div class="card-body py-3 px-4">
-                  <div class="flex items-center gap-2 mb-3">
-                    <h2 class="card-title flex-1">Auto Traceroute</h2>
-                    <select class="select select-sm select-bordered font-mono w-24"
-                            x-model.number="perfAutoIntervalMin"
-                            @change="if (_perfAutoTimer) perfAutoStart()">
-                      <option value="1">1 min</option>
-                      <option value="2">2 min</option>
-                      <option value="5">5 min</option>
-                      <option value="10">10 min</option>
-                      <option value="15">15 min</option>
-                      <option value="30">30 min</option>
-                    </select>
-                    <button class="btn btn-sm"
-                            :class="_perfAutoTimer ? 'btn-error' : 'btn-success'"
-                            :disabled="!perfAutoNodes.length && !_perfAutoTimer"
-                            @click="_perfAutoTimer ? perfAutoStop() : perfAutoStart()"
-                            x-text="_perfAutoTimer ? '■ Stop' : '▶ Start'"></button>
-                  </div>
-                  <div class="flex flex-wrap gap-1.5">
-                    <template x-for="n in nodes.filter(n => n._km != null).sort((a,b) => (a._km??999) - (b._km??999))" :key="n.num">
-                      <button class="btn btn-xs font-mono gap-1"
-                              :class="perfAutoNodes.includes(n.num) ? 'btn-primary' : 'btn-ghost border border-base-300'"
-                              @click="perfAutoToggleNode(n.num)">
-                        <span x-text="n.user?.short_name || ('!'+n.num.toString(16).slice(-4))"></span>
-                        <span x-text="n._km.toFixed(0)+'km'"></span>
-                      </button>
-                    </template>
-                    <span x-show="!nodes.filter(n=>n._km!=null).length"
-                          class="text-xs text-base-content/30 italic">No nodes with position data</span>
-                  </div>
-                  <div x-show="_perfAutoTimer" class="mt-2 text-xs font-mono text-success flex items-center gap-1.5">
-                    <span class="animate-pulse">●</span>
-                    running · every <span x-text="perfAutoIntervalMin"></span> min ·
-                    <span x-text="perfAutoNodes.length"></span> node(s)
-                  </div>
-                </div>
-              </div>
-
-            </div><!-- /right column -->
-
-          </div><!-- /grid -->
-
-        </div><!-- /perf tab -->
+        </div>

@@ -1,7 +1,7 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: a9bca94e6c09bcdb531c0ae4b763f6f24b72efd2b6227d5deb1de7942396ea91
+source_hash: 6961680482e99f5bf8536ba1baf174b723ef77eb18dcc678a13079297c725ca1
 updated: 2026-08-04
 ---
 
@@ -9,8 +9,20 @@ updated: 2026-08-04
 
 ## Purpose
 
+> **2026-08-17 — the traceroute overlay is REMOVED.** See
+> `traceroute-removal-browser.md`. `_drawRadarTraceroute()`, the
+> `radar-traceroute-g` layer, `sendTraceroute()`, `tracerouteNodeName()`, the
+> `passiveNode` getter and the PASV green crosshair are all gone.
+>
+> `ctx.tracerouteNode` is **renamed `ctx.focusNode`** (`radar_context.focus_node`
+> on the wire). The old name was wrong and the removal exposed it: in ACTV the
+> backend put the TRACKER's target there, which is where the rotator is
+> pointing and has nothing to do with a traceroute. It was renamed rather than
+> deleted because deleting it would have taken ACTV's crosshair and signal
+> overlay with it. `traceroute_active` had no such second meaning and is gone.
+
 Radar SVG rendering mixin: background/rings, node blips, label arms, target
-arm, beam, traceroute overlays. Pure presentation — geometry derived from the
+arm, beam. Pure presentation — geometry derived from the
 backend-pushed node list and radar context (BROWSER_CONTRACT: display
 arithmetic only; no state decisions).
 

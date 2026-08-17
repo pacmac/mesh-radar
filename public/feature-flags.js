@@ -8,9 +8,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const FF = {
-  SSOT_TRACEROUTE:     true,   // app-ws.js — single route_discovered handler replaces dual raw+event paths
+  // SSOT_TRACEROUTE removed 2026-08-17 — its only consumer was the legacy
+  // raw-packet block in app-ws.js, deleted with the traceroute surface.
+  // Spec: docs/modules/traceroute-removal-browser.md.
+  //
+  // SSOT_ROUTE_RENDER STAYS. It reads as traceroute-shaped and is not: it gates
+  // whether the radar builds its display context from the backend's
+  // radar_context event or falls back to deciding locally. Three live call
+  // sites still branch on it (app-radar.js:137, app-ws.js:601,
+  // app-components.js:21), and removing it would make them read `undefined` —
+  // falsy — and silently drop the radar onto the V1 path.
   SSOT_SIGNAL:         false,  // (backend only — no frontend flag needed)
-  SSOT_ROUTE_RENDER:   true,   // app-radar.js _drawRadarTraceroute() — args instead of mode checks
+  SSOT_ROUTE_RENDER:   true,   // app-radar.js — radar display state from radar_context
   SSOT_SIGNAL_DISPLAY: false,  // app-signal.js — single writer for yagiSignal
   SSOT_WS_BROADCAST:   false,  // (backend only — no frontend flag needed)
 };

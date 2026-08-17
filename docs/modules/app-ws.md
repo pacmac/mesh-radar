@@ -1,13 +1,21 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: aec679420e189eeb5041d90650edcd1696cd366224b2c305d8a57b383da8a8e4
+source_hash: 067810c44ec23a5aff26c91703e55ca326a0abb8ec437ccfe393a386f554ea75
 updated: 2026-08-17
 ---
 
 # Module: app-ws
 
 ## Purpose
+
+> **2026-08-17 — six handlers removed.** See `traceroute-removal-browser.md`:
+> `trace_aiming`, `trace_aimed`, `traceroute_history`, `traceroute_failed`,
+> `passive_trace_start`, `route_discovered`, plus the legacy `!FF.SSOT_TRACEROUTE`
+> raw-packet block that decoded `TRACEROUTE_APP` in the browser. Nothing emits
+> those events any more. The `_passiveTraceTimer` went with them — it was a
+> `setTimeout` in `public/`, deciding on its own when a measurement had gone
+> stale.
 
 Browser WebSocket mixin: connects to `/events`, dispatches every WS event
 type into Alpine state. The canonical event→state map lives in

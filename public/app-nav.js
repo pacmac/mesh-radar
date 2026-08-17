@@ -50,10 +50,11 @@ export function tabFromPath(pathname = window.location.pathname) {
 
 export const navMixin = {
   setNav(t, c) {
-    // Tabs are lazy-mounted (x-if): destroy the perf Chart.js instances before
-    // leaving perf so its canvases unmount cleanly and re-init fresh on return.
-    if (this.tab === 'perf' && t !== 'perf') this.destroyPerfCharts();
-    // Same reason as perf: lazy-mounted x-if tabs must release Chart.js
+    // The perf tab no longer holds Chart.js instances — its plots were all of
+    // traceroute_history and went with it (2026-08-17, spec
+    // docs/modules/traceroute-removal-browser.md), so there is nothing to
+    // destroy on leave.
+    // Lazy-mounted x-if tabs must release Chart.js
     // instances on leave or their canvases leak.
     if (this.tab === 'node' && t !== 'node') this._destroyNodeCharts();
     this.tab = t;
@@ -75,7 +76,7 @@ export const navMixin = {
     else if (t === 'cfg') this.switchCfgTab(cfg || this.cfgTab || 'bridge');
     else if (t === 'range') { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
     else if (t === 'messages') this.unreadMessages = 0;
-    else if (t === 'perf') { this.adoptPerfLoraCfg(); this.perfHistory = this.perfHistorySlice(); this.$nextTick(() => this.initPerfCharts()); }
+    else if (t === 'perf') { this.adoptPerfLoraCfg(); }
     // Plugin tab activation, AFTER the core chain — the plugin decides what
     // entering its own tab means. Placing this inside the else-if chain splits
     // it and is a syntax error; that is how it was first written.

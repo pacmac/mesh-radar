@@ -1,41 +1,34 @@
-// Performance mixin: link budget calculator, traceroute history, RF analytics.
-// Chart instances live outside Alpine's reactive scope to prevent proxy recursion.
-import { bandFor, toneCls, toneBadge } from './app-helpers.js';
-// Imported rather than taken off `window`. This module was the ONLY one reaching
-// persistSet through the global that app.js:26 sets for app-node-status.js; the
-// other eight (app-radar, app-devices, app-config, app-nav, app-ws, app-messages,
-// app.js, app-observatory) all import it. It worked — which is why the bug ledger
-// recording it as a "latent ReferenceError" was wrong — but it made this file
-// silently dependent on a line in another module that exists for a third module's
-// benefit, and tidying that line away would have broken six call sites here.
+// Performance mixin: radio selection, antenna/chain config, and the SERVED link
+// budget for the selected radio.
+//
+// WHAT THIS FILE USED TO BE, and why it is a fifth of its former size —
+// 2026-08-17, spec docs/modules/traceroute-removal-browser.md. Peter: "I want
+// all traces of it removed, browser and backend. it will be re-designed with no
+// fragments remaining."
+//
+// Everything this page MEASURED came from traceroute_history rows: the success
+// rate, the history table, the margin/SNR medians, the trend buckets, the
+// scatter and its reference curve, the aggregate RF score, and the auto-trace
+// scheduler that produced the rows in the first place. With nothing dispatching
+// a traceroute, every one of those was an empty widget with a confident title.
+//
+// The 37,425 stored rows are UNTOUCHED in traceroute_history — Peter kept the
+// data and dropped the reads. Whatever replaces the dispatcher can read them
+// again, and the deleted arithmetic is in git, not lost.
+//
+// WHAT SURVIVES is the half that never needed a traceroute: which radio the page
+// is scoped to, that radio's antenna/chain configuration, and the link budget
+// the backend computes from them. That is theory — what this radio COULD do —
+// and it is still true with no measurements to compare it against.
 import { persistSet } from './app-persist.js';
-let _charts = {}; // reassigned by destroyPerfCharts() on tab-leave (lazy tabs)
-
-
-// LoRa SNR limits (dB) from Semtech datasheets — minimum decodable SNR per SF
-
-// NF for SX1262 (typical) + implementation margin
 
 export const perfMixin = {
-  perfHistory:      [],     // the perfDev() slice shown by the page
-  _trHistAll:       [],     // all-device rows from the WS replay + live events
-  perfFailureEpoch: null,   // unix s when failure recording began (rides the WS replay)
-  perfLoading:      false,
-  perfAutoNodes:    [],   // node nums scheduled for auto-traceroute
-  _perfAutoTimer:   null,
-
   // ── Link budget ──────────────────────────────────────────────────────────
   //
   // THE PHYSICS IS GONE FROM HERE. Friis sensitivity, free-space path loss, the
   // thermal noise floor, EIRP, max range and the reference curve all moved to
   // src/link-budget.js and arrive computed. Peter, 2026-08-04: "the first thing
   // I want to do is to bring us back into compliance with the UI rules."
-  //
-  // What the page reads now:
-  //   per row     margin_tx_db, gap_tx_db, theo_snr_db, metric_dist_km, valid_tx
-  //   per radio   link_budget { freq_mhz, sf_snr_limit_db, noise_floor_dbm,
-  //                             rx_sensitivity_dbm, eirp_dbm, max_range_km,
-  //                             reference_curve[] }
   //
   // Nothing in public/ may compute a link budget again.
 
@@ -46,20 +39,6 @@ export const perfMixin = {
     return d?.link_budget || {};
   },
 
-  _perfMedian(values) {
-    const nums = (values || []).filter(v => Number.isFinite(v)).sort((a, b) => a - b);
-    if (!nums.length) return null;
-    const mid = Math.floor(nums.length / 2);
-    return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
-  },
-
-  // B72: _perfSnr lived here and was the only CORRECT decoder of the three.
-  // It is gone rather than shared: decoding now happens once, at the app-ws.js
-  // ingest boundary, so every row reaching this mixin already holds dB with
-  // null for unmeasured hops. Re-introducing a /4 here would double-decode.
-
-  // ── Traceroute history ────────────────────────────────────────────────────
-
   // Radio lora config rides the WS device_list (dev.lora, fetched by the
   // backend on READY) — no GET (C2). This adopts the selected radio's copy.
   adoptPerfLoraCfg() {
@@ -67,44 +46,8 @@ export const perfMixin = {
     if (dev?.lora) this.loraCfg = dev.lora;
   },
 
-  // ── Auto-traceroute scheduler ─────────────────────────────────────────────
-  perfAutoIntervalMin: 5,
-
-  _perfAutoTick() {
-    if (!this.perfAutoNodes?.length) return;
-    const via = this.perfDev();
-    for (const num of this.perfAutoNodes) {
-      // Target in the URL (the API's contract); dispatch via the page's
-      // selected radio so ITS RF chain is what gets measured.
-      const target = '!' + (num >>> 0).toString(16).padStart(8, '0');
-      fetchJSON(`/${target}/traceroute`, 'POST', via ? { via } : {})
-        .catch(e => console.warn('[perf] auto-traceroute failed', num, e));
-    }
-  },
-
-  perfAutoStart() {
-    this.perfAutoStop();
-    if (!this.perfAutoNodes?.length) return;
-    const ms = (this.perfAutoIntervalMin ?? 5) * 60 * 1000;
-    // Results arrive via WS route_discovered events — no polling needed
-    this._perfAutoTimer = setInterval(() => this._perfAutoTick(), ms);
-    persistSet('perfAutoNodes', JSON.stringify(this.perfAutoNodes));
-    persistSet('perfAutoIntervalMin', String(this.perfAutoIntervalMin));
-  },
-
-  perfAutoStop() {
-    if (this._perfAutoTimer) { clearInterval(this._perfAutoTimer); this._perfAutoTimer = null; }
-  },
-
-  perfAutoToggleNode(num) {
-    const idx = (this.perfAutoNodes ?? []).indexOf(num);
-    if (idx === -1) this.perfAutoNodes = [...(this.perfAutoNodes ?? []), num];
-    else            this.perfAutoNodes = this.perfAutoNodes.filter(n => n !== num);
-  },
-
   // Effective perf device: explicit selection, else the primary radio.
-  // Perf scope key is the radio's BLE MAC (identity Phase B). The backend
-  // stores/filters tx_device as MAC; both sides flipped together.
+  // Perf scope key is the radio's BLE MAC (identity Phase B).
   perfDev() {
     let sel = this.perfDevice;
     // One-time shim: a persisted legacy !hex selection converts via the
@@ -114,19 +57,12 @@ export const perfMixin = {
       if (mac) { this.perfDevice = mac; persistSet('perfDevice', mac); sel = mac; }
     }
     const devs = this.availableDevices || [];
-    // Honor an explicit selection (persisted by perfSetDevice) — even an empty
-    // radio, so the user can target it for auto-traceroute.
     if (sel && devs.some(d => d.addr === sel)) return sel;
-    // No explicit pick: default to the device that is actually tracing now —
-    // the current tracer (backend mode_role.tx) when it has rows to show — else
-    // any radio with data, else the tracer even if still empty, else primary,
-    // else first. This is why the page follows dispatch to the rotator instead
-    // of sitting on an empty primary view.
-    const hasData  = mac => (this._trHistAll || []).some(r => r.tx_device === mac);
-    const tracer   = devs.find(d => d.mode_role?.tx)?.addr;
-    const withData = devs.find(d => hasData(d.addr))?.addr;
-    const primary  = devs.find(d => d.node_id === this.primaryDeviceId)?.addr;
-    return (tracer && hasData(tracer) ? tracer : null) || withData || tracer || primary || devs[0]?.addr || '';
+    // No explicit pick. This used to rank radios by how many traceroute rows
+    // each had produced, so the page followed dispatch to the rotator. With no
+    // rows to count, the fallback is the plain one: primary, else first.
+    const primary = devs.find(d => d.node_id === this.primaryDeviceId)?.addr;
+    return primary || devs[0]?.addr || '';
   },
 
   // Antenna/chain config for the scoped device — read from the backend's
@@ -140,553 +76,13 @@ export const perfMixin = {
     this.perfDevice = addr;
     persistSet('perfDevice', addr);
     this.loraCfg = {};              // force per-device reload of theory constants
-    this.perfHistory = this.perfHistorySlice();
     this.adoptPerfLoraCfg();
-    this.$nextTick(() => this.initPerfCharts());
   },
 
-  // History arrives EXCLUSIVELY over WS (traceroute_history replay on
-  // connect + route_discovered/traceroute_failed live) — page data is
-  // WS-only per BROWSER_CONTRACT; the REST GET is browser-blocked.
-  // This slices the all-device store for the selected radio: presentation
-  // scoping, same pattern as the tilt/env history slices.
-  perfHistorySlice() {
-    const dev = this.perfDev();
-    return (this._trHistAll || []).filter(r => r.tx_device === dev).slice(0, 200);
-  },
-
-  // Success rate over post-epoch attempts only. Pre-epoch rows predate
-  // failure recording — counting them would fake a 100% rate.
-  perfSuccessRate() {
-    if (this.perfFailureEpoch == null) return null;
-    const rows = this.perfHistory.filter(r => r.ts >= this.perfFailureEpoch);
-    if (!rows.length) return null;
-    const ok = rows.filter(r => !r.status || r.status === 'ok').length;
-    return { n: rows.length, ok, rate: Math.round((ok / rows.length) * 100) };
-  },
-
-  // SERVED BANDS. tab-perf.html:42-43 held >=90/>=60 in a :class attribute,
-  // which is why the first sweep of app-*.js did not see it.
-  perfSuccessRateClass() {
-    const r = this.perfSuccessRate();
-    return toneCls(bandFor(r?.rate, this.verdictBands?.success_rate)?.tone ?? 'muted');
-  },
-
-  // Was `perfTrendChange() >= 0 ? success : error` in the template — which
-  // disagreed with the badge beside it, since that uses the 1 dB dead-band and
-  // this did not. A change of +0.3 dB read "flat" on the badge and green here.
-  // Both now come from the one served rule.
-  perfTrendChangeClass() {
-    const TONE_OF = { better: 'success', worse: 'error', flat: 'warning', baseline: 'muted' };
-    return toneCls(TONE_OF[this.perfTrendDirection()]);
-  },
-
-  // Distance (km) from home to a lat/lon pair using Haversine
-  _haversineKm(lat, lon) {
-    if (lat == null || lon == null || !this.homePos?.lat || !this.homePos?.lon) return null;
-    const R    = 6371;
-    const dLat = (lat - this.homePos.lat) * Math.PI / 180;
-    const dLon = (lon - this.homePos.lon) * Math.PI / 180;
-    const a    = Math.sin(dLat/2)**2 + Math.cos(this.homePos.lat*Math.PI/180) * Math.cos(lat*Math.PI/180) * Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  },
-
-  // Distance (km) from home to a node by num
-  perfDistKm(num) {
-    // 1. Use pre-computed _km from live node list
-    const node = this.nodes.find(n => n.num === num);
-    if (node?._km != null) return node._km;
-    // 2. Compute from node position (latitude_i is in 1e-7 degrees)
-    const lat = node?.position?.latitude_i  != null ? node.position.latitude_i  / 1e7 : null;
-    const lon = node?.position?.longitude_i != null ? node.position.longitude_i / 1e7 : null;
-    return this._haversineKm(lat, lon);
-  },
-
-  _perfNodePoint(row, num) {
-    if (num == null) return null;
-    if (num === row.to_num && row.to_lat != null && row.to_lon != null) {
-      return { lat: row.to_lat, lon: row.to_lon };
-    }
-    const relay = row.relay_positions?.[num] ?? row.relay_positions?.[String(num)];
-    if (relay?.latitude_i != null && relay?.longitude_i != null) {
-      return { lat: relay.latitude_i / 1e7, lon: relay.longitude_i / 1e7 };
-    }
-    const node = this.nodes.find(n => n.num === num);
-    if (node?.position?.latitude_i != null && node?.position?.longitude_i != null) {
-      return { lat: node.position.latitude_i / 1e7, lon: node.position.longitude_i / 1e7 };
-    }
-    if (node?.lat != null && node?.lon != null) return { lat: node.lat, lon: node.lon };
-    return null;
-  },
-
-  _perfDistFromHomeToPoint(point) {
-    return point ? this._haversineKm(point.lat, point.lon) : null;
-  },
-
-  // Enrich a history row with calculated fields
-  perfEnrich(row) {
-    // Failure rows (status != 'ok') carry no payload — they render as
-    // em-dashes and validTx:false keeps them out of medians/charts.
-    if (row.status && row.status !== 'ok') {
-      return {
-        ...row,
-        failed: true, route: [], routeHops: 0, direct: false,
-        routeKind: 'failed', confidence: 'low', validTx: false,
-        distKm: null, metricDistKm: null, targetDistKm: null,
-        firstHopNum: null, firstHopDistKm: null, firstHopName: null,
-        distLabel: '', snrTx: null, snrRx: null, gapTx: null, marginTx: null,
-      };
-    }
-    const route = Array.isArray(row.route) ? row.route.filter(n => n != null && n !== 0xffffffff) : [];
-    const routeHops = route.length;
-    const direct = routeHops === 0;
-    const targetPoint = this._perfNodePoint(row, row.to_num);
-    const targetDistKm = this._perfDistFromHomeToPoint(targetPoint);
-    const firstHopNum = direct ? row.to_num : route[0];
-    const firstHopPoint = direct ? targetPoint : this._perfNodePoint(row, firstHopNum);
-    const firstHopDistKm = this._perfDistFromHomeToPoint(firstHopPoint);
-    const metricDistKm = direct ? targetDistKm : firstHopDistKm;
-    // Already dB, already null-for-unmeasured — decoded once at WS ingest (B72).
-    const snrTx   = row.snr_towards?.[0] ?? null;
-    const snrRx   = direct
-      ? (row.snr_back?.[0] ?? null)
-      : (row.snr_back?.[row.snr_back.length - 1] ?? null);
-    // SERVED, not computed — attributed to the row's own tx_device by the
-    // backend, which is more correct than the old behaviour of applying the
-    // page's currently-selected radio to every row.
-    const gapTx    = row.gap_tx_db    ?? null;
-    const marginTx = row.margin_tx_db ?? null;
-    // SERVED. confidence, route kind and the distance label are decided in
-    // ws-relay.js from the same `direct`/`validTx` facts — BROWSER_CONTRACT:
-    // "if a display differs based on a condition, that condition is evaluated
-    // in Node.js". The ?? keeps a row that predates the enrichment renderable
-    // rather than blank.
-    const validTx    = row.valid_tx   ?? false;
-    const confidence = row.confidence ?? 'low';
-    const routeKind  = row.route_kind ?? (direct ? 'direct' : 'first-hop');
-    return {
-      ...row,
-      route,
-      routeHops,
-      direct,
-      routeKind,
-      confidence,
-      validTx,
-      distKm: metricDistKm,
-      metricDistKm,
-      targetDistKm,
-      firstHopNum,
-      firstHopDistKm,
-      firstHopName: firstHopNum === row.to_num
-        ? (row.to_short_name || (this.nodeLabel ? this.nodeLabel(row.to_num) : row.to_num))
-        : (this.nodeLabel ? this.nodeLabel(firstHopNum) : firstHopNum),
-      distLabel: row.dist_label ?? (direct ? 'target' : 'first hop'),
-      snrTx,
-      snrRx,
-      gapTx,
-      marginTx,
-    };
-  },
-
-  perfValidRows(kind = 'all') {
-    return this.perfHistory
-      .map(r => this.perfEnrich(r))
-      .filter(r => r.validTx && (
-        kind === 'all' ||
-        (kind === 'direct' && r.direct) ||
-        (kind === 'first-hop' && !r.direct)
-      ));
-  },
-
-  perfSummary(kind = 'all') {
-    const rows = this.perfValidRows(kind);
-    const gaps = rows.map(r => r.gapTx);
-    const snrs = rows.map(r => r.snrTx);
-    const margins = rows.map(r => r.marginTx);
-    return {
-      n: rows.length,
-      direct: rows.filter(r => r.direct).length,
-      relayed: rows.filter(r => !r.direct).length,
-      medianGap: this._perfMedian(gaps),
-      medianSnr: this._perfMedian(snrs),
-      medianMargin: this._perfMedian(margins),
-    };
-  },
-
-  // Aggregate setup health: median direct headroom. Falls back to first-hop if no direct rows exist.
-  perfScore() {
-    const direct = this.perfSummary('direct');
-    if (direct.medianMargin != null) return direct.medianMargin;
-    return this.perfSummary('first-hop').medianMargin;
-  },
-
-  perfScoreKind() {
-    return this.perfSummary('direct').medianMargin != null ? 'direct RF' : 'first hop';
-  },
-
-  perfSetExpert(v) {
-    this.perfExpert = !!v;
-    persistSet('perfExpert', this.perfExpert ? 'true' : 'false');
-    this.updatePerfCharts();
-  },
-
-  // RENDERS A SERVED VERDICT. This held five thresholds (20/10/3/0) producing
-  // the label, the description and two CSS classes — the browser deciding what
-  // a link-budget margin MEANS. The bands now live in src/signal-verdict.js and
-  // arrive as `verdict_bands.margin`; this looks up and paints.
-  //
-  // It also carried the bug this whole exercise exists to kill: perfHealthBars
-  // below picked the bar count from 20/10/3/0 and the colour from 10/0 — two
-  // band tables in one widget. One table now, and the tone carries the colour.
-  perfHealth(margin) {
-    const B = this.verdictBands;
-    const band = bandFor(margin, B?.margin);
-    const v = band ?? B?.margin_none ?? { label: 'No data', desc: 'Need valid traceroute samples', tone: 'muted', bars: 0 };
-    return { label: v.label, desc: v.desc, cls: toneCls(v.tone), badge: toneBadge(v.tone), bars: v.bars ?? 0 };
-  },
-
-  perfHealthLabel(margin) {
-    return this.perfHealth(margin).label;
-  },
-
-  perfHealthDesc(margin) {
-    return this.perfHealth(margin).desc;
-  },
-
-  perfHealthClass(margin) {
-    return this.perfHealth(margin).cls;
-  },
-
-  perfHealthBadge(margin) {
-    return this.perfHealth(margin).badge;
-  },
-
-  perfHealthBars(margin, scale = 1.6) {
-    // bars and cls both come from the ONE served band — see perfHealth above.
-    const health = this.perfHealth(margin);
-    const bars = health.bars;
-    const cls  = health.cls;
-    const html = [3, 6, 9, 12].map((h, i) =>
-      `<i style="height:${Math.round(h * scale)}px;opacity:${bars > i ? 1 : 0.16}"></i>`
-    ).join('');
-    return `<span class="sig-bars perf-health-bars ${cls}" title="${health.label} · ${this.perfSignedDb(margin)} headroom">${html}</span>`;
-  },
-
+  /** Formatter, kept because the link budget is still quoted in dB. */
   perfSignedDb(v, digits = 1, compact = false) {
     if (v == null || !Number.isFinite(v)) return '–';
     const sign = v > 0 ? '+' : '';
     return `${sign}${v.toFixed(digits)}${compact ? '' : ' '}dB`;
   },
-
-  // SERVED BANDS. Held 40/12 — how many samples make a figure trustworthy is a
-  // judgement, not a rendering choice. `n` is a count of served rows, which is
-  // arithmetic and may stay here; the bands are not.
-  perfConfidence(kind = 'all') {
-    const n = this.perfSummary(kind).n;
-    return bandFor(n, this.verdictBands?.confidence)?.level ?? 'none';
-  },
-
-  perfTrendChange() {
-    const buckets = this.perfTrendBuckets().filter(b => b.margin != null);
-    if (buckets.length < 2) return null;
-    const first = buckets[0].margin;
-    const last = buckets[buckets.length - 1].margin;
-    return last - first;
-  },
-
-  // The 1 dB dead-band — "a change this small is noise, not a trend" — is a
-  // judgement and is now SERVED as verdict_bands.trend_dead_band_db. The words
-  // are presentation: they map 1:1 onto the direction, they are not a threshold.
-  perfTrendDirection() {
-    const delta = this.perfTrendChange();
-    if (delta == null) return 'baseline';
-    const dead = this.verdictBands?.trend_dead_band_db;
-    if (dead == null) return 'baseline';          // no table yet — claim nothing
-    return Math.abs(delta) < dead ? 'flat' : delta > 0 ? 'better' : 'worse';
-  },
-
-  perfTrendChangeLabel() {
-    const delta = this.perfTrendChange();
-    if (delta == null) return 'No baseline yet';
-    const dir = this.perfTrendDirection();
-    if (dir === 'baseline') return 'No baseline yet';
-    const WORD = { flat: 'little change', better: 'better', worse: 'worse' };
-    return `${delta > 0 ? '+' : ''}${delta.toFixed(1)} dB · ${WORD[dir]}`;
-  },
-
-  perfTrendDirectionBadge() {
-    const TONE_OF = { better: 'success', worse: 'error', flat: 'warning' };
-    return toneBadge(TONE_OF[this.perfTrendDirection()]);
-  },
-
-  perfHistoryTime(ts) {
-    if (!ts) return '–';
-    const d = new Date(ts * 1000);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    const startToday = new Date();
-    startToday.setHours(0, 0, 0, 0);
-    const startRow = new Date(d);
-    startRow.setHours(0, 0, 0, 0);
-    const dayDiff = Math.floor((startToday - startRow) / 86400000);
-    return `${hh}:${mm}${dayDiff > 0 ? ' -' + dayDiff : ''}`;
-  },
-
-  perfTrendSetWindow(hours) {
-    this.perfTrendWindowHours = hours;
-    persistSet('perfTrendWindowHours', String(hours));
-    this.updatePerfCharts();
-  },
-
-  perfTrendRows() {
-    const rows = this.perfValidRows('all');
-    if (!rows.length) return [];
-    const maxTs = Math.max(...rows.map(r => r.ts));
-    const cutoff = maxTs - ((this.perfTrendWindowHours ?? 72) * 3600);
-    return rows.filter(r => r.ts >= cutoff);
-  },
-
-  _perfTrendBucketSecs() {
-    const hours = this.perfTrendWindowHours ?? 72;
-    if (hours <= 4) return 15 * 60;
-    if (hours <= 8) return 30 * 60;
-    if (hours <= 24) return 60 * 60;
-    return 3 * 60 * 60;
-  },
-
-  perfTrendBuckets() {
-    const bucketSecs = this._perfTrendBucketSecs();
-    const buckets = new Map();
-    for (const r of this.perfTrendRows()) {
-      if (!r.ts) continue;
-      const bucket = Math.floor(r.ts / bucketSecs) * bucketSecs;
-      const cur = buckets.get(bucket) || { ts: bucket, direct: [], firstHop: [], all: [] };
-      (r.direct ? cur.direct : cur.firstHop).push(r.marginTx);
-      cur.all.push(r.marginTx);
-      buckets.set(bucket, cur);
-    }
-    return [...buckets.values()].sort((a, b) => a.ts - b.ts).map(b => ({
-      ts: b.ts,
-      margin: this._perfMedian(b.all),
-      directMargin: this._perfMedian(b.direct),
-      firstHopMargin: this._perfMedian(b.firstHop),
-      directN: b.direct.length,
-      firstHopN: b.firstHop.length,
-    }));
-  },
-
-  // ── Chart.js charts ───────────────────────────────────────────────────────
-
-  _perfTheme() {
-    const dark = document.documentElement.getAttribute('data-theme') === 'business';
-    return {
-      text:    dark ? '#e5e7eb' : '#1f2937',
-      grid:    dark ? 'rgba(229,231,235,0.18)' : 'rgba(31,41,55,0.16)',
-      success: dark ? '#4ade80' : '#16a34a',
-      info:    dark ? '#60a5fa' : '#2563eb',
-      warning: dark ? '#fbbf24' : '#d97706',
-      primary: dark ? '#22d3ee' : '#0891b2',
-    };
-  },
-
-  _perfBandsPlugin() {
-    return {
-      id: 'perfBands',
-      beforeDraw(chart) {
-        const { ctx, chartArea, scales: { y } } = chart;
-        if (!chartArea || !y) return;
-        const { left, right } = chartArea;
-        const yMin = y.min, yMax = y.max;
-        const yp = v => y.getPixelForValue(Math.min(Math.max(v, yMin), yMax));
-        ctx.save();
-        for (const [lo, hi, col] of [
-          [yMin, 0,    'rgba(248,113,113,0.22)'],
-          [0,    3,    'rgba(251,191,36,0.22)'],
-          [3,    10,   'rgba(250,204,21,0.14)'],
-          [10,   yMax, 'rgba(74,222,128,0.12)'],
-        ]) {
-          if (lo >= yMax || hi <= yMin) continue;
-          const yTop = yp(Math.min(hi, yMax));
-          const yBot = yp(Math.max(lo, yMin));
-          ctx.fillStyle = col;
-          ctx.fillRect(left, yTop, right - left, yBot - yTop);
-        }
-        ctx.restore();
-      },
-    };
-  },
-
-  _perfChartAxes(c, time) {
-    const font = { family: 'ui-monospace, SFMono-Regular, Menlo, monospace', size: 11 };
-    const x = {
-      type: 'linear',
-      ticks: {
-        color: c.text,
-        font,
-        maxTicksLimit: 8,
-        ...(time ? {
-          callback(val, index, ticks) {
-            if (!ticks.length) return '';
-            const rangeMs = ticks[ticks.length - 1].value - ticks[0].value;
-            const d = new Date(val);
-            const hh = String(d.getHours()).padStart(2, '0');
-            const mm = String(d.getMinutes()).padStart(2, '0');
-            if (rangeMs > 24 * 3600 * 1000) {
-              return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${hh}:${mm}`;
-            }
-            return `${hh}:${mm}`;
-          },
-        } : {}),
-      },
-      grid:   { color: c.grid },
-      border: { color: c.grid },
-    };
-    const y = {
-      ticks:  { color: c.text, font },
-      grid:   { color: c.grid },
-      border: { color: c.grid },
-    };
-    return { x, y };
-  },
-
-  _perfTrendDatasets(c) {
-    const buckets = this.perfTrendBuckets();
-    return [
-      {
-        label: 'Direct RF',
-        data: buckets.map(b => ({ x: b.ts * 1000, y: b.directMargin })),
-        borderColor: c.success,
-        backgroundColor: c.success,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        borderWidth: 2,
-        spanGaps: true,
-      },
-      {
-        label: 'First Hop',
-        data: buckets.map(b => ({ x: b.ts * 1000, y: b.firstHopMargin })),
-        borderColor: c.info,
-        backgroundColor: c.info,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        borderWidth: 2,
-        borderDash: [8, 5],
-        spanGaps: true,
-      },
-    ];
-  },
-
-  _perfScatterRefDatasets(c) {
-    if (!this.perfExpert) return [];
-    const rows = this.perfValidRows('all');
-    if (!rows.length) return [];
-    // CLIPPED, not computed. The curve arrives from the server over a fixed
-    // 250 km domain; choosing how much of it to draw is the only display
-    // decision left here.
-    const maxKm = Math.max(...rows.map(r => r.metricDistKm), 1) * 1.1;
-    const curve = (this.perfBudget().reference_curve || []).filter(p => p.km <= maxKm);
-    const ideal = curve.map(p => ({ x: p.km, y: p.ideal_db }));
-    const rural = curve.map(p => ({ x: p.km, y: p.rural_db }));
-    return [
-      {
-        label: 'Ideal (free space)',
-        type: 'line',
-        data: ideal,
-        borderColor: c.primary,
-        backgroundColor: 'transparent',
-        borderWidth: 1.5,
-        pointRadius: 0,
-        spanGaps: true,
-      },
-      {
-        label: 'Rural (n=3)',
-        type: 'line',
-        data: rural,
-        borderColor: c.warning,
-        backgroundColor: 'transparent',
-        borderWidth: 1.5,
-        borderDash: [8, 5],
-        pointRadius: 0,
-        spanGaps: true,
-      },
-    ];
-  },
-
-  _perfScatterDatasets(c) {
-    const rows     = this.perfValidRows('all');
-    const direct   = rows.filter(r =>  r.direct).map(r => ({ x: r.metricDistKm, y: r.marginTx }));
-    const firstHop = rows.filter(r => !r.direct).map(r => ({ x: r.metricDistKm, y: r.marginTx }));
-    return [
-      {
-        label: 'Direct RF',
-        data: direct,
-        backgroundColor: c.success + 'bf',
-        pointRadius: 5,
-        pointHoverRadius: 7,
-      },
-      {
-        label: 'First Hop',
-        data: firstHop,
-        backgroundColor: c.info + 'bf',
-        pointRadius: 5,
-        pointHoverRadius: 7,
-      },
-      ...this._perfScatterRefDatasets(c),
-    ];
-  },
-
-  initPerfCharts() {
-    if (this.tab !== 'perf') return;
-    const trendEl   = this.$refs?.perfTrendChart;
-    const scatterEl = this.$refs?.perfScatterChart;
-    if (!trendEl || !scatterEl) return;
-    if (!window.Chart) { console.warn('[perf] Chart.js not loaded'); return; }
-    const c           = this._perfTheme();
-    const bandsPlugin = this._perfBandsPlugin();
-    if (!_charts.trend) {
-      _charts.trend = new window.Chart(trendEl, {
-        type: 'line',
-        data: { datasets: this._perfTrendDatasets(c) },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: false,
-          plugins: { legend: { display: false } },
-          scales: this._perfChartAxes(c, true),
-        },
-        plugins: [bandsPlugin],
-      });
-    }
-    if (!_charts.scatter) {
-      _charts.scatter = new window.Chart(scatterEl, {
-        type: 'scatter',
-        data: { datasets: this._perfScatterDatasets(c) },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: false,
-          plugins: { legend: { display: false } },
-          scales: this._perfChartAxes(c, false),
-        },
-        plugins: [bandsPlugin],
-      });
-    }
-  },
-
-  updatePerfCharts() {
-    if (this.tab !== 'perf') return;
-    if (!_charts?.trend || !_charts?.scatter) { this.initPerfCharts(); return; }
-    const c = this._perfTheme();
-    _charts.trend.data.datasets = this._perfTrendDatasets(c);
-    _charts.trend.update('none');
-    _charts.scatter.data.datasets = this._perfScatterDatasets(c);
-    _charts.scatter.update('none');
-  },
-
-  destroyPerfCharts() {
-    _charts?.trend?.destroy();
-    _charts?.scatter?.destroy();
-    _charts = {};
-  },
-
 };

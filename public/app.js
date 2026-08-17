@@ -92,9 +92,6 @@ function dashboard() {
     yagiAz:          null,
     yagiConnected:   false,
     yagiPointTarget: null,
-    // What traceroute.run() is currently aiming at, from trace_aiming/trace_aimed.
-    // Display cache — every field is server-decided. Task `traceroute-ui-domain2`.
-    traceAim:        null,
     yagiTargetMeta:  {},
     yagiSignal:      { num: null, rssi: null, snr: null, ts: null },
     _sigTick:        0,
@@ -181,9 +178,6 @@ function dashboard() {
     // Chart window (1/4/24/72 HR). User input, forwarded to the backend —
     // the SERVER slices history and computes the axis labels for it.
     nodeWindowHours: Number(persistGet('nodeWindowHours', 24)),
-    tracerouteResult:  null,
-    traceroutePending: false,
-    passiveTraceNum:   null,
     radarCtx:          null,   // [V2] SSOT_ROUTE_RENDER — backend-derived radar display state
     _radarScalePts:    null,   // adaptive-scale control points (display cache, hysteresis)
     _radarLabelAngles: null,   // Map num→arm angle — per-node label placement memory
@@ -315,14 +309,11 @@ function dashboard() {
     feedVisible: [],   // populated in init() from feedFilterOptions; DOM persist manages it
 
     // -- Performance ----------------------------------------------------------
-    perfHistory:          [],
-    perfLoading:          false,
-    perfAutoNodes:        JSON.parse(persistGet('perfAutoNodes', '[]')),
+    // Only the radio scope survives. The history store, the loading flag, the
+    // trend window, the expert toggle and the auto-trace schedule all described
+    // traceroute measurements — removed 2026-08-17, spec
+    // docs/modules/traceroute-removal-browser.md.
     perfDevice: persistGet('perfDevice', ''),
-    perfAutoIntervalMin:  parseInt(persistGet('perfAutoIntervalMin', '5'), 10) || 5,
-    perfTrendWindowHours: parseInt(persistGet('perfTrendWindowHours', '72'), 10) || 72,
-    perfExpert:           persistGet('perfExpert', 'false') === 'true',
-    _perfAutoTimer:       null,
 
     // -- Range test -----------------------------------------------------------
     rangeLog:     [],
@@ -417,13 +408,9 @@ function dashboard() {
           this.loadRotatorCfg();
         }
       });
-      this.$watch('tab',               t => { if (t === 'perf') this.$nextTick(() => this.initPerfCharts()); });
-      this.$watch('perfHistory',       () => this.$nextTick(() => this.updatePerfCharts()));
-      this.$watch('perfTrendWindowHours', () => this.$nextTick(() => this.updatePerfCharts()));
-      this.$watch('loraCfg',           () => this.$nextTick(() => this.updatePerfCharts()));
-      this.$watch('homePos',           () => this.$nextTick(() => this.updatePerfCharts()));
-      this.$watch('nodes',             () => this.$nextTick(() => this.updatePerfCharts()));
-      this.$watch('deviceConfigs',     () => this.$nextTick(() => this.updatePerfCharts()));
+      // The seven perf-chart watchers are gone with the charts they redrew —
+      // 2026-08-17, spec docs/modules/traceroute-removal-browser.md. Every one
+      // of them existed to re-render a plot of traceroute_history rows.
       this.$watch('tiltPeak', peak => {
         const stops = [0.25, 0.5, 1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90];
         const maxRing = stops.find(v => v >= Math.max(peak * 1.25, 0.5)) ?? 90;
@@ -440,7 +427,7 @@ function dashboard() {
       if (this.tab === 'radar') this.$nextTick(() => this.initRadar());
       else if (this.tab === 'cfg') this.switchCfgTab(this.cfgTab);
       else if (this.tab === 'range') { this.loadRangeTest(); this.loadRangeTimer(); }
-      else if (this.tab === 'perf') { this.adoptPerfLoraCfg(); this.perfHistory = this.perfHistorySlice(); this.$nextTick(() => this.initPerfCharts()); }
+      else if (this.tab === 'perf') { this.adoptPerfLoraCfg(); }
     },
   };
 }

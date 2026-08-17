@@ -29,10 +29,10 @@ export const componentsMixin = {
       return { node: this.targetNode,  mode: 'actv', label: 'TARGET',
                border:  'rgba(255,30,30,0.40)', accent:  'rgba(255,30,30,0.75)',
                nameclr: 'rgba(255,30,30,0.95)', divider: 'rgba(255,30,30,0.18)' };
-    if (this.rotatorMode === 0 && this.passiveNode)
-      return { node: this.passiveNode, mode: 'pasv', label: 'TRACING',
-               border:  'rgba(0,255,80,0.35)',  accent:  'rgba(0,255,80,0.75)',
-               nameclr: 'rgba(0,255,80,0.95)',  divider: 'rgba(0,255,80,0.15)' };
+    // The PASV "TRACING" card is REMOVED 2026-08-17 — spec
+    // docs/modules/traceroute-removal-browser.md. It named the node the passive
+    // tracer was currently tracing; nothing traces, so the card could only ever
+    // have been a lie about what the station was doing.
     return null;
     // ─────────────────────────────────────────────────────────────────────────
   },
@@ -48,16 +48,17 @@ export const componentsMixin = {
   // `tone` is SERVED (node.hops_tone / message.hops_tone) — the 0/1/2 threshold
   // moved to src/signal-verdict.js. The TEXT below is display composition and
   // stays here: "Direct" vs "n hops", and the verified/reported suffix.
-  hopsBadge(hops, verified = false, fresh = false, tone = null) {
+  // THE VERIFIED/FRESH DOT IS GONE — 2026-08-17, spec
+  // docs/modules/traceroute-removal-browser.md. `verified` meant "this hop
+  // count came from a traceroute rather than from reported live hops", and
+  // `fresh` meant that traceroute was recent. With nothing tracing, every hop
+  // count is reported, so a badge claiming verification would be asserting a
+  // measurement that can no longer be taken. What is left is the count.
+  hopsBadge(hops, tone = null) {
     if (hops == null) return '';
     const cls = toneCls(tone ?? 'muted');
-    const tip = (hops === 0 ? 'Direct' : `${hops} ${hops === 1 ? 'hop' : 'hops'}`)
-              + (verified ? (fresh ? ' · traceroute-verified (fresh)' : ' · traceroute-verified (stale)') : ' · reported');
-    // Same small circle either way (number stays fully legible; hop count is the
-    // border+text colour). VERIFIED adds a dot on the outer ring at ~2 o'clock:
-    // green when fresh, amber when the traceroute is stale (backend hops_fresh).
-    const dot = verified ? `<i class="hop-dot${fresh ? '' : ' stale'}"></i>` : '';
-    return `<span class="hop-circle ${cls}" title="${tip}">${hops}${dot}</span>`;
+    const tip = (hops === 0 ? 'Direct' : `${hops} ${hops === 1 ? 'hop' : 'hops'}`) + ' · reported';
+    return `<span class="hop-circle ${cls}" title="${tip}">${hops}</span>`;
   },
 
   // ── Signal bars (consolidated from app-radar.js) ─────────────────────────

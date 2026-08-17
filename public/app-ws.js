@@ -157,30 +157,18 @@ export const wsMixin = {
       this._onRotatorEvent(ev.data || {}); return;
     }
 
-    // THE AIMING ANIMATION, FROM EVERY PATH. Peter, 2026-08-04: "the beauty and
-    // refinement of the radar is it actually animates the whole traceroute, the
-    // antenna aiming, the target node, and also displays an animated route when
-    // it is actively trace routing."
+    // THE AIMING ANIMATION IS GONE — 'trace_aiming' and 'trace_aimed' removed
+    // 2026-08-17, spec docs/modules/traceroute-removal-browser.md.
     //
-    // It was fed ONLY by rotator's point_target, emitted only by active-tracker
-    // in ACTV — so a DISC mission, a passive trace or a manual probe animated
-    // nothing. traceroute.run() now emits these for every caller.
+    // Peter, 2026-08-04, on what is being lost: "the beauty and refinement of
+    // the radar is it actually animates the whole traceroute, the antenna
+    // aiming, the target node, and also displays an animated route when it is
+    // actively trace routing." Worth rebuilding on top of whatever replaces
+    // the dispatcher — the animation was never the broken part.
     //
-    // Every value is server-decided (az, via, mode, settled); this stores and
-    // renders, it decides nothing.
-    if (ev.type === 'trace_aiming') {
-      this.traceAim = { to: ev.to, az: ev.az, via: ev.via, mode: ev.mode, settled: false };
-      if (ev.az != null && this.tab === 'radar') this._animateBeam(ev.az);
-      return;
-    }
-    if (ev.type === 'trace_aimed') {
-      this.traceAim = { to: ev.to, az: ev.az, via: ev.via, mode: ev.mode, settled: !!ev.settled };
-      // az_actual is where the rotator REPORTED it arrived — animate to the
-      // truth, not to the request.
-      const at = ev.az_actual ?? ev.az;
-      if (at != null && this.tab === 'radar') this._animateBeam(at);
-      return;
-    }
+    // Both events were emitted by traceroute.run(). Nothing dispatches, so
+    // nothing emits them, and a handler for an event that can never arrive is
+    // exactly the fragment this removal is for.
 
     if (ev.type === 'device_list') {
       const devices = ev.devices || [];
@@ -282,12 +270,11 @@ export const wsMixin = {
           this.msgFrom = this.activeNodeId;
         }
       }
-      // Perf page cold-load: perfDev() resolves once the device list exists —
-      // re-slice the WS-replayed history and fetch theory constants.
-      if (this.tab === 'perf' && !this.perfHistory.length && devices.length) {
-        this.perfHistory = this.perfHistorySlice();
-        this.adoptPerfLoraCfg();
-      }
+      // Perf page cold-load: perfDev() resolves once the device list exists.
+      // The history re-slice that sat here went with the history itself
+      // (2026-08-17, spec docs/modules/traceroute-removal-browser.md); the
+      // theory constants still need adopting.
+      if (this.tab === 'perf' && devices.length) this.adoptPerfLoraCfg();
       if (!this.cfgRadioId || !devices.find(d => d.node_id === this.cfgRadioId)) {
         this.cfgRadioId = this.activeNodeId;
       }
@@ -541,24 +528,11 @@ export const wsMixin = {
       return;
     }
 
-    if (ev.type === 'traceroute_history') {
-      // Sole transport for perf-page history (C1: page data is WS-only).
-      // All-device rows are stored; the page shows the perfDev() slice —
-      // presentation scoping, same pattern as tilt/env history.
-      this._trHistAll = ev.rows || [];
-      if (ev.failure_epoch != null) this.perfFailureEpoch = ev.failure_epoch;
-      this.perfHistory = this.perfHistorySlice();
-      return;
-    }
-
-    if (ev.type === 'traceroute_failed' && ev.row) {
-      const failedRow = ev.row;
-      this._trHistAll = [failedRow, ...(this._trHistAll || [])].slice(0, 500);
-      if (failedRow.tx_device === this.perfDev()) {
-        this.perfHistory = [failedRow, ...(this.perfHistory || [])].slice(0, 200);
-      }
-      return;
-    }
+    // 'traceroute_history' and 'traceroute_failed' handlers REMOVED 2026-08-17,
+    // spec docs/modules/traceroute-removal-browser.md. They fed the perf page's
+    // history store. Peter kept the 37,425 stored rows and dropped the reads:
+    // the data is still in traceroute_history for the redesign to use, but
+    // nothing serves it and nothing here consumes it.
 
     if (ev.type === 'signal_update') {
       const d = ev.data;
@@ -571,32 +545,11 @@ export const wsMixin = {
       return;
     }
 
-    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ─────────────────────
-    // Raw packet patch: updates last_traceroute directly from the WS packet feed.
-    // In V2 this is replaced by the route_discovered handler below (fired by traceroute.js).
-    if (!FF.SSOT_TRACEROUTE) {
-      if (ev.type === 'packet') {
-        const pkt = ev.data?.packet;
-        if (pkt?.decoded?.portnum === 'TRACEROUTE_APP' && pkt?.decoded?.route_discovery) {
-          const rd = pkt.decoded.route_discovery;
-          this.traceroutePending = false;
-          this.tracerouteResult = {
-            num:         pkt.from,
-            route:       rd.route       ?? [],
-            route_back:  rd.route_back  ?? [],
-            snr_towards: rd.snr_towards ?? [],
-            snr_back:    rd.snr_back    ?? [],
-            ts: Date.now(),
-          };
-          const ni = this.nodes.findIndex(n => n.num === pkt.from);
-          if (ni >= 0) {
-            this.nodes[ni] = { ...this.nodes[ni], last_traceroute: this.tracerouteResult };
-            if (this.tab === 'radar') this.refreshRadar();
-          }
-        }
-      }
-    }
-    // ─────────────────────────────────────────────────────────────────────────────
+    // The [V1] legacy raw-packet block that decoded TRACEROUTE_APP off the
+    // packet feed and patched last_traceroute itself is REMOVED — 2026-08-17,
+    // spec docs/modules/traceroute-removal-browser.md. It was the browser
+    // decoding a mesh payload and deciding what it meant, which is the
+    // BROWSER_CONTRACT violation the SSOT_TRACEROUTE flag existed to retire.
 
     const time = new Date().toLocaleTimeString();
     const summary = summarizeEvent(ev);
@@ -635,53 +588,13 @@ export const wsMixin = {
       if (this.tab === 'radar') this.drawRadar();
       return;
     }
-    if (ev.type === 'passive_trace_start') {
-      this.passiveTraceNum = ev.from;
-      if (this._passiveTraceTimer) clearTimeout(this._passiveTraceTimer);
-      if (this.tab === 'radar') this.refreshRadar();
-      return;
-    }
-    if (ev.type === 'route_discovered') {
-      const ni = this.nodes.findIndex(n => n.num === ev.from);
-      if (ni >= 0) {
-        this.nodes[ni] = { ...this.nodes[ni], last_traceroute: {
-          route:           ev.route           ?? [],
-          route_back:      ev.route_back      ?? [],
-          snr_towards:     ev.snr_towards     ?? [],
-          snr_back:        ev.snr_back        ?? [],
-          relay_positions: ev.relay_positions ?? {},
-          ts:              ev.ts              ?? Date.now(),
-        }};
-      }
-      // Prepend to perfHistory so the perf tab stays live without polling —
-      // only when the result belongs to the page's selected device (scope
-      // match on the subscribed device, not business filtering).
-      if (ev.from != null && ev.tx_device) {
-        const entry = {
-          id: ev.id ?? null,
-          from_num: ev.from, to_num: ev.to ?? null,
-          route: ev.route ?? [], route_back: ev.route_back ?? [],
-          snr_towards: ev.snr_towards ?? [], snr_back: ev.snr_back ?? [],
-          relay_positions: ev.relay_positions ?? {},
-          ts: ev.ts != null && ev.ts > 1e12 ? Math.floor(ev.ts / 1000) : (ev.ts ?? Math.floor(Date.now() / 1000)),
-          rx_device: ev.rx_device ?? null,
-          tx_device: ev.tx_device, rotator_az: ev.rotator_az ?? null,
-          status: 'ok',
-        };
-        this._trHistAll = [entry, ...(this._trHistAll || [])].slice(0, 500);
-        if (ev.tx_device === this.perfDev()) {
-          this.perfHistory = [entry, ...(this.perfHistory || [])].slice(0, 200);
-        }
-      }
-      this.passiveTraceNum = ev.from;
-      if (this._passiveTraceTimer) clearTimeout(this._passiveTraceTimer);
-      this._passiveTraceTimer = setTimeout(() => {
-        this.passiveTraceNum = null;
-        if (this.tab === 'radar') this.refreshRadar();
-      }, 30000);
-      if (this.tab === 'radar') this.refreshRadar();
-      return;
-    }
+    // 'passive_trace_start' and 'route_discovered' handlers REMOVED 2026-08-17,
+    // spec docs/modules/traceroute-removal-browser.md.
+    //
+    // route_discovered was the last writer of node.last_traceroute in the
+    // browser, and it also carried the 30 s _passiveTraceTimer that cleared the
+    // radar's passive-trace highlight — a timer in public/, and one that
+    // decided on its own when a measurement had gone stale.
 
     // ── [V2] SSOT_ROUTE_RENDER — backend owns radar display state ────────────
     if (FF.SSOT_ROUTE_RENDER && ev.type === 'radar_context') {

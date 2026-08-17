@@ -199,22 +199,17 @@ export const nodesMixin = {
   },
 
   nodeHops(n) {
-    // Backend-decided display distance (ws-relay.enrichEvent): traceroute-
-    // verified relay count preferred over reported live hops. The UI does NOT
-    // choose the source — presentation layer only (BROWSER_CONTRACT).
+    // Backend-decided (ws-relay.enrichEvent). The UI does NOT choose the
+    // source — presentation layer only (BROWSER_CONTRACT).
+    //
+    // hops_display used to prefer a traceroute-VERIFIED relay count over
+    // reported live hops. Nothing verifies now, so it is the reported count.
     return n?.hops_display ?? null;
   },
 
-  nodeHopsIsVerified(n) {
-    // Whether nodeHops came from a traceroute — for badge styling only.
-    return n?.hops_verified != null;
-  },
-
-  nodeHopsFresh(n) {
-    // Backend-decided: is the verifying traceroute still fresh (vs stale/cached)?
-    // Drives green (fresh) vs amber (stale) dot. No age math in the UI.
-    return !!n?.hops_fresh;
-  },
+  // nodeHopsIsVerified() and nodeHopsFresh() REMOVED 2026-08-17 — spec
+  // docs/modules/traceroute-removal-browser.md. Both read fields that only a
+  // traceroute could set.
 
   // Toggle only — no local mutation. The star re-renders from the re-broadcast
   // node_list, so what you see is always what the server holds (the same rule

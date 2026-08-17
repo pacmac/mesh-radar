@@ -239,13 +239,13 @@
           </div>
         </template>
         <div class="badge badge-sm badge-info hidden sm:inline-flex" x-text="nodeCount + ' nodes'"></div>
-        <template x-if="perfScore() != null">
-          <div class="badge badge-sm font-mono cursor-pointer hidden md:inline-flex"
-               :class="perfHealthBadge(perfScore())"
-               :title="'Signal headroom: ' + perfSignedDb(perfScore()) + ' above decode limit'"
-               @click="setNav('perf')"
-               x-text="'RF ' + perfSignedDb(perfScore(), 1, true)"></div>
-        </template>
+        <!-- The header RF badge is REMOVED — 2026-08-17, spec
+             docs/modules/traceroute-removal-browser.md. It showed
+             perfScore(), the median link-budget margin across
+             traceroute_history rows, so with no traceroutes it had nothing
+             to report. Worth rebuilding on whatever replaces the dispatcher:
+             one number in the chrome saying how much headroom the station
+             has was the most-glanced-at figure on the page. -->
         <!-- plugin: header -->
         <div class="badge badge-sm" :class="wsConnected ? 'badge-primary' : 'badge-ghost'" x-text="wsConnected ? 'live' : 'offline'"></div>
       </div>

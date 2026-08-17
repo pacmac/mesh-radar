@@ -153,54 +153,13 @@
                   <div style="font-family:monospace;font-size:11px;color:rgba(0,255,80,0.62);line-height:1.5"
                        x-text="nodeInfo._address || (nodeInfo.position ? (nodeInfo.position.latitude_i/1e7).toFixed(4)+', '+(nodeInfo.position.longitude_i/1e7).toFixed(4) : '–')"></div>
                 </div>
-                <!-- Route -->
-                <div style="padding:0.55rem 1.1rem;border-bottom:1px solid rgba(0,255,80,0.08)">
-                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem">
-                    <div style="font-family:'Oxanium',monospace;font-size:8.5px;letter-spacing:0.12em;color:rgba(0,255,80,0.32)">ROUTE</div>
-                    <button style="font-family:'Oxanium',monospace;font-size:9px;letter-spacing:0.08em;
-                                   color:rgba(0,255,80,0.65);border:1px solid rgba(0,255,80,0.25);
-                                   border-radius:0.2rem;padding:0.1rem 0.45rem;background:transparent;cursor:pointer"
-                            :class="traceroutePending ? 'opacity-40 pointer-events-none' : ''"
-                            @click="sendTraceroute(nodeInfo)">
-                      <span x-show="!traceroutePending">TRACE</span><span x-show="traceroutePending">…</span>
-                    </button>
-                  </div>
-                  <template x-if="tracerouteResult && tracerouteResult.num === nodeInfo?.num">
-                    <div style="font-family:monospace;font-size:11px;display:flex;flex-wrap:wrap;gap:0.2rem;align-items:center">
-                      <template x-if="tracerouteResult.route.length === 0">
-                        <span style="color:rgba(0,255,80,0.38)">Direct — no intermediate hops</span>
-                      </template>
-                      <template x-if="tracerouteResult.route.length > 0">
-                        <span style="color:rgba(0,255,80,0.28)">→</span>
-                      </template>
-                      <template x-if="tracerouteResult.route.length > 0">
-                        <template x-for="(hop, i) in tracerouteResult.route" :key="i">
-                          <span style="display:inline-flex;align-items:center;gap:0.2rem">
-                            <span style="border:1px solid rgba(0,255,80,0.22);border-radius:0.2rem;padding:0 0.3rem;color:rgba(0,255,80,0.65)" x-text="tracerouteNodeName(hop)"></span>
-                            <span x-show="tracerouteResult.snr_towards[i] != null" style="font-size:9px;color:rgba(0,255,80,0.28)" x-text="tracerouteResult.snr_towards[i]?.toFixed(1)+'dB'"></span>
-                            <span style="color:rgba(0,255,80,0.28)">→</span>
-                          </span>
-                        </template>
-                      </template>
-                      <template x-if="tracerouteResult.route.length > 0">
-                        <span style="border:1px solid rgba(255,160,0,0.35);border-radius:0.2rem;padding:0 0.3rem;color:rgba(255,160,0,0.80)" x-text="tracerouteNodeName(tracerouteResult.num)"></span>
-                      </template>
-                      <template x-if="tracerouteResult.route_back.length > 0">
-                        <div style="width:100%;margin-top:0.2rem;display:flex;flex-wrap:wrap;gap:0.2rem;align-items:center;opacity:0.55">
-                          <span style="color:rgba(0,255,80,0.50)">↩</span>
-                          <template x-for="(hop, i) in tracerouteResult.route_back" :key="i">
-                            <span style="display:inline-flex;align-items:center;gap:0.2rem">
-                              <span style="border:1px solid rgba(0,255,80,0.18);border-radius:0.2rem;padding:0 0.3rem;font-size:10px;color:rgba(0,255,80,0.55)" x-text="tracerouteNodeName(hop)"></span>
-                              <span x-show="tracerouteResult.snr_back[i] != null" style="font-size:9px" x-text="tracerouteResult.snr_back[i]?.toFixed(1)+'dB'"></span>
-                              <span>→</span>
-                            </span>
-                          </template>
-                        </div>
-                      </template>
-                    </div>
-                  </template>
-                  <div x-show="traceroutePending" style="font-size:11px;font-family:monospace;color:rgba(0,255,80,0.28)">Waiting for response…</div>
-                </div>
+                <!-- The ROUTE section and its TRACE button are REMOVED —
+                     2026-08-17, spec docs/modules/traceroute-removal-browser.md.
+                     The button POSTed the station into transmitting from the
+                     browser, and after the backend route was deleted it did so
+                     straight through index.js:379's proxy to mesh-gw with none
+                     of traceroute.js's guards and no row recorded. The route
+                     display below it had nothing left to render. -->
                 <!-- Actions -->
                 <div style="padding:0.65rem 1.1rem;display:flex;flex-wrap:wrap;gap:0.4rem">
                   <!-- Tier 1 → tier 2. This modal is the peek that does not

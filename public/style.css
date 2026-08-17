@@ -795,31 +795,13 @@ footer {
   background: transparent;
   border: 1.5px solid currentColor;
   opacity: 0.85;
-  position: relative;   /* anchor for the verified .hop-dot */
 }
 
-/* Traceroute-VERIFIED marker: a small green dot whose centre sits on the
-   circle's border at ~2 o'clock (half in / half out). Green is a distinct
-   provenance colour (not a hop-count colour) and costs no interior space, so
-   the hop number stays fully legible. Absence of the dot = reported. The
-   base-background ring separates it from the colour-coded border in any theme. */
-.hop-dot {
-  position: absolute;
-  left: 112%;
-  top: 13%;
-  transform: translate(-50%, -50%);
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 0 1.5px hsl(var(--b1));
-}
-
-/* Stale verification (traceroute older than the auto-tracer staleness window,
-   backend hops_fresh:false) — amber instead of green. */
-.hop-dot.stale {
-  background: #f59e0b;
-}
+/* .hop-dot and .hop-dot.stale REMOVED 2026-08-17 — spec
+   docs/modules/traceroute-removal-browser.md. The dot marked a hop count as
+   traceroute-VERIFIED (green fresh / amber stale) against a plain circle
+   meaning reported. Nothing verifies now, so every badge is the plain circle
+   and the rules had no element to style. */
 
 /* Radar / telemetry stats grid */
 .radar-stat-grid {

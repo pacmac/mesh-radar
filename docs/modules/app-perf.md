@@ -1,11 +1,30 @@
 ---
 module: app-perf
 source: public/app-perf.js
-source_hash: 092744978c92c44c0e9f075080de9580c188da338a2bddf28daf26b68f5f0500
+source_hash: f101ef78e78cb01d83b61f4d81b34513c94dcfdf0d5a5e28d1c6b9acd4ce998c
 updated: 2026-08-14
 ---
 
 # Module: app-perf
+
+> **GUTTED 2026-08-17 — read `traceroute-removal-browser.md` first.**
+>
+> Peter: *"I want all traces of it removed, browser and backend. it will be
+> re-designed with no fragments remaining."*
+>
+> Everything below describing a MEASUREMENT is history, not current behaviour.
+> The success rate, headroom trend, headroom-vs-distance scatter, history table
+> and auto-traceroute scheduler were all computed from `traceroute_history`
+> rows, and node-dash no longer dispatches a traceroute. They are removed, not
+> disabled.
+>
+> **What the module is now:** `perfBudget()`, `adoptPerfLoraCfg()`, `perfDev()`,
+> `perfDevCfg()`, `perfSetDevice()`, `perfSignedDb()`. Radio scope, antenna
+> chain, and the SERVED link budget — theory only.
+>
+> The 37,425 stored rows are kept. The attribution model below (`tx_device` is
+> the dispatching radio, SNR already in dB with `null` for unmeasured hops) is
+> preserved deliberately: it is what the replacement has to be correct against.
 
 ## Purpose
 
