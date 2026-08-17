@@ -8,7 +8,6 @@ import { defineHook } from './hooks.js';
 import db, { stmts, getConfig } from './db.js';
 import { ownDeviceNums } from './node-filter.js';
 import { FF } from './feature-flags.js';
-import { traceroute } from './traceroute.js';
 import { missionRunner } from './mission-runner.js';
 
 // A PER-MODE HOOK DECLARES ITS MODES. Task `hooks-per-mode-scope`.
@@ -217,55 +216,28 @@ class PassiveTracer extends EventEmitter {
     if (missionRunner.dispatching) return;
     if (!needsTrace(pkt.from)) return;
 
-    this._trace(pkt.from, rxDevice);
+    // The dispatch that stood here is removed — see _trace() below. The gates
+    // above still run and still decide a trace WOULD be warranted; nothing
+    // acts on that decision until the replacement is designed.
   }
 
-  _trace(from_num, device) {
-    this._busy        = true;
-    this._pendingFrom = from_num;
-    log.info(`tracing !${from_num.toString(16)} via ${device}`);
-    this.emit('tracing', { from: from_num });
+  // _trace() — REMOVED 2026-08-17, task `traceroute-callers-rewrite`.
+  //
+  // It held BOTH dispatch paths: a V1 legacy bridge.post() straight at the
+  // gateway, and the V2 traceroute.run(). Peter: "no re-implementation logic
+  // will be decided until all existing calls to it are completely removed from
+  // code."
+  //
+  // PASSIVE TRACING NO LONGER TRANSMITS. Everything above this point still
+  // runs — the listener gate, the own-radio check, the MQTT skip, the
+  // needsTrace() cooldown, the yield to a mission in flight. That logic is not
+  // the mess; deciding the radio and the aim was. It is kept so the eventual
+  // replacement inherits the guards rather than rediscovering them.
+  //
+  // Worth carrying forward when it is rebuilt: this prober was the one that
+  // ANSWERED — 3.8% over 5,557 traces, against 0.0% for 132 aimed missions in
+  // the same window.
 
-    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
-    if (!FF.SSOT_TRACEROUTE) {
-      bridge.post(`/${device}/traceroute`, { to: from_num }).catch(err => {
-        log.warn(`send failed for !${from_num.toString(16)}: ${err.message}`);
-        _failed.set(from_num, Date.now());
-        this.emit('traced', { from: from_num, route: [], route_back: [], snr_towards: [], snr_back: [], relay_positions: {}, ts: Date.now() });
-        this._release();
-      });
-      const { timeout_ms } = getPasvConfig();
-      this._timeout = setTimeout(() => {
-        const num = this._pendingFrom;
-        log.warn(`timeout for !${num?.toString(16)}`);
-        _failed.set(num, Date.now());
-        this.emit('traced', { from: num, route: [], route_back: [], snr_towards: [], snr_back: [], relay_positions: {}, ts: Date.now() });
-        this._release();
-      }, timeout_ms);
-    // ── [V2] SSOT — traceroute.js owns dispatch, timeout, decode ─────────────
-    } else {
-      // device arrived as ev.addr (MAC); dispatch takes the node_id so
-      // tx_device attribution stays single-vocabulary (perf page queries
-      // by !hex). URL addressing resolves back to MAC inside dispatch.
-      // PASV is aim:'none' by mode definition, so this never moves the antenna —
-      // stated through the mode rather than by omitting an argument.
-      traceroute.run(from_num, { radio: transmitterForMode('pasv', { rxDevice: device }), reason: 'passive' })
-        .then(result => {
-          _attempted.set(from_num, Date.now());
-          this.emit('traced', result);
-        })
-        .catch(err => {
-          log.warn(`trace failed !${from_num.toString(16)}: ${err.message}`);
-          _failed.set(from_num, Date.now());
-          this.emit('traced', { from: from_num, route: [], route_back: [], snr_towards: [], snr_back: [], relay_positions: {}, ts: Date.now() });
-        })
-        .finally(() => {
-          this._busy        = false;
-          this._pendingFrom = null;
-        });
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-  }
 
   // Used by V1 path only — V2 uses .finally() on the dispatch promise
   _release() {

@@ -283,14 +283,17 @@ const REGISTRY = new Map([
     example_payload: { target: 'E9:B0:3F:17:27:91', values: {} },
     timeout_s: 10, reboot: false,
   }],
-  ['send_traceroute', {
-    class: 'Mode', description: 'Send traceroute to node',
-    method: 'POST', endpoint: p => `/${p.target}/traceroute`,
-    read_back_path: null, match_fields: [],
-    confirming: 'http_200',
-    example_payload: { target: '!2687afb1', values: { to: 646426545 } },
-    timeout_s: 10, reboot: false,
-  }],
+  // 'send_traceroute' — REMOVED 2026-08-17, task `traceroute-callers-rewrite`.
+  //
+  // It was the FOURTH dispatch path, and the least visible: not a call to
+  // traceroute.js at all, but a catalogue entry whose endpoint POSTed to
+  // node-dash's own `/:target/traceroute` route through _localFetch. Nothing
+  // in src/ names it — the catalogue is driven generically — so it survived
+  // three grep sweeps for `traceroute.run`.
+  //
+  // With that route gone this op could only 404, and an op that always fails
+  // its `http_200` confirmation is worse than an absent one: op-manager would
+  // report a live radio problem for a route that simply does not exist.
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────

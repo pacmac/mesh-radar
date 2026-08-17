@@ -18,7 +18,6 @@ import { isRole, indexFor } from './channels.js';
 import { sendMeshText } from './mesh-send.js';
 import { nodeList } from './node-list.js';
 import { rotator } from './rotator.js';
-import { traceroute } from './traceroute.js';
 import { bearing as bearingOf, signalQuality, numToNodeId, nodeIdToNum } from './utils.js';
 import { resolveDeviceLabel } from './node-label.js';
 import { fmtStamp } from './format.js';
@@ -189,21 +188,16 @@ export const VERBS = {
     },
   },
 
-  route: {
-    args:    '[!node]  (default: you)',
-    purpose: 'traceroute and answer with the path',
-    async run({ target, device, pktId }) {
-      // NO AIMING HERE. traceroute.run() owns aiming via opts.aim; aiming as well
-      // would repeat the double-aim defect already in the bug ledger.
-      await reply(device, pktId, `route: tracing ${numToNodeId(target)}`);
-      try {
-        await traceroute.run(target, { aim: 'endpoint' });
-      } catch (e) {
-        return reply(device, pktId, `route: failed — ${e?.message ?? 'error'}`);
-      }
-      return true;   // the result arrives as a traceroute event, not inline
-    },
-  },
+  // @route — REMOVED 2026-08-17, task `traceroute-callers-rewrite`.
+  //
+  // Peter: "no re-implementation logic will be decided until all existing calls
+  // to it are completely removed from code." Nothing in node-dash dispatches a
+  // traceroute now, so this verb could not do what its name says.
+  //
+  // It is DELETED rather than left answering "not available". An advertised verb
+  // that always fails is worse than an absent one: it reads as a fault in the
+  // radio path, which is the hardest thing here to diagnose from a field.
+  // @point and @ping are unaffected and still work.
 };
 
 /** Handle one bridge event. Called from registerBridgeEvents.

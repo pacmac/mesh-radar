@@ -34,7 +34,8 @@ SKIP_OPS = {
     "rotator_scan_abort",
     # Live network / RF side effects
     "send_message",
-    "send_traceroute",
+    # send_traceroute was removed 2026-08-17 (task traceroute-callers-rewrite).
+    # It is not listed here as skipped, because the op no longer exists to skip.
     # Fixed position changes radio state
     "fixed_position_push",
     "fixed_position_clear",

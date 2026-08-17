@@ -4,7 +4,6 @@ import { rotator } from './rotator.js';
 import { activeTracker } from './active-tracker.js';
 import { nodeList } from './node-list.js';
 import { passiveTracer } from './passive-tracer.js';
-import { traceroute } from './traceroute.js';
 import { FF } from './feature-flags.js';
 import { getRotatorAddress, onHomePosChange } from './device-config.js';
 import { bridge } from './bridge.js';
@@ -24,14 +23,13 @@ export function initLifecycle() {
     const rotatorId = getRotatorAddress();
     if (contact.from && rotatorId)
       nodeList.confirmScanContact(contact.from, rotatorId, contact.az, contact.rssi, contact.snr);
-    if (FF.SSOT_TRACEROUTE && contact.from) {
-      const sender = transmitterForMode('scan');
-      if (sender)
-        // SCAN is already pointing at the contact's bearing — the sweep put it
-        // there. aim:'none' so run() does not re-aim and fight the scanner.
-        traceroute.run(contact.from, { radio: sender, aim: 'none', cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: contact.from, reason: 'scan-contact' })
-          .catch(() => {});
-    }
+    // SCAN's traceroute dispatch — REMOVED 2026-08-17, task
+    // `traceroute-callers-rewrite`. confirmScanContact above is untouched: the
+    // contact is still recorded, it is just no longer traced.
+    //
+    // Worth keeping when this is rebuilt: SCAN is ALREADY pointing at the
+    // contact's bearing, because the sweep put it there. Whatever replaces this
+    // must not re-aim and fight the scanner.
   });
   scanner.on('end', () => {
     dashMode.set(scanner._preMode);
@@ -58,28 +56,13 @@ export function initLifecycle() {
   // -- rotator lifecycle -------------------------------------------------------
   rotator.on('connected', () => {});
 
-  rotator.on('point_target', (data) => {
-    const num    = data.point_target;
-    const sender = transmitterForMode('actv');
-    if (!num || !sender) return;
-
-    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ──────────────────
-    if (!FF.SSOT_TRACEROUTE) {
-      if (!rotator._lastTracedNum) rotator._lastTracedNum = null;
-      if (!rotator._lastTracedAt)  rotator._lastTracedAt  = 0;
-      const now = Date.now();
-      if (num === rotator._lastTracedNum && now - rotator._lastTracedAt < TRACE_COOLDOWN_MS) return;
-      rotator._lastTracedNum = num;
-      rotator._lastTracedAt  = now;
-      bridge.post(`/${sender}/traceroute`, { to: num }).catch(() => {});
-    // ── [V2] SSOT — traceroute.js owns dispatch and cooldown ─────────────────
-    } else {
-      // ACTV: the tracker has ALREADY aimed at this node — that is what
-      // point_target means — so aim:'none' here records the truth (the beam is
-      // on the endpoint) without moving it again.
-      traceroute.run(num, { radio: sender, aim: 'none', cooldownMs: TRACE_COOLDOWN_MS, cooldownKey: num, reason: 'actv-point' })
-        .catch(() => {});
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-  });
+  // ACTV's traceroute dispatch on `point_target` — REMOVED 2026-08-17, task
+  // `traceroute-callers-rewrite`. It held BOTH paths: a V1 legacy bridge.post()
+  // with its own hand-rolled cooldown on the rotator object, and the V2
+  // traceroute.run(). Both gone.
+  //
+  // Worth keeping when this is rebuilt: `point_target` MEANS the tracker has
+  // already aimed at that node, so the replacement must not move the beam
+  // again — and the V1 branch is the reason cooldown belongs inside the
+  // dispatcher rather than being reinvented per caller.
 }

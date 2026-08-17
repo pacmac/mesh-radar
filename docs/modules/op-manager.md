@@ -1,7 +1,7 @@
 ---
 module: op-manager
 source: src/op-manager.js
-source_hash: 54d89f6fab5f2379b8c77cd0186ad0d03d6618385c8051e7931462782728a311
+source_hash: 5ef21b2b9e02b7e3366ec061cfe7110bb3ae7a802d38b15249ee67eb67d0bb18
 updated: 2026-07-22
 ---
 
@@ -142,7 +142,10 @@ Action triggers. Confirmation is either the HTTP 200 response or a WS `device_st
 | `send_alert_test` | `POST /alerts/test` | `http_200` |
 | `ble_connect` | `POST /devices` | `device_state_ready` |
 | `ble_disconnect` | `DELETE /devices/:target` | `http_200` |
-| `send_traceroute` | `POST /:target/traceroute` | `http_200` |
+
+`send_traceroute` was removed 2026-08-17 (task `traceroute-callers-rewrite`).
+Its endpoint, node-dash's own `POST /:target/traceroute`, no longer exists.
+No op dispatches a traceroute.
 
 ## Runners
 

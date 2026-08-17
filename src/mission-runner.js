@@ -45,7 +45,6 @@
 // feeds the shortlist in via setQueue() and broadcasts activity out. This is a
 // dumb executor: handed a list, it works it.
 import { EventEmitter } from 'events';
-import { traceroute } from './traceroute.js';
 import { transmitterForMode, isTransmitterForMode, dashMode, modeName } from './dash-mode.js';
 import { rotator } from './rotator.js';
 import { doorAim } from './doors.js';
@@ -544,27 +543,21 @@ class MissionRunner extends EventEmitter {
       // provenance are all inside the function now. _aim() above still moves the
       // beam for the hold/negotiation, and run() re-resolves and waits — the
       // rotator is idempotent on an azimuth it is already at.
-      const result = await traceroute.run(to, {
-        // THE PROBE PLAN DECIDES, not a fixed call. Peter, 2026-08-05: the
-        // traceroute config should be "a route table array with key-verbs as a
-        // list of sequential actions ... tweak them without needing to touch the
-        // source code".
-        //
-        // 21,395 attempts across 443 targets were the same experiment repeated,
-        // because the aim came from (target, mode) with no attempt index. The
-        // plan gives each attempt a different question to ask, and its position
-        // is durable so a restart does not send it back to step 0.
-        radio:     step?.radio  ?? 'auto',
-        aim:       step?.aim    ?? undefined,
-        timeoutMs: (step?.timeout_sec ?? c.timeout_sec) * 1000,
-        planClass: planClass,
-        stepIndex: stepIndex,
-        reason:    'mission',
-        // WE ALREADY AIMED. Handing the context over stops run() issuing a second
-        // point() to a shared rotator, and stops it overriding the "door is inside
-        // omni reach, do not move" decision _aim() just made.
-        aimCtx:    aim.ctx ?? null,
-      });
+      // THE DISPATCH IS REMOVED — 2026-08-17, task `traceroute-callers-rewrite`.
+      // Peter: "no re-implementation logic will be decided until all existing
+      // calls to it are completely removed from code."
+      //
+      // Everything around it is kept: the probe plan, the aim negotiation, the
+      // budget, the hold, and the miss-is-data analysis below. Those are not the
+      // mess — deciding the radio and the aim across four places was.
+      //
+      // Worth carrying forward: the plan gives each ATTEMPT a different question.
+      // 21,395 attempts across 443 targets were the same experiment repeated,
+      // because the aim came from (target, mode) with no attempt index.
+      //
+      // This runner is ALREADY inert — missionRunner.setQueue() is fed from
+      // inside the observatory block disabled in 3b39449, so it has no queue.
+      const result = { ok: false, error: 'traceroute dispatch removed', found: [] };
       outcome = this._analyse(result);
       this._discovered.replies++;
       // A REPLY ENDS THE PLAN. Nothing further is learned by probing something

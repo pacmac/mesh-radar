@@ -1,47 +1,28 @@
 import { Router } from 'express';
-import { bridge } from './bridge.js';
-import { traceroute } from './traceroute.js';
 import { stmts } from './db.js';
-import { dashMode, transmitterForMode } from './dash-mode.js';
-import { FF } from './feature-flags.js';
 
 const router = Router();
 
-router.post('/:nodeId/traceroute', async (req, res) => {
-  const targetNum = parseInt((req.params.nodeId || '').replace('!', ''), 16);
-  if (!targetNum) return res.status(400).json({ error: 'invalid nodeId' });
-  // Optional { via } — dispatch through a specific radio so its RF chain
-  // gets measured (per-device performance). Accepts a BLE MAC (the perf
-  // page's vocabulary since Phase B) or a !hex node id. Default: primary.
-  const via = typeof req.body?.via === 'string' &&
-    (/^![0-9a-f]{8}$/i.test(req.body.via) || /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(req.body.via))
-    ? req.body.via : null;
-  const sender = via ?? transmitterForMode(dashMode.value);
-  if (!sender) return res.status(503).json({ error: 'no primary device configured' });
-  try {
-    // ── [V1] LEGACY — remove when SSOT_TRACEROUTE verified ────────────────
-    if (!FF.SSOT_TRACEROUTE) {
-      const result = await bridge.post(`/${sender}/traceroute`, { to: targetNum });
-      res.json(result);
-    // ── [V2] SSOT — traceroute.js owns dispatch ────────────────────────────
-    } else {
-      // manual: a user pressed the button. Never gated by the master switch —
-      // turning automatic traceroute off must not disable asking for one.
-      // A user pressed the button on a NODE. aim comes from the request when
-      // given, else the mode's — the button is a node function, not a global.
-      const result = await traceroute.run(targetNum, {
-        radio:  via ?? undefined,
-        aim:    typeof req.body?.aim === 'string' ? req.body.aim : undefined,
-        manual: true,
-        reason: 'manual',
-      });
-      res.json(result);
-    }
-    // ───────────────────────────────────────────────────────────────────────
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
+// POST /:nodeId/traceroute — REMOVED 2026-08-17, task `traceroute-callers-rewrite`.
+//
+// Peter: "no re-implementation logic will be decided until all existing calls to
+// it are completely removed from code. then we will decide how it will work."
+//
+// This route held BOTH dispatch paths — the V2 `traceroute.run()` call and a V1
+// legacy `bridge.post('/{sender}/traceroute')` that bypassed the module
+// entirely. Both are gone. `src/traceroute.js` itself is untouched: what was
+// wrong was who called it and how they decided the radio and the aim, not how a
+// traceroute is dispatched and recorded.
+//
+// NOTHING IN node-dash NOW DISPATCHES A TRACEROUTE. That is the intended state
+// until the replacement is designed, on a clean tree, as its own task.
+//
+// Two browser callers used to reach this route and are removed with it:
+//   public/app-perf.js     the per-radio RF measurement button
+//   public/app-radar.js    the radar's trace action
+//
+// The history GET below is untouched — it READS, and existing rows stay
+// readable. They simply stop being added to.
 
 router.get('/traceroute_history', (req, res) => {
   const to_num = req.query.to_num ? parseInt(req.query.to_num) : null;
