@@ -74,7 +74,18 @@ export const navMixin = {
     if (window.location.pathname !== p) history.pushState({ tab: t }, '', p);
     if (t === 'radar') this.$nextTick(() => this.initRadar());
     else if (t === 'cfg') this.switchCfgTab(cfg || this.cfgTab || 'bridge');
-    else if (t === 'range') { this.loadRangeTest(); this.loadRangeTimer(); this._startRangeAutoSync(); }
+    // `this._startRangeAutoSync()` used to be called here and IS DEFINED NOWHERE
+    // in public/ — opening Range threw `TypeError: this._startRangeAutoSync is
+    // not a function`, which aborted setNav before the plugin onTab loop below.
+    // The tab still switched and its two loaders had already run, which is how a
+    // hard throw survived unnoticed. Removed 2026-08-18, spec
+    // docs/modules/range-tab-autosync-removal.md.
+    //
+    // NOT REPLACED WITH AN IMPLEMENTATION: "auto sync" means a poll, and range
+    // state already arrives on the WS (range_test_log, range_test_timer, both
+    // replayed on connect). Writing the function to satisfy the call would add
+    // the timer the standing rule forbids.
+    else if (t === 'range') { this.loadRangeTest(); this.loadRangeTimer(); }
     else if (t === 'messages') this.unreadMessages = 0;
     else if (t === 'perf') { this.adoptPerfLoraCfg(); }
     // Plugin tab activation, AFTER the core chain — the plugin decides what
