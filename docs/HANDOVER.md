@@ -174,6 +174,23 @@ not the slug.
 as *"Peter is considering moving the alarm out of node-dash entirely"*; asked
 directly, he said **"he has decided"**. Start here.
 
+**Destination, given by Peter 2026-08-17: `/usr/share/pac/dev/projects/mt-alarm/html`.**
+Confirmed present. And mt-alarm is already the other half of this system — the
+bridge node-dash consumes on `:8790` identifies itself as *"mt-alarm bridge"*. The
+alarm is going back to where the rest of it lives.
+
+**That makes it a TWO-REPO job and only one half is node-dash's.** CLAUDE.md:
+*"This repo only… Cross-repo modification is never permitted."* So:
+
+- **ours** — unwire `src/index.js`, settle `coulomb.js`, settle `obs_*`
+- **mt-alarm's** — receive the modules, its own pm2 entry, port and store
+
+The mt-alarm half needs an mt-alarm session or Peter's explicit instruction. The
+coordination path exists: `node-dash--plugins` **is** mt-alarm's plugin session.
+
+**Order matters: mt-alarm must be serving BEFORE node-dash unwires**, or the
+Control page dies in the gap.
+
 The new service needs its **own pm2 entry, its own port, and a decision about its
 store** — the alarm currently shares `data/node-dash.db` (`obs_observation`,
 `obs_fact` live there). A separate service sharing one SQLite file is a choice,
