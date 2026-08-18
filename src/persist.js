@@ -29,7 +29,13 @@ const RARE_SENDER = defineHook({
 function noteRareSender({ from_num, text, ts }) {
   if (!from_num) return;
   const max  = Math.max(1, Number(getConfig('alerts.rare_sender_max', 5)) || 5);
-  const days = Number(getConfig('observatory.window_days', 7)) || 7;
+  // 30, matching the DECLARED default in config-api.js:94. It read 7 here and 30
+  // there, which is the exact defect check_contract's window_days assertion
+  // exists to catch — it simply never watched this file. Harmless while the key
+  // is stored (it is, at 7, so runtime is unchanged), and wrong the moment it is
+  // not: a missing key would have produced a 7-day window here beside a 30-day
+  // one in snapshot-api, in the same payload. Aligned 2026-08-18.
+  const days = Number(getConfig('observatory.window_days', 30)) || 30;
   const from = ts - days * 86400;
 
   const inWindow = db.prepare(

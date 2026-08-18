@@ -56,47 +56,43 @@ import { renderPluginTabs, renderPluginNav, renderPluginHeader, renderPluginScri
 // late, connect replays still worked while ZERO live broadcasts arrived in 110s,
 // which makes the failure invisible from the UI.
 
-// ─── OBSERVATORY ─────────────────────────────────────────────────────────────
-// The observations store and inference registry (docs/MESH_REACH_SPEC.md §7f).
-// THIS IS THE ONLY PLACE IN src/ ALLOWED TO NAME IT, and
-// tests/test_observatory_boundary.mjs fails if a second appears. Core emits;
-// core does not reach in.
+// ─── OBSERVATORY — ARCHIVED 2026-08-18 ───────────────────────────────────────
+// Peter: "really observatory and discovery need moving out of code with the
+// associated specs and put into a archive folder, tarred up so they stop
+// confusing you", and "observator is deprecated."
 //
-// Static and side-effecting, for the same reason the alarm imports above are:
-// the schema is created on load, and a registration made later inside listen()
-// silently never fires.
+// Twenty files — the engine, the observations store, the inference catalogue,
+// the WS wiring, mission-runner, both browser halves, the boundary test and
+// every associated spec — are in
+//     archive/observatory-and-discovery-2026-08-18.tar.gz
+// TARRED ON PURPOSE: loose files in an archive/ directory would still be
+// grep-able and would still be read as live code, which is the confusion this
+// was done to end. It was disabled behind `observatory.enabled` on 2026-08-17
+// and had been costing nothing since; this removes it from sight as well.
 //
-// Delete these lines and the observatory's own files and node-dash is unchanged.
-import { observe } from './observatory.js';
-import { registerPacketObserver } from './persist.js';
-import { packetObservation } from './observations.js';
-
-// Every packet becomes an observation, carrying WHERE THE ANTENNA WAS POINTING.
-// That last part is the whole reason this is wired now rather than later: it is
-// the only datum in the plan that cannot be reconstructed afterwards (B52).
+// The block that stood here imported observatory.js, observations.js,
+// inferences.js and observatory-ws.js, and registered a per-packet observer
+// behind the same flag. Its own comment said "Delete these lines and the
+// observatory's own files and node-dash is unchanged" — which is exactly what
+// was done, and the claim held.
 //
-// The wiring lives here because persist.js is core and may not name a plugin,
-// and observations.js is kept pure so it can be tested with plain objects. The
-// composition root is the one place allowed to know about all three.
-// DISABLED 2026-08-17 (`observatory.enabled`, default false). This callback wrote
-// ONE ROW PER RECEIVED PACKET — measured at 30 rows in 90 s, ~29,000/day, and
-// 549,937 accumulated. The registration is skipped entirely rather than the
-// callback returning early, so a disabled observatory costs nothing per packet.
-if (getConfig('observatory.enabled', false)) {
-  registerPacketObserver((packet, device, ts, replay) => {
-    const o = packetObservation(packet, device, ts, replay, rotator.status, getAllDeviceCfgs());
-    if (o) observe(o);
-  });
-}
-// The catalogue of domain calculations. Separate from the engine on purpose:
-// this file knows what a bearing is, the engine must never learn. It is the ONE
-// place every inference is registered, so the whole of what node-dash works out
-// can be read top to bottom (docs/modules/inferences.md). Empty today.
-import './inferences.js';
-// Pushes each observation to the browser as it is recorded, and replays the
-// recent past to every new connection. Plugin wiring, not core — ws-relay.js
-// never names the observatory.
-import './observatory-ws.js';
+// WHAT DELIBERATELY DID NOT GO, because each has a live consumer:
+//   relay-observation.js  core persist.js imports it — packet provenance, not
+//                         observatory, despite the name
+//   doors.js              standing-tasks.js imports it, and startStandingTasks()
+//                         runs unconditionally below
+//   discoveryConfig()     standing-tasks.js reads max_silence_days from it
+//   DISCOVERY_LIMITS      rotator.js takes its hold ceiling from hold_sec[1] —
+//                         and the rotator is shared with the garage alarm
+//   observatory.window_days   read by snapshot-api, persist.js and
+//                         standing-tasks.js. The NAME says observatory; the
+//                         setting is a general analysis window and is live
+//   clusters/reach/snapshot routers   still gated by `observatory.enabled`
+//                         below. None of them imported anything archived
+//
+// So "discovery" was NOT archived as a unit: its runner is dead, but its config,
+// its door model and the DISC dash mode are not. Removing those would have
+// deleted working behaviour nobody asked to lose.
 
 // Name every positioned node we have never looked up. Deferred, paced, and
 // idempotent — see src/geocode.js.

@@ -104,68 +104,40 @@ timers.length
 // ── 4. observatory.window_days must default the same everywhere.
 // Bug: charts() read 7 while config-api and three SQL COALESCEs read 30, so a
 // missing key produced 7-day series next to 30-day figures in one payload.
+//
+// REPOINTED 2026-08-18. It watched observatory-ws.js and inferences.js, both now
+// in archive/observatory-and-discovery-2026-08-18.tar.gz — so it was guarding two
+// files that no longer exist while the LIVE readers went unwatched. The key
+// itself is NOT observatory-only despite its name: snapshot-api, persist.js and
+// standing-tasks.js all read it.
 const defs = new Set();
 for (const [f, re] of [
-  ['src/observatory-ws.js', /getConfig\('observatory\.window_days',\s*(\d+)\)/g],
-  ['src/config-api.js',     /window_days:\s*(\d+)/g],
-  ['src/inferences.js',     /key = 'observatory\.window_days'\),\s*(\d+)\)/g],
+  ['src/config-api.js',      /window_days:\s*(\d+)/g],
+  ['src/snapshot-api.js',    /getConfig\('observatory\.window_days',\s*(\d+)\)/g],
+  ['src/persist.js',         /getConfig\('observatory\.window_days',\s*(\d+)\)/g],
+  ['src/standing-tasks.js',  /getConfig\('observatory\.window_days',\s*(\d+)\)/g],
 ]) for (const m of R(f).matchAll(re)) defs.add(m[1]);
 defs.size > 1
   ? fail('observatory.window_days default agrees', `found ${[...defs].join(' and ')}`)
   : pass(`observatory.window_days default agrees (${[...defs][0] ?? 'none found'})`);
 
-// ── 4. Live payload invariants.
-// Bugs: contribution() had no plausibility ceiling, so one laundered position
-// would flip the headline green; and it printed literal "null" before the
-// ladder produced a fact.
-const PLAUSIBLE = 445;
-await new Promise((resolve) => {
-  const ws = new WebSocket('ws://127.0.0.1:8000/events');
-  const t = setTimeout(() => { fail('live payload reachable', 'no charts within 20s'); ws.close(); resolve(); }, 20000);
-  ws.on('error', (e) => { clearTimeout(t); fail('live payload reachable', e.message); resolve(); });
-  ws.on('message', (d) => {
-    let ev; try { ev = JSON.parse(d); } catch { return; }
-    if (ev.type !== 'charts' || !ev.charts) return;
-    clearTimeout(t); const c = ev.charts;
-
-    const far = (c.nodes?.rows ?? []).filter(r => r.km > PLAUSIBLE);
-    far.length ? fail('no served distance exceeds the plausibility ceiling',
-                      `${far.length} rows > ${PLAUSIBLE} km, furthest ${far[0].km}`)
-               : pass('no served distance exceeds the plausibility ceiling');
-
-    // Walk STRING VALUES only. An earlier version regexed the JSON text and
-    // matched `"key":null` — a legitimate null field, not a display string.
-    const bad = [];
-    const walk = (v) => {
-      if (typeof v === 'string') { if (/\b(null|undefined|NaN)\b/.test(v)) bad.push(v); }
-      else if (Array.isArray(v)) v.forEach(walk);
-      else if (v && typeof v === 'object') Object.values(v).forEach(walk);
-    };
-    walk(c.contribution); walk(c.nodes?.rows);
-    bad.length
-      ? fail('no served display string contains null/undefined/NaN', bad[0].slice(0, 120))
-      : pass('no served display string contains null/undefined/NaN');
-
-    // ── Every served reach FIGURE must be rendered somewhere.
-    // Bug: charts.heard_km (proven contact, 444.2 km) was computed, served, and
-    // rendered NOWHERE, so every headline on the board was traceroute-only and
-    // the first number Peter looked at was the wrong one.
-    const markup = R('public/partials/tab-observatory.html');
-    const unrendered = ['record_km', 'window_best_km', 'heard_km']
-      .filter(k => c[k] != null && !markup.includes(k));
-    unrendered.length
-      ? fail('every served reach figure is rendered', `served but never rendered: ${unrendered.join(', ')}`)
-      : pass('every served reach figure is rendered');
-
-    const cont = c.contribution;
-    (cont && cont.beyond_record > 0 && !cont.gaining) || (cont && cont.beyond_record === 0 && cont.gaining)
-      ? fail('gaining flag agrees with beyond_record', JSON.stringify({ beyond: cont.beyond_record, gaining: cont.gaining }))
-      : pass('gaining flag agrees with beyond_record');
-
-    ws.close(); resolve();
-  });
-});
-
+// ── Live payload invariants — REMOVED 2026-08-18 ─────────────────────────────
+//
+// This block opened a socket and waited for a `charts` event, then asserted a
+// plausibility ceiling on served distances, that no display string contained
+// "null"/"undefined"/"NaN", that every served reach figure appeared in
+// tab-observatory.html, and that `gaining` agreed with `beyond_record`.
+//
+// `charts` was emitted ONLY by observatory-ws.js, and tab-observatory.html was
+// its renderer. Both are in archive/observatory-and-discovery-2026-08-18.tar.gz,
+// so the block could no longer do anything but time out after 20 s and fail.
+//
+// The bugs it guarded were real and are recorded here so they are not lost if
+// the board ever returns: contribution() had no plausibility ceiling, so a single
+// laundered position flipped the headline green; it printed the literal string
+// "null" before the ladder produced a fact; and charts.heard_km (444.2 km,
+// proven contact) was computed and served but rendered NOWHERE, so every
+// headline was traceroute-only.
 
 // ── Reach may never fall below what we have HEARD ────────────────────────────
 //

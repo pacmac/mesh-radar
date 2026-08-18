@@ -18,7 +18,11 @@ import { spawn } from 'node:child_process';
 // dominates and a tighter bound tests the machine rather than the code.
 const CHECKS = [
   { name: 'check_specs',            group: 'fast',    cmd: 'python',  args: ['scripts/check_specs.py'],           needs: '—',                   measured: '82 ms',    timeoutMs: 30_000 },
-  { name: 'observatory_boundary',   group: 'fast',    cmd: 'node',    args: ['tests/test_observatory_boundary.mjs'], needs: '—',                measured: '40 ms',    timeoutMs: 30_000 },
+  // observatory_boundary REMOVED 2026-08-18 — the boundary it guarded no longer
+  // exists to be crossed. The whole subsystem is in
+  // archive/observatory-and-discovery-2026-08-18.tar.gz, and the test went with
+  // it. It asserted that only index.js/inferences.js/observatory-ws.js could
+  // import the engine; with no engine there is nothing to import.
   { name: 'channel_write',          group: 'fast',    cmd: 'node',    args: ['tests/test_channel_write.mjs'],     needs: '—',                   measured: '30 ms',    timeoutMs: 30_000 },
   { name: 'op_manager',             group: 'fast',    cmd: 'node',    args: ['tests/test_op_manager.mjs'],        needs: '—',                   measured: '140 ms',   timeoutMs: 30_000 },
   { name: 'served_time',            group: 'fast',    cmd: 'node',    args: ['tests/test_served_time.mjs'],       needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },

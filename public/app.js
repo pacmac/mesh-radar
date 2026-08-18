@@ -7,7 +7,6 @@ import { devicesMixin }   from './app-devices.js';
 import { nodesMixin }     from './app-nodes.js';
 import { rotatorMixin }   from './app-rotator.js';
 import { radarMixin }     from './app-radar.js';
-import { observatoryMixin } from './app-observatory.js';
 import { snapshotMixin } from './app-snapshot.js';
 import { messagesMixin }  from './app-messages.js';
 import { rangeMixin }     from './app-range.js';
@@ -445,7 +444,7 @@ window.dashboard = function() {
   for (const p of (window.__dashPlugins || [])) Object.assign(state, p.state || {});
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
-    rotatorMixin, radarMixin, observatoryMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
+    rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
     componentsMixin, perfMixin, nodeStatusMixin, snapshotMixin,
     // Plugin-contributed mixins. Core does not know what any of them are; a
     // plugin registers itself in window.__dashPlugins from a script emitted

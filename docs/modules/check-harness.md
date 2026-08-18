@@ -4,7 +4,7 @@ source:
   - scripts/ws-ask.mjs
   - scripts/check_snapshot.mjs
   - scripts/check_contract.mjs
-source_hash: 439f175270d902ec5b23e84401f5fe1c1cd7dc7b713df8805a163d2210c8c248
+source_hash: 04d80b726bad411ada99ec5807e290cc2d0eb2ba0fc06c39e07c74326e693603
 updated: 2026-08-17
 ---
 

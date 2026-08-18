@@ -803,7 +803,7 @@ function runOutboundRelayIdentity() {
 // unpositioned node is still a node we had never reached. Measured 2026-08-03:
 // 6 first-ever that day, only 2 plottable.
 function runNewGround() {
-  const days = Number(getConfig('observatory.window_days', 7)) || 7;
+  const days = Number(getConfig('observatory.window_days', 30)) || 30;  // 30 = the declared default (config-api.js:94)
   const from = Math.floor(Date.now() / 1000) - days * 86400;
 
   const att = db.prepare(`SELECT COUNT(*) n, SUM(status='ok') ok
@@ -881,7 +881,7 @@ function runExplorers() {
   const minKm      = Number(getConfig('explorers.min_km', 40)) || 40;
   const minHops    = Number(getConfig('explorers.min_hops', 2)) || 2;
   const minTraffic = Number(getConfig('explorers.min_traffic', 20)) || 20;
-  const days       = Number(getConfig('observatory.window_days', 7)) || 7;
+  const days       = Number(getConfig('observatory.window_days', 30)) || 30;  // 30 = the declared default
   const home = homeLatLon();
   if (!home) {
     T.explorers.emit({ severity: 'info', summary: 'cannot place ourselves — no explorer ranking possible', detail: {} });
