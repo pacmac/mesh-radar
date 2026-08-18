@@ -36,7 +36,13 @@ const CHECKS = [
   // copy sits still — see vendor/meshtastic-android/PROVENANCE.md.
   { name: 'interval_tables',        group: 'fast',    cmd: 'node',    args: ['scripts/gen_interval_tables.mjs', '--check'], needs: '—',        measured: '45 ms',    timeoutMs: 30_000 },
   { name: 'interval_options',       group: 'fast',    cmd: 'node',    args: ['tests/test_interval_options.mjs'],  needs: '—',                   measured: '40 ms',    timeoutMs: 30_000 },
-  { name: 'verify_saved',           group: 'fast',    cmd: 'node',    args: ['tests/test_verify_saved.mjs'],      needs: '—',                   measured: '40 ms',    timeoutMs: 30_000 },
+  // verify_saved REMOVED 2026-08-18, one commit after it was added. It tested
+  // verifySaved(), which compared a section against a read-back taken immediately
+  // after the save — a check that cannot work, because the read-back races the
+  // radio's reboot and because turning a boolean off makes it vanish from the GET
+  // entirely. It fired on the normal path. The test passed throughout; it was
+  // asserting the behaviour of a mechanism that should not exist.
+  // docs/modules/app-config.md.
   { name: 'served_time',            group: 'fast',    cmd: 'node',    args: ['tests/test_served_time.mjs'],       needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
   { name: 'channels',               group: 'fast',    cmd: 'node',    args: ['tests/test_channels.mjs'],          needs: '—',                   measured: '190 ms',   timeoutMs: 30_000 },
   { name: 'send_channel',           group: 'fast',    cmd: 'node',    args: ['tests/test_send_channel.mjs'],      needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },

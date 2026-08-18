@@ -367,7 +367,7 @@
                               <div class="flex items-center gap-2 mt-3" x-show="sec.loaded">
                                 <button class="btn btn-sm btn-primary"
                                         :disabled="devIsSaving(cfgRadioId) || !devIsReady(cfgRadioId) || opLoading('cfg_' + sec.name + '_' + cfgRadioId)"
-                                        @click="asyncOp('cfg_' + sec.name + '_' + cfgRadioId, () => saveSection(sec), { successMsg: sec.name.replace(/_/g,' ') + ' saved & verified' })">
+                                        @click="asyncOp('cfg_' + sec.name + '_' + cfgRadioId, () => saveSection(sec), { successMsg: sec.name.replace(/_/g,' ') + ' saved — radio is restarting'})">
                                   <span x-show="opLoading('cfg_' + sec.name + '_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
                                   Save
                                 </button>
@@ -394,7 +394,7 @@
                                 <div class="flex items-center gap-2 mt-3">
                                   <button class="btn btn-sm btn-primary"
                                           :disabled="opLoading('fixedpos_save_' + cfgRadioId)"
-                                          @click="asyncOp('fixedpos_save_' + cfgRadioId, () => saveFixedPosition(), { successMsg: 'Fixed position saved & verified' })">
+                                          @click="asyncOp('fixedpos_save_' + cfgRadioId, () => saveFixedPosition(), { successMsg: 'Fixed position saved — radio is restarting'})">
                                     <span x-show="opLoading('fixedpos_save_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
                                     Save Position
                                   </button>
@@ -467,7 +467,7 @@
                             <div class="flex items-center gap-2 mt-3">
                               <button class="btn btn-sm btn-primary"
                                       :disabled="opLoading('owner_' + cfgRadioId)"
-                                      @click="asyncOp('owner_' + cfgRadioId, () => saveOwner(), { successMsg: 'Owner saved & verified' })">
+                                      @click="asyncOp('owner_' + cfgRadioId, () => saveOwner(), { successMsg: 'Owner saved — radio is restarting'})">
                                 <span x-show="opLoading('owner_' + cfgRadioId)" class="loading loading-spinner loading-xs"></span>
                                 Save
                               </button>

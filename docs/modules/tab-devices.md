@@ -1,7 +1,7 @@
 ---
 module: tab-devices
 source: public/partials/tab-devices.html
-source_hash: 92bd2ed81c26195ee8e7c6a4455c5c3d6fe4b7e9ac6654c5be76c103591806fd
+source_hash: 065d71381c46fbd19de0c0a4413c643e8a6073d5c009e1ec45c79aebc419f5ec
 updated: 2026-08-01
 ---
 

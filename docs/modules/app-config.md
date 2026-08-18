@@ -1,7 +1,7 @@
 ---
 module: app-config
 source: public/app-config.js
-source_hash: f51db60dfcfa4afa230ec6e7873be379cbacbc84a419d7f3db75a0d8949aea84
+source_hash: 76d92417ecd58f50216fcd57cdba353f039a8687d7c34a05df3b3e7ba0495351
 updated: 2026-08-03
 ---
 
@@ -268,78 +268,118 @@ never report success.
 - read-back from the radio (not from a cache) shows the written value
 - falsification: forcing the path back to `config` reproduces the protobuf error
 
-## "Saved & verified" now means something — 2026-08-18
+## A save follows the phone app: optimistic, then re-read on next open — 2026-08-18
 
-Three Save buttons told the operator **"saved & verified"**. Nothing was ever
-compared.
+Peter, reporting a false alarm raised by this module's own code:
 
-`saveSection` did re-read the section after the POST, and a comment called the
-result *"the verified server state"* — but it only repainted the form with it. The
-same for `saveOwner` and `saveFixedPosition`, which did not even re-read.
+> store forward did NOT match after saving — is_server: sent false, radio has true
 
-So "verified" was shown on every save made today, including the ones that failed
-with mesh-gw's 500, and including reads that landed while the device was
-`RECONNECTING` and could therefore return the **old** value.
+then *"seems to me that this will never work"*, and — when the reply was a menu
+rather than an answer — *"how does phone app handle it. that will always be my
+reply"*.
 
-Peter's whole reason for the backup chain was *"it can prove that what we are
-writing to the radio is actually what the radio hold"*. The save path was claiming
-that proof without doing it.
+**His save had worked.** The alarm was wrong.
 
-### Three states, because two would still be a lie
+```
+backups/!2687afb1/260818153011.json   (taken PRE-save)
+   store_forward = {"enabled": true, "heartbeat": true, "is_server": true}
+radio, ?fresh=1
+   store_forward = {"enabled": true, "heartbeat": true}
+```
 
-| state | meaning | how it is shown |
-|---|---|---|
-| `verified` | every field we sent matches the read-back | the existing success toast |
-| `unconfirmed` | read-back unavailable, or device not `READY` | our own toast, worded as *saved, not yet confirmed* — the radio is restarting, which is normal after a save |
-| `mismatch` | it came back **different** | thrown, so it surfaces as an error toast |
+`is_server` is absent because **`false` is the protobuf default and the GET omits
+defaults**. The radio took the write.
 
-`mismatch` is the reason to build this at all. It is the only state that indicates
-something actually went wrong, and previously it was indistinguishable from
-success.
+### Why synchronous verification cannot work
 
-`unconfirmed` is not a failure and must not be dressed as one. The firmware
-reboots after most saves — observed on every module-config write — so an immediate
-read-back failing is the *expected* path, not an exception.
+Not a tuning problem. Two independent reasons, either of which is fatal:
 
-### `verifySaved(sent, readback)` — pure, and therefore testable
+1. **The read-back races the reboot.** The radio restarts after a save, and the
+   gateway's cache serves pre-save values meanwhile — measured,
+   `RECONNECTING 14:50:35 → READY 14:50:51`, about 16 s. `?fresh=1` does not help
+   while the device is reconnecting.
+2. **Turning a boolean OFF makes it vanish.** "Set to default" and "absent" are
+   the same thing on the wire. So the commonest edit anyone makes — switching
+   something off — is exactly the one that can never be confirmed.
 
-Lives in `public/app-forms.js` beside `collectForm`, whose output it consumes. It
-takes no DOM, so it is unit-tested in node.
+Together they mean the check fires on the **normal path**, and an alarm that fires
+on the normal path is worse than no alarm. The previous version of this section
+said precisely that about `unconfirmed`, and then shipped a `mismatch` that did it.
 
-Rules, each of which exists because the naive version gets it wrong:
+### What the app does instead
 
-- **Compare only the fields we SENT.** mesh-gw's GET returns only non-default
-  fields, so a field we did not send being absent proves nothing. This is the same
-  asymmetry that made `collectForm` skip untouched fields.
-- **Ignore keys beginning `__`.** `/config/{section}` adds `__reboot` and
-  `__notes` for the form to render. A comparison that does not strip them reports
-  spurious mismatches — measured: 8 of 21 sections, all false.
-- **Compare loosely across number/string.** A select's DOM value is a string and
-  the schema value is a number; `199` and `"199"` are the same setting.
-- **A missing field in the read-back is `unconfirmed`, never `mismatch`.** Absence
-  is not disagreement — the gw may simply not have re-read yet.
+`RadioConfigViewModel.setConfig` / `setModuleConfig`:
+
+**1. Optimistic local update, from what was sent.**
+
+```kotlin
+state.copy(moduleConfig = state.moduleConfig.copy(
+    store_forward = config.store_forward ?: state.moduleConfig.store_forward, …))
+```
+
+No read-back. No comparison. The word "verified" appears nowhere in the path.
+
+**2. The restart is declared, not discovered.**
+
+```kotlin
+expectRestartIfLocal(config.saveRebootBehavior())
+```
+
+**3. The single exception states the rule** — their comment, verbatim:
+
+> LoRa is intentionally NOT applied optimistically: the firmware can clamp or
+> region-swap (e.g. EU sibling) a LoRa write and applies it live, so the form must
+> reflect the device's actual value. **It is re-read from the device when the LoRa
+> screen is next opened.**
+
+So: trust the write; where the firmware may **alter** what you sent, re-read — and
+re-read **when the screen is next opened**, never synchronously. By then the radio
+has rebooted and resynced, which dissolves both failure modes above.
+
+### The change
+
+| before | after |
+|---|---|
+| POST, immediately GET, compare, alarm on difference | POST, update the form from what was **sent**, mark the section stale |
+| "«section» saved & verified" | "«section» saved — radio is restarting" |
+| `verifySaved()` + `tests/test_verify_saved.mjs` | **deleted** |
+
+`sec.loaded = false` after a save is the whole of the re-read mechanism:
+`onSectionToggle` already returns early when `sec.loaded`, so clearing it makes the
+next open fetch from the device. That is the app's "re-read when the screen is next
+opened", and it needs no timer, no polling and no waiting.
+
+**`verifySaved` is deleted rather than left unused.** Dead code with a passing test
+attached is worse than no code: the green check implies a guarantee that nothing
+provides.
+
+### Why "saved" is honest and "verified" was not
+
+The app treats queue acceptance as success (`CommandSenderImpl.enqueueOrThrow` —
+the only failure is the queue refusing the packet). It never claims delivery, and
+neither should the UI. `docs/modules/radio-admin.md` carries the same reasoning for
+the backend.
+
+The audit chain remains the thing that can actually prove what was written: a
+backup precedes every save, and the diff between consecutive files is the record.
+That is verification done where it works — **after** the fact, against a settled
+device — rather than 200 ms after a write, against a cache.
 
 ### Deliberately NOT changed
 
-- **`asyncOp` is untouched.** Its static `successMsg`, `throw` → error toast, and
-  `return false` → suppress toast are together enough to express three states.
-  Rearchitecting a shared helper to add a status to one caller would be scope
-  creep with a blast radius across every op in the app.
-- **The two OTHER `verified` claims** — config restore (`tab-devices.html:654`)
-  and `pushFixedPosition` (`app-devices.js:125`) — test a `verified` flag returned
-  by mesh-gw's older cooked PUT, which `radio-admin-api.js` records as reporting
-  `{"verified": true}` without verifying anything. Those are a different endpoint
-  on a different path, and go to the ledger rather than into this change.
+**The two OTHER `verified` claims** — config restore (`tab-devices.html:654`) and
+`pushFixedPosition` (`app-devices.js:125`) — test a `verified` flag returned by
+mesh-gw's older cooked PUT, which `radio-admin-api.js` records as reporting
+`{"verified": true}` without verifying anything. A different endpoint on a
+different path; they stay in the ledger.
 
 ### Test notes
 
-- all sent fields matching → `verified`
-- one field differing → `mismatch`, and the diff names the field, what was sent
-  and what the radio holds
-- a sent field absent from the read-back → `unconfirmed`, not `mismatch`
-- `__reboot` / `__notes` present in the read-back → still `verified`
-- `199` vs `"199"` → `verified`
-- a field in the read-back that we did not send → ignored
+- saving a section leaves `sec.loaded === false`, so reopening re-reads
+- the form repaints from the values **sent**, so a boolean switched off shows off
+- no request is made to `/config/{section}` between the POST and the toast
+- `verifySaved` is gone from `app-forms.js`, and `check_all` no longer lists
+  `verify_saved`
 
 ### Related finding, recorded separately
 
