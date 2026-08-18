@@ -10,7 +10,7 @@
 // not get run, and an unrun test is not a test.
 import assert from 'node:assert/strict';
 
-const { decideAim, aimAt, aimForNode, bearingToNode } = await import('../src/aim.js');
+const { decideAim, aimAt, aimForNode, bearingToNode, parseVia } = await import('../src/aim.js');
 const { rotator, HOLD_CEILING_MS } = await import('../src/rotator.js');
 const { DISCOVERY_LIMITS } = await import('../src/config-api.js');
 
@@ -163,6 +163,52 @@ for (const num of [1234, 0xda5af428]) {
   // With no via, the derived rule is untouched.
   const plain = decideAim(646426545, steerable);
   ok(['node', 'relay', 'none'].includes(plain.mode), 'without via the node/relay rule is unchanged');
+}
+
+// ── `via` as a BEARING — the radar-cluster case ────────────────────────────
+// Peter, 2026-08-18: "we need to able to force a traceroute via a node or via a
+// bearing. so I might look at the radar and see a cluster and attempt to route
+// via them by a bearing / angle."
+{
+  const GZG = 80054436;   // relayed — without via its beam would go to the relay
+
+  // A bare number in 0..360 is a BEARING, and it beats whatever the route says.
+  const b = decideAim(GZG, steerable, 90);
+  eq(b.mode, 'bearing',   'a bare 0-360 number is a bearing, not a node');
+  eq(b.az, 90,            '...and is used verbatim');
+  eq(b.aimTarget, null,   'a bearing has NO node identity — claiming one would be a lie in the row');
+
+  eq(decideAim(GZG, steerable, 0).az, 0,   'bearing 0 is due north, not "absent"');
+  eq(decideAim(GZG, steerable, 360).az, 0, '360 normalises to 0 rather than being read as a node');
+
+  // Above the bearing range it is a node again.
+  eq(parseVia(3663393832).kind, 'node', 'a large number is a node num');
+  eq(parseVia('!da5af428').kind, 'node', 'a !hex id is a node');
+  eq(parseVia(219).kind, 'bearing',      '219 is a bearing');
+
+  // The EXPLICIT forms escape the range rule in both directions.
+  const fb = parseVia({ bearing: 219 }); eq(fb.kind, 'bearing', '{bearing} forces a bearing');
+  const fn = parseVia({ node: 219 });    eq(fn.kind, 'node',    '{node} forces a node, inside the bearing range');
+  eq(fn.num, 219,                                              '...with the number intact');
+
+  // THE COLLISION GUARD. Cannot fire against the live store (no node is below
+  // 360 — smallest measured 2026-08-18 is 3,119,745), so it is driven here.
+  const clash = parseVia(219, (n) => n === 219);
+  ok(clash?.error && /ambiguous/.test(clash.error), 'a number that is BOTH a bearing and a known node is refused');
+  ok(/\{"bearing":219\}/.test(clash.error) && /\{"node":219\}/.test(clash.error),
+     '...and the refusal shows both explicit forms');
+
+  // Malformed input is an error, never a silent zero — 0 is due north.
+  ok(parseVia('nonsense')?.error, 'an unparseable via is an error');
+  ok(parseVia({})?.error,         'a via object with neither node nor bearing is an error');
+  eq(parseVia(null), null,        'no via is not an error, it is simply absent');
+
+  // A bearing needs no lookup, so it is always honourable — it must reach the
+  // rotator even for a target we know nothing about.
+  const s = await withStubbedRotator(() => aimForNode(999_999_999, steerable, 20_000, { via: 137 }));
+  eq(s.value.mode, 'bearing', 'a bearing aims even when the TARGET is unknown');
+  eq(s.value.az, 137,         '...at exactly the bearing given');
+  ok(s.points >= 1,           '...and the rotator is actually commanded');
 }
 
 // ── bearingToNode is a bearing or null, never NaN ──────────────────────────

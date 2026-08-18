@@ -33,6 +33,7 @@ import { Router } from 'express';
 import { stmts } from './db.js';
 import { traceroute } from './traceroute.js';
 import { resolveRadio, RADIO_SPECS } from './resolve.js';
+import { parseVia } from './aim.js';
 import { nodeIdToNum } from './utils.js';
 
 const router = Router();
@@ -76,24 +77,26 @@ router.post('/traceroute', async (req, res) => {
     });
   }
 
-  // `via` — an AIM override, same accepted forms as `node`. Validated here so a
-  // typo is a 400 rather than a refusal to dispatch three seconds later.
-  let viaNum = null;
-  if (via != null && via !== '') {
-    viaNum = typeof via === 'string' && via.startsWith('!') ? nodeIdToNum(via) : Number(via);
-    if (!Number.isFinite(viaNum) || viaNum <= 0) {
-      return res.status(400).json({ error: 'via must be a !hex id or a node num' });
-    }
-  }
+  // `via` — an AIM override, read as a NODE or a BEARING by aim.js's parseVia,
+  // which is the single place that ambiguity is resolved. Parsed here too so a
+  // bad one is a 400 now rather than a refusal to dispatch three seconds later.
+  //
+  // The collision guard is handed a real lookup against the node table: a bare
+  // number in 0-360 that is also a known node is refused rather than guessed.
+  const isKnownNode = (n) => {
+    try { return !!stmts.getNodeByNum.get(n); } catch { return false; }
+  };
+  const viaSpec = parseVia(via, isKnownNode);
+  if (viaSpec?.error) return res.status(400).json({ error: viaSpec.error });
 
   // VIA ON AN OMNI IS IGNORED, AND SAID SO OUT LOUD. Peter: "this only applies
   // to directional antennas." The traceroute is still valid, so this is not an
-  // error — but a caller who asked for a beam on a node and got none must not
+  // error — but a caller who asked for a beam somewhere and got none must not
   // have to infer that from silence.
-  const viaIgnored = viaNum != null && !resolved.directional;
+  const viaIgnored = viaSpec != null && !resolved.directional;
 
   try {
-    const result = await traceroute.run(radio, to, timeoutMs, { via: viaNum });
+    const result = await traceroute.run(radio, to, timeoutMs, { via: viaSpec });
     return res.json({
       ok: true,
       radio: { label: resolved.label, node_id: resolved.node_id, beam_deg: resolved.beam_deg,
