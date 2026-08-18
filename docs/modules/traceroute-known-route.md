@@ -4,7 +4,7 @@ source:
   - src/db.js
   - src/aim.js
   - src/traceroute.js
-source_hash: 4829ddfcdc80473ecd67a26a97230f52cddf2119a413190d18d29e3635c8cca4
+source_hash: cee0927195596ee95729ce84033645ca8091e1fdbe3c593fb85373f2b4a4db20
 updated: 2026-08-18
 ---
 
@@ -55,7 +55,8 @@ Present on every phase, since it is part of the run context:
   "direct":      false,                     // true = empty route, we reach it ourselves
   "ts":          1786998000,                // when that path was last observed
   "relay_num":   3608510722,                // route[0] — what a relay aim points at
-  "relay_label": "fir"
+  "relay_label": "fir",
+  "relay_positions": { "3608510722": { "latitude_i": …, "longitude_i": … }, … }
 }
 ```
 
@@ -63,6 +64,12 @@ Present on every phase, since it is part of the run context:
 apart from a real direct contact.
 
 Labels are pre-resolved because the browser resolves nothing.
+
+`relay_positions` is carried for the same reason the OLD radar overlay carried
+it: a consumer working from the node list alone cannot place every hop. Measured
+2026-08-18, only **80 of 109** relays appearing in stored routes have a position
+in `nodes` — so 27% of hops would be unplottable. `extractRelayPositions()` reads
+`nodeinfo`, the same source the stored rows used.
 
 ## What this gives a consumer
 

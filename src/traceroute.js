@@ -278,7 +278,17 @@ class TracerouteManager extends EventEmitter {
       // Read here rather than inside the aim branch, because it is true of the
       // run whether or not we aim — an omni has a known route too, and a `via`
       // overrides where we point without changing what we know.
-      known_route: lastKnownRoute(to),
+      known_route: (() => {
+        const k = lastKnownRoute(to);
+        if (!k) return null;
+        // POSITIONS FOR THE RELAYS, so a consumer can place every hop without a
+        // lookup of its own. Measured 2026-08-18: only 80 of 109 relays seen in
+        // stored routes have a position in `nodes`, so a consumer working from
+        // the node list alone cannot plot 27% of hops. `extractRelayPositions`
+        // reads nodeinfo — the same source the stored rows used — and is the
+        // reason the old radar overlay carried relay_positions at all.
+        return { ...k, relay_positions: extractRelayPositions(k.route) };
+      })(),
       timing: { started_ts: startedTs, timeout_ms: timeout,
                 deadline_ts: startedTs + Math.round(timeout / 1000) },
     });
