@@ -1,7 +1,7 @@
 ---
 module: channels
 source: src/channels.js
-source_hash: 0ac605be72c0dde7be2e9018abeb23161b205be66ca24d75542c7ff34170582b
+source_hash: 100dced1d85383821686e62199d3077a9a3482dd161adfe0591cb8c0e153c07e
 updated: 2026-08-18
 ---
 

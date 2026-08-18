@@ -27,7 +27,7 @@
 import assert from 'node:assert/strict';
 
 const { channelKey, setDeviceChannels, isRole, roleOf, indexFor,
-        resolveChannel, channelsFor, divergences, ROLES, ROLE_CONFIG_KEY }
+        resolveChannel, channelsFor, divergences, designatedKey, ROLES, ROLE_CONFIG_KEY }
   = await import('../src/channels.js');
 const { setConfig, getConfig } = await import('../src/db.js');
 
@@ -75,10 +75,24 @@ setDeviceChannels(YAGI, [
 // `finally`, and asserts the restoration. Every interruption point leaves a role
 // undesignated or pointing at a key we do not hold — both FAIL CLOSED, so there is
 // no way to be interrupted into a MORE permissive state.
-const restore = Object.fromEntries(ROLES.map(r => [r, getConfig(ROLE_CONFIG_KEY[r], null)]));
+const restore = Object.fromEntries(ROLES.map(r => [r, {
+  name: getConfig(ROLE_CONFIG_KEY[r].name, null),
+  psk:  getConfig(ROLE_CONFIG_KEY[r].psk,  null),
+}]));
 try {
-  setConfig(ROLE_CONFIG_KEY.pub, KEY_PUB);
-  setConfig(ROLE_CONFIG_KEY.pri, KEY_PRI);
+  setConfig(ROLE_CONFIG_KEY.pub.name, '');            // UNNAMED — the default channel
+  setConfig(ROLE_CONFIG_KEY.pub.psk,  PSK_PRIMARY);
+  setConfig(ROLE_CONFIG_KEY.pri.name, 'Private');
+  setConfig(ROLE_CONFIG_KEY.pri.psk,  PSK_PRIVATE);
+
+  // AN EMPTY NAME IS A DESIGNATION, NOT AN ABSENCE. The public role above is
+  // configured with `''`, which is the CORRECT primary name for the default
+  // channel — the firmware substitutes the modem preset name when it hashes.
+  // A truthiness test on the name would reject it and leave `pub` undesignated,
+  // and configuring a non-empty name to dodge that is precisely how `Public`
+  // came to be designated for two days while all public traffic was dead.
+  eq(designatedKey('pub'), KEY_PUB,
+     "an EMPTY name is a valid designation — '' is the default public channel");
 
   // ── (radio, role) resolves per radio — Peter: "so 2 args (RADIO,PUB/PRI)" ──
   eq(indexFor(OMNI, 'pri'), 2, 'private is index 2 on the OMNI');
@@ -139,7 +153,8 @@ try {
   // ── FAILS SAFE ───────────────────────────────────────────────────────────
   // Undesignated: nothing is anything, and there is no slot to send on. A
   // fallback to 0 here is PRIMARY — the public mesh — when private was asked for.
-  setConfig(ROLE_CONFIG_KEY.pri, null);
+  setConfig(ROLE_CONFIG_KEY.pri.name, null);
+  setConfig(ROLE_CONFIG_KEY.pri.psk,  null);
   eq(indexFor(OMNI, 'pri'), null,  'no designation -> null, never 0');
   eq(roleOf(OMNI, 2),       null,  'no designation -> nothing claims the role');
   eq(divergences().filter(x => x.role === 'pri').length, 0,
@@ -147,16 +162,21 @@ try {
 
   // A designation matching no slot we hold must fail closed, not fall through to
   // "the first secondary" or similar.
-  setConfig(ROLE_CONFIG_KEY.pri, channelKey('Nope', 'c29tZS1vdGhlci1rZXk='));
+  setConfig(ROLE_CONFIG_KEY.pri.name, 'Nope');
+  setConfig(ROLE_CONFIG_KEY.pri.psk,  'c29tZS1vdGhlci1rZXk=');
   eq(indexFor(OMNI, 'pri'), null, 'unknown designation -> null');
   eq(divergences().filter(x => x.role === 'pri').length, 2,
      'and BOTH radios are reported as diverged from it');
 } finally {
-  for (const r of ROLES) setConfig(ROLE_CONFIG_KEY[r], restore[r]);
+  for (const r of ROLES) {
+    setConfig(ROLE_CONFIG_KEY[r].name, restore[r].name);
+    setConfig(ROLE_CONFIG_KEY[r].psk,  restore[r].psk);
+  }
 }
 
 for (const r of ROLES) {
-  eq(getConfig(ROLE_CONFIG_KEY[r], null), restore[r], `live ${r} designation restored`);
+  eq(getConfig(ROLE_CONFIG_KEY[r].name, null), restore[r].name, `live ${r} name restored`);
+  eq(getConfig(ROLE_CONFIG_KEY[r].psk,  null), restore[r].psk,  `live ${r} psk restored`);
 }
 
 console.log(`${checks} checks — identity is name+key, (radio,role) resolves per radio, gaps are reported.`);

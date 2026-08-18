@@ -79,7 +79,20 @@ export const ROLES = ['pub', 'pri'];
 // CONFIGURED, NOT INFERRED. "The channel both radios share" singles neither out,
 // and inferring `pub` from "index 0" is precisely the assumption that hid the
 // YAGI fault: index 0 on the YAGI IS a primary, it is just the wrong one.
-export const ROLE_CONFIG_KEY = { pub: 'channels.pub_key', pri: 'channels.pri_key' };
+// THE READABLE PAIR THAT IDENTIFIES EACH ROLE — name AND psk, per role. The
+// identity hash is DERIVED from these; it is not stored.
+//
+// Peter, 2026-08-18: "AQ== (or whatever is the PKC for public) and our PRIVATE
+// key should be in our config file. resolver MUST use these to determine the
+// PUBLIC and PRIVATE channel for each radio."
+//
+// The predecessor stored the sha256 alone — `channels.pub_key` — and for two
+// days that fingerprint denoted the MISNAMED `Public` channel while all public
+// traffic was dead. A hash cannot be reviewed; a name can. See the banner above.
+export const ROLE_CONFIG_KEY = {
+  pub: { name: 'channels.pub_name', psk: 'channels.pub_psk' },
+  pri: { name: 'channels.pri_name', psk: 'channels.pri_psk' },
+};
 
 // device key (MAC **or** node id, upper-cased) -> [{ index, name, role, key }]
 //
@@ -139,12 +152,24 @@ export function channelsFor(device) {
   return _byDevice.get(_dev(device)) ?? [];
 }
 
-/** The configured identity for a role, or null if undesignated. */
+/** The configured identity for a role, DERIVED from its name+psk, or null if
+ *  undesignated.
+ *
+ *  AN EMPTY NAME IS A DESIGNATION, NOT AN ABSENCE. `''` is the correct primary
+ *  name for the default public channel — the firmware substitutes the modem
+ *  preset name when it hashes — so only a null/missing name means undesignated.
+ *  Testing the name for truthiness here would reject the one value we most need
+ *  to accept, which is how `Public` came to be configured in the first place.
+ *
+ *  The PSK still must be present and non-empty: channelKey() returns null
+ *  without one, and an unencrypted slot must never match a designated channel. */
 export function designatedKey(role) {
-  const cfgKey = ROLE_CONFIG_KEY[role];
-  if (!cfgKey) return null;
-  const v = getConfig(cfgKey, null);
-  return (typeof v === 'string' && v !== '') ? v : null;
+  const cfg = ROLE_CONFIG_KEY[role];
+  if (!cfg) return null;
+  const name = getConfig(cfg.name, null);
+  const psk  = getConfig(cfg.psk, null);
+  if (typeof name !== 'string') return null;
+  return channelKey(name, psk);
 }
 
 /** THE SLOT TO TRANSMIT `role` ON, FOR THIS RADIO. Two args, as Peter specified:

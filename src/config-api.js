@@ -35,15 +35,31 @@ export const DEFAULTS = {
   // a shared channel forever is the fault a config edit must not be able to
   // create.
   'automation.max_replies_per_hour':  60,
-  // Which channel is the private one, as a sha256 fingerprint of its key —
-  // NEVER the key. See docs/modules/channels.md; index and name both fail
-  // across radios. Null means "not designated", and every predicate in
-  // channels.js then fails closed rather than guessing at index 0.
+  // WHICH CHANNEL IS THE PUBLIC ONE, AND WHICH IS OURS — as the readable pair
+  // that identifies it, name AND psk. channels.js derives the sha256 identity
+  // from these; nothing stores a bare fingerprint any more.
   //
-  // The read-path contract check did NOT catch this one, because channels.js
-  // reads it through a const (`PRIVATE_FP_KEY`) rather than a string literal.
-  // Declared here anyway, and the checker's blind spot is in the bug ledger.
-  'channels.private_psk_fp':          null,
+  // Peter, 2026-08-18: "AQ== (or whatever is the PKC for public) and our PRIVATE
+  // key should be in our config file. resolver MUST use these to determine the
+  // PUBLIC and PRIVATE channel for each radio."
+  //
+  // READABLE ON PURPOSE. The predecessor stored only `b7ecd210d6cd…`, and for two
+  // days that fingerprint was the MISNAMED `Public` channel — nobody could see it
+  // was wrong, because a hash looks equally plausible whatever it denotes. A name
+  // is wrong at a glance. All public traffic was dead in the meantime; see
+  // docs/modules/channels.md and commit 4a9b90b.
+  //
+  // THE NAME IS PART OF THE IDENTITY, and an EMPTY primary name is the correct
+  // value for the default public channel — the firmware substitutes the modem
+  // preset name when hashing. `Public`, or any other string, is a channel of one.
+  'channels.pub_name':                '',
+  'channels.pub_psk':                 'AQ==',
+  // NEVER DEFAULTED, AND NEVER COMMITTED. The public key above is the published
+  // Meshtastic default and is not a secret; ours is. Null means "not designated"
+  // and every predicate in channels.js then fails closed rather than guessing at
+  // index 0. Set it at runtime.
+  'channels.pri_name':                null,
+  'channels.pri_psk':                 null,
   'node_filters.max_age':     0,
   'node_filters.max_hops':    99,
   'node_filters.named_only':  false,
@@ -201,9 +217,27 @@ export const DEFAULTS = {
   },
 };
 
+// NEVER SERVED TO THE BROWSER. `channels.pri_psk` is a real secret, and the
+// browser makes ZERO channel decisions (docs/BROWSER_CONTRACT.md) — it asks the
+// backend for a role and is told a slot — so it has no use for any of them. The
+// name halves are withheld too: a caller that can read the name but not the key
+// is one short step from re-deriving the identity in the browser, which is the
+// duplication this module exists to prevent.
+//
+// Served as `<key>_present: true|false` so a settings page can still show
+// whether a role is designated without ever seeing what it is.
+const WITHHELD = new Set(['channels.pub_name', 'channels.pub_psk',
+                          'channels.pri_name', 'channels.pri_psk']);
+
 router.get('/', (req, res) => {
   const result = {};
   for (const [key, fallback] of Object.entries(DEFAULTS)) {
+    if (WITHHELD.has(key)) {
+      // AN EMPTY NAME IS A DESIGNATION, NOT AN ABSENCE — it is precisely the
+      // correct value for the default public channel. Only null means undesignated.
+      result[`${key}_present`] = getConfig(key, fallback) != null;
+      continue;
+    }
     result[key] = getConfig(key, fallback);
   }
   res.json(result);
@@ -544,6 +578,11 @@ router.put('/modes', (req, res) => {
 router.get('/:key', (req, res) => {
   const { key } = req.params;
   if (!(key in DEFAULTS)) return res.status(404).json({ error: 'Unknown config key' });
+  // Withholding these from GET / and then serving them one at a time here would
+  // be no withholding at all.
+  if (WITHHELD.has(key)) {
+    return res.json({ key, present: getConfig(key, DEFAULTS[key]) != null, withheld: true });
+  }
   res.json({ key, value: getConfig(key, DEFAULTS[key]) });
 });
 
