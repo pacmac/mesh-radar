@@ -60,11 +60,16 @@ ROUTES = (
     RouteCase("/device-config", "devices", ("Connected radios",), "device-config-legacy"),
     RouteCase("/devices", "devices", ("Connected radios",), "devices"),
     RouteCase("/range", "range", ("Range Test Log",), "range"),
-    RouteCase("/performance", "perf", ("Performance", "Traceroute History"), "performance"),
-    # /control was absent from this list entirely — a real page with six
-    # sub-tabs, never audited. Tokens are the sub-tab labels, which exist
-    # whether or not a given sub-tab is built out yet.
-    RouteCase("/control", "control", ("Command", "Config", "Yagi Align"), "control"),
+    # "Traceroute History" dropped 2026-08-18: the surface was stripped from this
+    # page on 2026-08-17 (86400ab, docs/modules/traceroute-removal-browser.md)
+    # because its buttons were still transmitting. The assertion outlived it.
+    RouteCase("/performance", "perf", ("Performance",), "performance"),
+    # NO /control CASE, and this absence is deliberate — do not re-add it.
+    # The alarm left node-dash in e8a6745 (2026-08-17) and the Control page now
+    # serves from mt-alarm-1 on :8791. Peter, 2026-08-18: "alarm should have left
+    # node dash and should be removed."
+    # `audit_invalid_persisted_tab` asserts the removal from the other side —
+    # a persisted activeTab:'control' must fall back to Overview.
     RouteCase(f"/node/{OMNI_NODE_ID}", "node", (), "node-focus"),
     RouteCase("/debug", None, ("mt-radar debug", "mesh-gw", "node-dash"), "debug"),
 )
@@ -562,15 +567,25 @@ async def _node_page_facts(page, path: str) -> dict:
 
 
 async def audit_plugin_boundary(browser) -> None:
-    """The alarm is a PLUGIN: additive, and it must never alter core.
+    """The alarm has LEFT, and an alarm unit is now an ordinary node.
 
     Peter, 2026-07-29: "node-dash exists with or without the alarm. alarm is
     addative, it changes nothing about node communications, stats, messages."
+    That was proven the additive way while the plugin lived here.
 
-    Verified from the browser without unwiring anything: an alarm unit gains a
-    section an ordinary node does not, and every CORE section behaves the same
-    on both. If a future change makes core branch on the plugin, the core-node
-    assertions here are what break.
+    It no longer does — e8a6745 (2026-08-17) moved the alarm out to its own
+    service on :8791, and Peter, 2026-08-18: "alarm should have left node dash
+    and should be removed." So the same property is now asserted from the other
+    direction: an alarm unit must show NO plugin section, while every CORE
+    section behaves identically on an alarm unit and an ordinary one.
+
+    That the alarm units still appear here at all is not a leftover. Our radios
+    hear them, so they are nodes like anyone else's — see
+    docs/ALARM_TRANSPORT_BOUNDARY.md. Meshtastic is their transport, never their
+    application, and nothing about their behaviour follows from it.
+
+    If a future change makes core branch on a plugin, or drags alarm UI back into
+    core, the assertions here are what break.
 
     Also guards `stat-desc` truncation (2dd2540): a clipped desc silently hides
     the provenance qualifier — that is how "886 failed since" disappeared.
@@ -586,13 +601,18 @@ async def audit_plugin_boundary(browser) -> None:
         RESULTS.check(alarm["found"], "alarm node page found", json.dumps(alarm))
         RESULTS.check(core["found"], "core node page found", json.dumps(core))
 
-        # The plugin ADDS.
+        # THE PLUGIN IS GONE, AND THIS ASSERTION WAS INVERTED RATHER THAN DELETED
+        # (2026-08-18). It used to read `"reachability" in alarm["sections"]`,
+        # because the alarm plugin ADDED that section. The alarm left node-dash in
+        # e8a6745 and now runs as its own service on :8791, so the section is
+        # correctly absent — and deleting the check would have thrown away the
+        # coverage. Inverted, it guards the REMOVAL: if alarm UI ever creeps back
+        # into core, this goes red.
         RESULTS.check(
-            "reachability" in alarm["sections"],
-            "alarm node has plugin section",
+            "reachability" not in alarm["sections"],
+            "alarm node has NO plugin section",
             f"sections={alarm['sections']}",
         )
-        # ...and only for its own units.
         RESULTS.check(
             "reachability" not in core["sections"],
             "core node has NO plugin section",

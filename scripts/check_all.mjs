@@ -53,8 +53,13 @@ const CHECKS = [
   // still counts as a failure: annotating why is not excusing it.
   { name: 'node_api',               group: 'service', cmd: 'python3', args: ['tests/test_node.py'],               needs: 'node-dash up',        measured: '~35 s',    timeoutMs: 180_000, known: 'B92, B93' },
 
-  { name: 'page_snapshot',          group: 'slow',    cmd: 'python3', args: ['tests/test_page_snapshot.py'],      needs: 'node-dash + browser', measured: 'minutes',  timeoutMs: 600_000 },
-  { name: 'playwright_audit',       group: 'slow',    cmd: 'python3', args: ['tests/test_playwright.py'],         needs: 'node-dash + browser', measured: 'minutes',  timeoutMs: 600_000 },
+  // BOTH of these sat red with no `known:` marker, and because `npm run check` is
+  // fast+service only, nothing ever ran them. That is how ten stale assertions in
+  // playwright_audit went unnoticed from 2026-08-17 to 2026-08-18. An unexplained
+  // permanent failure is indistinguishable from an ignored one, so the remaining
+  // red is named here.
+  { name: 'page_snapshot',          group: 'slow',    cmd: 'python3', args: ['tests/test_page_snapshot.py'],      needs: 'node-dash + browser', measured: 'minutes',  timeoutMs: 600_000, known: 'layout cut=1 at 1280x800, both themes — ledger: slow-browser-checks-fail-with-nothing-recording-it' },
+  { name: 'playwright_audit',       group: 'slow',    cmd: 'python3', args: ['tests/test_playwright.py'],         needs: 'node-dash + browser', measured: 'minutes',  timeoutMs: 600_000, known: 'iphone/messages YAGI control clipped out of viewport — a REAL defect, deliberately left failing' },
 ];
 
 // NEVER run by this runner. Not a group — an exclusion, printed on every run

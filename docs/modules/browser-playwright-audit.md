@@ -28,7 +28,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 3f259e571019e97f287bf35f4da063fae0844bb010581f2255b1b09e9b78383b
+source_hash: 33fd14c3e3961de57a04d31b0a017386d9ac67e12a82dff00fd89cf1a7054e86
 updated: 2026-08-17
 ---
 
@@ -565,3 +565,70 @@ can fill it and **who owns the hole**. Four of six panels have no source today.
   `snapClusterWhen()` and threw three times per render: **`x-text` evaluates
   even while `x-show` is false**, so a hidden block still ran. Worth remembering
   — an `x-show` guard does not protect the expressions inside it.
+
+## The audit asserted three removed features — 2026-08-18
+
+`npm run check:all` was 15 of 17, and **ten of this audit's failures were not
+defects.** They were assertions about features deliberately removed on
+2026-08-17, never taken out of the test.
+
+Peter, 2026-08-18: *"alarm should have left node dash and should be removed"* —
+confirming what `e8a6745` had already done, so the fix is to delete the
+assertions, never to restore the pages.
+
+| failed assertion | removed by | why the app is right |
+|---|---|---|
+| `/control`, + surfaces `Command`, `Yagi Align` (6 — desktop and iphone) | `e8a6745` | the alarm left node-dash; the page serves from **mt-alarm-1 on :8791**, verified 200 with `<title>mt-alarm</title>` |
+| `alarm node has plugin section` (`reachability`) | `e8a6745` | the plugin that ADDED the section is gone, so its absence is the correct state |
+| `Traceroute History` on `/performance` | `86400ab` | stripped because the buttons were still transmitting — `docs/modules/traceroute-removal-browser.md` |
+
+**The file already contradicted itself**, which is the tell that this was
+half-finished maintenance rather than a discovery:
+
+```
+line  67   RouteCase("/control", ...)                     # expects it to EXIST
+line 278   "removed control tab falls back to Overview"   # asserts it is GONE
+```
+
+### The changes
+
+1. **`/performance` tokens** — drop `Traceroute History`, keep `Performance`.
+2. **Delete the `/control` RouteCase** and the comment above it, which describes
+   a page that no longer exists here.
+3. **Invert the plugin-section assertion rather than deleting it.**
+   `"reachability" in alarm["sections"]` becomes `not in`, retitled *alarm node
+   has NO plugin section*. Deleting it would lose the coverage; inverting it
+   turns a stale assertion into a **regression guard for the removal itself** —
+   if alarm UI ever creeps back into core, that check goes red. This is the one
+   place where the right answer is not deletion.
+4. **`audit_plugin_boundary`'s docstring** — restate the premise. The rest of the
+   function is untouched and still passing: core sections present on both node
+   kinds, no plugin-owned label in either header, and the `stat-desc` truncation
+   guard from `2dd2540`, which is core and unrelated to the alarm.
+
+### Deliberately still failing
+
+**`iphone/messages controls in viewport: YAGI` is a REAL defect and stays red.**
+It reports `geo["clipped"]` — a control clipped outside the viewport on the
+iphone profile — which is a generic geometry measurement, not an assertion about
+any removed feature. It was traced individually rather than assumed to belong
+with the other nine.
+
+Deleting a genuine failure to make a suite green is the precise inverse of the
+point of the suite. It is recorded in the ledger and annotated `known:` in
+`scripts/check_all.mjs`, so the remaining red is explained rather than ambient —
+an unexplained permanent failure is what let all ten sit unnoticed.
+
+Likewise **out of scope**: `test_page_snapshot`'s `cut=1` layout failure at
+1280x800 in both themes. Also generic geometry, also probably real, also
+ledgered.
+
+### Test notes
+
+- the audit's failure count drops from 10 to 1, and the survivor is the YAGI
+  clipping — not a green suite, an *honest* one
+- `removed control tab falls back to Overview` still passes, and is now the only
+  statement in the file about `/control`
+- `core sections unaffected on an alarm node` still passes, proving the removal
+  took the plugin section without disturbing the core ones
+- falsification: re-adding the `/control` RouteCase reproduces six failures
