@@ -207,6 +207,74 @@ export function buildField(field, value, path, opts = {}) {
   return ctl;
 }
 
+/** Did the radio actually take what we sent?
+ *
+ *  Until 2026-08-18 three Save buttons reported "saved & verified" and NOTHING
+ *  compared anything. saveSection re-read the section after the POST and a comment
+ *  called it "the verified server state", but it only repainted the form with it.
+ *  So "verified" was shown for every save, including ones that failed outright and
+ *  ones whose read-back landed while the device was RECONNECTING and returned the
+ *  OLD value.
+ *
+ *  Peter's reason for the whole backup chain was "it can prove that what we are
+ *  writing to the radio is actually what the radio hold". This is that proof, and
+ *  it returns THREE states because two would still be a lie:
+ *
+ *    verified     every field we sent came back the same
+ *    unconfirmed  we cannot tell yet — the radio reboots after most saves, so
+ *                 this is the EXPECTED path, not a failure
+ *    mismatch     it came back DIFFERENT. The only state that means something is
+ *                 wrong, and previously indistinguishable from success.
+ *
+ *  Pure — no DOM — so it is unit-tested in node. docs/modules/app-config.md. */
+export function verifySaved(sent, readback) {
+  if (!readback || typeof readback !== 'object')
+    return { state: 'unconfirmed', reason: 'no read-back', diffs: [] };
+
+  const diffs = [];
+  let missing = 0;
+
+  for (const [key, want] of Object.entries(sent ?? {})) {
+    // `__reboot` and `__notes` are added by /config/{section} for the form to
+    // render; radio_backup and the save payload carry neither. Not skipping them
+    // reported 8 spurious mismatches across 21 sections when measured.
+    if (key.startsWith('__')) continue;
+    if (!Object.prototype.hasOwnProperty.call(readback, key)) {
+      // ABSENCE IS NOT DISAGREEMENT. The gw may not have re-read yet, and a field
+      // at its default is omitted from the GET entirely. Calling this a mismatch
+      // would cry wolf on the commonest benign case.
+      missing++;
+      continue;
+    }
+    const got = readback[key];
+    if (!sameValue(want, got)) diffs.push({ field: key, sent: want, radio: got });
+  }
+
+  if (diffs.length) return { state: 'mismatch', diffs };
+  if (missing)      return { state: 'unconfirmed', reason: `${missing} field(s) absent from read-back`, diffs: [] };
+  return { state: 'verified', diffs: [] };
+}
+
+/** Loose across number/string: a select's DOM value is a string and the schema's
+ *  is a number, and 199 vs "199" is the same setting, not a failed save. Arrays
+ *  and nested objects compare structurally. */
+function sameValue(a, b) {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => sameValue(v, b[i]));
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const ka = Object.keys(a), kb = Object.keys(b);
+    if (ka.length !== kb.length) return false;
+    return ka.every(k => Object.prototype.hasOwnProperty.call(b, k) && sameValue(a[k], b[k]));
+  }
+  if (typeof a === 'number' || typeof b === 'number') {
+    const na = Number(a), nb = Number(b);
+    if (!Number.isNaN(na) && !Number.isNaN(nb)) return na === nb;
+  }
+  return a === b;
+}
+
 /** Collect a section's values for submission.
  *
  *  `loaded` is the object the READ returned. When supplied, a field is included

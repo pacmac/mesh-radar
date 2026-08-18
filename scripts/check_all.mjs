@@ -36,6 +36,7 @@ const CHECKS = [
   // copy sits still — see vendor/meshtastic-android/PROVENANCE.md.
   { name: 'interval_tables',        group: 'fast',    cmd: 'node',    args: ['scripts/gen_interval_tables.mjs', '--check'], needs: '—',        measured: '45 ms',    timeoutMs: 30_000 },
   { name: 'interval_options',       group: 'fast',    cmd: 'node',    args: ['tests/test_interval_options.mjs'],  needs: '—',                   measured: '40 ms',    timeoutMs: 30_000 },
+  { name: 'verify_saved',           group: 'fast',    cmd: 'node',    args: ['tests/test_verify_saved.mjs'],      needs: '—',                   measured: '40 ms',    timeoutMs: 30_000 },
   { name: 'served_time',            group: 'fast',    cmd: 'node',    args: ['tests/test_served_time.mjs'],       needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
   { name: 'channels',               group: 'fast',    cmd: 'node',    args: ['tests/test_channels.mjs'],          needs: '—',                   measured: '190 ms',   timeoutMs: 30_000 },
   { name: 'send_channel',           group: 'fast',    cmd: 'node',    args: ['tests/test_send_channel.mjs'],      needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },

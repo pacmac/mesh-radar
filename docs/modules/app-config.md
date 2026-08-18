@@ -1,7 +1,7 @@
 ---
 module: app-config
 source: public/app-config.js
-source_hash: c1dfe561b9322424972b2ea756d601c1192a7fa644a838bac407c6b0ae1e46d4
+source_hash: f51db60dfcfa4afa230ec6e7873be379cbacbc84a419d7f3db75a0d8949aea84
 updated: 2026-08-03
 ---
 
@@ -267,6 +267,79 @@ never report success.
   save to `/radio-admin/config`
 - read-back from the radio (not from a cache) shows the written value
 - falsification: forcing the path back to `config` reproduces the protobuf error
+
+## "Saved & verified" now means something — 2026-08-18
+
+Three Save buttons told the operator **"saved & verified"**. Nothing was ever
+compared.
+
+`saveSection` did re-read the section after the POST, and a comment called the
+result *"the verified server state"* — but it only repainted the form with it. The
+same for `saveOwner` and `saveFixedPosition`, which did not even re-read.
+
+So "verified" was shown on every save made today, including the ones that failed
+with mesh-gw's 500, and including reads that landed while the device was
+`RECONNECTING` and could therefore return the **old** value.
+
+Peter's whole reason for the backup chain was *"it can prove that what we are
+writing to the radio is actually what the radio hold"*. The save path was claiming
+that proof without doing it.
+
+### Three states, because two would still be a lie
+
+| state | meaning | how it is shown |
+|---|---|---|
+| `verified` | every field we sent matches the read-back | the existing success toast |
+| `unconfirmed` | read-back unavailable, or device not `READY` | our own toast, worded as *saved, not yet confirmed* — the radio is restarting, which is normal after a save |
+| `mismatch` | it came back **different** | thrown, so it surfaces as an error toast |
+
+`mismatch` is the reason to build this at all. It is the only state that indicates
+something actually went wrong, and previously it was indistinguishable from
+success.
+
+`unconfirmed` is not a failure and must not be dressed as one. The firmware
+reboots after most saves — observed on every module-config write — so an immediate
+read-back failing is the *expected* path, not an exception.
+
+### `verifySaved(sent, readback)` — pure, and therefore testable
+
+Lives in `public/app-forms.js` beside `collectForm`, whose output it consumes. It
+takes no DOM, so it is unit-tested in node.
+
+Rules, each of which exists because the naive version gets it wrong:
+
+- **Compare only the fields we SENT.** mesh-gw's GET returns only non-default
+  fields, so a field we did not send being absent proves nothing. This is the same
+  asymmetry that made `collectForm` skip untouched fields.
+- **Ignore keys beginning `__`.** `/config/{section}` adds `__reboot` and
+  `__notes` for the form to render. A comparison that does not strip them reports
+  spurious mismatches — measured: 8 of 21 sections, all false.
+- **Compare loosely across number/string.** A select's DOM value is a string and
+  the schema value is a number; `199` and `"199"` are the same setting.
+- **A missing field in the read-back is `unconfirmed`, never `mismatch`.** Absence
+  is not disagreement — the gw may simply not have re-read yet.
+
+### Deliberately NOT changed
+
+- **`asyncOp` is untouched.** Its static `successMsg`, `throw` → error toast, and
+  `return false` → suppress toast are together enough to express three states.
+  Rearchitecting a shared helper to add a status to one caller would be scope
+  creep with a blast radius across every op in the app.
+- **The two OTHER `verified` claims** — config restore (`tab-devices.html:654`)
+  and `pushFixedPosition` (`app-devices.js:125`) — test a `verified` flag returned
+  by mesh-gw's older cooked PUT, which `radio-admin-api.js` records as reporting
+  `{"verified": true}` without verifying anything. Those are a different endpoint
+  on a different path, and go to the ledger rather than into this change.
+
+### Test notes
+
+- all sent fields matching → `verified`
+- one field differing → `mismatch`, and the diff names the field, what was sent
+  and what the radio holds
+- a sent field absent from the read-back → `unconfirmed`, not `mismatch`
+- `__reboot` / `__notes` present in the read-back → still `verified`
+- `199` vs `"199"` → `verified`
+- a field in the read-back that we did not send → ignored
 
 ### Related finding, recorded separately
 

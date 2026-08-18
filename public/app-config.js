@@ -1,7 +1,7 @@
 // Radio/bridge/rotator configuration tabs mixin.
 import { fetchJSON, nextFrame } from './app-helpers.js';
 import { persistSet } from './app-persist.js';
-import { buildForm, collectForm } from './app-forms.js';
+import { buildForm, collectForm, verifySaved } from './app-forms.js';
 import { submitOp } from './op-client.js';
 import { opFlow } from './op-flow.js';
 
@@ -171,6 +171,24 @@ export const configMixin = {
       body.altitude = Math.round(this.fixedPosition.alt);
     const target = this.cfgRadioId || this.activeNodeId;
     await fetchJSON('/radio-admin/fixed-position', 'POST', { device: target, position: body });
+
+    // Same again — this button claimed verification too. The read-back is the
+    // gw's fixed_position, whose shape is {position: {latitude_i, ...}}.
+    let pos = null;
+    try {
+      const res = await fetchJSON(this.cd('/fixed_position'));
+      pos = res?.position ?? null;
+    } catch { pos = null; }
+
+    const check = verifySaved(body, pos);
+    if (check.state === 'mismatch') {
+      const d = check.diffs.map(x => `${x.field}: sent ${JSON.stringify(x.sent)}, radio has ${JSON.stringify(x.radio)}`);
+      throw new Error(`Fixed position did NOT match after saving — ${d.join('; ')}`);
+    }
+    if (check.state === 'unconfirmed') {
+      this.showToast('Fixed position saved — not yet confirmed (radio is restarting)', 'info');
+      return false;
+    }
   },
 
   async clearFixedPosition() {
@@ -211,13 +229,46 @@ export const configMixin = {
     // The backend composes the AdminMessage; this posts form values and nothing
     // else. docs/modules/radio-admin.md, docs/BROWSER_CONTRACT.md.
     await fetchJSON(`/radio-admin/${path}`, 'POST', { device: target, section: sec.name, values: formValues });
-    // Refresh the form UI with the verified server state
-    const fresh = await fetchJSON(this.cd(`/config/${sec.name}`));
-    sec.data = fresh[sec.name] || fresh || {};
-    const formEl = document.getElementById('sec_' + sec.name);
-    if (formEl && !formEl.dataset.dirty) {
-      formEl.innerHTML = '';
-      formEl.appendChild(buildForm(sec.schema.fields, sec.data, []));
+
+    // READ BACK AND ACTUALLY COMPARE. This used to re-read and merely repaint,
+    // while the button claimed "saved & verified" — a proof asserted without
+    // being performed. docs/modules/app-config.md.
+    let fresh = null;
+    try {
+      fresh = await fetchJSON(this.cd(`/config/${sec.name}`));
+    } catch {
+      // The radio reboots after most saves, so a failed read-back here is the
+      // EXPECTED path. Not an error, and not a success either.
+      fresh = null;
+    }
+
+    if (fresh) {
+      sec.data = fresh[sec.name] || fresh || {};
+      const formEl = document.getElementById('sec_' + sec.name);
+      if (formEl && !formEl.dataset.dirty) {
+        formEl.innerHTML = '';
+        formEl.appendChild(buildForm(sec.schema.fields, sec.data, []));
+      }
+    }
+
+    const check = verifySaved(formValues, fresh ? (fresh[sec.name] || fresh) : null);
+    sec.verify = check;
+
+    // MISMATCH IS THE ONE THAT MUST NEVER BE QUIET. Throwing routes it to
+    // asyncOp's error toast, naming the field, what we sent and what the radio
+    // holds — previously this was indistinguishable from success.
+    if (check.state === 'mismatch') {
+      const d = check.diffs.map(x => `${x.field}: sent ${JSON.stringify(x.sent)}, radio has ${JSON.stringify(x.radio)}`);
+      throw new Error(`${sec.name.replace(/_/g, ' ')} did NOT match after saving — ${d.join('; ')}`);
+    }
+
+    // Saved, but we cannot prove it yet. Say exactly that: our own toast, then
+    // `false` so asyncOp suppresses its "saved & verified" one. Dressing this as
+    // a failure would be as wrong as dressing it as a success — the radio
+    // restarting after a save is normal.
+    if (check.state === 'unconfirmed') {
+      this.showToast(`${sec.name.replace(/_/g, ' ')} saved — not yet confirmed (radio is restarting)`, 'info');
+      return false;
     }
   },
 
@@ -325,6 +376,23 @@ export const configMixin = {
     if (currentRole == null || payload.role === currentRole) delete payload.role;
     const target = this.cfgRadioId || this.activeNodeId;
     await fetchJSON('/radio-admin/owner', 'POST', { device: target, user: payload });
+
+    // Read back and compare, for the same reason as saveSection: this button also
+    // said "saved & verified" while verifying nothing. docs/modules/app-config.md.
+    let owner = null;
+    try {
+      owner = await fetchJSON(`/radio-admin/owner/${encodeURIComponent(target)}`);
+    } catch { owner = null; }
+
+    const check = verifySaved(payload, owner);
+    if (check.state === 'mismatch') {
+      const d = check.diffs.map(x => `${x.field}: sent ${JSON.stringify(x.sent)}, radio has ${JSON.stringify(x.radio)}`);
+      throw new Error(`Owner did NOT match after saving — ${d.join('; ')}`);
+    }
+    if (check.state === 'unconfirmed') {
+      this.showToast('Owner saved — not yet confirmed (radio is restarting)', 'info');
+      return false;
+    }
   },
 
   async loadBridgeConfig() {
