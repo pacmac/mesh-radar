@@ -3,7 +3,6 @@ import { getChannelNameByMac } from './ws-relay.js';
 
 export function queryMessages(limit = 100) {
   const channels = getConfig('message_filter.channels', []);
-  const hideMqtt = getConfig('message_filter.hide_mqtt', false);
 
   const conditions = [];
   const params = [];
@@ -13,9 +12,20 @@ export function queryMessages(limit = 100) {
     params.push(...channels);
   }
 
-  if (hideMqtt) {
-    conditions.push(`from_num NOT IN (SELECT num FROM mqtt_nodeinfo)`);
-  }
+  // THE `message_filter.hide_mqtt` BRANCH IS REMOVED, 2026-08-18, task
+  // `filters-dead-mqtt-sql`. It read:
+  //
+  //     if (hideMqtt) conditions.push(`from_num NOT IN (SELECT num FROM mqtt_nodeinfo)`)
+  //
+  // `mqtt_nodeinfo` has never existed in data/node-dash.db. This function IS live
+  // — index.js:266 and ws-relay.js:636 — and worked only because the config key
+  // is unset and defaults false. One config write away from throwing
+  // `no such table` and taking out BOTH the Messages page and the
+  // message_history WS replay. Nothing in public/ can set it, so it was a
+  // landmine with no path to it rather than a live outage.
+  //
+  // NOT replaced with an empty table. A filter that silently matches nothing is
+  // worse than one that throws: the page looks filtered and is not.
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(Math.min(limit, 1000));
@@ -72,43 +82,19 @@ export function queryMessages(limit = 100) {
     });
 }
 
-export function queryNodes() {
-  const maxAge    = getConfig('node_filters.max_age',    0);
-  const maxHops   = getConfig('node_filters.max_hops',   99);
-  const namedOnly = getConfig('node_filters.named_only', false);
-  const hasPos    = getConfig('node_filters.has_pos',    false);
-  const hideMqtt  = getConfig('node_filters.hide_mqtt',  false);
-  const hasSignal = getConfig('node_filters.has_signal', false);
-  const hasTelem  = getConfig('node_filters.has_telem',  false);
-  const roles     = getConfig('node_filters.roles',      []);
-  const sortField = getConfig('node_sort.field',         'last_heard');
-  const sortDir   = getConfig('node_sort.dir',           -1);
-
-  const conditions = [];
-  const params = [];
-
-  if (maxAge > 0) {
-    conditions.push(`last_heard >= (unixepoch() - ?)`);
-    params.push(maxAge);
-  }
-  if (maxHops < 99) {
-    conditions.push(`hops <= ?`);
-    params.push(maxHops);
-  }
-  if (namedOnly) conditions.push(`long_name IS NOT NULL`);
-  if (hasPos)    conditions.push(`lat IS NOT NULL AND lon IS NOT NULL`);
-  if (hideMqtt)  conditions.push(`num NOT IN (SELECT num FROM mqtt_nodeinfo WHERE num IS NOT NULL)`);
-  if (hasSignal) conditions.push(`snr IS NOT NULL`);
-  if (hasTelem)  conditions.push(`battery IS NOT NULL`);
-  if (roles.length > 0) {
-    conditions.push(`role IN (${roles.map(() => '?').join(',')})`);
-    params.push(...roles);
-  }
-
-  const SAFE_FIELDS = new Set(['last_heard', 'snr', 'hops', 'long_name', 'updated_at']);
-  const orderField = SAFE_FIELDS.has(sortField) ? sortField : 'last_heard';
-  const orderDir   = sortDir >= 0 ? 'ASC' : 'DESC';
-
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  return db.prepare(`SELECT * FROM nodes ${where} ORDER BY ${orderField} ${orderDir}`).all(...params);
-}
+// queryNodes() REMOVED 2026-08-18, task `filters-dead-mqtt-sql`.
+//
+// It had ZERO CALLERS in src/ or public/ — this module's own spec had already
+// noted it was "not imported by any module ... or is dead code pending removal".
+//
+// It was also BROKEN, which is why it could not simply be left alone: it filtered
+// on `mqtt_nodeinfo`, a table that has never existed in data/node-dash.db, and
+// `node_filters.hide_mqtt` is set TRUE in config — so the branch was reached and
+// SQLite answered `no such table: mqtt_nodeinfo`. Calling it threw. A dead
+// function is tidy-up; a dead function that throws the moment anyone wires it up
+// is a trap for whoever wires it up.
+//
+// NOTHING IS LOST. The live node list never used this — it is filtered in
+// node-filter.js against the in-memory cache — and MQTT-only nodes are actually
+// excluded by `node_filters.hide_mqtt_only`, which tests `rf_last_heard`, our own
+// RF evidence. See docs/modules/filters.md.

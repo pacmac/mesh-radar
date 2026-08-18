@@ -1,8 +1,8 @@
 ---
 module: filters
 source: src/filters.js
-source_hash: a54257adb5f2dfdc26588e2b4b478aab7eed6afd2da479b93e0b47a4088c82a9
-updated: 2026-07-20
+source_hash: 623fb1eedb859a9fa9092ae52b13cccea3da2efac963c2fd77a99a01f7ed53f0
+updated: 2026-08-18
 ---
 
 # Module: filters
@@ -26,8 +26,10 @@ a restart.
 
 ```js
 export function queryMessages(limit = 100)  // → message row[]
-export function queryNodes()                 // → node row[]
 ```
+
+`queryNodes()` was **removed 2026-08-18** — see "Removed: queryNodes and the
+mqtt_nodeinfo filters" below.
 
 ## `queryMessages(limit)`
 
@@ -36,7 +38,7 @@ export function queryNodes()                 // → node row[]
 | Key | Default | Effect |
 |---|---|---|
 | `message_filter.channels` | `[]` | If non-empty, `WHERE channel IN (...)` |
-| `message_filter.hide_mqtt` | `false` | If true, `WHERE from_num NOT IN (SELECT num FROM mqtt_nodeinfo)` |
+| ~~`message_filter.hide_mqtt`~~ | — | **REMOVED 2026-08-18.** Queried `mqtt_nodeinfo`, a table that has never existed |
 
 ### SQL structure
 
@@ -122,65 +124,56 @@ bindings resolve correctly. Not an init-order hazard.
 
 ---
 
-## `queryNodes()`
+## Removed: `queryNodes()` and the `mqtt_nodeinfo` filters
 
-### Config keys read
+**Both deleted 2026-08-18, task `filters-dead-mqtt-sql`.** They filtered on a
+table — `mqtt_nodeinfo` — that has never existed in `data/node-dash.db`.
 
-| Key | Default | SQL condition added |
-|---|---|---|
-| `node_filters.max_age` | `0` | `last_heard >= (unixepoch() - max_age)` (skipped if 0) |
-| `node_filters.max_hops` | `99` | `hops <= max_hops` (skipped if ≥ 99) |
-| `node_filters.named_only` | `false` | `long_name IS NOT NULL` |
-| `node_filters.has_pos` | `false` | `lat IS NOT NULL AND lon IS NOT NULL` |
-| `node_filters.hide_mqtt` | `false` | `num NOT IN (SELECT num FROM mqtt_nodeinfo WHERE num IS NOT NULL)` |
-| `node_filters.has_signal` | `false` | `snr IS NOT NULL` |
-| `node_filters.has_telem` | `false` | `battery IS NOT NULL` |
-| `node_filters.roles` | `[]` | `role IN (...)` (skipped if empty) |
-| `node_sort.field` | `'last_heard'` | `ORDER BY <field>` (whitelist-validated) |
-| `node_sort.dir` | `-1` | `ASC` if ≥ 0, `DESC` if < 0 |
+| what | state when removed |
+|---|---|
+| `queryNodes()` | **zero callers** in `src/` or `public/`, and it **threw**: `node_filters.hide_mqtt` is `true` in config, so the branch was reached and SQLite answered `no such table: mqtt_nodeinfo` |
+| `message_filter.hide_mqtt` branch in `queryMessages()` | `queryMessages` **is** live (`index.js`, `ws-relay.js`); the branch was unreachable only because the key is unset and defaults `false` |
 
-### Sort field whitelist
+A dead function is housekeeping. A dead function that throws the moment someone
+wires it up is a trap for whoever wires it up, which is why it was deleted rather
+than left.
 
-`SAFE_FIELDS = { 'last_heard', 'snr', 'hops', 'long_name', 'updated_at' }`
+**Nothing was lost.** The live node list is filtered in `node-filter.js` against
+the in-memory cache, not by SQL here. MQTT-only nodes are excluded by
+`node_filters.hide_mqtt_only` (default `true`), which tests `rf_last_heard` — our
+own RF evidence — and works.
 
-Any `node_sort.field` value not in this set falls back to `'last_heard'`. This prevents SQL injection via the config table.
+**Not replaced by creating an empty `mqtt_nodeinfo`.** A filter that silently
+matches nothing is worse than one that throws: the page looks filtered and is not.
 
-### SQL structure
+### Still outstanding, Domain 2
 
-```sql
-SELECT * FROM nodes [WHERE ...] ORDER BY <field> <dir>
-```
-
-No LIMIT. Returns all matching rows.
-
-### Callers
-
-`queryNodes` is **not imported by any module**. It is defined but currently unused externally. It may be called directly from the browser via a future REST endpoint, or is dead code pending removal.
+`node_filters.hide_mqtt` remains a live UI toggle (`app-forms.js`,
+`app-nodes.js`, `app-ws.js`) and is currently **on**. In `node-filter.js:82` it
+tests `node.via_mqtt`, which nothing populates — a permanent no-op, but plain JS,
+so it cannot throw. It is misleading rather than dangerous: it reads as though it
+hides MQTT nodes while `hide_mqtt_only` is what actually does. Removing the
+control, or reinstating MQTT provenance properly (`relay_observation` and
+`ev.via_mqtt` both exist), is a browser-side task and Peter's call.
 
 ---
 
 ## Invariants
 
-- Both functions read config on every call — no caching. Filter changes take effect on the next call without a restart.
-- **Code smell**: both functions use the raw `db` export from `db.js` and call `db.prepare()` directly at query time. This bypasses the prepared-statement cache in `db.js` (`stmts`). Queries are re-prepared on every call. This is not a correctness issue with better-sqlite3 (it caches internally) but it is an encapsulation leak — these queries should be in `db.js` as named exports.
+- `queryMessages` reads config on every call — no caching. Filter changes take effect on the next call without a restart.
+- **Code smell**: `queryMessages` uses the raw `db` export from `db.js` and call `db.prepare()` directly at query time. This bypasses the prepared-statement cache in `db.js` (`stmts`). Queries are re-prepared on every call. This is not a correctness issue with better-sqlite3 (it caches internally) but it is an encapsulation leak — these queries should be in `db.js` as named exports.
 - `queryMessages` parameters (channel values, limit) are fully parameterised — no interpolation into SQL.
-- `queryNodes` filter values are all parameterised. The sort field is whitelist-validated; the sort direction is a ternary, not interpolated from config directly.
-- `queryNodes` has no LIMIT. On large databases it returns all matching rows.
 
 ## Test notes
 
 - **queryMessages — no filter**: no channel config, hide_mqtt=false → no WHERE clause; returns all messages grouped by packet_id, ordered newest first
 - **queryMessages — channel filter**: `message_filter.channels = [0, 1]` → `WHERE channel IN (0, 1)`
-- **queryMessages — hide_mqtt**: `message_filter.hide_mqtt = true` → MQTT senders excluded
 - **queryMessages — dedup**: two rows with same packet_id → single output row; MAX(snr) from best reception
 - **queryMessages — limit cap**: `queryMessages(5000)` → at most 1000 rows returned
-- **queryNodes — max_age=0**: condition skipped; all nodes regardless of last_heard
-- **queryNodes — sort whitelist**: `node_sort.field = 'injected; DROP TABLE'` → falls back to `last_heard`
-- **queryNodes — roles filter**: `node_filters.roles = ['CLIENT', 'ROUTER']` → `role IN ('CLIENT', 'ROUTER')`
-- **queryNodes unused**: no module imports `queryNodes` — verify no callers before assuming it's live
 
 ## Out of scope
 
 - Traceroute queries — `stmts.queryTracerouteHistory` in `db.js` owns that
 - Node full-text or range queries — `db.js` `stmts` handle those
 - Writing messages or nodes — `persist.js` owns all writes
+- **no `mqtt_nodeinfo` anywhere**: `grep -rn mqtt_nodeinfo src/` returns comments only
