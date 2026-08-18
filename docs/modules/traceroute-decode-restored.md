@@ -2,7 +2,7 @@
 module: traceroute-decode-restored
 source:
   - src/bridge-events.js
-source_hash: 8d5faec891abc1a69d2db5cb19a349bdc3e9e2e47fe574a6a1d46b299251c1a0
+source_hash: 8b8a38c38fcb31250012ec7ebdcc97e74ff9d64de5fdb235daf2cb7f69394b2b
 updated: 2026-08-18
 ---
 

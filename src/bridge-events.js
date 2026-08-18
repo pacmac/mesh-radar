@@ -59,12 +59,22 @@ export function registerBridgeEvents(bridge) {
       const rxDevice = ev.addr || ev.device || null;
       // During a scan, only the SCAN listener(s) may update last-heard (default: rotator/YAGI).
       const yagiOnly = scanner.active && !isListenerForMode('scan', rxDevice);
+      // A RECEPTION IS PERSISTED, ALWAYS — OUTSIDE THE SCAN GUARD.
+      //
+      // `yagiOnly` exists so that during a scan only the scan listener may update
+      // the CACHE; that is a scan-attribution rule and it still applies below.
+      // But "we received a packet from node X at time T" is true whichever radio
+      // heard it, and withholding it does not make the scan more accurate — it
+      // just loses the fact, and `last_heard` goes stale while we are actively
+      // hearing the node. Peter, 2026-08-18: "last_heard is KING, it must never
+      // be stale." docs/modules/last-heard-is-king.md.
+      //
+      // RF ONLY. An MQTT-delivered packet did not travel the whole path by radio,
+      // so it must not count as having heard the node — that is the distinction
+      // node_filters.hide_mqtt_only rests on.
+      if (pkt?.from && !ev.via_mqtt) touchRfHeard(pkt.from, pkt.rx_time);
       if (pkt?.from && !yagiOnly) {
         nodeList.touchLastHeard(pkt.from, pkt.rx_time, rxDevice);
-        // RF ONLY. An MQTT-delivered packet did not travel the whole path by
-        // radio, so it must not count as having heard the node — that is the
-        // distinction node_filters.hide_mqtt_only rests on.
-        if (!ev.via_mqtt) touchRfHeard(pkt.from, pkt.rx_time);
         // Guarded hops-away, updated per packet (firmware NodeDB updateFrom analog)
         nodeList.setHopsAway(pkt.from, hopsAway(pkt.hop_start, pkt.hop_limit));
       }

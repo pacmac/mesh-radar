@@ -610,6 +610,35 @@ if (!nodeCols.includes('rf_last_heard')) {
   console.log(`[migrate] rf_last_heard backfilled from local signal evidence (${n} rows)`);
 }
 
+// LAST_HEARD CATCHES UP WITH WHAT WE ALREADY KNOW WE HEARD.
+//
+// touchRfHeard now advances last_heard on every RF reception, but that only fixes
+// nodes from their NEXT packet onward. Measured immediately after that change:
+// 256 of 1,058 nodes still carried a last_heard OLDER than their own
+// rf_last_heard — historical staleness left by the years the column was written
+// only from the radio's nodedb replay. G1 read 06 Aug while we had heard it at
+// 09:54 that morning; `trac` was 559 hours out.
+//
+// Peter, 2026-08-18: "last_heard is KING, it must never be stale." Waiting for
+// each node to speak again would leave hundreds of them lying in the meantime,
+// and a node we never hear again would lie forever.
+//
+// MONOTONIC AND EVIDENCE-BASED: it only ever moves last_heard FORWARD, and only
+// to a timestamp we already recorded as our own RF reception. It invents nothing.
+{
+  const KEY = 'migrations.last_heard_catchup_v1';
+  const done = db.prepare('SELECT value FROM config WHERE key = ?').get(KEY);
+  if (!done) {
+    const r = db.prepare(`
+      UPDATE nodes SET last_heard = rf_last_heard, updated_at = unixepoch()
+       WHERE rf_last_heard IS NOT NULL
+         AND (last_heard IS NULL OR rf_last_heard > last_heard)`).run();
+    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)')
+      .run(KEY, JSON.stringify(true));
+    console.log(`[migrate] last_heard caught up to rf_last_heard (${r.changes} rows)`);
+  }
+}
+
 // Seed default alert rules (INSERT OR IGNORE preserves user customisations)
 const _seedRules = db.prepare(
   `INSERT OR IGNORE INTO alert_rules (type, enabled, threshold, cooldown_minutes) VALUES (?, ?, ?, ?)`
@@ -784,8 +813,30 @@ export const stmts = {
   // Persist the live-computed hops-away (getHopsAway). No-op if the node has no
   // nodeinfo row yet (same as upsertTraceroute) — reloaded via enrichFromCache.
   // Stamped only when the packet did NOT arrive over MQTT.
+  // LAST_HEARD IS KING AND MUST NEVER BE STALE. Peter, 2026-08-18: "last_heard is
+  // king. traceroute is tx/rx so last_heard will also reflect traceroutes.
+  // last_heard is KING, it must never be stale."
+  //
+  // Until this stamped it, `nodes.last_heard` was written ONLY by upsertNode —
+  // the radio's nodedb replay, which db.js itself calls "not reception evidence".
+  // nodeList.touchLastHeard() updates the in-memory cache and issues no SQL, so
+  // nothing we heard ourselves ever reached the column. Measured 2026-08-18:
+  // G1 heard on RF at 09:54 carried a stored last_heard of 06 Aug — 275 hours —
+  // and `trac` was 559 hours out. A traceroute REPLY is an ordinary received
+  // packet, so it stopped at the cache like everything else: exactly the case
+  // Peter named.
+  //
+  // MAX, NEVER ASSIGNMENT. A replayed nodedb row, an out-of-order packet or a
+  // backfill must not roll it backwards. upsertNode already guards its own path
+  // this way; this gives the first-hand path the same protection.
+  //
+  // Both columns, one statement, one round trip. rf_last_heard keeps answering
+  // the narrower question — "did we hear this OVER THE AIR" — which
+  // hide_mqtt_only rests on. The caller stamps only when !ev.via_mqtt.
   touchRfHeard: db.prepare(`
-    UPDATE nodes SET rf_last_heard = MAX(COALESCE(rf_last_heard, 0), @ts) WHERE num = @num
+    UPDATE nodes SET rf_last_heard = MAX(COALESCE(rf_last_heard, 0), @ts),
+                     last_heard    = MAX(COALESCE(last_heard,    0), @ts)
+     WHERE num = @num
   `),
 
   upsertNodeHopsAway: db.prepare(`
