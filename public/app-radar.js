@@ -808,10 +808,29 @@ export const radarMixin = {
       const relayPos = run.known_route?.relay_positions ?? {};
       const snrs = run.phase === 'answered' ? (run.result?.snr_towards ?? []) : [];
 
-      const col = run.phase === 'answered' ? 'rgba(0,255,80,0.95)'
-                : failed                   ? 'rgba(255,120,60,0.85)'
+      // COLOUR AND BRIGHTNESS BY STATE. Three faults are being fixed here, all
+      // mine from the rebuild earlier today:
+      //
+      //   1. "answered" was GREEN on a radar whose rings, nodes, labels and sweep
+      //      are all green — the state you most want to see vanished into the
+      //      furniture. Success is now CYAN-WHITE, which nothing else on the plot
+      //      uses.
+      //   2. Success was DIMMER than in-flight (0.55 against 0.95). The most
+      //      interesting state was the faintest. It is now the brightest thing
+      //      drawn.
+      //   3. The only strong signal was the dots stopping, which is invisible
+      //      unless you happen to be watching at that instant.
+      //
+      // `retired` is set by the deadline timer in app-ws.js — the trace is not
+      // removed, it stops shouting, so the last known path stays readable.
+      const answered = run.phase === 'answered';
+      const col = answered ? (run.retired ? 'rgba(120,255,200,0.70)' : 'rgba(180,255,230,1)')
+                : failed   ? 'rgba(255,120,60,0.80)'
                 : 'rgba(255,200,40,0.95)';
-      const g = svgElem('g', { style: `opacity:${live ? 0.95 : 0.55}` });
+      const width = answered && !run.retired ? 3.2 : (live ? 2.5 : 2);
+      const g = svgElem('g', {
+        style: `opacity:${answered && !run.retired ? 1 : (live ? 0.95 : 0.5)}`,
+      });
 
       // home -> relays -> target. The sentinel is never a hop.
       const chain  = [null, ...route.filter(n => n != null && n !== 0xffffffff), run.target?.num];
@@ -829,7 +848,7 @@ export const radarMixin = {
         g.appendChild(svgElem('line', {
           x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
           x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
-          style: `stroke:${col};stroke-width:${live ? 2.5 : 2};stroke-linecap:round;` +
+          style: `stroke:${col};stroke-width:${width};stroke-linecap:round;` +
                  `stroke-dasharray:${adjacent ? '0,4' : '0,7'}`,
         }));
         // PER-HOP SNR, and NULLS ARE SKIPPED. An unmeasured hop was once drawn as
@@ -843,6 +862,27 @@ export const radarMixin = {
           });
           lbl.textContent = `${snr >= 0 ? '+' : ''}${snr.toFixed(1)}`;
           g.appendChild(lbl);
+        }
+      }
+
+      // A FRESH SUCCESS GETS A HALO on the target, so "it worked" is legible
+      // without comparing line colours. Drops away when the trace retires.
+      if (answered && !run.retired) {
+        const tp = points[points.length - 1];
+        if (tp) {
+          g.appendChild(svgElem('circle', {
+            cx: tp.x.toFixed(1), cy: tp.y.toFixed(1), r: 11,
+            style: `fill:none;stroke:${col};stroke-width:1.6;opacity:0.9`,
+          }));
+          const hops = run.result?.hops;
+          if (hops != null) {
+            const lbl = svgElem('text', {
+              x: tp.x.toFixed(1), y: (tp.y - 16).toFixed(1),
+              style: `fill:${col};font-size:9px;font-weight:600;font-family:'Oxanium',monospace;text-anchor:middle`,
+            });
+            lbl.textContent = hops === 0 ? 'DIRECT' : `${hops} HOP${hops === 1 ? '' : 'S'}`;
+            g.appendChild(lbl);
+          }
         }
       }
 

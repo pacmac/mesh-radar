@@ -54,6 +54,13 @@ export const navMixin = {
     // traceroute_history and went with it (2026-08-17, spec
     // docs/modules/traceroute-removal-browser.md), so there is nothing to
     // destroy on leave.
+    // The trace-retire timers are UI-only and must not fire against a radar that
+    // has been torn down. Cleared on leave; the feed re-establishes state on the
+    // next event, and a retired trace simply stays drawn until then.
+    if (this.tab === 'radar' && t !== 'radar' && this._traceRetire) {
+      for (const id of Object.keys(this._traceRetire)) clearTimeout(this._traceRetire[id]);
+      this._traceRetire = {};
+    }
     // Lazy-mounted x-if tabs must release Chart.js
     // instances on leave or their canvases leak.
     if (this.tab === 'node' && t !== 'node') this._destroyNodeCharts();

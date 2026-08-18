@@ -538,9 +538,39 @@ export const wsMixin = {
     // 2026-08-17 when the route overlay was deleted along with the TRACE button.
     // Nothing in public/ posts a traceroute; this only watches.
     if (ev.type === 'traceroute_status') {
-      // Replace by run id. A terminal phase stays in the map deliberately: it is
-      // the last known path, and dropping it would need a timer to decide when.
-      this.traceroutes = { ...this.traceroutes, [ev.id]: ev };
+      // Replace by run id. A terminal phase STAYS in the map — Peter, 2026-08-18:
+      // "should a finished trace disappear on its own - no, because then I can
+      // see the last traceroute." Retiring dims it; nothing is removed.
+      this.traceroutes = { ...this.traceroutes, [ev.id]: { ...ev, retired: false } };
+
+      // A SUCCESS NEEDS A DURATION. The trace stops the instant the reply lands
+      // (traceroute.js:668), so without this the bright state lasted one redraw
+      // and a succeeded trace looked identical to a stale one.
+      //
+      // THIS TIMER IS IN SCOPE. Peter, 2026-08-18: "NO TIMERS ... that is related
+      // to DATA polling ... BUT any such timer cannot be a trigger or event that
+      // is outside the scope of the UI." It fetches nothing, derives nothing, and
+      // its whole effect is a colour change. The DEADLINE ITSELF IS SERVED —
+      // ev.timing.deadline_ts, computed from Peter's traceroute.timeout_sec — so
+      // the server decides when and this only executes it. A persistence constant
+      // invented here would put that judgement back in the browser.
+      this._traceRetire = this._traceRetire || {};
+      if (this._traceRetire[ev.id]) {
+        clearTimeout(this._traceRetire[ev.id]);
+        delete this._traceRetire[ev.id];
+      }
+      if (ev.phase === 'answered' && ev.timing?.deadline_ts) {
+        // Clamped at 0: a reply arriving after the deadline retires at once
+        // rather than scheduling into the past.
+        const ms = Math.max(0, ev.timing.deadline_ts * 1000 - Date.now());
+        this._traceRetire[ev.id] = setTimeout(() => {
+          const run = this.traceroutes?.[ev.id];
+          if (run) this.traceroutes = { ...this.traceroutes, [ev.id]: { ...run, retired: true } };
+          delete this._traceRetire[ev.id];
+          if (this.tab === 'radar') this.refreshRadar();
+        }, ms);
+      }
+
       if (this.tab === 'radar') this.refreshRadar();
       return;
     }

@@ -3,7 +3,7 @@ module: range-tab-autosync-removal
 source:
   - public/app-nav.js
   - public/app-range.js
-source_hash: 6c110e97764d12264df1c6005724461c9e54552e4d6079c74f74b01a2943ee7c
+source_hash: 87cef87c7fb0438fb67c68f597c333126050cfb956c4e3e192f16e9756c6bfb6
 updated: 2026-08-18
 ---
 
