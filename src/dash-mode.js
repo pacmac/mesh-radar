@@ -49,32 +49,25 @@ const MODE_DEFAULTS = {
   pasv: { rx: 'non-rotator', tx: 'rx',      passive: true,  aim: 'none',     radio: 'auto' }, // passive: hear on non-rotator radios, re-trace via the hearer
   actv: { rx: 'rotator',     tx: 'rotator', passive: false, aim: 'auto',     radio: 'auto' }, // active: the aimed YAGI hears and transmits
   scan: { rx: 'rotator',     tx: 'rotator', passive: false, aim: 'none',     radio: 'auto' }, // scan: the sweeping YAGI hears and transmits
-  // DISC — discovery. Peter, 2026-08-02: "well this is a new mode isnt it?"
+  // DISC REMOVED 2026-08-18. Peter: "DISC is deprecated, it is part of
+  // observatory" — and observatory is in
+  // archive/observatory-and-discovery-2026-08-18.tar.gz, along with the
+  // mission-runner that DISC existed to drive. A mode whose engine has been
+  // archived is a button that cannot do anything.
   //
-  // It is, and the roles are why. A discovery mission chooses a distant target
-  // and pursues it, so it must TRANSMIT on the aimed YAGI — the first
-  // implementation dispatched a 234 km attempt on the omni at no particular
-  // azimuth, which is close to worthless. But it must LISTEN on everything: the
-  // reply can come back down any path and arrive at either radio, and hearing
-  // it on the omni is still hearing it.
+  // Kept from its comment because the MEASUREMENT is still worth having: DISC
+  // used to switch the passive tracer off entirely (passive-tracer.js tested
+  // `dashMode.value !== 0`). Measured 2026-08-02 — passive ran 17.0 traces/h
+  // answering 3.8% (n=5,557) before DISC was selected at 10:53, then managed
+  // 1 trace in 9.5 h while DISC returned 0 answers for 132 attempts. The only
+  // prober that was working got silently disabled by the mode meant to improve
+  // reach. If a discovery mode is ever rebuilt, that is the trap to avoid.
   //
-  // That rx:'all' + tx:'rotator' combination is what makes it a mode of its own
-  // rather than a flag on ACTV, whose rx is the rotator alone.
-  //
-  // passive: TRUE. Selecting DISC used to switch the passive tracer off entirely
-  // — `passive-tracer.js` tested `dashMode.value !== 0`. Measured 2026-08-02:
-  // passive ran 17.0 traces/h answering 3.8% (n=5,557) before DISC was selected
-  // at 10:53, then managed 1 trace in 9.5 h while DISC returned 0 answers for
-  // 132 attempts. The only prober that was working got silently disabled by the
-  // mode meant to improve reach.
-  //
-  // They do not compete for the antenna: passive keeps PASV's roles in every
-  // mode, so it works the OMNI while missions work the YAGI. The one real
-  // conflict is airtime, and passive already yields on missionRunner.dispatching
-  // for the seconds a mission packet is actually in the air.
-  disc: { rx: 'all',         tx: 'rotator', passive: true,  aim: 'auto',     radio: 'auto' },
+  // Its roles were rx:'all', tx:'rotator', passive:true, aim:'auto' — listen on
+  // everything because a reply can arrive at either radio, transmit only on the
+  // aimed YAGI because an unaimed 234 km attempt on the omni is worthless.
 };
-const MODE_NAME = { 0: 'pasv', 1: 'actv', 2: 'scan', 3: 'disc' };
+const MODE_NAME = { 0: 'pasv', 1: 'actv', 2: 'scan' };
 
 // Map a mode (number or name) to its canonical name.
 export function modeName(mode) {
@@ -122,7 +115,17 @@ export function isTransmitterForMode(mode, mac) {
 
 // Role vocabulary (SSOT). rx roles exclude 'rx' (which only means "the hearing
 // radio" and is meaningless as a listener); tx roles include it.
-export const MODE_KEYS = ['pasv', 'actv', 'scan', 'disc'];
+// 'disc' removed 2026-08-18 with observatory.
+//
+// A legacy stored mode of 3 is safe: modeName() already falls back to 'pasv'.
+//
+// THIS LIST DOES NOT DRIVE THE MODE BUTTONS. I assumed modeVocabulary() served
+// it to the browser and that removing 'disc' here would take the tab with it —
+// it did not, and a screenshot caught it still on screen. The buttons in
+// public/index.html are hand-written, one per mode, and had to be removed
+// separately. tab-cfg.html says the same of the Modes cards ("three hand-written
+// cards"). Anyone removing or adding a mode must edit BOTH.
+export const MODE_KEYS = ['pasv', 'actv', 'scan'];
 export const RX_ROLES  = ['rotator', 'non-rotator', 'primary', 'all'];
 export const TX_ROLES  = ['rotator', 'primary', 'non-rotator', 'all', 'rx'];
 // 'auto' FIRST, because it is the one that thinks. The others are explicit

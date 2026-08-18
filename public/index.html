@@ -195,15 +195,18 @@
                     :disabled="!rotatorConnected || !rotatorDeviceId()"
                     @click="scanMode ? abortScan() : startScan()"
                     x-text="scanMode ? 'ABORT' : 'SCAN'"></button>
-            <!-- DISC — discovery. A fourth mode, not a flag: it listens on every
-                 radio (the reply can come back anywhere) but transmits on the
-                 AIMED yagi, which no other mode combines. Peter, 2026-08-02:
-                 "well this is a new mode isnt it?" -->
-            <button class="btn btn-xs font-mono tracking-widest px-2"
-                    :class="rotatorMode === 3 && !scanMode ? 'btn-secondary' : 'btn-ghost opacity-40'"
-                    :disabled="scanMode || !rotatorConnected"
-                    title="Discovery — pursue the mission queue on the aimed yagi"
-                    @click="setRotatorMode(3)">DISC</button>
+            <!-- The DISC button was here and was REMOVED 2026-08-18. Peter:
+                 "DISC is deprecated, it is part of observatory" — and observatory,
+                 including the mission-runner DISC existed to drive, is in
+                 archive/observatory-and-discovery-2026-08-18.tar.gz.
+
+                 THESE BUTTONS ARE HAND-WRITTEN, not generated from the backend's
+                 mode vocabulary. I assumed they were, removed 'disc' from
+                 MODE_KEYS, and the tab was still on screen — the screenshot
+                 caught the assumption. Worth knowing: dropping a mode server-side
+                 does NOT remove its button, and tab-cfg.html says the same thing
+                 about the mode cards ("three hand-written cards"). -->
+
           </div>
         </div>
         <!-- The global TRACE switch was HERE and is deliberately gone.
