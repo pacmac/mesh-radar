@@ -5,7 +5,7 @@ import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
 import { insertTilt, insertEnvHistory, getTiltCal, getConfig, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts, persistNodeMac, loadNodeMacMap } from './db.js';
 import { buildNodeStatus } from './node-status.js';
-import { listFavourites } from './db.js';
+import { listFavourites, lastTraceByNode } from './db.js';
 import { queryMessages } from './filters.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.js';
@@ -438,6 +438,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       const _doorSet = provenDoors();
       const _ownNums = ownDeviceNums();
       const _roleMap = rolesByNum();
+      // ONE grouped read for the whole list. See docs/modules/node-recency-ssot.md.
+      const _lastTrace = lastTraceByNode();
       return { ...ev, favourites: listFavourites(), nodes: (ev.nodes || []).map(n => {
         // `via` — the first-hop relay bundle (IDENTITY.md §3) — is now always
         // null. It was read from last_traceroute.route[0], and nothing writes
@@ -478,7 +480,19 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
                  node_kind: nodeKind(n.num, n.role, { doors: _doorSet, own: _ownNums, roles: _roleMap }),
                  // tab-nodes.html:163-164 did its own Date.now() arithmetic AND
                  // set the bands. Age is server-side; the row renders a tone.
-                 heard_tone: heardTone(n.last_heard == null ? null : (Date.now() / 1000) - n.last_heard) };
+                 heard_tone: heardTone(n.last_heard == null ? null : (Date.now() / 1000) - n.last_heard),
+                 // WHEN WE LAST TRACED THIS NODE, and whether it answered.
+                 // Recorded in traceroute_history since the beginning and never
+                 // published — Peter, 2026-08-18: "we have no record of last
+                 // trace. that last one I challenge, because every traceroute
+                 // saves to and / or updates tables." He was right; it was there.
+                 //
+                 // ATTEMPT and HIT are separate because they answer different
+                 // questions: HOME has 730 attempts in 7 days and has answered
+                 // NONE, and one merged "last traced" would hide that entirely.
+                 // Raw unix seconds — the browser derives no age from them.
+                 last_trace_attempt: _lastTrace.get(n.num)?.attempt ?? null,
+                 last_trace_hit:     _lastTrace.get(n.num)?.hit     ?? null };
       }) };
     }
     if (ev.type === 'device_list') {

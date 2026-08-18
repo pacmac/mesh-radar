@@ -1003,6 +1003,29 @@ export const stmts = {
   // node_filters.hide_mqtt_only removes.
   rfHeardNums: db.prepare(`SELECT num FROM nodes WHERE rf_last_heard IS NOT NULL`),
 
+  // WHEN WE LAST TRACED EACH NODE, and whether it answered.
+  //
+  // Peter, 2026-08-18: "we have no record of last trace. that last one I
+  // challenge, because every traceroute saves to and / or updates tables." He
+  // was right — it IS recorded here and was simply never published, so any
+  // consumer wanting it had to query this table itself.
+  //
+  // ATTEMPT AND HIT ARE DIFFERENT QUESTIONS and both are needed: HOME has 730
+  // attempts in 7 days and has answered NONE. A single "last traced" would make
+  // that node look tended when nothing has ever come back.
+  //
+  // `tx_device IS NOT NULL` restricts this to traces WE sent. A reply we merely
+  // overheard is stored with null attribution and is not our attempt.
+  //
+  // ONE grouped read for the whole node list, never one query per node.
+  lastTraceByNode: db.prepare(`
+    SELECT to_num,
+           MAX(ts)                                AS attempt,
+           MAX(CASE WHEN status='ok' THEN ts END) AS hit
+      FROM traceroute_history
+     WHERE tx_device IS NOT NULL
+     GROUP BY to_num`),
+
   // NODES WE HEARD BY RADIO INSIDE THE WINDOW — the boot hydration set.
   //
   // NOT the radio's nodedb. That is a deliberate exclusion: node-dash does not
@@ -2134,6 +2157,18 @@ export function insertDetectionEvent(entry) {
 export function insertEnvHistory(entry) {
   stmts.insertEnvHistory.run(_finAll({ packet_id: null, gas_resistance: null, ...entry },
     ['temperature', 'relative_humidity', 'barometric_pressure', 'gas_resistance']));
+}
+
+/** num -> { attempt, hit } in unix seconds, either possibly null.
+ *
+ *  Absent from the map = we have never traced that node at all, which is a third
+ *  state and not the same as "traced and never answered". */
+export function lastTraceByNode() {
+  const m = new Map();
+  for (const r of stmts.lastTraceByNode.all()) {
+    m.set(r.to_num, { attempt: r.attempt ?? null, hit: r.hit ?? null });
+  }
+  return m;
 }
 
 export function queryEnvHistory(num, sinceTs) {
