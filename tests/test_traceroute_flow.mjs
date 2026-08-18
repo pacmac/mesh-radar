@@ -38,6 +38,7 @@ const PREFIX = 'device_cfg.';
 const TARGET = 646426545;
 
 let checks = 0;
+let failure = null;
 const ok = (c, w) => { assert.ok(c, w); checks++; };
 const eq = (a, b, w) => { assert.equal(a, b, w); checks++; };
 
@@ -49,6 +50,16 @@ for (const mac of [OMNI, YAGI]) saved[mac] = getConfig(PREFIX + mac, null);
 const baselineId = db.prepare('SELECT COALESCE(MAX(id),0) id FROM traceroute_history').get().id;
 
 async function harness(fn, { pointResult = { ok: true, busy: false, timeout: false, err: null }, settleMs = 400 } = {}) {
+  // EACH BLOCK STARTS FROM A CLEAN SLATE. _pending is keyed by TARGET, so a
+  // dispatch still in flight from an earlier block makes the next one JOIN it
+  // rather than post — and the assertion "it dispatched" then fails for a reason
+  // that has nothing to do with the code under test. Caught 2026-08-18 when the
+  // config-default block left 1-2 s timeouts pending and the omni block after it
+  // reported zero posts.
+  for (const [, e] of traceroute._pending) if (e.timer) clearTimeout(e.timer);
+  traceroute._pending.clear();
+  traceroute._runs.clear();
+
   const realPost = bridge.post, realPointOnce = rotator._pointOnce, realHold = rotator.hold;
   const seen = { posts: [], points: 0, holds: [], error: null };
   bridge.post        = async (path, body) => { seen.posts.push({ path, body }); return { ok: true }; };
@@ -157,11 +168,89 @@ try {
     ok(/aim not confirmed/.test(s.error ?? ''), '...and the caller is told');
   }
 
+  // ── the STATUS FEED — every phase, in order, on one id ──────────────────
+  // Peter, 2026-08-18: "we know everything about what its doing ... whether or
+  // not all of it will be consumed is irrelevant." So this asserts the SHAPE is
+  // complete, not merely that events fire.
+  {
+    const seen = [];
+    const onStatus = (s) => seen.push(s);
+    traceroute.on('status', onStatus);
+    try {
+      // OMNI: no aim phases at all.
+      seen.length = 0;
+      await harness(() => traceroute.run('non-rotator', TARGET, 200));
+      const omniPhases = seen.map(s => s.phase);
+      eq(omniPhases[0], 'resolved',    'the first phase is resolved');
+      ok(!omniPhases.includes('aiming'), 'an omni never emits aiming');
+      ok(omniPhases.includes('dispatched'), '...but does dispatch');
+      ok(seen.every(s => s.id === seen[0].id), 'every phase of one run shares one id');
+
+      // The payload carries what it knows, whether or not anything reads it.
+      const r = seen[0];
+      ok(r.target?.num === TARGET,            'target num is served');
+      ok('label' in (r.target ?? {}),         'target label is served');
+      ok('bearing_deg' in (r.target ?? {}),   "the TARGET's own bearing is served");
+      eq(r.radio?.beam_deg, 360,              'radio beamwidth is served');
+      eq(r.radio?.directional, false,         'directionality is served');
+      ok('mac' in (r.radio ?? {}),            'radio mac is served');
+      ok('rotator_id' in (r.radio ?? {}),     'which rotator serves it is served');
+      ok(r.timing?.started_ts > 0,            'started_ts is served');
+      eq(r.timing?.timeout_ms, 200,           'the timeout budget is served');
+      // Peter offered the timestamp himself: "if s/ms to timeout is tricky then
+      // a timestamp instead". deadline - started must equal the budget.
+      eq(r.timing.deadline_ts - r.timing.started_ts, Math.round(200 / 1000),
+         'deadline_ts is started_ts + the timeout, so no consumer derives it');
+      ok('az' in (r.rotator ?? {}),           "the rotator's live azimuth is served");
+
+      // DIRECTIONAL: the aim phases appear, and source says who chose the bearing.
+      seen.length = 0;
+      await harness(() => traceroute.run('rotator', TARGET, 300, { via: { via_bearing: 275 } }));
+      const ph = seen.map(s => s.phase);
+      ok(ph.includes('aiming') && ph.includes('aimed'), 'a directional radio emits aiming then aimed');
+      eq(ph.indexOf('aiming') < ph.indexOf('aimed'), true, '...in that order');
+      const aimed = seen.find(s => s.phase === 'aimed');
+      eq(aimed.aim.source, 'via_bearing', 'source distinguishes an operator override from the rule');
+      eq(aimed.aim.mode, 'bearing',       'mode says WHAT it aimed at');
+      eq(aimed.aim.az_requested, 275,     'the requested angle is served');
+      eq(aimed.aim.settled, true,         'confirmation is served');
+
+      // A run with no via reports source 'derived' — the rule fired, not a human.
+      seen.length = 0;
+      await harness(() => traceroute.run('rotator', TARGET, 300));
+      eq(seen.find(s => s.phase === 'aimed')?.aim.source, 'derived',
+         'without a via the source is the rule, not an override');
+
+      // AIM REFUSED: aim_failed, and NO dispatched.
+      seen.length = 0;
+      await harness(() => traceroute.run('rotator', TARGET, 300),
+                    { pointResult: { ok: false, busy: true, timeout: false, err: null, az: 200 } });
+      const rf = seen.map(s => s.phase);
+      ok(rf.includes('aim_failed'),  'a refused aim emits aim_failed');
+      ok(!rf.includes('dispatched'), '...and NEVER dispatched — nothing was transmitted');
+      ok(seen.find(s => s.phase === 'aim_failed')?.error?.reason, '...with a reason');
+
+      // A terminal phase ends the run, so nothing leaks into the replay.
+      eq(traceroute.inFlight().length, 0, 'a finished run is not reported as in flight');
+    } finally {
+      traceroute.off('status', onStatus);
+    }
+  }
+
   // The hold ceiling itself is proven in tests/test_aim.mjs against
   // rotator.point() directly — it cannot be exercised here without passing a
   // timeout so large the dispatch would never return.
 
   console.log(`test_traceroute_flow: ${checks} checks passed`);
+} catch (e) {
+  // A FAILING ASSERTION MUST FAIL THE RUN. The `finally` below calls
+  // process.exit() so the pending dispatch timers cannot hold the process open
+  // — and an unqualified exit(0) there SWALLOWED every assertion error, which is
+  // a test that cannot fail. Caught 2026-08-18 when the suite reported nothing
+  // at all instead of a mismatch.
+  failure = e;
+  console.error(`test_traceroute_flow FAILED: ${e?.message ?? e}`);
+  if (e?.stack) console.error(e.stack.split('\n').slice(1, 4).join('\n'));
 } finally {
   for (const mac of [OMNI, YAGI]) {
     if (saved[mac] === null) setConfig(PREFIX + mac, {});
@@ -169,5 +258,5 @@ try {
   }
   const removed = db.prepare('DELETE FROM traceroute_history WHERE id > ?').run(baselineId).changes;
   if (removed) console.log(`test_traceroute_flow: cleaned up ${removed} row(s) this test created`);
-  process.exit(0);   // pending dispatch timers would otherwise hold the process open
+  process.exit(failure ? 1 : 0);
 }

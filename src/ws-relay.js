@@ -11,6 +11,10 @@ import { handleAlertEvent } from './alerts.js';
 import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
 import { scheduleTime } from './served-time.js';
+// Re-imported 2026-08-18 for the status feed. It was dropped when the last
+// traceroute broadcast went; this subscribes to ONE event ('status') and
+// relays it verbatim, rather than the five it used to assemble.
+import { traceroute } from './traceroute.js';
 import { nodeKind, provenDoors, rolesByNum } from './node-kind.js';
 import { ownDeviceNums } from './node-filter.js';
 import { channelKey, setDeviceChannels, roleOf, indexFor } from './channels.js';
@@ -885,10 +889,24 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   scanner.on('progress', (data) => broadcast({ type: 'scan_progress', data }));
   scanner.on('contact',  (data) => broadcast({ type: 'scan_contact',  data }));
   scanner.on('end',      (data) => broadcast({ type: 'scan_end',      data }));
-  // 'passive_trace_start' and 'route_discovered' broadcasts REMOVED 2026-08-17,
-  // task `traceroute-remove-backend-remainder`, along with the SSOT_TRACEROUTE
-  // V1/V2 fork that chose between passiveTracer and traceroute as their source.
-  // Neither emitter exists now. The browser handlers went in 86400ab.
+  // ── traceroute_status ──────────────────────────────────────────────────────
+  //
+  // Peter, 2026-08-18: "traceroute needs a ws status feed that can be subscribed
+  // to, i.e by the radar", and on the payload: "we know everything about what
+  // its doing, what radio it is using etc etc. whether or not all of it will be
+  // consumed is irrelevant."
+  //
+  // ONE EVENT TYPE CARRYING A PHASE, not the five overlapping types this
+  // replaces (trace_aiming, trace_aimed, passive_trace_start, route_discovered,
+  // traceroute_failed — all removed 2026-08-17 when their emitters went). Five
+  // types serving four callers is why the browser's handling of them sprawled;
+  // one typed event lets a consumer switch on one thing.
+  //
+  // THE PAYLOAD IS ASSEMBLED IN traceroute.js, NOT HERE. This is a relay: it
+  // must not enrich, because the module that ran the traceroute is the only one
+  // that knows the radio, the aim and the budget at the same instant. Spec:
+  // docs/modules/traceroute-status-feed.md.
+  traceroute.on('status', (s) => broadcast({ type: 'traceroute_status', ...s }));
   nodeList.on('change',  (nodes) => broadcast({ type: 'node_list', nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos }));
 
   // ── [V2] SSOT_ROUTE_RENDER — backend-derived radar display state ──────────
@@ -1273,6 +1291,14 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       //
       // Static config, so once on connect rather than on every broadcast.
       ws.send(JSON.stringify({ type: 'verdict_bands', ...verdictBands() }));
+
+      // IN-FLIGHT TRACEROUTES, so a client connecting mid-trace is not blind
+      // until the next transition — which for a 60 s trace may be the end of it.
+      // Nothing in flight sends nothing, rather than an empty frame nobody can
+      // distinguish from "the feed is broken".
+      for (const s of traceroute.inFlight()) {
+        ws.send(JSON.stringify({ type: 'traceroute_status', ...s, replay: true }));
+      }
     } catch (e) {
       console.error('[ws-relay] history push failed:', e.message);
     }

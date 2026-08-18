@@ -34,7 +34,12 @@ import { rotator } from './rotator.js';
 // THE TWO MODULES THIS ONE CALLS INSTEAD OF RE-IMPLEMENTING. Peter, 2026-08-17:
 // "traceroute should call and not duplicate what the other functions provide."
 import { resolveRadio } from './resolve.js';
-import { aimForNode } from './aim.js';
+// bearingToNode comes from aim.js rather than being recomputed here — it is the
+// same function the aiming uses, so a status feed and a beam cannot disagree
+// about where a node is.
+import { aimForNode, bearingToNode, parseVia } from './aim.js';
+import { resolveNodeLabel } from './node-label.js';
+import { haversine } from './utils.js';
 // provenDoors, getDeviceCfg, doorAim, discoveryConfig, DISCOVERY_LIMITS and
 // transmitterForMode are no longer imported here — every one of them was a
 // dependency of the aiming or the radio-resolution this file used to do itself.
@@ -83,6 +88,16 @@ function extractRelayPositions(route) {
   return relay_positions;
 }
 
+/** Km from home to a node, for the status feed. Reads the same `nodes` table
+ *  bearingToNode does, so the bearing and the distance describe one position. */
+function distanceKmToNode(num) {
+  const n = stmts.getNodeByNum.get(num) ?? null;
+  if (!n?.lat || !n?.lon) return null;
+  const hLat = getConfig('home.lat'), hLon = getConfig('home.lon');
+  if (hLat == null || hLon == null) return null;
+  return +haversine(hLat, hLon, n.lat, n.lon).toFixed(1);
+}
+
 // THERE IS NO ENABLED SWITCH, AND THERE IS NO STATE TO BE IN.
 //
 // Peter, 2026-08-18: "traceroute.enabled is not a config setting, that's the
@@ -112,6 +127,63 @@ class TracerouteManager extends EventEmitter {
     this._pending   = new Map();
     // _cooldowns: cooldownKey → timestamp of last dispatch
     this._cooldowns = new Map();
+    // _runs: id → the context every status emission is built from. One entry per
+    // run(), removed when the run reaches a terminal phase.
+    this._runs      = new Map();
+    this._nextRunId = 1;
+  }
+
+  // ── THE STATUS FEED ────────────────────────────────────────────────────────
+  //
+  // Peter, 2026-08-18: "we know everything about what its doing, what radio it
+  // is using etc etc. whether or not all of it will be consumed is irrelevant"
+  // and "we have a lot of known data no point in keeping it a secret!"
+  //
+  // So this emits EVERYTHING KNOWN at each transition, not what a consumer
+  // currently reads. A field withheld because nothing uses it yet is the reason
+  // a defect later takes a database query to diagnose.
+  //
+  // Spec: docs/modules/traceroute-status-feed.md. Relayed to the browser by
+  // ws-relay as `traceroute_status`; this module does not know a browser exists.
+  _emitStatus(runId, phase, extra = {}) {
+    const ctx = this._runs.get(runId);
+    if (!ctx) return;
+    // Kept current so inFlight()'s replay reports where a run actually IS,
+    // not where it started.
+    ctx.phase = phase;
+    const rs = rotator.status ?? {};
+    this.emit('status', {
+      id: runId,
+      phase,
+      ts: Math.floor(Date.now() / 1000),
+      target: ctx.target,
+      radio:  ctx.radio,
+      aim:    ctx.aim,
+      timing: ctx.timing,
+      // The rotator's own live view, sampled at emit time. Included for every
+      // phase — including an omni's, where it says what the beam happens to be
+      // doing for somebody else while we transmit omnidirectionally.
+      rotator: { az: rs.az ?? null, busy: !!rs.busy, held: !!rs.held },
+      ...extra,
+    });
+    // Terminal phases end the run. Keeping the context would leak one object per
+    // traceroute forever, and a replayed "in flight" that finished hours ago is
+    // worse than no replay at all.
+    if (['answered', 'timeout', 'send_failed', 'aim_failed'].includes(phase)) {
+      this._runs.delete(runId);
+    }
+  }
+
+  /** Status of every run currently in flight — for replay to a client that
+   *  connects mid-trace. Without it a browser opening during a 60 s trace sees
+   *  nothing until the next transition, which may be the end of it. */
+  inFlight() {
+    const rs = rotator.status ?? {};
+    return [...this._runs.entries()].map(([id, ctx]) => ({
+      id, phase: ctx.phase, ts: Math.floor(Date.now() / 1000),
+      target: ctx.target, radio: ctx.radio, aim: ctx.aim, timing: ctx.timing,
+      rotator: { az: rs.az ?? null, busy: !!rs.busy, held: !!rs.held },
+    }));
   }
 
   // ── run(target, opts) ──────────────────────────────────────────────────────
@@ -172,6 +244,35 @@ class TracerouteManager extends EventEmitter {
     if (!resolved) throw new Error(`no radio resolves for '${radio ?? 'auto'}'`);
     const device = resolved.node_id;
 
+    // THE RUN CONTEXT. Built once, here, because this is the only place that
+    // knows all of it at the same time — the resolved radio, the target, the
+    // budget. Every status emission is assembled from it, so the phases of one
+    // run cannot disagree with each other about what they are describing.
+    const runId = this._nextRunId++;
+    const startedTs = Math.floor(Date.now() / 1000);
+    this._runs.set(runId, {
+      phase: 'resolved',
+      target: {
+        num: to,
+        label: resolveNodeLabel(to),
+        // What the TARGET's own bearing is, which is not necessarily where the
+        // beam went — a relay or a `via` sends it somewhere else. Both are
+        // served so a consumer can draw the node AND the beam without inferring
+        // either.
+        bearing_deg: bearingToNode(to),
+        km: distanceKmToNode(to),
+      },
+      radio: {
+        label: resolved.label, node_id: resolved.node_id, mac: resolved.mac,
+        beam_deg: resolved.beam_deg, directional: resolved.directional,
+        steerable: resolved.steerable, rotator_id: resolved.rotatorId,
+      },
+      aim: null,
+      timing: { started_ts: startedTs, timeout_ms: timeout,
+                deadline_ts: startedTs + Math.round(timeout / 1000) },
+    });
+    this._emitStatus(runId, 'resolved');
+
     // 2. OMNI SKIPS EVERYTHING TO DO WITH POINTING. Peter: "of course some of
     //    this is skipped if the radio is an omni directional", the test being
     //    "beam width 360 degrees".
@@ -199,7 +300,48 @@ class TracerouteManager extends EventEmitter {
       // is set, the traceroute will go via that node, again this only applies to
       // directional antennas." That last clause is why it is read HERE, inside
       // the directional branch, and not before it.
-      aim = await aimForNode(to, resolved, timeout, { via: opts.via ?? null });
+      // `aiming` is emitted BEFORE the rotator is commanded, so a consumer sees
+      // the beam start moving rather than learning about it once it arrived.
+      // NORMALISE ONCE, HERE. opts.via arrives already parsed when the API
+      // validated it, but a direct caller may pass the raw { via_node } /
+      // { via_bearing } fields. Reading `.kind` off the raw form yields
+      // undefined, which reported source 'derived' for what was actually an
+      // operator override — the feed lying about who chose the bearing. Caught
+      // by tests/test_traceroute_flow.mjs on the day this was written.
+      const rawVia  = opts.via ?? null;
+      const viaSpec = (rawVia && (rawVia.kind === 'node' || rawVia.kind === 'bearing'))
+        ? rawVia
+        : parseVia(rawVia ?? {});
+      this._runs.get(runId).aim = {
+        mode: null,
+        // WHO chose the bearing, as distinct from what it aimed at. Collapsing
+        // this into `mode` would lose the ability to tell an operator override
+        // from the rule firing, which is the question asked when a run looks
+        // wrong. It also answers Peter's "if it is via a bearing or node"
+        // directly, without inspecting target_num.
+        source: viaSpec?.kind === 'bearing' ? 'via_bearing'
+              : viaSpec?.kind === 'node'    ? 'via_node'
+              : 'derived',
+        target_num: null, target_label: null,
+        az_requested: null, az_arrived: null, settled: false, note: null,
+      };
+      this._emitStatus(runId, 'aiming');
+
+      aim = await aimForNode(to, resolved, timeout, { via: viaSpec });
+
+      const ctx = this._runs.get(runId);
+      if (ctx) {
+        ctx.aim = {
+          ...ctx.aim,
+          mode: aim.mode,
+          target_num: aim.target ?? null,
+          target_label: aim.target != null ? resolveNodeLabel(aim.target) : null,
+          az_requested: aim.az ?? null,
+          az_arrived: aim.az_actual ?? null,
+          settled: !!aim.settled,
+          note: aim.note ?? null,
+        };
+      }
 
       // 4b. CONFIRMATION IS A PRECONDITION, NOT A NICETY. Peter: "once the
       //     rotator has confirmed it is aimed it starts the traceroute."
@@ -216,8 +358,12 @@ class TracerouteManager extends EventEmitter {
       // visible rather than silent.
       if (!aim.settled) {
         this._recordFailure(to, device, 'aim_failed', Date.now(), aim, opts);
+        // TERMINAL, AND THE POINT OF THE FEED. Nothing was transmitted, and the
+        // consumer is told why rather than seeing a run simply stop.
+        this._emitStatus(runId, 'aim_failed', { error: { reason: aim.note ?? 'aim not confirmed' } });
         throw new Error(`aim not confirmed (${aim.note ?? aim.mode}) — not dispatching`);
       }
+      this._emitStatus(runId, 'aimed');
     }
 
     // 5. DISPATCH, await the reply or the timeout, and save.
@@ -228,6 +374,7 @@ class TracerouteManager extends EventEmitter {
       cooldownKey: opts.cooldownKey,
       manual:      opts.manual ?? false,
       aimCtx:      aim,
+      runId,
       // Which probe-plan step produced this attempt, carried onto the row.
       planClass:   opts.planClass ?? null,
       stepIndex:   opts.stepIndex ?? null,
@@ -265,7 +412,7 @@ class TracerouteManager extends EventEmitter {
   // cooldownKey + cooldownMs: skip dispatch if key was dispatched within cooldownMs.
   // manual: a user-initiated request. Never gated by the master switch.
   dispatch({ to, device, timeoutMs, cooldownMs, cooldownKey, manual = false, aimCtx = null,
-             planClass = null, stepIndex = null } = {}) {
+             planClass = null, stepIndex = null, runId = null } = {}) {
     if (!to || !device) return Promise.reject(new Error('to and device are required'));
 
     // Master switch (task `traceroute-manual-enable`). Before this existed there
@@ -310,6 +457,10 @@ class TracerouteManager extends EventEmitter {
                       // dispatch() leaves it null, which is honest — unknown, not
                       // 'none'. Task `traceroute-rework`.
                       aim: aimCtx ?? null,
+                      // The run this dispatch belongs to, so the terminal phases
+                      // report against the same context the early ones did. Null
+                      // for a bare dispatch() that did not come through run().
+                      runId,
                       plan: { plan_class: planClass ?? null, step_index: stepIndex ?? null } };
 
       entry.timer = setTimeout(() => {
@@ -319,11 +470,13 @@ class TracerouteManager extends EventEmitter {
           log.warn(err.message);
           for (const cb of entry.callbacks) cb.reject(err);
           this._recordFailure(to, device, 'timeout', entry.startedAt, entry.aim, entry.plan);
+          this._emitStatus(entry.runId, 'timeout', { error: { reason: `no reply within ${effectiveMs} ms` } });
         }
       }, effectiveMs);
 
       this._pending.set(to, entry);
       this.emit('start', { to, device });
+      this._emitStatus(runId, 'dispatched');
       log.info(`dispatch to !${to.toString(16)} via ${device}`);
 
       // gw device paths are addressed by BLE MAC — always valid, whereas a
@@ -337,6 +490,7 @@ class TracerouteManager extends EventEmitter {
           log.warn(`send failed !${to.toString(16)}: ${err.message}`);
           for (const cb of entry.callbacks) cb.reject(err);
           this._recordFailure(to, device, 'send_failed', entry.startedAt, entry.aim, entry.plan);
+          this._emitStatus(entry.runId, 'send_failed', { error: { reason: err.message } });
         }
       });
     });
@@ -508,8 +662,25 @@ class TracerouteManager extends EventEmitter {
     result.rx_snr    = (typeof pkt.rx_snr  === 'number') ? pkt.rx_snr  : null;
     result.rx_rssi   = (typeof pkt.rx_rssi === 'number') ? pkt.rx_rssi : null;
 
-    // Notify all subscribers (ws-relay → route_discovered, passive-tracer → _busy release)
+    // Notify all subscribers.
     this.emit('result', result);
+
+    // ANSWERED — the terminal success phase of the status feed. Emitted only for
+    // a reply to a dispatch of OURS: an overheard traceroute has no pendingEntry
+    // and therefore no run, and claiming it as one of our runs would be false.
+    this._emitStatus(pendingEntry?.runId, 'answered', {
+      result: {
+        route:       result.route,
+        route_back:  result.route_back,
+        snr_towards: result.snr_towards,
+        snr_back:    result.snr_back,
+        hops:        Array.isArray(result.route) ? result.route.length : null,
+        rtt_ms:      result.rtt_ms,
+        rx_device:   result.rx_device ?? null,
+        rx_snr:      result.rx_snr ?? null,
+        rx_rssi:     result.rx_rssi ?? null,
+      },
+    });
   }
 }
 
