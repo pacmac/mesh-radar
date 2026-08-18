@@ -37,7 +37,7 @@ import { resolveRadio } from './resolve.js';
 // bearingToNode comes from aim.js rather than being recomputed here — it is the
 // same function the aiming uses, so a status feed and a beam cannot disagree
 // about where a node is.
-import { aimForNode, bearingToNode, parseVia } from './aim.js';
+import { aimForNode, bearingToNode, parseVia, lastKnownRoute } from './aim.js';
 import { resolveNodeLabel } from './node-label.js';
 import { haversine } from './utils.js';
 // provenDoors, getDeviceCfg, doorAim, discoveryConfig, DISCOVERY_LIMITS and
@@ -159,6 +159,7 @@ class TracerouteManager extends EventEmitter {
       target: ctx.target,
       radio:  ctx.radio,
       aim:    ctx.aim,
+      known_route: ctx.known_route,
       timing: ctx.timing,
       // The rotator's own live view, sampled at emit time. Included for every
       // phase — including an omni's, where it says what the beam happens to be
@@ -181,7 +182,8 @@ class TracerouteManager extends EventEmitter {
     const rs = rotator.status ?? {};
     return [...this._runs.entries()].map(([id, ctx]) => ({
       id, phase: ctx.phase, ts: Math.floor(Date.now() / 1000),
-      target: ctx.target, radio: ctx.radio, aim: ctx.aim, timing: ctx.timing,
+      target: ctx.target, radio: ctx.radio, aim: ctx.aim,
+      known_route: ctx.known_route, timing: ctx.timing,
       rotator: { az: rs.az ?? null, busy: !!rs.busy, held: !!rs.held },
     }));
   }
@@ -268,6 +270,15 @@ class TracerouteManager extends EventEmitter {
         steerable: resolved.steerable, rotator_id: resolved.rotatorId,
       },
       aim: null,
+      // THE PATH WE ALREADY BELIEVE, served so a consumer never has to ask.
+      // Peter, 2026-08-18: "radar can then plot it without having to do it's own
+      // enquiries." It is the SAME lookup decideAim uses to choose node-vs-relay,
+      // so what the beam is aimed at and what a consumer draws cannot disagree.
+      //
+      // Read here rather than inside the aim branch, because it is true of the
+      // run whether or not we aim — an omni has a known route too, and a `via`
+      // overrides where we point without changing what we know.
+      known_route: lastKnownRoute(to),
       timing: { started_ts: startedTs, timeout_ms: timeout,
                 deadline_ts: startedTs + Math.round(timeout / 1000) },
     });

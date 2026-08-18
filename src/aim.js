@@ -27,6 +27,7 @@
 
 import { stmts, getConfig } from './db.js';
 import { nodeIdToNum } from './utils.js';
+import { resolveNodeLabel } from './node-label.js';
 import { discoveryConfig } from './config-api.js';
 import { rotator } from './rotator.js';
 // doorAim (doors.js) and provenDoors (node-kind.js) are no longer imported: both
@@ -75,6 +76,48 @@ export function bearingToNode(num) {
   const x = Math.cos(h.lat * r) * Math.sin(lat * r)
           - Math.sin(h.lat * r) * Math.cos(lat * r) * Math.cos((lon - h.lon) * r);
   return Math.round((Math.atan2(y, x) / r + 360) % 360);
+}
+
+/** The last route we OBSERVED to a node, as a fact rather than a decision.
+ *
+ *  Peter, 2026-08-18: "the ws feed already looks up the target node's last record
+ *  to determine the route ... and this should also be part of the ws feed. why
+ *  because radar can then plot it without having to do it's own enquiries."
+ *
+ *  So this is exported: decideAim consults it to choose node-vs-relay, and
+ *  traceroute.run() puts it on the status feed. ONE query definition, two
+ *  callers, so what the beam is aimed at and what a consumer draws cannot
+ *  disagree about the path.
+ *
+ *  DISTINGUISHES DIRECT FROM UNKNOWN, which stmts.latestRouteTo cannot — it
+ *  filters empty routes out, so a node we reach directly and a node never traced
+ *  both come back as nothing.
+ *
+ *  @returns { route, hops, direct, ts, relay_num, relay_label } | null
+ */
+export function lastKnownRoute(to) {
+  let row = null;
+  try { row = stmts.lastKnownRouteTo.get(to) ?? null; } catch { return null; }
+  if (!row) return null;                       // never traced — genuinely unknown
+
+  let route = [];
+  try { route = JSON.parse(row.route ?? '[]') ?? []; } catch { route = []; }
+  if (!Array.isArray(route)) route = [];
+
+  // The broadcast sentinel is not a relay. It appears in stored routes and must
+  // never be aimed at or drawn as a hop.
+  const relay = route.length && route[0] !== 0xffffffff ? route[0] : null;
+
+  return {
+    route,
+    hops: route.length,
+    // EMPTY MEANS DIRECT — we reached it ourselves, which is a fact worth
+    // showing and is NOT the same as having no information.
+    direct: route.length === 0,
+    ts: row.ts ?? null,
+    relay_num: relay,
+    relay_label: relay != null ? resolveNodeLabel(relay) : null,
+  };
 }
 
 // ── decideAim(to, radio) ─────────────────────────────────────────────────────
@@ -223,14 +266,14 @@ export function decideAim(to, radio, via = null) {
     return { ...none, note: 'via could not be read as a node or a bearing' };
   }
 
-  let route = null;
-  try { route = JSON.parse(stmts.latestRouteTo.get(to)?.route ?? 'null'); } catch { /* no route */ }
-
-  const relay = Array.isArray(route) && route.length ? route[0] : null;
+  // ONE SOURCE FOR THE PATH. Both the aim decision and the status feed read
+  // lastKnownRoute(), so the beam and what a consumer draws cannot disagree.
+  const known = lastKnownRoute(to);
+  const relay = known?.relay_num ?? null;
 
   // RELAYED: aim at the relay. It is the node our transmission actually has to
   // reach, and the measurement above is why this is not the endpoint.
-  if (relay != null && relay !== 0xffffffff) {
+  if (relay != null) {
     const b = bearingToNode(relay);
     if (b != null) return { az: b, aimTarget: relay, mode: 'relay' };
     // The relay's position is unknown, so its bearing cannot be computed. Fall

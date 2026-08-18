@@ -976,6 +976,27 @@ export const stmts = {
      ORDER BY ts DESC LIMIT 1
   `),
 
+  // THE SAME LOOKUP WITHOUT THE LENGTH FILTER, and with the timestamp.
+  //
+  // `latestRouteTo` above drops a last-known route that was EMPTY, so a node we
+  // reach DIRECTLY looks identical to one never traced: both return no row.
+  // Measured 2026-08-18, 7 nodes are in that state — WLCD (919 attempts, 657
+  // answered), TA2m (972/393), T4, fir, HOME, GARG, TA2o.
+  //
+  // That never produced a wrong DECISION: decideAim treats empty and missing the
+  // same, and correctly aims at the node, because a direct node has no relay.
+  // Dispatch never consults it at all — direct nodes are traced like any other.
+  //
+  // It matters for REPORTING. "Direct — we reach it ourselves" and "we have no
+  // idea what the path is" are different things to show, and the filtered query
+  // cannot tell a consumer which it is looking at. `ts` rides along so the age of
+  // the observation is served rather than derived.
+  lastKnownRouteTo: db.prepare(`
+    SELECT route, ts FROM traceroute_history
+     WHERE to_num = ? AND status = 'ok'
+     ORDER BY ts DESC LIMIT 1
+  `),
+
   allNodeRoles: db.prepare(`SELECT num, role FROM nodes WHERE role IS NOT NULL AND role != ''`),
 
   // Nodes we have EVER heard by radio. The complement is the MQTT-only set that

@@ -10,7 +10,7 @@
 // not get run, and an unrun test is not a test.
 import assert from 'node:assert/strict';
 
-const { decideAim, aimAt, aimForNode, bearingToNode, parseVia } = await import('../src/aim.js');
+const { decideAim, aimAt, aimForNode, bearingToNode, parseVia, lastKnownRoute } = await import('../src/aim.js');
 const { rotator, HOLD_CEILING_MS } = await import('../src/rotator.js');
 const { DISCOVERY_LIMITS } = await import('../src/config-api.js');
 
@@ -208,6 +208,35 @@ for (const num of [1234, 0xda5af428]) {
   eq(s.value.mode, 'bearing', 'a bearing aims even when the TARGET is unknown');
   eq(s.value.az, 137,         '...at exactly the bearing given');
   ok(s.points >= 1,           '...and the rotator is actually commanded');
+}
+
+// ── lastKnownRoute: DIRECT and UNKNOWN are different answers ───────────────
+// stmts.latestRouteTo filters empty routes out, so a node we reach DIRECTLY and
+// a node never traced both come back as nothing. Measured 2026-08-18: 7 nodes
+// are direct, including WLCD (919 attempts, 657 answered). That never caused a
+// wrong DECISION — decideAim aims at the node either way, correctly, because a
+// direct node has no relay — but they are different things to SHOW.
+{
+  const never = lastKnownRoute(999_999_999);
+  eq(never, null, 'a never-traced node is null — genuinely no information');
+
+  // Whatever the live store holds, the SHAPE must obey the rules.
+  for (const num of [3663393832, 80054436, 646426545]) {
+    const k = lastKnownRoute(num);
+    if (k === null) continue;
+    ok(Array.isArray(k.route),            `route is an array for ${num}`);
+    eq(k.hops, k.route.length,            'hops equals the route length');
+    eq(k.direct, k.route.length === 0,    'direct is exactly "the route is empty"');
+    if (k.direct) {
+      eq(k.relay_num, null,               'a direct route has no relay to aim at');
+      ok(k !== null,                      '...but is NOT null — direct is knowledge, not absence');
+    } else {
+      eq(k.relay_num, k.route[0],         'the relay is route[0] — what a relay aim points at');
+      ok(k.relay_label != null,           '...with a pre-resolved label, since the browser resolves nothing');
+    }
+    // The broadcast sentinel is not a relay and must never be aimed at.
+    ok(k.relay_num !== 0xffffffff,        'the broadcast sentinel is never offered as a relay');
+  }
 }
 
 // ── bearingToNode is a bearing or null, never NaN ──────────────────────────

@@ -230,6 +230,24 @@ try {
       ok(!rf.includes('dispatched'), '...and NEVER dispatched — nothing was transmitted');
       ok(seen.find(s => s.phase === 'aim_failed')?.error?.reason, '...with a reason');
 
+      // KNOWN ROUTE ON EVERY PHASE. Peter, 2026-08-18: "radar can then plot it
+      // without having to do it's own enquiries." So it must be present from the
+      // FIRST phase — a consumer that only got it at the end could not draw the
+      // believed path while the trace was running, which is the whole point.
+      seen.length = 0;
+      await harness(() => traceroute.run('non-rotator', TARGET, 200));
+      ok(seen.length > 0, 'phases were emitted');
+      const kr = seen[0];
+      ok('known_route' in kr, 'known_route is present on the FIRST phase, not just the last');
+      for (const s of seen) {
+        eq(JSON.stringify(s.known_route), JSON.stringify(kr.known_route),
+           `known_route is identical on every phase (${s.phase}) — it is what we BELIEVED going in`);
+      }
+      if (kr.known_route) {
+        eq(kr.known_route.hops, kr.known_route.route.length, 'hops matches the route');
+        eq(kr.known_route.direct, kr.known_route.route.length === 0, 'direct means the route is empty');
+      }
+
       // A terminal phase ends the run, so nothing leaks into the replay.
       eq(traceroute.inFlight().length, 0, 'a finished run is not reported as in flight');
     } finally {
