@@ -27,6 +27,7 @@ import rotatorRouter from './rotator-api.js';
 import clustersRouter from './clusters-api.js';
 import terrainRouter from './terrain-api.js';
 import tracerouteRouter from './traceroute-api.js';
+import radioAdminRouter from './radio-admin-api.js';
 import reachRouter from './reach-api.js';
 import messagesRouter from './messages-api.js';
 import { createPerformanceRouter } from './performance-api.js';
@@ -355,6 +356,19 @@ app.use('/range_test', rangeTestRouter);
 // so requests fell through to mesh-gw and transmitted with no guards and no row.
 // A path the proxy regex cannot match is the fix that cannot regress.
 app.use(tracerouteRouter);
+
+// RADIO CONFIG WRITES — spec docs/modules/radio-admin.md.
+//
+// Mounted under a fixed prefix that carries NO node id, for the same reason the
+// traceroute router above does: a `/{nodeId}/...` path falls through to the
+// `/!hex` proxy at the bottom of this file the moment a handler is missing, and
+// then goes to mesh-gw unexamined. The device travels in the BODY.
+//
+// This replaces five deleted op-manager ops (radio_config_section,
+// channel_config, owner_info, fixed_position_push, fixed_position_clear) which
+// wrote through mesh-gw's cooked PUT surface and validated themselves against a
+// cache written from their own input.
+app.use('/radio-admin', radioAdminRouter);
 
 app.use(autoPurgeRouter);
 

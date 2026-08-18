@@ -167,12 +167,12 @@ export const configMixin = {
     if (this.fixedPosition.alt != null && this.fixedPosition.alt !== '')
       body.altitude = Math.round(this.fixedPosition.alt);
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp('fixed_position_push', target, { values: body });
+    await fetchJSON('/radio-admin/fixed-position', 'POST', { device: target, position: body });
   },
 
   async clearFixedPosition() {
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp('fixed_position_clear', target, {});
+    await fetchJSON('/radio-admin/fixed-position', 'DELETE', { device: target });
     this.fixedPosition.lat = null;
     this.fixedPosition.lon = null;
     this.fixedPosition.alt = null;
@@ -185,7 +185,9 @@ export const configMixin = {
     // being cleared by an unrelated edit in the same section.
     const formValues = collectForm(el, sec.schema.fields, sec.data ?? {});
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp('radio_config_section', target, { section: sec.name, values: formValues });
+    // The backend composes the AdminMessage; this posts form values and nothing
+    // else. docs/modules/radio-admin.md, docs/BROWSER_CONTRACT.md.
+    await fetchJSON('/radio-admin/config', 'POST', { device: target, section: sec.name, values: formValues });
     // Refresh the form UI with the verified server state
     const fresh = await fetchJSON(this.cd(`/config/${sec.name}`));
     sec.data = fresh[sec.name] || fresh || {};
@@ -239,7 +241,7 @@ export const configMixin = {
     const payload = collectForm(el, this.channelSchema.fields);
     const body = channelWriteBody(ch.data, payload);
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp('channel_config', target, { index: ch.index, values: body });
+    await fetchJSON('/radio-admin/channel', 'POST', { device: target, index: ch.index, settings: body });
     // mesh-gw's channel cache is stale until reconnect even after a completed
     // BLE write. Keep the accepted full replacement locally instead of
     // immediately overwriting it with the pre-write cached value.
@@ -282,7 +284,7 @@ export const configMixin = {
     const currentRole = this.ownerData?.role ?? 'CLIENT';
     if (payload.role === currentRole) delete payload.role;
     const target = this.cfgRadioId || this.activeNodeId;
-    await submitOp('owner_info', target, { values: payload });
+    await fetchJSON('/radio-admin/owner', 'POST', { device: target, user: payload });
   },
 
   async loadBridgeConfig() {

@@ -147,42 +147,32 @@ const REGISTRY = new Map([
   // The firmware decides whether to reboot after a config write — we never predict
   // or command it. device_state WS events inform the UI independently.
 
-  ['radio_config_section', {
-    class: 'Radio', description: 'Any radio/module config section (section name is a parameter)',
-    method: 'PUT', endpoint: p => `/${p.target}/config/${p.section}`,
-    read_back_path: null, match_fields: [],
-    example_payload: { target: '!2687afb1', section: 'lora', values: { hop_limit: 3 } },
-    timeout_s: 15,
-  }],
-  ['channel_config', {
-    class: 'Radio', description: 'Channel settings and role',
-    method: 'PUT', endpoint: p => `/${p.target}/channels/${p.index}`,
-    // mesh-gw's channel GET is cached until reconnect, so it cannot verify this write.
-    read_back_path: null, match_fields: [],
-    example_payload: { target: '!2687afb1', index: 0, values: { role: 'PRIMARY' } },
-    timeout_s: 15, reboot: false,
-  }],
-  ['owner_info', {
-    class: 'Radio', description: 'Device owner (name, short name, licensed)',
-    method: 'PUT', endpoint: p => `/${p.target}/owner`,
-    read_back_path: p => `/${p.target}/owner`, match_fields: ['long_name', 'short_name'],
-    example_payload: { target: '!2687afb1', values: { long_name: 'Test Node', short_name: 'TN1' } },
-    timeout_s: 15, reboot: false,
-  }],
-  ['fixed_position_push', {
-    class: 'Radio', description: 'Push fixed position to device',
-    method: 'PUT', endpoint: p => `/${p.target}/fixed_position`,
-    read_back_path: p => `/${p.target}/fixed_position`, match_fields: ['latitude_i', 'longitude_i'],
-    example_payload: { target: '!2687afb1', values: { latitude_i: 515074000, longitude_i: -1278000 } },
-    timeout_s: 15, reboot: false,
-  }],
-  ['fixed_position_clear', {
-    class: 'Radio', description: 'Remove fixed position from device',
-    method: 'DELETE', endpoint: p => `/${p.target}/fixed_position`,
-    read_back_path: null, match_fields: [],
-    example_payload: { target: '!2687afb1', values: {} },
-    timeout_s: 15, reboot: false,
-  }],
+  // FIVE RADIO-CONFIG OPS REMOVED 2026-08-18 — spec docs/modules/radio-admin.md.
+  //
+  //   radio_config_section   PUT /{target}/config/{section}
+  //   channel_config         PUT /{target}/channels/{index}
+  //   owner_info             PUT /{target}/owner
+  //   fixed_position_push    PUT /{target}/fixed_position
+  //   fixed_position_clear   DELETE /{target}/fixed_position
+  //
+  // Peter, said four times: "I do NOT want you to patch the existing code, I want
+  // it ripped out and re-done based on the exact same method that the phone app
+  // does." They are gone, not amended. src/radio-admin.js replaces them.
+  //
+  // WHY THEY COULD NOT BE SALVAGED. All five wrote through mesh-gw's cooked PUT
+  // surface, which returns {"verified": true} the moment the BLE write returns and
+  // then overwrites its cache with the values just sent. `owner_info` and
+  // `fixed_position_push` carried read_back_path + match_fields, so their
+  // "validation" GET read back the cache mesh-gw had just written from our own
+  // input. That comparison could not fail, and across two weeks it never once did
+  // — including on 2026-08-04 when a role write reported success and the radio
+  // never adopted it.
+  //
+  // The replacement composes AdminMessages and posts them to mesh-gw's
+  // pass-through, which is what the phone app's BLE layer does.
+  //
+  // send_message stays: it is not radio config. The device_config_* ops above are
+  // node-dash's own per-device metadata (class Local) and stay.
   ['send_message', {
     class: 'Radio', description: 'Send mesh text message',
     method: 'POST', endpoint: p => `/${p.target}/messages`,

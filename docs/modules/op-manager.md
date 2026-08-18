@@ -1,7 +1,7 @@
 ---
 module: op-manager
 source: src/op-manager.js
-source_hash: 5ef21b2b9e02b7e3366ec061cfe7110bb3ae7a802d38b15249ee67eb67d0bb18
+source_hash: aed33dce8d62142f4d0a0ff90713c27af0ddd795c0334ae361581c4f32cd00aa
 updated: 2026-07-22
 ---
 

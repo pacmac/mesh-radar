@@ -4,3 +4,7 @@ data/
 scripts/migrate-nodeinfo.js
 .playwright-mcp/
 artifacts/screenshots/
+
+# Radio config audit chain — one file per save, per device (docs/modules/radio-admin.md).
+# Operational history of THIS deployment's radios, not source. Kept on disk, not in git.
+backups/

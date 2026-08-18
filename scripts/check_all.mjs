@@ -24,7 +24,12 @@ const CHECKS = [
   // it. It asserted that only index.js/inferences.js/observatory-ws.js could
   // import the engine; with no engine there is nothing to import.
   { name: 'channel_write',          group: 'fast',    cmd: 'node',    args: ['tests/test_channel_write.mjs'],     needs: '—',                   measured: '30 ms',    timeoutMs: 30_000 },
-  { name: 'op_manager',             group: 'fast',    cmd: 'node',    args: ['tests/test_op_manager.mjs'],        needs: '—',                   measured: '140 ms',   timeoutMs: 30_000 },
+  // op_manager REPLACED BY radio_admin 2026-08-18. Its only subject was
+  // `channel_config`, one of the five radio-config ops deleted with the rewrite;
+  // a test for a deleted op is not a test. The new one asserts the phone app's
+  // method: admin pass-through, no session passkey, no reboot command, no edit
+  // transaction, and a backup per save.
+  { name: 'radio_admin',            group: 'fast',    cmd: 'node',    args: ['tests/test_radio_admin.mjs'],       needs: '—',                   measured: '90 ms',    timeoutMs: 30_000 },
   { name: 'served_time',            group: 'fast',    cmd: 'node',    args: ['tests/test_served_time.mjs'],       needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
   { name: 'channels',               group: 'fast',    cmd: 'node',    args: ['tests/test_channels.mjs'],          needs: '—',                   measured: '190 ms',   timeoutMs: 30_000 },
   { name: 'send_channel',           group: 'fast',    cmd: 'node',    args: ['tests/test_send_channel.mjs'],      needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
