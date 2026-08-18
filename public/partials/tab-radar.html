@@ -277,8 +277,11 @@
                     style="fill:none;stroke:rgba(255,180,60,0.85);stroke-width:1.2;stroke-dasharray:3 2"></path>
               <g id="radar-beam-g" x-ignore style="transform-box:view-box;transform-origin:300px 300px;transition:transform 1.2s ease"></g>
               <g id="radar-scan-arm-g" x-ignore clip-path="url(#radarClip)"></g>
-              <!-- radar-traceroute-g removed 2026-08-17 with the route layer
-                   it held — spec docs/modules/traceroute-removal-browser.md -->
+              <!-- The traceroute overlay, RESTORED 2026-08-18. The radar OBSERVES
+                   a traceroute; it has never been able to start one. Driven only
+                   by the traceroute_status feed — spec
+                   docs/modules/radar-traceroute-overlay.md -->
+              <g id="radar-traceroute-g" x-ignore clip-path="url(#radarClip)"></g>
               <!-- Clusters sit UNDER the nodes: a blob is context for the marks
                    on top of it, never something that can obscure them. -->
               <!-- Achieved reach: what we have PROVEN we can talk to, per sector.

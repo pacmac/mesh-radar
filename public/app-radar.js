@@ -142,6 +142,7 @@ export const radarMixin = {
     this._drawRadarTerrain(maxKm);
     this._drawRadarReach(maxKm);
     this._drawRadarClusters(maxKm);
+    this._drawRadarTrace(maxKm);
     this._drawRadarNodes(maxKm, ctx);
     this._applyLayerOrder();
   },
@@ -744,6 +745,134 @@ export const radarMixin = {
       style: 'stroke:rgba(255,160,0,0.75);stroke-width:1.5;stroke-dasharray:6,4',
     });
     ag.appendChild(line);
+  },
+
+  // ── THE TRACEROUTE OVERLAY, REBUILT 2026-08-18 ─────────────────────────────
+  //
+  // Peter: the radar "can show it happening WITHOUT commanding it, same as it
+  // also shows the yagi's aim position and movement."
+  //
+  // Driven ENTIRELY by the traceroute_status feed. This function makes no
+  // enquiry of its own — no lookup, no fetch, no derivation. The believed path,
+  // the relay positions, the labels and the phase all arrive on the event, which
+  // is why `known_route.relay_positions` exists: only 80 of 109 relays seen in
+  // stored routes have a position in the node list, so the browser could not
+  // place 27% of hops from what it already holds.
+  //
+  // NO TIMERS. The travelling dots are SMIL <animateMotion> — the renderer ticks
+  // them, not JavaScript. That is what the original used and why it was safe. A
+  // finished trace stops animating and STAYS DRAWN as the last known path:
+  // expiring it would need a timer, and would throw away the freshest thing we
+  // know. The deleted version had a _passiveTraceTimer doing exactly that.
+  _drawRadarTrace(maxKm) {
+    const tg = document.getElementById('radar-traceroute-g');
+    if (!tg) return;
+    tg.innerHTML = '';
+    const home = this.homePos;
+    if (!home) return;
+
+    const CX = 300, CY = 300, R = 256;
+    const runs = Object.values(this.traceroutes ?? {});
+    if (!runs.length) return;
+
+    const IN_FLIGHT = ['resolved', 'aiming', 'aimed', 'dispatched'];
+
+    // Position a node: the served relay_positions FIRST, because they cover
+    // hops the node list cannot place, then the node list.
+    const xyOf = (num, relayPos) => {
+      if (num == null) return { x: CX, y: CY };            // home
+      const p = relayPos?.[String(num)] ?? relayPos?.[num];
+      let lat = p?.latitude_i != null ? p.latitude_i / 1e7 : null;
+      let lon = p?.longitude_i != null ? p.longitude_i / 1e7 : null;
+      if (lat == null) {
+        const n = this.nodes.find(x => x.num === num);
+        lat = n?.position?.latitude_i != null ? n.position.latitude_i / 1e7 : null;
+        lon = n?.position?.longitude_i != null ? n.position.longitude_i / 1e7 : null;
+      }
+      if (lat == null || lon == null) return null;
+      const km  = haversine(home.lat, home.lon, lat, lon);
+      const az  = bearing(home.lat, home.lon, lat, lon);
+      const rad = az * Math.PI / 180;
+      const norm = this._radarNorm(km, maxKm);
+      return { x: CX + Math.sin(rad) * norm * R, y: CY - Math.cos(rad) * norm * R };
+    };
+
+    for (const run of runs) {
+      const live = IN_FLIGHT.includes(run.phase);
+      const failed = run.phase === 'aim_failed' || run.phase === 'send_failed' || run.phase === 'timeout';
+      // ANSWERED shows the route we just PROVED; anything else shows the route we
+      // BELIEVED going in. Both are served, so neither is inferred.
+      const route = run.phase === 'answered'
+        ? (run.result?.route ?? [])
+        : (run.known_route?.route ?? []);
+      const relayPos = run.known_route?.relay_positions ?? {};
+      const snrs = run.phase === 'answered' ? (run.result?.snr_towards ?? []) : [];
+
+      const col = run.phase === 'answered' ? 'rgba(0,255,80,0.95)'
+                : failed                   ? 'rgba(255,120,60,0.85)'
+                : 'rgba(255,200,40,0.95)';
+      const g = svgElem('g', { style: `opacity:${live ? 0.95 : 0.55}` });
+
+      // home -> relays -> target. The sentinel is never a hop.
+      const chain  = [null, ...route.filter(n => n != null && n !== 0xffffffff), run.target?.num];
+      const points = chain.map(n => xyOf(n, relayPos));
+      const known  = points.map((p, i) => p ? i : -1).filter(i => i >= 0);
+
+      for (let k = 0; k < known.length - 1; k++) {
+        const ai = known[k], bi = known[k + 1];
+        const p1 = points[ai], p2 = points[bi];
+        // A GAP IS NOT A LINK. `adjacent` is false when a hop between these two
+        // could not be placed, and the dash pattern says so — otherwise a chain
+        // with a hole reads as a direct connection. This was a fix in the
+        // original, not decoration.
+        const adjacent = (bi === ai + 1);
+        g.appendChild(svgElem('line', {
+          x1: p1.x.toFixed(1), y1: p1.y.toFixed(1),
+          x2: p2.x.toFixed(1), y2: p2.y.toFixed(1),
+          style: `stroke:${col};stroke-width:${live ? 2.5 : 2};stroke-linecap:round;` +
+                 `stroke-dasharray:${adjacent ? '0,4' : '0,7'}`,
+        }));
+        // PER-HOP SNR, and NULLS ARE SKIPPED. An unmeasured hop was once drawn as
+        // a confident "-32.0" because the old code divided by 4 with no sentinel
+        // guard. Values arrive already in dB with null for unmeasured.
+        const snr = adjacent ? snrs[ai] : null;
+        if (snr != null) {
+          const lbl = svgElem('text', {
+            x: ((p1.x + p2.x) / 2).toFixed(1), y: ((p1.y + p2.y) / 2 - 4).toFixed(1),
+            style: `fill:${col};font-size:8px;font-family:'Oxanium',monospace;text-anchor:middle`,
+          });
+          lbl.textContent = `${snr >= 0 ? '+' : ''}${snr.toFixed(1)}`;
+          g.appendChild(lbl);
+        }
+      }
+
+      // Relay markers.
+      for (let i = 1; i < chain.length - 1; i++) {
+        const p = points[i];
+        if (!p) continue;
+        g.appendChild(svgElem('circle', {
+          cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: 3,
+          style: `fill:${col};stroke:${col};stroke-width:1`,
+        }));
+      }
+
+      // THE TRAVELLING DOTS — SMIL, so no browser timer ticks them. Only while
+      // the trace is actually in flight: an animation still running after the
+      // answer would claim something is happening when nothing is.
+      if (live && known.length >= 2) {
+        const d = 'M ' + known.map(i => `${points[i].x.toFixed(1)},${points[i].y.toFixed(1)}`).join(' L ');
+        for (let n = 0; n < 3; n++) {
+          const dot = svgElem('circle', { r: '2.5', cx: '0', cy: '0', style: `fill:${col}` });
+          dot.appendChild(svgElem('animateMotion', {
+            path: d, dur: '1.8s', begin: `-${(n * 0.6).toFixed(2)}s`,
+            repeatCount: 'indefinite', calcMode: 'linear',
+          }));
+          g.appendChild(dot);
+        }
+      }
+
+      tg.appendChild(g);
+    }
   },
 
   // _drawRadarTraceroute() REMOVED — 2026-08-17, spec

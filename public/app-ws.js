@@ -530,6 +530,21 @@ export const wsMixin = {
       return;
     }
 
+    // THE TRACEROUTE STATUS FEED. One event type carrying a phase; the browser
+    // stores it and renders, and decides nothing. Spec:
+    // docs/modules/radar-traceroute-overlay.md.
+    //
+    // OBSERVING, NOT COMMANDING — the distinction that was got wrong on
+    // 2026-08-17 when the route overlay was deleted along with the TRACE button.
+    // Nothing in public/ posts a traceroute; this only watches.
+    if (ev.type === 'traceroute_status') {
+      // Replace by run id. A terminal phase stays in the map deliberately: it is
+      // the last known path, and dropping it would need a timer to decide when.
+      this.traceroutes = { ...this.traceroutes, [ev.id]: ev };
+      if (this.tab === 'radar') this.refreshRadar();
+      return;
+    }
+
     // 'traceroute_history' and 'traceroute_failed' handlers REMOVED 2026-08-17,
     // spec docs/modules/traceroute-removal-browser.md. They fed the perf page's
     // history store. Peter kept the 37,424 stored rows and dropped the reads:

@@ -178,6 +178,10 @@ function dashboard() {
     // Chart window (1/4/24/72 HR). User input, forwarded to the backend —
     // the SERVER slices history and computes the axis labels for it.
     nodeWindowHours: Number(persistGet('nodeWindowHours', 24)),
+    // Live traceroutes, keyed by the feed's run id. Peter, 2026-08-18: the radar
+    // "can show it happening WITHOUT commanding it". Written ONLY by the
+    // traceroute_status handler; nothing here initiates one.
+    traceroutes:       {},
     radarCtx:          null,   // [V2] SSOT_ROUTE_RENDER — backend-derived radar display state
     _radarScalePts:    null,   // adaptive-scale control points (display cache, hysteresis)
     _radarLabelAngles: null,   // Map num→arm angle — per-node label placement memory
