@@ -350,9 +350,20 @@ body {
 }
 
 /* ── Form controls ───────────────────────────────────────── */
+/* background-COLOR, never the `background` shorthand.
+ *
+ * The shorthand resets every background-* longhand it does not name, so it wipes
+ * background-image — and daisyUI draws a <select>'s caret AS a background-image
+ * (two linear-gradient triangles, in currentColor). With `!important` on top, a
+ * rule that only meant to set a translucent tint deleted the dropdown arrow from
+ * every select in the app, making each one look like a text box.
+ *
+ * `appearance: none` further down daisyUI's own rule is CORRECT and must stay —
+ * it removes the native arrow to make room for the drawn one. Restoring
+ * `appearance` instead would give two carets. docs/modules/select-caret.md. */
 .input, .select, .textarea {
   border-color: var(--border-hi) !important;
-  background: rgba(255,255,255,0.04) !important;
+  background-color: rgba(255,255,255,0.04) !important;
   transition: border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.82rem !important;
@@ -361,7 +372,7 @@ body {
 .input:focus, .select:focus, .textarea:focus {
   border-color: var(--sig) !important;
   box-shadow: 0 0 0 3px var(--sig-glow), 0 0 12px var(--sig-glow-xs) !important;
-  background: rgba(0,212,200,0.04) !important;
+  background-color: rgba(0,212,200,0.04) !important;   /* not `background` — keeps the caret */
   outline: none !important;
 }
 
@@ -646,12 +657,12 @@ footer {
 [data-theme="corporate"] .input,
 [data-theme="corporate"] .select,
 [data-theme="corporate"] .textarea {
-  background: rgba(0, 0, 0, 0.025) !important;
+  background-color: rgba(0, 0, 0, 0.025) !important;   /* not `background` — keeps the caret */
 }
 [data-theme="corporate"] .input:focus,
 [data-theme="corporate"] .select:focus,
 [data-theme="corporate"] .textarea:focus {
-  background: rgba(0, 151, 167, 0.04) !important;
+  background-color: rgba(0, 151, 167, 0.04) !important;   /* not `background` — keeps the caret */
 }
 
 [data-theme="corporate"] .btn-primary {
