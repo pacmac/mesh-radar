@@ -94,6 +94,40 @@ export function buildField(field, value, path, opts = {}) {
     ctl.style.flexDirection = 'row';
     ctl.style.alignItems = 'center';
     ctl.style.justifyContent = 'space-between';
+  } else if (field.type === 'choice' && !field.repeated) {
+    // A CLOSED SET, RENDERED AS A SELECT — this is the whole fix, and it is a
+    // control decision rather than a validation one. The phone app does exactly
+    // this (DropDownPreference over IntervalConfiguration.allowedIntervals) and
+    // that is why, in Peter's words, "it works 100% of the time": there is no
+    // invalid state to reject, so there is no rejection path to get wrong.
+    //
+    // What was here before was a number box carrying an advisory `min` attribute,
+    // and because this form is read by collectForm rather than submitted
+    // natively, the browser's constraint validation never ran. The attribute
+    // decorated a control that enforced nothing.
+    input = document.createElement('select');
+    input.className = 'select select-bordered select-sm w-full';
+    for (const opt of field.options) {
+      const o = document.createElement('option');
+      o.value = opt.value; o.textContent = opt.label;
+      // == not ===: the served value is a Number and an option's DOM value is a
+      // string. Strict equality would leave the radio's CURRENT setting
+      // unselected and silently show the first option instead — which is how a
+      // form quietly proposes a change nobody asked for.
+      if (value != null && opt.value == value) o.selected = true;
+      input.appendChild(o);
+    }
+    // A value the radio holds that is NOT in the allowlist must stay visible
+    // rather than be silently replaced by the nearest legal one. It is shown,
+    // marked, and selected — the operator decides whether to change it.
+    if (value != null && !field.options.some(o => o.value == value)) {
+      const o = document.createElement('option');
+      o.value = value; o.textContent = `${value} (not a standard value)`;
+      o.selected = true;
+      input.insertBefore(o, input.firstChild);
+    }
+    input.dataset.field = fieldPath;
+    input.dataset.type = field.type;
   } else if (field.type === 'enum' && !field.repeated) {
     input = document.createElement('select');
     input.className = 'select select-bordered select-sm w-full';
@@ -229,5 +263,12 @@ function _readFieldValue(input, field) {
   }
   if (field.type === 'int')   return parseInt(input.value, 10) || 0;
   if (field.type === 'float') return parseFloat(input.value) || 0;
+  // A `choice` is a closed set of NUMBERS rendered as a select. A DOM select's
+  // value is always a string, so this must coerce or we would send "1800" where
+  // the protobuf needs an int — a wrong-TYPED value sent while fixing
+  // wrong-VALUED ones. Number(), not parseInt: an option value is authored by us
+  // and must round-trip exactly, so a non-numeric one should surface as NaN
+  // rather than be silently truncated. docs/modules/interval-options.md.
+  if (field.type === 'choice') return Number(input.value);
   return input.value;
 }

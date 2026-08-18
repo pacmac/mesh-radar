@@ -30,6 +30,12 @@ const CHECKS = [
   // method: admin pass-through, no session passkey, no reboot command, no edit
   // transaction, and a backup per save.
   { name: 'radio_admin',            group: 'fast',    cmd: 'node',    args: ['tests/test_radio_admin.mjs'],       needs: '—',                   measured: '90 ms',    timeoutMs: 30_000 },
+  // interval_tables regenerates src/interval-tables.js from the vendored Kotlin
+  // and diffs. Red if anyone hand-edits the generated file, or re-vendors a newer
+  // source without regenerating. It canNOT see upstream moving while our vendored
+  // copy sits still — see vendor/meshtastic-android/PROVENANCE.md.
+  { name: 'interval_tables',        group: 'fast',    cmd: 'node',    args: ['scripts/gen_interval_tables.mjs', '--check'], needs: '—',        measured: '45 ms',    timeoutMs: 30_000 },
+  { name: 'interval_options',       group: 'fast',    cmd: 'node',    args: ['tests/test_interval_options.mjs'],  needs: '—',                   measured: '40 ms',    timeoutMs: 30_000 },
   { name: 'served_time',            group: 'fast',    cmd: 'node',    args: ['tests/test_served_time.mjs'],       needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
   { name: 'channels',               group: 'fast',    cmd: 'node',    args: ['tests/test_channels.mjs'],          needs: '—',                   measured: '190 ms',   timeoutMs: 30_000 },
   { name: 'send_channel',           group: 'fast',    cmd: 'node',    args: ['tests/test_send_channel.mjs'],      needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },

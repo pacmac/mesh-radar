@@ -122,7 +122,10 @@ export const configMixin = {
     sec.loading = true;
     try {
       const [schema, values] = await Promise.all([
-        fetchJSON(`/schema/${sec.name}`),
+        // NOT /schema/{section}: the backend decorates interval fields into closed
+        // choices so a value that breaks the radio cannot be typed at all.
+        // docs/modules/interval-options.md.
+        fetchJSON(`/radio-admin/schema/${sec.name}`),
         fetchJSON(this.cd(`/config/${sec.name}`)),
       ]);
       sec.schema = schema;

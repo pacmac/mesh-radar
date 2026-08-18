@@ -3,7 +3,7 @@ module: check-all
 source:
   - scripts/check_all.mjs
   - package.json
-source_hash: 08667d10fe864c5b6d66b2bb9fc5d3f1aa5dbd12200b009f30d0fcb7e33ec5ea
+source_hash: a6c9e59a2e08bd100037cee448afbf0db4c6331f5c7b996b490467e55f60ed10
 updated: 2026-08-17
 ---
 

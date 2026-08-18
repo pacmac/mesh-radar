@@ -20,6 +20,7 @@ import {
 import { bridge } from './bridge.js';
 import { stmts } from './db.js';
 import { macToNodeId } from './device-config.js';
+import { decorateSchema } from './interval-options.js';
 
 const router = Router();
 
@@ -55,6 +56,30 @@ function toNum(device) {
  *
  *  NULL WHEN WE DO NOT KNOW. The browser renders the field empty rather than
  *  inventing a default, because a form that guesses is how this defect existed. */
+/** THE SECTION SCHEMA, WITH INTERVAL FIELDS TURNED INTO CLOSED CHOICES.
+ *
+ *  Peter, 2026-08-18: "I can enter any value I like for things like send freq for
+ *  metadata, node dash allows it and saves it an breaks the radio", and then
+ *  "that schema MUST exist in phoen app!... we should use that becos it works 100%
+ *  of the time."
+ *
+ *  It does exist, and the app's reliability is not validation — it is that the
+ *  invalid value cannot be typed. See docs/modules/interval-options.md.
+ *
+ *  mesh-gw still owns the FIELDS; this only replaces the control for the interval
+ *  fields the app curates. Everything else passes through untouched, including
+ *  fields we have no mapping for — which stay free-text and stay unconstrained,
+ *  because inventing a constraint would be the same class of error in reverse. */
+router.get('/schema/:section', async (req, res) => {
+  const { section } = req.params;
+  try {
+    const schema = await bridge.get(`/schema/${encodeURIComponent(section)}`);
+    res.json(decorateSchema(section, schema));
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 router.get('/owner/:device', async (req, res) => {
   const { device } = req.params;
   try {
