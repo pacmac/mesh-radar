@@ -117,14 +117,30 @@ def static_checks():
     # 4. traceroute.js portnum check — portnum IS string from gw (MessageToDict normalises enums)
     # Check that traceroute.js gets CALLED with route_discovery data (it doesn't via raw packet)
     if "route_discovery" in traceroute:
-        # Check if index.js handles the typed 'traceroute' event to feed traceroute.handlePacket
-        has_typed_traceroute_handler = "ev.type === 'traceroute'" in index or "'traceroute'" in index and "handlePacket" in index
-        if has_typed_traceroute_handler:
-            report("PASS", "traceroute.js: typed traceroute event handled", "index.js routes traceroute → handlePacket")
+        # WHERE THE DECODE ACTUALLY LIVES: src/bridge-events.js, registered by
+        # index.js via registerBridgeEvents(bridge). It has never been in index.js,
+        # so asserting index.js could only ever fail — and it did, silently, while
+        # the real fault was something else entirely.
+        #
+        # THIS CHECK STILL HAS TEETH, and must keep them. Its subject is the exact
+        # fault of 2026-08-18: both handlePacket call sites were removed with the
+        # dispatchers (c297b9d) and were NOT restored when POST /traceroute brought
+        # dispatch back, so every traceroute ran to its full timeout with the reply
+        # arriving perfectly and nothing looking at it. BOTH paths are required:
+        # the gw's typed event carries route_discovery, the raw packet does not.
+        bridge_events = read_src("bridge-events.js")
+        has_typed = "ev.type === 'traceroute'" in bridge_events and "handlePacket" in bridge_events
+        has_raw   = "traceroute.handlePacket(pkt" in bridge_events
+        if has_typed and has_raw:
+            report("PASS", "traceroute.js: reply decode wired",
+                   "bridge-events.js routes BOTH the typed traceroute event and the raw packet → handlePacket")
         else:
-            report("FAIL", "traceroute.js: typed traceroute event not handled in index.js",
-                   "gw emits 'traceroute' typed event with data.route_discovery; "
-                   "raw packet has no route_discovery; index.js must handle typed event and call traceroute.handlePacket")
+            missing = []
+            if not has_typed: missing.append("typed 'traceroute' event")
+            if not has_raw:   missing.append("raw TRACEROUTE_APP packet")
+            report("FAIL", "traceroute.js: reply decode NOT wired in bridge-events.js",
+                   "missing: " + ", ".join(missing) + ". Without it every traceroute times out "
+                   "regardless of radio, target or mesh — the 2026-08-18 fault (commit aba1ee3)")
     else:
         report("PASS", "traceroute.js: route_discovery", "not referenced (unexpected)")
 
@@ -235,7 +251,13 @@ def static_checks():
 REQUIRED_ON_CONNECT = {
     "device_list", "node_list", "known_nodes", "tilt_cal",
     "message_history", "tilt_history", "env_history",
-    "range_test_log", "range_test_timer", "traceroute_history",
+    "range_test_log", "range_test_timer",
+    # traceroute_history REMOVED from the required set 2026-08-17, task
+    # `traceroute-remove-backend-remainder` — the replay itself was deliberately
+    # removed (src/ws-relay.js carries the removal comment). Demanding it here
+    # kept the whole suite red for a replay nobody wants back, which trains
+    # readers to ignore a FAIL. Its schema below is retained: if the event ever
+    # returns it must still be well-formed.
 }
 
 # Expected event schemas (required top-level fields)
