@@ -188,9 +188,29 @@ export const configMixin = {
     // being cleared by an unrelated edit in the same section.
     const formValues = collectForm(el, sec.schema.fields, sec.data ?? {});
     const target = this.cfgRadioId || this.activeNodeId;
+    // A SECTION'S KIND DECIDES THE ADMIN FIELD. `set_config` and
+    // `set_module_config` are different AdminMessage fields carrying different
+    // protobuf types, and posting a module section to /config produces
+    //   Config has no field named "ambient_lighting" at AdminMessage.set_config
+    //
+    // This posted to /radio-admin/config unconditionally until 2026-08-18, so all
+    // THIRTEEN module sections — mqtt, serial, external_notification,
+    // store_forward, range_test, telemetry, canned_message, audio,
+    // remote_hardware, neighbor_info, ambient_lighting, detection_sensor,
+    // paxcounter — could not be saved at all. `kind` was already carried here
+    // from /sections and rendered as a badge next to every section title; only
+    // this line never read it.
+    //
+    // Found by Peter asking whether a save had ever actually been tried. It had
+    // not. docs/modules/app-config.md.
+    //
+    // Unknown kind falls back to 'config': `kind` comes from the backend's own
+    // /sections, so a third value means that contract changed, and keeping the 8
+    // working sections working beats breaking everything at once.
+    const path = sec.kind === 'module_config' ? 'module-config' : 'config';
     // The backend composes the AdminMessage; this posts form values and nothing
     // else. docs/modules/radio-admin.md, docs/BROWSER_CONTRACT.md.
-    await fetchJSON('/radio-admin/config', 'POST', { device: target, section: sec.name, values: formValues });
+    await fetchJSON(`/radio-admin/${path}`, 'POST', { device: target, section: sec.name, values: formValues });
     // Refresh the form UI with the verified server state
     const fresh = await fetchJSON(this.cd(`/config/${sec.name}`));
     sec.data = fresh[sec.name] || fresh || {};

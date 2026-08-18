@@ -1,7 +1,7 @@
 ---
 module: app-config
 source: public/app-config.js
-source_hash: 21c0b37712c06d7ebbb4c3e7757feb46db0e202d478949298c519788ed47f6ed
+source_hash: c1dfe561b9322424972b2ea756d601c1192a7fa644a838bac407c6b0ae1e46d4
 updated: 2026-08-03
 ---
 
@@ -195,3 +195,84 @@ because the two behaviours now differ and the difference matters.
 
 Verified with a real browser click (not curl): server `false → true`, templates
 intact, then back to `false`.
+
+## A section's KIND decides which admin field it is saved to — 2026-08-18
+
+Peter: *"have you actually tried saving something and validating it was saved ? -
+you can do that in some of the not used sections like ambient lightiung"*.
+
+I had not. The write path was built, shipped and never once exercised against a
+real radio. **The first live save found this.**
+
+`saveSection()` posted to `/radio-admin/config` unconditionally. But a section
+carries a `kind`, set in `loadSections()` and — until now — **read nowhere else in
+the file**:
+
+```js
+const makeSec = (name, kind) => ({ name, kind, ... });
+...sec.config.map(name        => makeSec(name, 'config')),
+...sec.module_config.map(name => makeSec(name, 'module_config')),
+```
+
+The UI has been *rendering* that kind as a badge beside every section title all
+along, so the screen displayed the distinction the save path ignored.
+
+Proven live, posting `ambient_lighting` the way the UI does:
+
+```
+POST /radio-admin/config {"section":"ambient_lighting", ...}
+-> Message type "meshtastic.protobuf.Config" has no field named
+   "ambient_lighting" at "AdminMessage.set_config".
+   Available Fields: ['device','position','power','network','display','lora',
+                      'bluetooth','security','sessionkey','deviceUi']
+```
+
+**13 of 21 sections could not be saved at all**: `mqtt`, `serial`,
+`external_notification`, `store_forward`, `range_test`, **`telemetry`**,
+`canned_message`, `audio`, `remote_hardware`, `neighbor_info`,
+`ambient_lighting`, `detection_sensor`, `paxcounter`. The 8 `config` sections
+were unaffected.
+
+`telemetry` being in that set is the sharp end: the interval-dropdown work in
+`7c81c49` exists to stop a bad *telemetry* interval reaching the radio, and it
+saved through a path that could never work. The control was right, the schema was
+right, and Save was never pressed.
+
+### The change
+
+```js
+const path = sec.kind === 'module_config' ? 'module-config' : 'config';
+await fetchJSON(`/radio-admin/${path}`, 'POST', { ... });
+```
+
+The backend already had both endpoints and both verbs — `setConfig` and
+`setModuleConfig` map to `set_config` and `set_module_config`. Only the browser's
+choice between them was missing.
+
+**Defaulting to `config` for an unknown kind is deliberate.** `kind` comes from
+the backend's own `/sections`, so a third value would mean that contract changed;
+falling back to the historical behaviour keeps the 8 working sections working
+rather than breaking everything at once.
+
+### It fails loudly, and that is worth keeping
+
+The wrong field produces a protobuf error naming the exact mismatch, not a silent
+no-op. That is the only reason this was a *broken* feature rather than a *lying*
+one. Any future change here must preserve that: a save that cannot work must
+never report success.
+
+### Test notes
+
+- an `ambient_lighting` save posts to `/radio-admin/module-config`, a `device`
+  save to `/radio-admin/config`
+- read-back from the radio (not from a cache) shows the written value
+- falsification: forcing the path back to `config` reproduces the protobuf error
+
+### Related finding, recorded separately
+
+**A save that returns an error may have succeeded.** A write returned
+`BleakGATTProtocolErrorCode.UNLIKELY_ERROR` and dropped OMNI to `RECONNECTING` —
+and the value had already landed, confirmed after reconnect. A 502 from this
+endpoint is *not* evidence the radio is unchanged, and no "did it save?" logic
+may assume it is.
+
