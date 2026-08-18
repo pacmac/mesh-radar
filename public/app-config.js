@@ -259,7 +259,12 @@ export const configMixin = {
   async loadOwner() {
     if (this.ownerSchema) return;
     this.ownerSchema = await fetchJSON('/schema/owner');
-    this.ownerData = await fetchJSON(this.cd('/owner'));
+    // NOT the proxied /{id}/owner: mesh-gw's cooked GET silently DROPS `role`,
+    // and this form used to fall back to a hard-coded 'CLIENT' — showing a role
+    // the radio does not have. Both our radios read CLIENT_BASE.
+    // docs/modules/radio-admin.md.
+    const target = this.cfgRadioId || this.activeNodeId;
+    this.ownerData = await fetchJSON(`/radio-admin/owner/${encodeURIComponent(target)}`);
     await nextFrame();
     const el = document.getElementById('owner_form');
     el.innerHTML = '';
@@ -279,10 +284,22 @@ export const configMixin = {
     const el = document.getElementById('owner_form');
     const payload = collectForm(el, this.ownerSchema.fields.filter(f =>
       ['long_name', 'short_name', 'is_licensed', 'role', 'is_unmessagable'].includes(f.name)));
-    // proto3 omits default enum values (role CLIENT=0 absent means CLIENT).
-    // Only include role in payload if it genuinely changed to avoid spurious reboots.
-    const currentRole = this.ownerData?.role ?? 'CLIENT';
-    if (payload.role === currentRole) delete payload.role;
+    // ROLE IS SENT ONLY IF IT GENUINELY CHANGED — a role write reboots the radio.
+    //
+    // THE FALLBACK THAT USED TO BE HERE WAS A LOADED GUN. It read
+    // `this.ownerData?.role ?? 'CLIENT'`, and role was ALWAYS undefined because
+    // mesh-gw's cooked GET drops it. So `currentRole` computed to 'CLIENT', the
+    // form displayed 'CLIENT', they compared equal, and role was stripped. The
+    // radio actually holds CLIENT_BASE. It was safe only by that coincidence:
+    // change the default, or the form, and saving this tab would have DEMOTED the
+    // radio.
+    //
+    // The backend now serves the real role (docs/modules/radio-admin.md), so
+    // there is nothing to guess. If it is null we do not know it, and an unknown
+    // role is never sent — refusing is the only safe move when the comparison
+    // cannot be made.
+    const currentRole = this.ownerData?.role ?? null;
+    if (currentRole == null || payload.role === currentRole) delete payload.role;
     const target = this.cfgRadioId || this.activeNodeId;
     await fetchJSON('/radio-admin/owner', 'POST', { device: target, user: payload });
   },

@@ -17,8 +17,61 @@ import {
   setConfig, setModuleConfig, setChannel, setOwner,
   setFixedPosition, removeFixedPosition,
 } from './radio-admin.js';
+import { bridge } from './bridge.js';
+import { stmts } from './db.js';
+import { macToNodeId } from './device-config.js';
 
 const router = Router();
+
+/** node_id (`!hex`) or BLE MAC -> node num, or null.
+ *
+ *  Both vocabularies are accepted for the same reason channels.js accepts both
+ *  (docs/IDENTITY.md): callers legitimately hold different ones. Short forms are
+ *  NOT accepted — last-4 hex collides 20 times across 1,056 nodes. */
+function toNum(device) {
+  if (!device) return null;
+  const direct = /^!([0-9a-f]{8})$/i.exec(String(device));
+  if (direct) return parseInt(direct[1], 16);
+  const viaMac = /^!([0-9a-f]{8})$/i.exec(String(macToNodeId(device) ?? ''));
+  return viaMac ? parseInt(viaMac[1], 16) : null;
+}
+
+/** THE OWNER READ, WITH A TRUTHFUL ROLE.
+ *
+ *  mesh-gw's cooked GET /{id}/owner returns short_name and long_name and SILENTLY
+ *  DROPS role. The radio does answer with it — a genuine get_owner_request
+ *  returns role: CLIENT_BASE — so the field is lost in the cooking, not missing
+ *  from the device.
+ *
+ *  The form then fell back to a hard-coded 'CLIENT' and showed a role the radio
+ *  does not have. It was harmless only by coincidence: saveOwner strips role when
+ *  it equals `ownerData?.role ?? 'CLIENT'`, and with role undefined BOTH sides
+ *  computed to 'CLIENT'. Change either half and saving the Owner tab demotes the
+ *  radio from CLIENT_BASE to CLIENT.
+ *
+ *  role comes from nodeinfo, which node-dash fills from the radio's own NodeInfo
+ *  announcements — first-hand, not a guess and not mesh-gw's cooked view. A role
+ *  change reboots the radio, which re-announces, so it self-heals.
+ *
+ *  NULL WHEN WE DO NOT KNOW. The browser renders the field empty rather than
+ *  inventing a default, because a form that guesses is how this defect existed. */
+router.get('/owner/:device', async (req, res) => {
+  const { device } = req.params;
+  try {
+    const owner = await bridge.get(`/${encodeURIComponent(device)}/owner`);
+    const num   = toNum(device);
+    const info  = num == null ? null : stmts.getNodeinfoByNum.get(num);
+    res.json({
+      ...owner,
+      role: info?.role ?? null,
+      // Says where role came from, so nobody later mistakes it for something the
+      // cooked GET supplied.
+      role_source: info?.role ? 'nodeinfo' : null,
+    });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
 
 // Sections are passed straight through as the AdminMessage field name. There is
 // deliberately NO allowlist of section names here: mesh-gw's /schema is generated

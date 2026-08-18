@@ -1,7 +1,7 @@
 ---
 module: app-config
 source: public/app-config.js
-source_hash: 1654f7a9f6c9a449347783a40a3eff9fc70386d16144f3baf47862ab7cc5d7cc
+source_hash: 3a4b77900d1a524150b42db58e2f40cb71a9e62c94cf57c373f531a05de2032f
 updated: 2026-08-03
 ---
 

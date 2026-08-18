@@ -4,7 +4,7 @@ source:
   - src/radio-admin.js
   - src/radio-admin-api.js
   - src/op-manager.js
-source_hash: b8c9adce68cf59f03b478f4cef6f656afcd43246791848777af13e83f5099afb
+source_hash: 40ef5ba09dad038260b3401fa3bba1c9365d6bbe38e256256cbd53d77caa36a5
 updated: 2026-08-18
 ---
 
@@ -147,6 +147,34 @@ sections the firmware applies without a reboot.
 `POST /radio-admin/{config|module-config|channel|owner|fixed-position}`. The
 browser submits form values and renders the result. It composes no AdminMessage,
 chooses no section order, and decides nothing.
+
+### `GET /radio-admin/owner/:device` — the read that tells the truth about role
+
+Added 2026-08-18, task `owner-form-role-truth`.
+
+mesh-gw's cooked `GET /{id}/owner` returns `short_name` and `long_name` and
+**silently drops `role`**. The radio does answer with it — a genuine
+`get_owner_request` returns `role: CLIENT_BASE` — so the field is lost in the
+cooking, not missing from the device.
+
+The Owner form then fell back to a hard-coded `'CLIENT'` and showed the operator a
+role the radio does not have. It was harmless only by coincidence: `saveOwner`
+strips `role` when it equals `ownerData?.role ?? 'CLIENT'`, and with `role`
+undefined both sides computed to `'CLIENT'`. Change either half and saving the
+Owner tab **demotes the radio from CLIENT_BASE to CLIENT**.
+
+This route returns mesh-gw's owner fields with `role` filled in from
+`nodeinfo.role` / `nodes.role`, which node-dash populates from the radio's own
+**NodeInfo announcements** — first-hand, and neither a guess nor mesh-gw's cooked
+view. A role change reboots the radio, which re-announces, so it self-heals.
+
+`role` is `null` when we genuinely do not know it, and the browser renders the
+field empty rather than inventing a default. **A form that guesses is how this
+defect existed at all.**
+
+An admin `get_owner_request` round trip would also work and costs ~471 ms per form
+load; it is not used because the answer is already here at ~0 ms, from a
+first-hand source.
 
 ### The timestamped backup, before EVERY save
 
