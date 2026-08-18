@@ -138,66 +138,44 @@ export function bearingToNode(num) {
 // TAKES A RESOLVED RADIO BUNDLE, not a device string — `radio.steerable` replaced
 // a local MAC comparison that once reported "not on the rotator" about the
 // rotator itself.
-/** The ONE place a `via` is read as a node or as a bearing.
+/** Resolve the caller's aim override into { kind, value }, or null, or an error.
  *
- *  Peter, 2026-08-18: "we need to able to force a traceroute via a node or via a
- *  bearing. so I might look at the radar and see a cluster and attempt to route
- *  via them by a bearing / angle."
+ *  TWO NAMED FIELDS, NOT ONE OVERLOADED ONE. Peter, 2026-08-18: "meaning you can
+ *  have via_node or via_bearing."
  *
- *  A cluster on the radar is a DIRECTION, not a node — you can see something
- *  worth trying over there without knowing which node it is, or whether we hold
- *  a position for any of them.
- *
- *  THE AMBIGUITY IS CLOSED HERE AND NOWHERE ELSE. A bare number could be either,
- *  and guessing wrong points a 35-degree antenna at the wrong sky while writing
- *  a row that looks deliberate — the same shape as every coercion fault this
- *  code has already been bitten by: Number(null) === 0 aiming due north, channel
- *  0 being PRIMARY, a node_id compared against a MAC.
- *
- *    "!hex"            node          the prefix is unambiguous
- *    0..360            BEARING       degrees; 360 normalises to 0
- *    > 360             node num
- *    { bearing: n }    bearing       explicit, escapes the range rule
- *    { node: n }       node          explicit, escapes the range rule
+ *  THIS FUNCTION IS NOW MOSTLY DELETION. The previous version had to answer "is
+ *  this number a bearing or a node?" and carried a magnitude rule (0-360 =
+ *  bearing, above = node), explicit {node:}/{bearing:} escape forms, and a
+ *  collision guard for a number that could be both. Every line of that existed
+ *  to disambiguate ONE overloaded field. Two named fields cannot be ambiguous,
+ *  so the rule, the escapes and the guard are all gone. Peter's correction
+ *  removed machinery rather than adding it.
  *
  *  @returns { kind:'node', num } | { kind:'bearing', deg } | null | { error }
  */
-export function parseVia(via, isKnownNode = null) {
-  if (via == null || via === '') return null;
+export function parseVia({ via_node = null, via_bearing = null } = {}) {
+  const hasNode    = via_node    != null && via_node    !== '';
+  const hasBearing = via_bearing != null && via_bearing !== '';
 
-  // Explicit forms first — they exist precisely to override everything below.
-  if (typeof via === 'object') {
-    if (via.bearing != null) {
-      const d = Number(via.bearing);
-      if (!Number.isFinite(d)) return { error: 'via.bearing must be a number of degrees' };
-      return { kind: 'bearing', deg: ((d % 360) + 360) % 360 };
-    }
-    if (via.node != null) {
-      const n = typeof via.node === 'string' && via.node.startsWith('!') ? nodeIdToNum(via.node) : Number(via.node);
-      if (!Number.isFinite(n) || n <= 0) return { error: 'via.node must be a !hex id or a node num' };
-      return { kind: 'node', num: n };
-    }
-    return { error: 'via object must carry either {node} or {bearing}' };
+  // BOTH IS A CONTRADICTION, NOT A PREFERENCE. Picking one would be guessing,
+  // which is the thing splitting the field exists to stop.
+  if (hasNode && hasBearing) {
+    return { error: 'via_node and via_bearing are mutually exclusive — set one' };
+  }
+  if (!hasNode && !hasBearing) return null;
+
+  if (hasBearing) {
+    const d = Number(via_bearing);
+    if (!Number.isFinite(d)) return { error: 'via_bearing must be a number of degrees' };
+    // 360 is due north, same as 0. Normalised rather than refused, because
+    // typing 360 for north is natural and rejecting it would be pedantry.
+    return { kind: 'bearing', deg: ((d % 360) + 360) % 360 };
   }
 
-  if (typeof via === 'string' && via.startsWith('!')) {
-    const n = nodeIdToNum(via);
-    return Number.isFinite(n) && n > 0 ? { kind: 'node', num: n } : { error: `via ${via} is not a valid node id` };
-  }
-
-  const n = Number(via);
-  if (!Number.isFinite(n) || n < 0) return { error: 'via must be a !hex id, a node num, or a bearing 0-360' };
-
-  if (n <= 360) {
-    // THE COLLISION GUARD. Measured 2026-08-18: no node in the store is below
-    // 360 (the smallest is 3,119,745), so this cannot fire today. It costs
-    // nothing, and the day it does fire it stops a silently wrong beam — which
-    // is the only thing that makes the range rule acceptable at all.
-    if (isKnownNode && isKnownNode(n)) {
-      return { error: `via ${n} is ambiguous — it is both a valid bearing and a known node. Use {"bearing":${n}} or {"node":${n}}` };
-    }
-    return { kind: 'bearing', deg: n === 360 ? 0 : n };
-  }
+  const n = typeof via_node === 'string' && via_node.startsWith('!')
+    ? nodeIdToNum(via_node)
+    : Number(via_node);
+  if (!Number.isFinite(n) || n <= 0) return { error: 'via_node must be a !hex id or a node num' };
   return { kind: 'node', num: n };
 }
 
@@ -224,9 +202,9 @@ export function decideAim(to, radio, via = null) {
   // instruction, and record a row that looks deliberate. traceroute.run() turns
   // this into a refusal to dispatch.
   if (via != null) {
-    const spec = typeof via === 'object' && (via.kind === 'node' || via.kind === 'bearing')
-      ? via                     // already parsed by the caller
-      : parseVia(via);
+    // Accept either an already-parsed spec (what traceroute.run passes, having
+    // let the API validate it first) or the raw named fields.
+    const spec = (via.kind === 'node' || via.kind === 'bearing') ? via : parseVia(via);
     if (spec?.error) return { ...none, note: spec.error };
 
     // A BEARING NEEDS NO LOOKUP, so it cannot fail the way a node can. There is

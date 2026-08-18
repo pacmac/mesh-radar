@@ -83,18 +83,26 @@ function extractRelayPositions(route) {
   return relay_positions;
 }
 
-// Is AUTOMATIC traceroute dispatch enabled? Persisted (config key
-// THE GLOBAL SWITCH IS GONE. Peter, 2026-08-04: "the traceroute button that
-// exists should not be there. traceroute is a node function and NOT a global
-// switch."
+// THERE IS NO ENABLED SWITCH, AND THERE IS NO STATE TO BE IN.
 //
-// tracerouteEnabled() gated every non-manual dispatch on a single config key.
-// It was a SECOND OWNER of behaviour dash-mode owns: with it off, DISC ran and
-// attempted nothing, and the only clue was one line in the mission runner's
-// idle reason — the same hole that hid passive tracing for 9.5 hours.
+// Peter, 2026-08-18: "traceroute.enabled is not a config setting, that's the
+// problem with the old design. traceroute is only ever called, it is not a
+// permanent state."
 //
-// Automatic tracing is now a property of the MODE (Config -> Modes), where
-// rx/tx/aim/radio already live. To stop tracing, change mode.
+// The config key `traceroute.enabled` is deleted with this comment. It gated
+// every non-manual dispatch on one boolean, and it was a SECOND OWNER of
+// behaviour: with it off, DISC ran and attempted nothing, and the only clue was
+// a line in the mission runner's idle reason — the same shape of hole that hid
+// passive tracing for 9.5 hours.
+//
+// The switch made sense only while something dispatched on its own. Nothing
+// does: every automatic caller was removed 2026-08-17 and the sole entry point
+// is an explicit POST. A traceroute happens because somebody asked for one, so
+// "is traceroute on?" is not a question with a meaning any more.
+//
+// Peter, 2026-08-04, saying the same thing about the browser's version of it:
+// "the traceroute button that exists should not be there. traceroute is a node
+// function and NOT a global switch."
 
 class TracerouteManager extends EventEmitter {
   constructor() {
@@ -136,8 +144,22 @@ class TracerouteManager extends EventEmitter {
   async run(radio, node, timeoutMs, opts = {}) {
     const to = Number(node);
     if (!to) throw new Error('node required');
-    const timeout = Number(timeoutMs);
-    if (!Number.isFinite(timeout) || timeout <= 0) throw new Error('timeout required (ms)');
+
+    // TIMEOUT IS OPTIONAL, AND ITS DEFAULT IS CONFIG. Peter, 2026-08-18: "when I
+    // said 3 args min, I did not mean those 3 should always be provided, I mean
+    // that it need at least 3. if timeout is not set, then it should have a
+    // default. that should be a config and not hard coded."
+    //
+    // An earlier reading of "min 3 args" made this mandatory and threw without
+    // it. "At least three" describes what the function needs to KNOW, not what a
+    // caller must type. `node` stays required because no default could be right.
+    //
+    // The key is read here AND in dispatch(), so a caller that supplies nothing
+    // and a caller that reaches dispatch() directly get the same answer.
+    const timeout = Number(timeoutMs) > 0
+      ? Number(timeoutMs)
+      : Number(getConfig('traceroute.timeout_sec', 60)) * 1000;
+    if (!Number.isFinite(timeout) || timeout <= 0) throw new Error('traceroute.timeout_sec is not a positive number');
 
     // 1. RESOLVE THE RADIO. Peter: "it then resolves the radio."
     //

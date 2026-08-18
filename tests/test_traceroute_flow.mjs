@@ -43,7 +43,6 @@ const eq = (a, b, w) => { assert.equal(a, b, w); checks++; };
 
 const saved = {};
 for (const mac of [OMNI, YAGI]) saved[mac] = getConfig(PREFIX + mac, null);
-const savedEnabled = getConfig('traceroute.enabled', null);
 
 // Every row this test causes is deleted at the end. A dispatch that times out
 // writes a real failure row, and this runs against the live store.
@@ -68,7 +67,6 @@ async function harness(fn, { pointResult = { ok: true, busy: false, timeout: fal
 try {
   setConfig(PREFIX + OMNI, { label: 'OMNI', is_rotator: false, is_primary: true,  beam_deg: 360 });
   setConfig(PREFIX + YAGI, { label: 'YAGI', is_rotator: true,  is_primary: false, beam_deg: 35  });
-  setConfig('traceroute.enabled', true);
 
   // ── the signature Peter specified ────────────────────────────────────────
   eq(traceroute.run.length, 3, 'run takes radio, node, timeout as positional args');
@@ -81,9 +79,24 @@ try {
     eq(s.posts.length, 0, '...and nothing is transmitted');
   }
   {
-    const s = await harness(() => traceroute.run('rotator', TARGET, null));
-    ok(/timeout required/.test(s.error ?? ''), 'a missing timeout is refused — it is arg 3, not an option');
-    eq(s.points, 0, '...and nothing is pointed');
+    // TIMEOUT IS OPTIONAL AND DEFAULTS FROM CONFIG. Peter, 2026-08-18: "if
+    // timeout is not set, then it should have a default. that should be a config
+    // and not hard coded." An earlier reading made it mandatory; this asserts
+    // the correction, and asserts the value comes from the KEY and not a literal.
+    const savedTo = getConfig('traceroute.timeout_sec', null);
+    try {
+      setConfig('traceroute.timeout_sec', 1);          // 1 s, so the test is quick
+      const s = await harness(() => traceroute.run('rotator', TARGET), { settleMs: 500 });
+      eq(s.holds[0], 1000, 'with no timeout the hold is traceroute.timeout_sec x 1000');
+      eq(s.posts.length, 1, '...and it dispatches rather than refusing');
+
+      setConfig('traceroute.timeout_sec', 2);          // change the key...
+      const s2 = await harness(() => traceroute.run('rotator', TARGET), { settleMs: 500 });
+      eq(s2.holds[0], 2000, '...and changing the key changes the timeout — it is config, not a literal');
+    } finally {
+      if (savedTo === null) setConfig('traceroute.timeout_sec', 60);
+      else                  setConfig('traceroute.timeout_sec', savedTo);
+    }
   }
   {
     const s = await harness(() => traceroute.run('no-such-radio', TARGET, 200));
@@ -126,20 +139,20 @@ try {
   // again this only applies to directional antennas."
   {
     // An OMNI ignores via and still dispatches — via has no meaning with no beam.
-    const s = await harness(() => traceroute.run('non-rotator', TARGET, 200, { via: 3663393832 }));
+    const s = await harness(() => traceroute.run('non-rotator', TARGET, 200, { via: { via_node: 3663393832 } }));
     eq(s.points, 0,       'via does not make an omni point at anything');
     eq(s.posts.length, 1, '...and the traceroute still goes');
   }
   {
     // A DIRECTIONAL radio honours it — the aim happens before the dispatch.
-    const s = await harness(() => traceroute.run('rotator', TARGET, 300, { via: 3663393832 }));
+    const s = await harness(() => traceroute.run('rotator', TARGET, 300, { via: { via_node: 3663393832 } }));
     ok(s.points >= 1,     'via aims a directional radio');
     eq(s.posts.length, 1, '...and dispatches once confirmed');
   }
   {
     // A via that cannot be pointed at REFUSES. It must not quietly fall back to
     // the node/relay rule and transmit as though nothing was asked for.
-    const s = await harness(() => traceroute.run('rotator', TARGET, 300, { via: 999_999_999 }));
+    const s = await harness(() => traceroute.run('rotator', TARGET, 300, { via: { via_node: 999_999_999 } }));
     eq(s.posts.length, 0, 'AN UNHONOURABLE via DOES NOT TRANSMIT');
     ok(/aim not confirmed/.test(s.error ?? ''), '...and the caller is told');
   }
@@ -154,8 +167,6 @@ try {
     if (saved[mac] === null) setConfig(PREFIX + mac, {});
     else                     setConfig(PREFIX + mac, saved[mac]);
   }
-  if (savedEnabled === null) setConfig('traceroute.enabled', false);
-  else                       setConfig('traceroute.enabled', savedEnabled);
   const removed = db.prepare('DELETE FROM traceroute_history WHERE id > ?').run(baselineId).changes;
   if (removed) console.log(`test_traceroute_flow: cleaned up ${removed} row(s) this test created`);
   process.exit(0);   // pending dispatch timers would otherwise hold the process open

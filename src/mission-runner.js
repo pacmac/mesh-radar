@@ -333,10 +333,10 @@ class MissionRunner extends EventEmitter {
   async _tick() {
     if (!this._started) return;
     const c = cfg();
-    // Both switches must be on. `traceroute.enabled` is the master and is
-    // checked HERE as well as inside dispatch() so a gated attempt never
-    // consumes a queue slot or a cooldown — the same reasoning dispatch() gives
-    // for checking before its own cooldown guard.
+    // The `traceroute.enabled` master switch this comment used to describe is
+    // GONE — removed 2026-08-18. Peter: "traceroute.enabled is not a config
+    // setting, that's the problem with the old design. traceroute is only ever
+    // called, it is not a permanent state." There is no switch to check.
     // AIRTIME GOVERNANCE, checked before anything is chosen so a braked tick
     // costs nothing. Both reasons are SURFACED (this._brake) rather than
     // silently skipping — an invisible pause is indistinguishable from a dead

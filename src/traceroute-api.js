@@ -51,7 +51,7 @@ const router = Router();
  *  result, and returning 202 would invite polling.
  */
 router.post('/traceroute', async (req, res) => {
-  const { radio = 'auto', node, timeout_ms, via } = req.body ?? {};
+  const { radio = 'auto', node, timeout_ms, via_node, via_bearing } = req.body ?? {};
 
   // Node: accept `!hex` or a number, and reject anything else rather than
   // coercing. `Number('!da5af428')` is NaN and `Number(null)` is 0 — a 0 target
@@ -61,9 +61,17 @@ router.post('/traceroute', async (req, res) => {
     return res.status(400).json({ error: 'node required — !hex or a node num' });
   }
 
-  const timeoutMs = Number(timeout_ms);
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return res.status(400).json({ error: 'timeout_ms required (positive integer, milliseconds)' });
+  // TIMEOUT IS OPTIONAL. Peter, 2026-08-18: "if timeout is not set, then it
+  // should have a default. that should be a config and not hard coded."
+  // run() applies `traceroute.timeout_sec` when this is absent; a NEGATIVE or
+  // non-numeric value is still refused, because that is a typo rather than an
+  // omission and silently substituting a default would hide it.
+  let timeoutMs;
+  if (timeout_ms != null && timeout_ms !== '') {
+    timeoutMs = Number(timeout_ms);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return res.status(400).json({ error: 'timeout_ms must be a positive number of milliseconds, or omitted to use traceroute.timeout_sec' });
+    }
   }
 
   // Resolve here as well as inside run(), only so a bad radio is a 400 with the
@@ -77,16 +85,11 @@ router.post('/traceroute', async (req, res) => {
     });
   }
 
-  // `via` — an AIM override, read as a NODE or a BEARING by aim.js's parseVia,
-  // which is the single place that ambiguity is resolved. Parsed here too so a
-  // bad one is a 400 now rather than a refusal to dispatch three seconds later.
-  //
-  // The collision guard is handed a real lookup against the node table: a bare
-  // number in 0-360 that is also a known node is refused rather than guessed.
-  const isKnownNode = (n) => {
-    try { return !!stmts.getNodeByNum.get(n); } catch { return false; }
-  };
-  const viaSpec = parseVia(via, isKnownNode);
+  // `via_node` / `via_bearing` — an AIM override, as two NAMED fields so nothing
+  // has to guess which was meant. Parsed here so a bad one is a 400 now rather
+  // than a refusal to dispatch three seconds later. Both set is a contradiction
+  // and parseVia refuses it.
+  const viaSpec = parseVia({ via_node, via_bearing });
   if (viaSpec?.error) return res.status(400).json({ error: viaSpec.error });
 
   // VIA ON AN OMNI IS IGNORED, AND SAID SO OUT LOUD. Peter: "this only applies

@@ -3,7 +3,7 @@ module: traceroute-via-bearing
 source:
   - src/aim.js
   - src/traceroute-api.js
-source_hash: 18774c98843d8e12f00d7516b6abbf1382a8c69da4fbf8398dbca31832f637bf
+source_hash: 79aa52be46c5b6c9858f5fd6845bee32573b53e7cbbb1b6951e3dd5a6e59b2fe
 updated: 2026-08-18
 ---
 

@@ -1,3 +1,18 @@
+> **RETIRED 2026-08-18. THIS DESCRIBES A DESIGN THAT NO LONGER EXISTS.**
+>
+> Peter: *"traceroute.enabled is not a config setting, that's the problem with
+> the old design. traceroute is only ever called, it is not a permanent state."*
+>
+> The config key `traceroute.enabled`, the browser toggle, and the gate inside
+> `dispatch()` are all gone. The switch only made sense while something
+> dispatched on its own; every automatic caller was removed 2026-08-17 and the
+> sole entry point is now an explicit `POST /traceroute`.
+>
+> Kept, not deleted, because the reasoning below — why a single global boolean
+> was a second owner of behaviour the MODE already owned, and how it hid DISC
+> doing nothing for five days — is exactly the argument for not reintroducing
+> one. See `docs/modules/traceroute-args.md` for the current contract.
+
 # Traceroute master switch — automatic dispatch is opt-in and persists
 
 Peter, 2026-07-27: *"Traceroute is continuous no matter whether in PASV or ACTV mode.

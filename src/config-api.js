@@ -98,7 +98,25 @@ export const DEFAULTS = {
   'packet_sources':           [],
   'range_test.duration':      10,
   'perf.failure_epoch':       null,   // read-only stamp: when traceroute failure recording began
-  'traceroute.enabled':       true,   // master switch for AUTOMATIC dispatch; a manual request is never gated
+  // 'traceroute.enabled' REMOVED 2026-08-18. Peter: "traceroute.enabled is not
+  // a config setting, that's the problem with the old design. traceroute is only
+  // ever called, it is not a permanent state." Removing it from DEFAULTS also
+  // makes PUT /config/traceroute.enabled a 400, because the generic PUT rejects
+  // anything not declared here — which is the behaviour we want.
+  // HOW LONG A TRACEROUTE WAITS, when the caller does not say. Peter,
+  // 2026-08-18: "if timeout is not set, then it should have a default. that
+  // should be a config and not hard coded."
+  //
+  // 60 IS NOT A NEW NUMBER. It is what PASV_DEFAULTS.timeout_sec has always been
+  // and what dispatch() already fell back to. This moves the same value to a
+  // correctly-named key: PASV is gone — the passive tracer was deleted
+  // 2026-08-17 — so a general traceroute default hiding under `pasv_config` now
+  // names a mode that does nothing.
+  //
+  // For a DIRECTIONAL radio this is also how long the beam is held, so raising
+  // it holds a rotator the garage alarm shares for longer. rotator.js's
+  // HOLD_CEILING_MS clamps that independently.
+  'traceroute.timeout_sec':   60,
   // DISCOVERY STRATEGY. One key, because this list governs two things at once:
   // the generic PUT below rejects anything not in it, and ws-relay's
   // settingsEvent() iterates it to build the settings WS payload. Declaring it
@@ -548,7 +566,7 @@ router.put('/:key', (req, res) => {
   if (key !== 'observatory.window_days') {
     logEvent({
       kind: 'config', source: 'config-api',
-      severity: key === 'traceroute.enabled' && value === false ? 'notice' : 'info',
+      severity: 'info',
       summary: `${key}: ${JSON.stringify(before)} → ${JSON.stringify(value)}`,
       detail: { key, from: before, to: value },
     });

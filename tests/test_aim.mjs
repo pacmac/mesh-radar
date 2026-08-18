@@ -140,7 +140,7 @@ for (const num of [1234, 0xda5af428]) {
 
   // via must BEAT the rule that would otherwise apply, whichever branch that is.
   for (const target of [1234, 0xda5af428, 646426545]) {
-    const d = decideAim(target, steerable, TA2M);
+    const d = decideAim(target, steerable, { via_node: TA2M });
     if (bTa2m == null) { ok(d.mode === 'none', 'via with no bearing refuses'); continue; }
     eq(d.mode, 'via',         `via overrides the derived target for ${target}`);
     eq(d.aimTarget, TA2M,     '...and aims at the via node');
@@ -150,13 +150,13 @@ for (const num of [1234, 0xda5af428]) {
   // AN UNRESOLVABLE via REFUSES AND DOES NOT FALL BACK. Falling through to the
   // node/relay rule would transmit while silently ignoring an explicit
   // instruction, and write a row that looks deliberate.
-  const bad = decideAim(646426545, steerable, 999_999_999);
+  const bad = decideAim(646426545, steerable, { via_node: 999_999_999 });
   eq(bad.mode, 'none',        'a via with no resolvable bearing does not aim');
   eq(bad.az, null,            '...and carries no azimuth');
   ok(/via 999999999/.test(bad.note ?? ''), '...and names the via node as the problem, not the target');
 
   // The refusal must reach aimForNode as a refusal, with that same note.
-  const s = await withStubbedRotator(() => aimForNode(646426545, steerable, 30_000, { via: 999_999_999 }));
+  const s = await withStubbedRotator(() => aimForNode(646426545, steerable, 30_000, { via: { via_node: 999_999_999 } }));
   eq(s.points, 0,             'an unhonourable via points nothing');
   ok(/via 999999999/.test(s.value.note ?? ''), '...and the row records why');
 
@@ -173,39 +173,38 @@ for (const num of [1234, 0xda5af428]) {
   const GZG = 80054436;   // relayed — without via its beam would go to the relay
 
   // A bare number in 0..360 is a BEARING, and it beats whatever the route says.
-  const b = decideAim(GZG, steerable, 90);
+  const b = decideAim(GZG, steerable, { via_bearing: 90 });
   eq(b.mode, 'bearing',   'a bare 0-360 number is a bearing, not a node');
   eq(b.az, 90,            '...and is used verbatim');
   eq(b.aimTarget, null,   'a bearing has NO node identity — claiming one would be a lie in the row');
 
-  eq(decideAim(GZG, steerable, 0).az, 0,   'bearing 0 is due north, not "absent"');
-  eq(decideAim(GZG, steerable, 360).az, 0, '360 normalises to 0 rather than being read as a node');
+  eq(decideAim(GZG, steerable, { via_bearing: 0 }).az, 0,   'bearing 0 is due north, not "absent"');
+  eq(decideAim(GZG, steerable, { via_bearing: 360 }).az, 0, '360 normalises to 0 rather than being read as a node');
 
-  // Above the bearing range it is a node again.
-  eq(parseVia(3663393832).kind, 'node', 'a large number is a node num');
-  eq(parseVia('!da5af428').kind, 'node', 'a !hex id is a node');
-  eq(parseVia(219).kind, 'bearing',      '219 is a bearing');
+  // TWO NAMED FIELDS — nothing has to guess which was meant, so the magnitude
+  // rule, the {node:}/{bearing:} escapes and the collision guard that the
+  // previous design needed are all gone. Peter, 2026-08-18: "meaning you can
+  // have via_node or via_bearing."
+  eq(parseVia({ via_node: 3663393832 }).kind, 'node',    'via_node is a node');
+  eq(parseVia({ via_node: '!da5af428' }).kind, 'node',   'via_node accepts !hex');
+  eq(parseVia({ via_bearing: 219 }).kind, 'bearing',     'via_bearing is a bearing');
+  eq(parseVia({ via_bearing: 219 }).deg, 219,            '...used verbatim');
+  // 219 as a NODE is no longer ambiguous with 219 as a bearing — the field says.
+  eq(parseVia({ via_node: 219 }).kind, 'node',           '219 in via_node is a node, no range rule involved');
+  eq(parseVia({ via_node: 219 }).num, 219,               '...with the number intact');
 
-  // The EXPLICIT forms escape the range rule in both directions.
-  const fb = parseVia({ bearing: 219 }); eq(fb.kind, 'bearing', '{bearing} forces a bearing');
-  const fn = parseVia({ node: 219 });    eq(fn.kind, 'node',    '{node} forces a node, inside the bearing range');
-  eq(fn.num, 219,                                              '...with the number intact');
+  // BOTH IS A CONTRADICTION, not a preference to be resolved by picking one.
+  const both = parseVia({ via_node: 123456, via_bearing: 90 });
+  ok(both?.error && /mutually exclusive/.test(both.error), 'both via fields set is refused');
 
-  // THE COLLISION GUARD. Cannot fire against the live store (no node is below
-  // 360 — smallest measured 2026-08-18 is 3,119,745), so it is driven here.
-  const clash = parseVia(219, (n) => n === 219);
-  ok(clash?.error && /ambiguous/.test(clash.error), 'a number that is BOTH a bearing and a known node is refused');
-  ok(/\{"bearing":219\}/.test(clash.error) && /\{"node":219\}/.test(clash.error),
-     '...and the refusal shows both explicit forms');
-
-  // Malformed input is an error, never a silent zero — 0 is due north.
-  ok(parseVia('nonsense')?.error, 'an unparseable via is an error');
-  ok(parseVia({})?.error,         'a via object with neither node nor bearing is an error');
-  eq(parseVia(null), null,        'no via is not an error, it is simply absent');
+  ok(parseVia({ via_node: 'nonsense' })?.error,   'an unparseable via_node is an error');
+  ok(parseVia({ via_bearing: 'nonsense' })?.error,'an unparseable via_bearing is an error');
+  eq(parseVia({}), null,                          'neither field set is not an error, it is absent');
+  eq(parseVia(), null,                            'no argument at all is absent');
 
   // A bearing needs no lookup, so it is always honourable — it must reach the
   // rotator even for a target we know nothing about.
-  const s = await withStubbedRotator(() => aimForNode(999_999_999, steerable, 20_000, { via: 137 }));
+  const s = await withStubbedRotator(() => aimForNode(999_999_999, steerable, 20_000, { via: { via_bearing: 137 } }));
   eq(s.value.mode, 'bearing', 'a bearing aims even when the TARGET is unknown');
   eq(s.value.az, 137,         '...at exactly the bearing given');
   ok(s.points >= 1,           '...and the rotator is actually commanded');
