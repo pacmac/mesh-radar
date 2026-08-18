@@ -7,7 +7,7 @@ source:
   - src/lifecycle.js
   - src/index.js
   - src/db.js
-source_hash: f3d40d466aa768aef6f37f25529e959cd9b08e3ede0d7acb103bfd86005e54e8
+source_hash: 39d9bde95dd2f8a5e0f85355de5e3f2cf670ecb2ccfe15c8de92c6f6f081319b
 updated: 2026-08-17
 ---
 

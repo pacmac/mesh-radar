@@ -3,6 +3,7 @@ import { nodeList, hopsAway } from './node-list.js';
 import { activeTracker } from './active-tracker.js';
 import { scanner } from './scanner.js';
 import { insertRangeTestEntry, insertEnvHistory, touchRfHeard } from './db.js';
+import { traceroute } from './traceroute.js';
 import { broadcastMessageHistory } from './ws-relay.js';
 import { ownDeviceNums } from './node-filter.js';
 import { isListenerForMode } from './dash-mode.js';
@@ -67,21 +68,40 @@ export function registerBridgeEvents(bridge) {
         // Guarded hops-away, updated per packet (firmware NodeDB updateFrom analog)
         nodeList.setHopsAway(pkt.from, hopsAway(pkt.hop_start, pkt.hop_limit));
       }
-      // TRACEROUTE DECODE REMOVED — 2026-08-17, task
-      // `traceroute-remove-backend-remainder`. Both paths went: the [V1] legacy
-      // branch that decoded route_discovery here and resolved relay positions
-      // itself, and the [V2] traceroute.handlePacket() that owned decode,
-      // relay_positions and storage.
+      // TRACEROUTE REPLIES. RESTORED 2026-08-18 — spec
+      // docs/modules/traceroute-decode-restored.md.
       //
-      // This one is a genuine LOSS, and it is Peter's instruction: "all traces
-      // of it removed". We overhear other people's traceroute replies on the
-      // mesh, and decoding them cost us no transmission at all. That passive
-      // data is no longer captured. Whatever replaces the dispatcher should
-      // take this back first — it is the cheapest route information available,
-      // and the only kind that does not put a frame on air.
+      // THIS LINE'S ABSENCE MADE EVERY TRACEROUTE TIME OUT. It was removed on
+      // 2026-08-17 with the rest of the traceroute surface, correctly at the
+      // time: every dispatcher was gone, so nothing could be pending and a
+      // decoder had nothing to match. Dispatch came back the next day as
+      // POST /traceroute — and this did not come back with it.
+      //
+      // For the whole of that window a reply could arrive perfectly, on the
+      // right radio, from the right node, and NOTHING WOULD LOOK AT IT. Five
+      // traceroutes ran to their full timeout, including one to a node with a
+      // 70% answer rate that had been heard on RF sixty seconds earlier, and
+      // every one was attributed to a degraded mesh — because a broken decoder
+      // and a silent mesh produce identical evidence.
+      //
+      // THE LESSON: a component removed as dead must be re-checked when the
+      // thing that made it dead comes back. Removing the dispatcher is what made
+      // this dead code; restoring the dispatcher should have restored this, and
+      // nothing linked the two.
+      //
+      // It also decodes replies we merely OVERHEAR, which cost no transmission
+      // at all — traceroute.js records those with null attribution, honestly
+      // marking them as not ours.
+      traceroute.handlePacket(pkt, rxDevice);
     }
-    // The `ev.type === 'traceroute'` branch — mesh-gw's own decoded traceroute
-    // event, fed through the same handlePacket — is removed for the same reason.
+    // mesh-gw's own decoded traceroute event, fed through the same handler via a
+    // synthetic packet. Restored with the raw path above and for the same reason.
+    if (ev.type === 'traceroute' && ev.from_num) {
+      traceroute.handlePacket({
+        from: ev.from_num, to: ev.to_num,
+        decoded: { portnum: 'TRACEROUTE_APP', route_discovery: ev.data ?? {} },
+      }, ev.addr || ev.device || null);
+    }
     if (ev.type === 'range_test') {
       try {
         const seq = parseInt((ev.data?.text || '').replace(/[^0-9]/g, '')) || null;
