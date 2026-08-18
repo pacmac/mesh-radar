@@ -1,8 +1,8 @@
 ---
 module: channels
 source: src/channels.js
-source_hash: 80d506059077eb1b453d49b48cb30fb9db9d1de94816b0fa8248fb302e538b62
-updated: 2026-08-16
+source_hash: 0ac605be72c0dde7be2e9018abeb23161b205be66ca24d75542c7ff34170582b
+updated: 2026-08-18
 ---
 
 # Module: channels
@@ -46,6 +46,65 @@ which is the fault, and under the old key-only identity they looked the same.
 **`null` for an unencrypted channel, deliberately.** `mqtt` has no key. If it
 returned a constant, `null === null` would make it match a designated channel and
 a private broadcast would go out in clear.
+
+## ⚠ A MISNAMED PRIMARY IS FIXED BY RENAMING THE RADIO — NEVER BY DESIGNATING IT
+
+**Read this before changing `channels.pub_key` or a radio's primary channel name.**
+
+The section above diagnosed the YAGI correctly on 2026-08-16. The fix was then
+applied **backwards**, and that cost two further days and every scrap of public
+traffic.
+
+`channels.pub_key` was set to `b7ecd210` — `channelKey('Public','AQ==')`, the
+YAGI's **broken** channel. The OMNI, named in the table above as the **correct**
+one at `865e781a` = `channelKey('','AQ==')`, was then renamed `Public` to match
+it. Both radios ended up transmitting into, and listening on, a channel nobody
+else on the mesh uses.
+
+| | |
+|---|---|
+| public text messages | 85/day → **0** |
+| nodeinfo refreshes | 185/day → **0** |
+| remote traceroutes | every one timed out |
+| Peter's own public messages | no replies for two days |
+
+Dead from 2026-08-16 ~18:15 until it was found on 2026-08-18.
+
+### Why nothing caught it
+
+**The radios and the config agreed with each other.** `divergences()` compares
+each radio to *our designation* — never to the mesh. Designate the wrong channel
+and every radio becomes "correct" and the check goes silent. A green resolver is
+not evidence that anybody can hear us.
+
+### The signature, so it is recognised in minutes
+
+**You still hear everyone, and you decrypt nothing from any stranger.** LoRa
+headers are unencrypted, so `from`, `snr` and last-heard keep updating and the
+dashboard looks entirely alive while every payload from a third party fails to
+decrypt. If node-dash decodes its own radios and the alarm units but no outside
+node, suspect the primary's **name** before anything else.
+
+### The rule
+
+The designation names **the channel the mesh is on**. Not "the channel our radios
+happen to carry", and never "the channel they agree on" — two radios can agree
+and both be wrong, which is precisely what happened here.
+
+### The name is load-bearing and is hashed verbatim
+
+From the firmware itself, `src/mesh/Channels.cpp` — the published documentation
+does not state this:
+
+```c
+generateHash() = xorHash(getName(ch)) ^ xorHash(key)
+getName()      = the stored name, EXCEPT an empty name is replaced by the
+                 modem preset display name ("LongFast") when use_preset is set
+```
+
+So empty ≡ `LongFast` ≡ the default public channel, and **any** other string —
+`Public`, a typo, a stray capital — is a private channel of one that looks
+perfectly normal in every UI. Set the primary's name to **empty** and leave it.
 
 ## Roles: `pub` and `pri`
 

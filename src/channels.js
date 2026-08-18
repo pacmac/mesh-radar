@@ -24,6 +24,48 @@
 //
 // THE KEY ITSELF IS NEVER STORED, only its hash: `psk` is in the browser's
 // SENSITIVE_FIELDS and the audit spec lets only psk_present and a length out.
+//
+// ============================================================================
+// A MISNAMED PRIMARY IS FIXED BY RENAMING THE RADIO. NEVER BY DESIGNATING IT.
+// ============================================================================
+//
+// The block above diagnosed the YAGI correctly on 2026-08-16 and then the fix was
+// applied BACKWARDS, which cost two more days and all public traffic.
+//
+// `channels.pub_key` was set to b7ecd210 — channelKey('Public','AQ=='), the
+// YAGI's BROKEN channel — and the OMNI, listed above as the CORRECT one at
+// 865e781a = channelKey('','AQ=='), was renamed `Public` to match it. Both radios
+// then transmitted into, and listened on, a channel nobody else uses.
+//
+// Cost, 16 Aug ~18:15 to 18 Aug: public text 85/day -> 0. Nodeinfo refreshes
+// 185/day -> 0. Every remote traceroute timed out. Peter's own public messages
+// got no replies for two days.
+//
+// WHY NOTHING CAUGHT IT: the radios and the config agreed with each other.
+// `divergences()` compares each radio to OUR DESIGNATION — never to the mesh — so
+// designating the wrong channel makes every radio "correct" and the check silent.
+// A green resolver is not evidence that anyone can hear us.
+//
+// THE SIGNATURE, so it is recognised in minutes and not in days: you still hear
+// everyone (LoRa headers are unencrypted, so `from`/`snr` and last-heard all keep
+// updating and the dashboard looks alive) while you DECRYPT NOTHING from any
+// stranger. If node-dash can decode its own radios and the alarm units but no
+// third party, suspect the primary's NAME before anything else.
+//
+// THE RULE: the designation names the channel THE MESH IS ON. It is not "the
+// channel our radios happen to carry", and never "the channel they agree on" —
+// two radios can agree and both be wrong, which is exactly what happened.
+//
+// THE NAME IS LOAD-BEARING AND IS HASHED VERBATIM. From the firmware, read at
+// src/mesh/Channels.cpp — not from the docs, which do not say this:
+//
+//   generateHash() = xorHash(getName(ch)) ^ xorHash(key)
+//   getName()      = the stored name, EXCEPT that an empty name is replaced by
+//                    the modem preset display name ("LongFast") when use_preset
+//
+// So empty === "LongFast" === the default public channel, and ANY other string —
+// `Public`, a typo, a stray capital — is a private channel of one that looks
+// completely normal in every UI. Set the primary's name to EMPTY and leave it.
 
 import { createHash } from 'node:crypto';
 import { getConfig } from './db.js';
