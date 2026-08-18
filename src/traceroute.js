@@ -172,7 +172,12 @@ class TracerouteManager extends EventEmitter {
       // bearing and hold time (ms ???) which is the same as the timeout passed
       // to traceroute." rotator.js clamps to its own shared-rotator ceiling, so
       // this cannot become a lockout however large a timeout is passed.
-      aim = await aimForNode(to, resolved, timeout);
+      // `via`, when the caller supplied one, overrides the node/relay choice —
+      // it is an AIM target, not a route instruction. Peter, 2026-08-18: "if via
+      // is set, the traceroute will go via that node, again this only applies to
+      // directional antennas." That last clause is why it is read HERE, inside
+      // the directional branch, and not before it.
+      aim = await aimForNode(to, resolved, timeout, { via: opts.via ?? null });
 
       // 4b. CONFIRMATION IS A PRECONDITION, NOT A NICETY. Peter: "once the
       //     rotator has confirmed it is aimed it starts the traceroute."

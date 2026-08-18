@@ -50,7 +50,7 @@ const router = Router();
  *  result, and returning 202 would invite polling.
  */
 router.post('/traceroute', async (req, res) => {
-  const { radio = 'auto', node, timeout_ms } = req.body ?? {};
+  const { radio = 'auto', node, timeout_ms, via } = req.body ?? {};
 
   // Node: accept `!hex` or a number, and reject anything else rather than
   // coercing. `Number('!da5af428')` is NaN and `Number(null)` is 0 — a 0 target
@@ -76,12 +76,29 @@ router.post('/traceroute', async (req, res) => {
     });
   }
 
+  // `via` — an AIM override, same accepted forms as `node`. Validated here so a
+  // typo is a 400 rather than a refusal to dispatch three seconds later.
+  let viaNum = null;
+  if (via != null && via !== '') {
+    viaNum = typeof via === 'string' && via.startsWith('!') ? nodeIdToNum(via) : Number(via);
+    if (!Number.isFinite(viaNum) || viaNum <= 0) {
+      return res.status(400).json({ error: 'via must be a !hex id or a node num' });
+    }
+  }
+
+  // VIA ON AN OMNI IS IGNORED, AND SAID SO OUT LOUD. Peter: "this only applies
+  // to directional antennas." The traceroute is still valid, so this is not an
+  // error — but a caller who asked for a beam on a node and got none must not
+  // have to infer that from silence.
+  const viaIgnored = viaNum != null && !resolved.directional;
+
   try {
-    const result = await traceroute.run(radio, to, timeoutMs);
+    const result = await traceroute.run(radio, to, timeoutMs, { via: viaNum });
     return res.json({
       ok: true,
       radio: { label: resolved.label, node_id: resolved.node_id, beam_deg: resolved.beam_deg,
                directional: resolved.directional },
+      ...(viaIgnored ? { via_ignored: `radio ${resolved.label} is omnidirectional (${resolved.beam_deg}°) — via only applies to a directional antenna` } : {}),
       result,
     });
   } catch (err) {

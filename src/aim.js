@@ -137,8 +137,35 @@ export function bearingToNode(num) {
 // TAKES A RESOLVED RADIO BUNDLE, not a device string — `radio.steerable` replaced
 // a local MAC comparison that once reported "not on the rotator" about the
 // rotator itself.
-export function decideAim(to, radio) {
+export function decideAim(to, radio, via = null) {
   const none = { az: null, aimTarget: null, mode: 'none' };
+
+  // `via` — AN EXPLICIT AIM OVERRIDE, and it wins over everything below.
+  // Peter, 2026-08-18: "if via is set, the traceroute will go via that node,
+  // again this only applies to directional antennas."
+  //
+  // It cannot be a ROUTE instruction: Meshtastic has no source routing for a
+  // traceroute and mesh-gw's surface is send_traceroute(to) — the target and
+  // nothing else. Putting the beam on a node is the only way node-dash can make
+  // a traceroute go via it, which is exactly why the argument is meaningless
+  // for an omni.
+  //
+  // IT IS NOT VALIDATED AGAINST THE KNOWN ROUTE, deliberately. The operator is
+  // testing a corridor; refusing to point at a node "because it is not on the
+  // known route" would make the argument useless for the discovery it exists
+  // for — the known route is the thing being challenged.
+  //
+  // AN UNRESOLVABLE `via` RETURNS 'none' AND DOES NOT FALL BACK. Falling through
+  // to the relay/node rule would transmit while silently ignoring an explicit
+  // instruction, and record a row that looks deliberate. traceroute.run() turns
+  // this into a refusal to dispatch.
+  if (via != null) {
+    const bv = bearingToNode(via);
+    return bv == null
+      ? { ...none, note: `via ${via} has no resolvable bearing` }
+      : { az: bv, aimTarget: via, mode: 'via' };
+  }
+
   let route = null;
   try { route = JSON.parse(stmts.latestRouteTo.get(to)?.route ?? 'null'); } catch { /* no route */ }
 
@@ -317,8 +344,11 @@ export async function aimForNode(to, radio, holdMs, opts = {}) {
   // now express, and which the old code could not.
   if (!radio?.steerable) return unaimed('radio is not on a rotator');
 
-  const { az, aimTarget, mode } = decideAim(to, radio);
-  if (az == null) return unaimed('no bearing resolves for the node or its relay');
+  const { az, aimTarget, mode, note } = decideAim(to, radio, opts.via ?? null);
+  // An explicit `via` that cannot be pointed at is a refusal, and its own note
+  // says so rather than being reported as the generic no-bearing case — the
+  // caller named a node and deserves to be told THAT node is the problem.
+  if (az == null) return unaimed(note ?? 'no bearing resolves for the node or its relay');
 
   aimEvents.emit('aiming', { to, az, via: aimTarget, mode });
   const { settled, azActual } = await aimAt(az, holdMs, { ...opts, beam_deg });

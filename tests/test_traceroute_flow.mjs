@@ -121,6 +121,29 @@ try {
     ok(/aim not confirmed/.test(s.error ?? ''), '...and the caller is told why');
   }
 
+  // ── `via` — directional only, and refuses rather than ignoring ──────────
+  // Peter, 2026-08-18: "if via is set, the traceroute will go via that node,
+  // again this only applies to directional antennas."
+  {
+    // An OMNI ignores via and still dispatches — via has no meaning with no beam.
+    const s = await harness(() => traceroute.run('non-rotator', TARGET, 200, { via: 3663393832 }));
+    eq(s.points, 0,       'via does not make an omni point at anything');
+    eq(s.posts.length, 1, '...and the traceroute still goes');
+  }
+  {
+    // A DIRECTIONAL radio honours it — the aim happens before the dispatch.
+    const s = await harness(() => traceroute.run('rotator', TARGET, 300, { via: 3663393832 }));
+    ok(s.points >= 1,     'via aims a directional radio');
+    eq(s.posts.length, 1, '...and dispatches once confirmed');
+  }
+  {
+    // A via that cannot be pointed at REFUSES. It must not quietly fall back to
+    // the node/relay rule and transmit as though nothing was asked for.
+    const s = await harness(() => traceroute.run('rotator', TARGET, 300, { via: 999_999_999 }));
+    eq(s.posts.length, 0, 'AN UNHONOURABLE via DOES NOT TRANSMIT');
+    ok(/aim not confirmed/.test(s.error ?? ''), '...and the caller is told');
+  }
+
   // The hold ceiling itself is proven in tests/test_aim.mjs against
   // rotator.point() directly — it cannot be exercised here without passing a
   // timeout so large the dispatch would never return.

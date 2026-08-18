@@ -129,6 +129,42 @@ for (const num of [1234, 0xda5af428]) {
   eq(s.value.beam_deg, 35, 'the TRANSMITTING antenna beamwidth is recorded');
 }
 
+// ── `via` — an explicit aim override ───────────────────────────────────────
+// Peter, 2026-08-18: "if via is set, the traceroute will go via that node, again
+// this only applies to directional antennas." It is an AIM target: Meshtastic
+// has no source routing and send_traceroute(to) carries only the target, so the
+// beam is the only mechanism there is.
+{
+  const TA2M = 3663393832;
+  const bTa2m = bearingToNode(TA2M);
+
+  // via must BEAT the rule that would otherwise apply, whichever branch that is.
+  for (const target of [1234, 0xda5af428, 646426545]) {
+    const d = decideAim(target, steerable, TA2M);
+    if (bTa2m == null) { ok(d.mode === 'none', 'via with no bearing refuses'); continue; }
+    eq(d.mode, 'via',         `via overrides the derived target for ${target}`);
+    eq(d.aimTarget, TA2M,     '...and aims at the via node');
+    eq(d.az, bTa2m,           "...at the via node's own bearing");
+  }
+
+  // AN UNRESOLVABLE via REFUSES AND DOES NOT FALL BACK. Falling through to the
+  // node/relay rule would transmit while silently ignoring an explicit
+  // instruction, and write a row that looks deliberate.
+  const bad = decideAim(646426545, steerable, 999_999_999);
+  eq(bad.mode, 'none',        'a via with no resolvable bearing does not aim');
+  eq(bad.az, null,            '...and carries no azimuth');
+  ok(/via 999999999/.test(bad.note ?? ''), '...and names the via node as the problem, not the target');
+
+  // The refusal must reach aimForNode as a refusal, with that same note.
+  const s = await withStubbedRotator(() => aimForNode(646426545, steerable, 30_000, { via: 999_999_999 }));
+  eq(s.points, 0,             'an unhonourable via points nothing');
+  ok(/via 999999999/.test(s.value.note ?? ''), '...and the row records why');
+
+  // With no via, the derived rule is untouched.
+  const plain = decideAim(646426545, steerable);
+  ok(['node', 'relay', 'none'].includes(plain.mode), 'without via the node/relay rule is unchanged');
+}
+
 // ── bearingToNode is a bearing or null, never NaN ──────────────────────────
 for (const num of [1234, 0xda5af428]) {
   const b = bearingToNode(num);
