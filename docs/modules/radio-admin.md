@@ -4,7 +4,7 @@ source:
   - src/radio-admin.js
   - src/radio-admin-api.js
   - src/op-manager.js
-source_hash: 5edaa4addc1bac89ffd724eda5c186ac2f7dfcf91406ba9dc0989ab1aedd8e8e
+source_hash: 831a6fd9ae4e29b21d705d4d009255a47a97d59f7f8aa0de8757841669fd7132
 updated: 2026-08-18
 ---
 
@@ -208,3 +208,63 @@ The diff between consecutive files is then the change log for that radio.
    against the previous file shows exactly the fields that changed.
 6. `grep -n "radio_config_section\|channel_config\|owner_info" src/op-manager.js`
    returns nothing.
+
+## Two comments in this module were false — 2026-08-18
+
+Peter, standing: *"how does phone app handle it. that will always be my reply"*.
+Applying that to my own comments found two claims that do not survive it.
+
+### 1. "It does NOT use begin/commit edit settings anywhere" — FALSE
+
+`core/service/.../AdminControllerImpl.kt` has `editSettings(destNum) { … }`, which
+sends `begin_edit_settings`, runs the writes, then `commit_edit_settings`, and
+waits for **acceptance** of both boundaries.
+
+The claim was written to justify not wrapping a save in a transaction. That
+conclusion is still right, but for a narrower reason than the comment gave:
+
+| what | how the app does it |
+|---|---|
+| single-section save | bare `setConfig` / `setModuleConfig`, no transaction — `RadioConfigUseCase` calls `radioController.setConfig(destNum, config, packetId)` directly |
+| bulk profile install | `editSettings { … }` — begin, all 13+ sections, commit. One reboot instead of one per section |
+
+So a transaction is what you use to write **many** sections at once, precisely to
+collapse the reboots. Our UI saves one section at a time, so bare sets are
+correct — but "anywhere" was wrong, and it would have misled anyone later adding
+a restore-a-whole-config feature, which is exactly when the transaction is needed.
+
+### 2. "Verified against genuine radio reads: matched on 6 of 6 sections" — TRUE BUT NARROW
+
+Six of twenty-one sections is not a verification of the backup; it reads as one.
+Re-run properly, comparing `backups/<node>/<stamp>.json` against a live read of
+every section:
+
+```
+sections compared: 21   MATCH: 20   differ: 1
+  ambient_lighting  backup={"blue":199,...}  live={"blue":146,...}
+```
+
+The single difference is the **point of the mechanism, not a fault**: that backup
+was taken immediately before the save that set blue back to 146, so it records the
+pre-save state, which is what an audit chain is for. Consecutive files across four
+saves read 200 → 146 → 199 → 199, each the value as it stood before that write.
+
+Comparison must strip keys beginning `__`. `/config/{section}` adds `__reboot` and
+`__notes` for the form to render; `radio_backup` carries neither. A first pass that
+did not strip them reported 8 spurious mismatches.
+
+### A false absence I published, retracted here
+
+I reported that the backup "omits every module_config section — all 13 absent",
+put it in a commit message and a ledger entry, and told Peter twice.
+
+**It is not true.** `radio_backup` returns `config`, `module_config` **and**
+`channels` as three top-level keys, and the saved files contain all three — 15
+module sections and 8 channels. I had inspected only `doc.config` and reported
+what was not in it as missing from the file.
+
+That is the failure mode `CLAUDE.md` names: *"An absence is a claim, and claims get
+checked."* Enumerate the container before declaring something absent from it. The
+cost here was a wrong entry in the ledger and a wrong statement to Peter; the same
+mistake against a real feature produces code built on a wrong premise.
+

@@ -17,11 +17,26 @@
 //
 //   app       AdminControllerImpl.kt — setters send want_response = false (the
 //             CommandSender default); only the GETTERS pass true. It writes its
-//             own store optimistically, and it does NOT use begin/commit edit
-//             settings anywhere. That last part matters: commit_edit_settings
-//             calls saveChanges with shouldReboot defaulting to TRUE after
-//             clearing the transaction flag, so wrapping a single-section save in
-//             a transaction would CAUSE a reboot the firmware would have skipped.
+//             own store optimistically.
+//
+//             A SINGLE-SECTION SAVE USES NO TRANSACTION, and that is why we do
+//             not either: RadioConfigUseCase.setConfig calls
+//             radioController.setConfig(destNum, config, packetId) — a bare set.
+//             commit_edit_settings calls saveChanges with shouldReboot defaulting
+//             to TRUE after clearing the transaction flag, so wrapping ONE section
+//             in a transaction would cause a reboot the firmware would have
+//             skipped.
+//
+//             CORRECTED 2026-08-18: this used to say the app "does NOT use
+//             begin/commit edit settings anywhere". That is false.
+//             AdminControllerImpl.editSettings does exactly that, awaiting
+//             acceptance of both boundaries, and InstallProfileUseCase uses it to
+//             write a whole profile — every config and module_config section — as
+//             one transaction, collapsing 13+ reboots into one. The rule is
+//             therefore about COUNT, not principle: one section, bare set; many
+//             sections at once, transaction. Anyone adding restore-a-whole-config
+//             needs the transaction and must not read this comment as forbidding
+//             it.
 //
 // THERE IS NO REBOOT FLAG IN ANY REPLY. Searched admin.proto: every reboot field
 // is a REQUEST field. A SET's only possible reply is a bare Routing ACK, and only
@@ -63,10 +78,28 @@ export function stamp(d = new Date()) {
  *  correct and deliberate: Peter, "the mesh-gw cache is trusted... if I use my
  *  phone to change config, the mesh gw needs to be disconnected, when it
  *  reconnects it will re-read the configs", and "it's not your responsibility to
- *  ensure that mesh-gw is / is not stale". Verified 2026-08-18 against genuine
- *  radio reads: matched on 6 of 6 sections including the Private channel PSK.
+ *  ensure that mesh-gw is / is not stale".
  *
- *  The diff between consecutive files is the change log for that radio. */
+ *  IT COVERS EVERYTHING, and that was checked rather than assumed. radio_backup
+ *  returns THREE top-level keys — `config`, `module_config` and `channels` — and
+ *  the saved file carries all three: 8 config sections, 15 module sections, 8
+ *  channels. `sessionkey` is present and EMPTY (`{}`), so no credential is stored;
+ *  the passkey stays mesh-gw's, per Peter's "that secret is theirs to keep".
+ *
+ *  VERIFIED 2026-08-18 across all 21 sections, not a sample: comparing a saved
+ *  file against a live read of every section gives MATCH 20, differ 1, and the
+ *  single difference is ambient_lighting holding the value from BEFORE the save
+ *  that file precedes — which is the mechanism working, not a fault. (Strip keys
+ *  beginning `__` when comparing: /config/{section} adds __reboot and __notes for
+ *  the form; radio_backup carries neither. Not stripping them reports 8 spurious
+ *  mismatches.)
+ *
+ *  This replaces an earlier note claiming "matched on 6 of 6 sections". That was
+ *  true and misleading — 6 of 21 is a sample, and it read as a verification.
+ *
+ *  The diff between consecutive files is the change log for that radio. Measured
+ *  over four consecutive saves: 200 -> 146 -> 199 -> 199, each the value as it
+ *  stood immediately before that write. */
 export async function backupBeforeSave(device) {
   const doc = await bridge.get(`/${encodeURIComponent(device)}/radio_backup`);
   const dir = path.join(BACKUP_ROOT, String(device));
