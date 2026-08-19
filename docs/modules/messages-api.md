@@ -1,7 +1,7 @@
 ---
 module: messages-api
 source: src/messages-api.js
-source_hash: 1e546e16a7ab5947389908ae59d0dc638bd0eece5cb11a7854a20b7cfe3106c8
+source_hash: 60e67bc31ccf6a6abf469e00f2d15f245f8a4db2c5031943d970ffc9ca595529
 updated: 2026-08-16
 ---
 

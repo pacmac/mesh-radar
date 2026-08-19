@@ -17,7 +17,8 @@ import { scheduleTime } from './served-time.js';
 import { traceroute } from './traceroute.js';
 import { nodeKind, provenDoors, rolesByNum } from './node-kind.js';
 import { ownDeviceNums } from './node-filter.js';
-import { channelKey, setDeviceChannels, roleOf, indexFor } from './channels.js';
+// src/channels.js DELETED 2026-08-19 — this repo no longer resolves channels.
+// See docs/modules/channels.md and _resolvedChannels below.
 // marginHealth and gapTone dropped 2026-08-17 — both scored a traceroute row.
 import { signalVerdict, hopsTone, blePctTone, verdictBands,
          excessLossTone, heardTone } from './signal-verdict.js';
@@ -267,6 +268,28 @@ const _seenLivePktIds = new Set();
 // This is a delivery concern, not a data decision.
 // MAC -> configured channels.
 const lastDeviceChannels = {};
+
+/** device key (MAC or node id, upper-cased) -> the gateway's `resolved` object,
+ *  verbatim: {public: N, private: M} — or null when it has not answered.
+ *
+ *  CACHED, NEVER COMPUTED. The only consumer is the inbound privacy gate, which
+ *  needs an integer because received events carry one and no role. Everything we
+ *  SEND uses the words 'public'/'private' and never looks in here.
+ *  docs/modules/channels.md. */
+const _resolvedChannels = new Map();
+
+/** Did this packet arrive on the radio's PRIVATE channel?
+ *
+ *  FAILS CLOSED. No cached answer, or a null private, returns false and the
+ *  caller does nothing — silence is the safe failure, acting on a command shouted
+ *  at the public mesh is not. `index` is compared with ===, so an undefined index
+ *  can never equal a resolved 0. */
+export function isPrivateChannel(device, index) {
+  if (typeof device !== 'string' || !Number.isInteger(index)) return false;
+  const resolved = _resolvedChannels.get(device.toUpperCase());
+  const priv = resolved?.private;
+  return Number.isInteger(priv) && priv === index;
+}
 
 const _lastStatusHint = new Map();   // num → ms
 const STATUS_HINT_MS = 1000;
@@ -553,31 +576,41 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     try {
       const r = await bridge.get(`/${addr}/channels`);
       if (Array.isArray(r?.channels)) {
-        // IDENTITY IS NAME + KEY — see docs/modules/channels.md. Index fails
-        // (Private is 2 on one of our radios and 1 on the other), and key alone
-        // fails too: our two PRIMARYs share a key while one is unnamed and one is
-        // named `Public`, and they are NOT the same channel on air. That mistake
-        // cost five days of the YAGI. The KEY ITSELF IS NEVER KEPT, only the
-        // hash; `psk` is in the browser's SENSITIVE_FIELDS for the same reason
-        // and this must not be the place that walks it back.
+        // NO IDENTITY IS COMPUTED HERE ANY MORE. This used to hash
+        // name + NUL + psk per slot so channels.js could resolve pub/pri itself.
+        // Peter, 2026-08-19: "you need to know nothing about channels, channel
+        // indexes, PSKs, PKI, all you need to know is public and private."
+        // The gateway resolves; we do not. docs/modules/channels.md.
         lastDeviceChannels[addr.toUpperCase()] = r.channels
-          .map((c, i) => ({
-            index: c.index ?? i,
-            name:  c.settings?.name ?? '',
-            role:  c.role ?? null,
-            key:   channelKey(c.settings?.name, c.settings?.psk),
-          }))
+          .map((c, i) => ({ index: c.index ?? i, name: c.settings?.name ?? '', role: c.role ?? null }))
           .filter(c => c.role === 'PRIMARY' || c.role === 'SECONDARY');
-        // One table, two readers. The resolver holds exactly what the send form is
-        // built from, so "which channel is this" and "what is in the dropdown" can
-        // never disagree.
+
+        // THE GATEWAY'S OWN ANSWER, CACHED VERBATIM — not a resolution.
         //
-        // The live node id is passed as an ALIAS because this is the one place
-        // that knows both halves. Callers such as callout are handed a node id by
-        // dash-mode.transmitterForMode() and never see a MAC; registering both
-        // here keeps the conversion at one boundary instead of at every call site.
-        setDeviceChannels(addr, lastDeviceChannels[addr.toUpperCase()],
-                          getLiveNodeIdByMac(addr));
+        // Needed for ONE thing: deciding whether a RECEIVED packet arrived on the
+        // private channel, which is what stops an "@ping" shouted on the public
+        // mesh driving the rotator. Inbound events carry an integer and no role
+        // (docs/gw/API_SSE.md:135), so the comparison cannot be made in words yet.
+        // Raised as `inbound-packets-carry-no-channel-role`; when they label the
+        // packet this goes too.
+        //
+        // mesh-gw asked for exactly this: "if you keep any index-derived logic at
+        // all, source the index from `resolved` rather than from your own pass
+        // over the channel list."
+        _resolvedChannels.set(addr.toUpperCase(), r.resolved ?? null);
+        const nodeId = getLiveNodeIdByMac(addr);
+        if (nodeId) _resolvedChannels.set(nodeId.toUpperCase(), r.resolved ?? null);
+        // LOGGED BECAUSE THE FAILURE IS SILENT. isPrivateChannel fails closed, so
+        // an absent or null `resolved` does not error — it just makes every
+        // inbound command look public and quietly stops every automation
+        // answering. Without this line there is no way to tell that state from
+        // "nobody sent a command". Warn, not info, when it is missing.
+        if (r.resolved && Number.isInteger(r.resolved.private)) {
+          console.log(`[channels] ${nodeId ?? addr} resolved private=${r.resolved.private} public=${r.resolved.public}`);
+        } else {
+          console.warn(`[channels] ${nodeId ?? addr} gateway returned no private channel — automations on this radio will not answer`);
+        }
+
         broadcastDeviceList();
       }
     } catch (e) { /* device not ready yet — next READY transition retries */ }
@@ -599,35 +632,30 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       link_budget: d.addr && lastDeviceLora[d.addr.toUpperCase()]
         ? linkBudget(lastDeviceLora[d.addr.toUpperCase()], lbDeviceCfg(d.addr))
         : null,
-      // The browser gets a SERVED `designated` ('pub' | 'pri' | null), never the
-      // identity hash it was derived from. Two reasons, and the second matters
-      // more: the hash is key-derived and has no business leaving the backend,
-      // and the browser decides nothing — it must not be handed the raw material
-      // to work out a channel's identity for itself. See docs/BROWSER_CONTRACT.md
-      // and docs/modules/channels.md.
+      // Slots as the radio reports them, for DISPLAY only — name and index, so
+      // the Channels tab can show what is configured. No `designated` and no
+      // identity hash: the browser decides nothing about which channel is which,
+      // and after 2026-08-19 neither does this process.
+      // docs/BROWSER_CONTRACT.md, docs/modules/channels.md.
       // `null` when the radio has not reported yet is PRESERVED, not flattened to
       // []: the send form distinguishes "no channels known" from "none configured".
       channels: (d.addr && lastDeviceChannels[d.addr.toUpperCase()])
-        ? lastDeviceChannels[d.addr.toUpperCase()].map(
-            ({ key, ...c }) => ({ ...c, designated: roleOf(d.addr, c.index) }))
+        ? lastDeviceChannels[d.addr.toUpperCase()]
         : null,
-      // WHICH CHANNEL THE SEND FORM STARTS ON, DECIDED HERE.
+      // WHICH CHANNEL THE SEND FORM STARTS ON — now a WORD, not an index.
       //
-      // The browser is a presentation layer: it does not choose a channel. It
-      // was choosing one — `msgChannel: '0'` at app.js:215, a fallback to 0 in
-      // tab-messages.html, and no validation at all in tab-shared.html — and a
-      // channel INDEX means different things on different radios. On the YAGI,
-      // index 0 is a primary named `Public` that nothing is listening to, and it
-      // EXISTS, so a "is this index valid" check passes and the send silently
-      // goes nowhere.
+      // It was `indexFor(d.addr, 'pri')`, a per-radio integer, and before that the
+      // browser picked `'0'` for itself. An index means different things on
+      // different radios: private is 2 on the OMNI and 1 on the YAGI, and index 0
+      // on the YAGI is a primary named `Public` that nothing listens to — it
+      // EXISTS, so an "is this index valid" check passes and the send goes
+      // nowhere.
       //
-      // PRIVATE, not public. `pri` resolves on every radio we have, and an
-      // accidental send must never land on the public mesh. Public stays
-      // available by deliberately selecting it, which is the point.
-      //
-      // null when it cannot be resolved — the form must then refuse rather than
-      // fall back to a number, exactly as sendMeshText now does.
-      default_channel: d.addr ? indexFor(d.addr, 'pri') : null,
+      // PRIVATE, not public, and unconditional. The word resolves on whichever
+      // radio the send is addressed to, so there is nothing left to be null and
+      // nothing to fall back from. Public stays available by deliberately
+      // selecting it, which is the point.
+      default_channel: 'private',
       // BLE link tone — app-components.js:80 held >=50/25. This is the BLE
       // percentage the gateway reports, NOT a LoRa measurement, so it keeps its
       // own two bands rather than signalVerdict's 76/51/26.

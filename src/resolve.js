@@ -33,7 +33,7 @@
 import { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress,
          macToNodeId } from './device-config.js';
 import { dashMode, modeName, transmitterForMode } from './dash-mode.js';
-import { indexFor } from './channels.js';
+// No channel import — a radio record no longer carries channel indices.
 
 /** Radio specs this module understands, for validation and for the config form.
  *
@@ -135,10 +135,11 @@ export function resolveRadio(spec, ctx = {}) {
     // duplicating the URL would create a second place to be wrong about where
     // the rotator lives, and the rotator module is the one that reconnects.
     rotatorId: steerable ? rotatorMac : null,
-    // Delegated, not reimplemented — channels.js stays the SSOT for channel
-    // identity (name + PSK, per-gateway index). indexFor returns null, never 0,
-    // for an unresolved role: `Number(null) === 0` is PRIMARY, the public mesh.
-    channels: { pub: indexFor(mac, 'pub'), pri: indexFor(mac, 'pri') },
+    // NO `channels` FIELD. A radio record used to carry
+    // `{ pub: <index>, pri: <index> }`, which is exactly the knowledge this repo
+    // gave up on 2026-08-19: a caller wanting to transmit says 'public' or
+    // 'private' and the gateway resolves it on the radio addressed.
+    // docs/modules/channels.md.
   };
 }
 

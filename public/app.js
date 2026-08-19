@@ -209,16 +209,16 @@ function dashboard() {
     mentionPos: 0,
     mentionIdx: 0,
     unreadMessages: 0,
-    // NOT '0'. The browser does not pick a channel — index 0 means different
-    // things on different radios, and on the YAGI it is a dead slot. The value
-    // arrives from device_list.default_channel, served by the backend through
-    // channels.js. null until it does.
+    // 'public' or 'private', never an index. It was `null` awaiting a served
+    // integer; the value now arrives as a WORD on device_list.default_channel and
+    // the gateway resolves it per radio. null until the first frame.
+    // docs/modules/channels.md.
     msgChannel: null,
-    // WHICH RADIO msgChannel WAS CHOSEN FOR. A channel index is only meaningful
-    // for one radio — index 1 is Private on the YAGI and `mqtt` on the OMNI — so
-    // the selection is re-taken from the served default whenever the radio
-    // changes. Without this, switching radio silently re-points the same number
-    // at a different channel.
+    // RETAINED, AND NOW ALWAYS EQUAL. It tracked which radio an index had been
+    // chosen for, because index 1 is Private on the YAGI and `mqtt` on the OMNI,
+    // so switching radio silently re-pointed the same number at a different
+    // channel. A word cannot do that. Kept only because tab-shared and
+    // tab-messages both still bind it; msgChannelStale() is now constant false.
     msgChannelFor: null,
     // Whether the observatory/DISC/snapshot subsystem exists at all.
     // SERVED on the settings frame (`observatory.enabled`), never decided

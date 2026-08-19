@@ -14,10 +14,14 @@ router.post('/:nodeId/messages', async (req, res) => {
   // fire for a caller that had forgotten, and the penalty for forgetting was a
   // public broadcast. There is no safe default for "which channel"; the honest
   // answer to an unstated one is to refuse. Task `channel-callers-onto-resolver`.
+  // A WORD, NOT AN INDEX — 'public' or 'private'. An integer is refused as firmly
+  // as an absent field: the gateway would still honour one, so accepting it here
+  // is how a per-radio index creeps back in and tests fine on whichever radio you
+  // happened to use. docs/modules/channels.md.
   const channel = req.body?.channel;
-  if (!Number.isInteger(channel)) {
+  if (channel !== 'public' && channel !== 'private') {
     return res.status(400).json({
-      error: 'channel required — an unstated channel would default to the public mesh',
+      error: "channel must be 'public' or 'private' — an unstated channel would default to the public mesh",
     });
   }
 

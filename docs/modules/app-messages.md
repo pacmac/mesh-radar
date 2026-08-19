@@ -1,7 +1,7 @@
 ---
 module: app-messages
 source: public/app-messages.js
-source_hash: 41c1b6108bd5e4840e23f2148a2c4437c1b62042bf4847b09264a34a4d95c215
+source_hash: ee82e9cb33f7505ba9706942d7652d161ed80238e8131707662c090144889c5b
 updated: 2026-08-16
 ---
 

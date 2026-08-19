@@ -39,14 +39,15 @@
                 <!-- Channel -->
                 <div class="flex items-center gap-2">
                   <span class="text-sm text-base-content/60 w-12 shrink-0">Ch</span>
-                  <!-- The fallback was `msgChannel = 0`. On the YAGI index 0 EXISTS
-                       (a primary named `Public`) and is dead, so the check passed and
-                       the form sat on a channel nothing hears. The default is served
-                       now — default_channel, resolved by channels.js. -->
-                  <select class="select select-bordered select-sm" x-model.number="msgChannel"
-                          x-effect="if (msgChannel === null || msgChannelStale()) { msgChannel = msgDefaultChannel(); msgChannelFor = msgFrom }">
-                    <template x-for="ch in msgFromChannels()" :key="ch.index">
-                      <option :value="ch.index" x-text="(ch.name || 'Channel ' + ch.index).toUpperCase() + (ch.designated ? ' · ' + ch.designated.toUpperCase() : '')"></option>
+                  <!-- TWO CHOICES, AND NO INDEX. This listed the radio's slots and
+                       bound with x-model.number, so the form held an integer that
+                       meant different things per radio — private is 2 on the OMNI
+                       and 1 on the YAGI. Peter, 2026-08-19: "all you need to know
+                       is public and private." docs/modules/channels.md. -->
+                  <select class="select select-bordered select-sm" x-model="msgChannel"
+                          x-effect="if (msgChannel !== 'public' && msgChannel !== 'private') { msgChannel = msgDefaultChannel() }">
+                    <template x-for="ch in msgFromChannels()" :key="ch.value">
+                      <option :value="ch.value" x-text="ch.label"></option>
                     </template>
                   </select>
                 </div>

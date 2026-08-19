@@ -1,0 +1,28 @@
+$ node tests/test_no_channel_resolver.mjs
+FAIL  src/channels.js still exists
+FAIL  src/automation.js still references channels.js
+FAIL  src/automation.js still references indexFor
+FAIL  src/callout.js still references channels.js
+FAIL  src/callout.js still references indexFor
+FAIL  src/channels.js still references indexFor
+FAIL  src/channels.js still references channelKey
+FAIL  src/channels.js still references designatedKey
+FAIL  src/channels.js still references setDeviceChannels
+FAIL  src/channels.js still references roleOf
+FAIL  src/channels.js still reads a channel secret: channels\.pub_psk
+FAIL  src/channels.js still reads a channel secret: channels\.pri_psk
+FAIL  src/channels.js still reads a channel secret: channels\.pub_name
+FAIL  src/channels.js still reads a channel secret: channels\.pri_name
+FAIL  src/config-api.js still reads a channel secret: channels\.pub_psk
+FAIL  src/config-api.js still reads a channel secret: channels\.pri_psk
+FAIL  src/config-api.js still reads a channel secret: channels\.pub_name
+FAIL  src/config-api.js still reads a channel secret: channels\.pri_name
+FAIL  src/mesh-send.js still references indexFor
+FAIL  src/resolve.js still references channels.js
+FAIL  src/resolve.js still references indexFor
+FAIL  src/ws-relay.js still references channels.js
+FAIL  src/ws-relay.js still references indexFor
+FAIL  src/ws-relay.js still references channelKey
+FAIL  src/ws-relay.js still references setDeviceChannels
+FAIL  src/ws-relay.js still references roleOf
+0 ok, 26 failed

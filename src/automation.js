@@ -12,9 +12,10 @@
 
 import { getConfig } from './db.js';
 // Automations run on the PRIVATE channel. Peter, 2026-08-16: "FYI for the time
-// being automations will work on private channel." The role is asked for by name
-// — `indexFor(radio, 'pri')` — never by index, and never by assuming index 1.
-import { isRole, indexFor } from './channels.js';
+// being automations will work on private channel." Replies now say the WORD and
+// the gateway resolves it; only the INBOUND test still needs an integer, because
+// received events carry one and no role. docs/modules/channels.md.
+import { isPrivateChannel } from './ws-relay.js';
 import { sendMeshText } from './mesh-send.js';
 import { nodeList } from './node-list.js';
 import { rotator } from './rotator.js';
@@ -94,15 +95,15 @@ function replyBudgetLeft() {
  *  fallback to channel 0 is PRIMARY — the public mesh — so answering a private
  *  command there would be the worst outcome this whole path can produce. */
 async function reply(device, toPktId, body) {
-  const channel = indexFor(device, 'pri');
-  if (channel == null) {
-    H.refused.emit({
-      summary: `automation reply dropped — no private channel resolves on ${resolveDeviceLabel(device) || device}`,
-      detail: { guard: 'no-private-channel', device }, severity: 'warn',
-    });
-    console.warn(`[automation] no private channel on ${device} — reply dropped, NOT sent on 0`);
-    return false;
-  }
+  // 'private', the word. The gateway resolves it against the radio that heard the
+  // command — necessarily, since our two radios put private on different indices.
+  //
+  // THE DROP-RATHER-THAN-FALL-BACK RULE ABOVE IS UNCHANGED, only its condition
+  // moved. There is no local index left to be null, so the refusal now arrives
+  // from the gateway as a 400 and is caught below. Nothing here may retry on
+  // another channel: a private reply on the public mesh is the worst outcome this
+  // path can produce.
+  const channel = 'private';
   // Peter: "all replies start with a short form time stamp: 12:15 XXXX".
   // fmtStamp is the same server-side formatter the pages use — "12:15" today,
   // "19 Jul 07:08" if a reply is ever read back later.
@@ -216,10 +217,16 @@ export function handleAutomationEvent(ev) {
   const device = ev.__ble_addr ?? ev.addr ?? ev.device ?? null;
   if (!device) return;
 
-  // THE ONLY PERMITTED PRIVACY TEST — channels.js, never an index literal.
-  // Private is index 2 on one of our radios and 1 on the other, and index 1 on
-  // the first is `mqtt`, which is unencrypted.
-  if (!isRole(device, pkt.channel ?? 0, 'pri')) return;
+  // THE ONLY PERMITTED PRIVACY TEST, and the only integer left in the send/receive
+  // path. The number comes from the GATEWAY's `resolved`, cached — never derived
+  // here. Private is index 2 on one of our radios and 1 on the other, and index 1
+  // on the first is `mqtt`, which is unencrypted.
+  //
+  // `pkt.channel` is passed through WITHOUT a `?? 0` default: an absent channel
+  // used to become 0, which is PRIMARY, so a packet with no channel field was
+  // tested as if it had arrived on the public mesh — and isPrivateChannel demands
+  // an integer, so undefined now fails closed instead of impersonating index 0.
+  if (!isPrivateChannel(device, pkt.channel)) return;
 
   const text = pkt.decoded?.payload
     ? Buffer.from(pkt.decoded.payload, 'base64').toString('utf8').trim() : '';

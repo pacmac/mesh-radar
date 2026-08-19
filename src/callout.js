@@ -23,7 +23,7 @@
 
 import db, { getConfig } from './db.js';
 import { sendMeshText } from './mesh-send.js';
-import { indexFor } from './channels.js';
+// No channel import: the send names 'public' and the gateway resolves it.
 import { resolveDeviceLabel } from './node-label.js';
 import { haversine, bearing as bearingOf } from './utils.js';
 import { defineHook } from './hooks.js';
@@ -89,8 +89,8 @@ const DEFAULTS = {
   // and an index means different things on different radios. Measured 2026-08-16,
   // index 0 on the OMNI is the unnamed primary (the LongFast everyone is on)
   // while index 0 on the YAGI is a primary named `Public` — a different channel
-  // on air, which nothing was listening to. The channel is resolved by ROLE at
-  // the send site now: channels.indexFor(radio, 'pub').
+  // on air, which nothing was listening to. The send site now names the channel
+  // by WORD — `channel: 'public'` — and the gateway resolves it per radio.
   min_km:         50,      // a callout to a neighbour proves nothing about reach
   max_per_day:    6,
   cooldown_days:  7,
@@ -271,15 +271,18 @@ export async function callout(node, { home, gatewayNodeId, dryRun = false } = {}
   // capital, not just airtime), and one transmitted into a channel nobody is on
   // spends it for nothing while logging a success. That is not hypothetical — it
   // is exactly what the YAGI has been doing since 2026-08-12.
-  const channel = indexFor(gatewayNodeId, 'pub');
-  if (channel == null) {
-    H.held.emit({
-      severity: 'warn',
-      summary: `callout withheld — no public channel resolves on ${resolveDeviceLabel(gatewayNodeId) || gatewayNodeId}`,
-      detail: { guard: 'no-public-channel', device: gatewayNodeId, num: node.num },
-    });
-    return { ...verdict, ok: false, held: 'no-public-channel' };
-  }
+  // 'public', the word — the gateway resolves it on the radio addressed, and
+  // REFUSES with a 400 if that radio's primary has been renamed or re-keyed
+  // rather than resolving to a channel nobody else is on. That refusal is the
+  // detector for the 16-18 August outage, and it now lives in one place instead
+  // of two. docs/modules/channels.md.
+  //
+  // The withhold-on-unresolved guard that stood here has not been dropped, it has
+  // moved: there is no local index left to be null, so the refusal arrives as a
+  // gateway error and is caught below. It must stay a refusal — a callout into a
+  // channel nobody is on spends social capital and logs a success, which is what
+  // the YAGI did from 2026-08-12.
+  const channel = 'public';
 
   _inFlight = true;
   try {

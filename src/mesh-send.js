@@ -59,14 +59,18 @@ export async function sendMeshText({ gatewayNodeId, text, channel, to = null, re
   // PRIMARY, which is the public mesh. The failure mode was: omit an argument,
   // broadcast to strangers, and record it as a normal send.
   //
-  // This module does not RESOLVE the channel — that is channels.js's job,
-  // indexFor(radio, 'pub'|'pri'). It only refuses to guess. Keeping the two apart
-  // is what lets the resolver's data source change without touching this path.
+  // A CHANNEL IS ONE OF TWO WORDS. Peter, 2026-08-19: "you need to know nothing
+  // about channels, channel indexes, PSKs, PKI, all you need to know is public
+  // and private." The gateway resolves the word against the radio addressed, and
+  // it must, because our radios disagree — private is index 2 on the OMNI and 1
+  // on the YAGI, so any index chosen here is already wrong on one of them.
   //
-  // 0 stays perfectly legal when a caller MEANS it (callout transmits publicly on
-  // purpose). The rule is that it must be stated, not that it must be non-zero.
-  if (!Number.isInteger(channel)) {
-    throw new Error(`channel required: sendMeshText got ${JSON.stringify(channel)} — resolve it with channels.indexFor(radio, 'pub'|'pri')`);
+  // An INTEGER is refused too, and that is the point rather than an oversight.
+  // The gateway still honours one, so accepting it here would let an index creep
+  // back in and be right in testing on whichever radio was used.
+  // docs/modules/channels.md.
+  if (channel !== 'public' && channel !== 'private') {
+    throw new Error(`channel must be 'public' or 'private': sendMeshText got ${JSON.stringify(channel)}`);
   }
   const body = { text, channel };
   if (to != null)       body.to = to;

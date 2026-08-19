@@ -97,15 +97,18 @@ try {
   eq(resolveRadio('AA:AA:AA:AA:AA:AA'), null, 'an unknown MAC resolves to null');
   eq(resolveRadio('nonsense-spec'), null, 'an unrecognised spec resolves to null');
 
-  // ── channels are DELEGATED, and never 0 by accident ───────────────────────
-  // `Number(null) === 0`, and channel 0 is PRIMARY — the public mesh. indexFor
-  // must return null for an unresolved role so a caller cannot fall into it.
-  const ch = resolveRadio('primary').channels;
-  ok('pub' in ch && 'pri' in ch, 'both channel roles are reported');
-  for (const role of ['pub', 'pri']) {
-    ok(ch[role] === null || Number.isInteger(ch[role]),
-       `channels.${role} is an integer or null — never undefined, never 0-by-coercion`);
-  }
+  // ── A RADIO RECORD CARRIES NO CHANNELS AT ALL ─────────────────────────────
+  // This used to assert `{ pub: <index>, pri: <index> }` and that neither was 0
+  // by coercion. The field is gone: an index means different things on different
+  // radios — private is 2 on the OMNI and 1 on the YAGI — and a caller that wants
+  // to transmit says 'public' or 'private' and lets the gateway resolve it.
+  // Peter, 2026-08-19: "all you need to know is public and private."
+  // docs/modules/channels.md.
+  //
+  // Asserting the ABSENCE, not merely dropping the old check: a `channels` field
+  // reappearing here is the resolver coming back, and this is where it shows.
+  ok(!('channels' in resolveRadio('primary')),
+     'a radio record carries no channels field — resolution belongs to the gateway');
 
   // ── the convenience wrappers agree with the bundle ────────────────────────
   eq(isDirectional('rotator'), true,      'isDirectional agrees with the bundle');

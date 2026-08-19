@@ -1,0 +1,78 @@
+# Every accusation this repo is under, and what trying it proved.
+# Written only by ~/.claude/hooks/idiot.py. Verdicts are derived, never typed.
+- id: messages-carry-timestamps-hours-in-the-future
+  type: bug
+  what: Rows in messages have ts up to ~20h ahead of now, so recent traffic sorts below them and looks
+    missing
+  spec: docs/modules/ws-relay.md
+  files:
+  - src/bridge-events.js
+  - src/db.js
+  test:
+    command: null
+    criterion: no row in messages has ts greater than the moment the query runs
+    runs: 1
+  trial: null
+  fix: null
+- id: node-dash-resolves-channels-itself
+  type: bug
+  what: "node-dash resolves channels locally, holding PSKs and per-radio indices it must not know \u2014\
+    \ the gateway owns resolution and our two radios disagree (private is 2 on OMNI, 1 on YAGI)"
+  spec: docs/modules/channels.md
+  files:
+  - src/channels.js
+  - src/mesh-send.js
+  - src/messages-api.js
+  - src/automation.js
+  - src/callout.js
+  - src/resolve.js
+  - src/ws-relay.js
+  - src/config-api.js
+  test:
+    command:
+    - node
+    - tests/test_no_channel_resolver.mjs
+    criterion: no src file references the resolver or reads a channel name/psk, and src/channels.js does
+      not exist
+    runs: 1
+  trial:
+    file: .proofs/node-dash-resolves-channels-itself.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-08-19T22:44:20.776'
+    commit: caaaa99-dirty
+  fix:
+    file: .proofs/node-dash-resolves-channels-itself.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-08-19T23:01:59.118'
+    commit: caaaa99-dirty
+- id: traceroute-sends-with-no-channel-and-the-gateway-defaults-to-public
+  type: bug
+  what: src/traceroute.js posts /traceroute with {to} and no channel; the gateway answers 200 and silently
+    applies channel 0, the public mesh
+  spec: docs/modules/channels.md
+  files:
+  - src/traceroute.js
+  test:
+    command: null
+    criterion: every /traceroute post from src names its channel as 'public' or 'private'
+    runs: 1
+  trial: null
+  fix: null
+- id: outbound-rows-store-a-channel-word-inbound-store-an-index
+  type: bug
+  what: messages.channel now holds 'public'/'private' for rows we send and an integer for rows we receive,
+    so the column has two incompatible types
+  spec: docs/modules/channels.md
+  files:
+  - src/mesh-send.js
+  - src/db.js
+  test:
+    command: null
+    criterion: every row in messages.channel is the same type, or the column's two meanings are separated
+    runs: 1
+  trial: null
+  fix: null

@@ -37,10 +37,10 @@
                    every page, and it offered channels the radio does not have while
                    naming one it does have wrongly. Same source as the messages form
                    now: the radio's real channels, and a SERVED default. -->
-              <select class="select select-bordered select-sm" x-model.number="msgChannel"
-                      x-effect="if (msgChannel === null || msgChannelStale()) { msgChannel = msgDefaultChannel(); msgChannelFor = msgFrom }">
-                <template x-for="ch in msgFromChannels()" :key="ch.index">
-                  <option :value="ch.index" x-text="(ch.name || 'Channel ' + ch.index).toUpperCase() + (ch.designated ? ' · ' + ch.designated.toUpperCase() : '')"></option>
+              <select class="select select-bordered select-sm" x-model="msgChannel"
+                      x-effect="if (msgChannel !== 'public' && msgChannel !== 'private') { msgChannel = msgDefaultChannel() }">
+                <template x-for="ch in msgFromChannels()" :key="ch.value">
+                  <option :value="ch.value" x-text="ch.label"></option>
                 </template>
               </select>
             </div>

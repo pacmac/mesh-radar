@@ -44,7 +44,11 @@ const CHECKS = [
   // asserting the behaviour of a mechanism that should not exist.
   // docs/modules/app-config.md.
   { name: 'served_time',            group: 'fast',    cmd: 'node',    args: ['tests/test_served_time.mjs'],       needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
-  { name: 'channels',               group: 'fast',    cmd: 'node',    args: ['tests/test_channels.mjs'],          needs: '—',                   measured: '190 ms',   timeoutMs: 30_000 },
+  // `channels` REMOVED 2026-08-19 with src/channels.js. It tested a resolver this
+  // repo no longer has: the gateway resolves 'public'/'private' per radio, which
+  // it must, because private is index 2 on the OMNI and 1 on the YAGI.
+  // Replaced by no_channel_resolver, which asserts the ABSENCE.
+  { name: 'no_channel_resolver',    group: 'fast',    cmd: 'node',    args: ['tests/test_no_channel_resolver.mjs'], needs: '—',                 measured: '45 ms',    timeoutMs: 30_000 },
   { name: 'send_channel',           group: 'fast',    cmd: 'node',    args: ['tests/test_send_channel.mjs'],      needs: '—',                   measured: '120 ms',   timeoutMs: 30_000 },
   { name: 'resolve',                group: 'fast',    cmd: 'node',    args: ['tests/test_resolve.mjs'],           needs: '—',                   measured: '180 ms',   timeoutMs: 30_000 },
   { name: 'aim',                    group: 'fast',    cmd: 'node',    args: ['tests/test_aim.mjs'],               needs: '—',                   measured: '210 ms',   timeoutMs: 30_000 },

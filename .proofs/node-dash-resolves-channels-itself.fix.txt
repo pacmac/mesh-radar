@@ -1,0 +1,4 @@
+$ node tests/test_no_channel_resolver.mjs
+ok    src/channels.js is gone
+ok    69 src files carry no resolver reference and no channel secret
+2 ok, 0 failed

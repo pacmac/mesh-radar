@@ -49,17 +49,17 @@ export const DEFAULTS = {
   // is wrong at a glance. All public traffic was dead in the meantime; see
   // docs/modules/channels.md and commit 4a9b90b.
   //
-  // THE NAME IS PART OF THE IDENTITY, and an EMPTY primary name is the correct
-  // value for the default public channel — the firmware substitutes the modem
-  // preset name when hashing. `Public`, or any other string, is a channel of one.
-  'channels.pub_name':                '',
-  'channels.pub_psk':                 'AQ==',
-  // NEVER DEFAULTED, AND NEVER COMMITTED. The public key above is the published
-  // Meshtastic default and is not a secret; ours is. Null means "not designated"
-  // and every predicate in channels.js then fails closed rather than guessing at
-  // index 0. Set it at runtime.
-  'channels.pri_name':                null,
-  'channels.pri_psk':                 null,
+  // channels.pub_name / pub_psk / pri_name / pri_psk RETIRED 2026-08-19.
+  //
+  // They existed so channels.js could compute a channel's identity as
+  // sha256(name + NUL + psk) and match it against each radio's slots. Peter:
+  // "you need to know nothing about channels, channel indexes, PSKs, PKI, all
+  // you need to know is public and private." The gateway resolves; this repo
+  // holds no channel secret and no channel name. docs/modules/channels.md.
+  //
+  // Any values already in the config table are simply no longer read. They are
+  // not deleted here — a config migration that drops a PSK is not something to
+  // do as a side effect of removing the code that read it.
   'node_filters.max_age':     0,
   'node_filters.max_hops':    99,
   'node_filters.named_only':  false,
@@ -217,24 +217,34 @@ export const DEFAULTS = {
   },
 };
 
-// NEVER SERVED TO THE BROWSER. `channels.pri_psk` is a real secret, and the
-// browser makes ZERO channel decisions (docs/BROWSER_CONTRACT.md) — it asks the
-// backend for a role and is told a slot — so it has no use for any of them. The
-// name halves are withheld too: a caller that can read the name but not the key
-// is one short step from re-deriving the identity in the browser, which is the
-// duplication this module exists to prevent.
+// NEVER SERVED TO THE BROWSER, and kept AFTER the keys were retired above.
 //
-// Served as `<key>_present: true|false` so a settings page can still show
-// whether a role is designated without ever seeing what it is.
-const WITHHELD = new Set(['channels.pub_name', 'channels.pub_psk',
-                          'channels.pri_name', 'channels.pri_psk']);
+// The defaults are gone, but a live config table may still hold values written
+// before 2026-08-19 — and a real PSK does not stop being a secret because the
+// code that read it was deleted. Removing this set would start publishing
+// `channels.pri_psk` to every browser that asks for /config, which is the exact
+// opposite of what retiring it was for.
+//
+// Served as `<key>_present: true|false`, so the shape does not change either.
+//
+// A PREFIX, not a list of four names. Two reasons, and the second is why it
+// changed: enumerating them meant this file still contained the strings
+// `channels.pri_psk` and friends, and "no source file names a channel secret" is
+// the rule this repo now holds itself to. A prefix also covers whatever a future
+// key under `channels.` turns out to be, instead of failing open on it.
+//
+// `message_filter.channels` and `discovery.channel_util_pause` are unaffected —
+// neither begins with `channels.`.
+const WITHHELD_PREFIX = 'channels.';
+const isWithheld = key => typeof key === 'string' && key.startsWith(WITHHELD_PREFIX);
 
 router.get('/', (req, res) => {
   const result = {};
   for (const [key, fallback] of Object.entries(DEFAULTS)) {
-    if (WITHHELD.has(key)) {
-      // AN EMPTY NAME IS A DESIGNATION, NOT AN ABSENCE — it is precisely the
-      // correct value for the default public channel. Only null means undesignated.
+    if (isWithheld(key)) {
+      // Defensive rather than active: no key under `channels.` remains in
+      // DEFAULTS after 2026-08-19, so this does not fire today. It stays so that
+      // reintroducing one cannot silently start publishing it.
       result[`${key}_present`] = getConfig(key, fallback) != null;
       continue;
     }
@@ -580,7 +590,7 @@ router.get('/:key', (req, res) => {
   if (!(key in DEFAULTS)) return res.status(404).json({ error: 'Unknown config key' });
   // Withholding these from GET / and then serving them one at a time here would
   // be no withholding at all.
-  if (WITHHELD.has(key)) {
+  if (isWithheld(key)) {
     return res.json({ key, present: getConfig(key, DEFAULTS[key]) != null, withheld: true });
   }
   res.json({ key, value: getConfig(key, DEFAULTS[key]) });

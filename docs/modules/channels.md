@@ -1,230 +1,163 @@
 ---
 module: channels
-source: src/channels.js
-source_hash: 100dced1d85383821686e62199d3077a9a3482dd161adfe0591cb8c0e153c07e
-updated: 2026-08-18
+source:
+  - src/mesh-send.js
+  - src/messages-api.js
+  - src/automation.js
+  - src/callout.js
+  - src/resolve.js
+  - src/ws-relay.js
+source_hash: 944e40901d7552e85549676e4191a5d1d1e50e6040a360c8d63dc8b473400f95
+updated: 2026-08-19
 ---
 
-# Module: channels
+# node-dash knows two words: `public` and `private`
 
-## Purpose
+Peter, 2026-08-19:
 
-**The single source of truth for "which channel is this, and which slot do I send
-it on".** Nothing else in the codebase may decide a channel.
+> you need to know nothing about channels, channel indexes, PSKs, PKI, all you
+> need to know is public and private.
 
-Peter, 2026-08-16: *"the resolver needs to resolve this, needs an arg passed to it
-'pub or pri' ... I suspect there are lots of other places where the wrong channel
-is used. resolve should be the SSOT"*, and earlier: *"you CANNOT use channel index
-and assume that channel 1 is the private channel on all devices."*
+> so all code for resolve needs ripping out
 
-## A channel's identity is its NAME **and** its key
+That is the whole specification. A channel crosses this repo's boundary as one of
+two strings. Nothing here computes, stores, compares or reasons about an index, a
+name, a PSK or a key hash.
 
-`channelKey(name, psk)` = `sha256(name + NUL + psk)`, and `null` when there is no
-key.
+## What is deleted
 
-**Key alone is not enough, and getting that wrong cost five days of the YAGI.** An
-earlier version of this module identified a channel by its PSK fingerprint and
-concluded that our two PRIMARYs — same key, one unnamed and one named `Public` —
-were the same channel. Meshtastic derives the transmitted channel hash from the
-name *and* the key, so they are **not**: a primary renamed `Public` is a channel
-nothing else on the mesh is listening to.
+`src/channels.js` — 239 lines — in full, with its four importers rewired.
 
-Measured 2026-08-16, and this is the whole argument for the identity function:
+It was not broken. It resolved per device by `sha256(name + NUL + psk)` against
+our own configured identity, and returned `null` rather than `0` when nothing
+matched. Measured today it agrees with the gateway on both radios.
 
-| radio | idx | role | name | `channelKey` |
-|---|---|---|---|---|
-| OMNI `E9:B0` | 0 | PRIMARY | *(unnamed)* | `865e781a56f3…` |
-| | 1 | SECONDARY | `mqtt` | *(no key)* |
-| | 2 | SECONDARY | `Private` | `fffb995be728…` |
-| YAGI `F4:12` | 0 | PRIMARY | `Public` | `b7ecd210d6cd…` |
-| | 1 | SECONDARY | `Private` | `fffb995be728…` |
+**Being correct is not the argument for keeping it.** The instruction is that this
+repo should not know what a PSK is. Two implementations of one rule is how
+16–18 August happened, and this one being right tonight says nothing about the
+next firmware or the next radio. The gateway owns the radios; resolution belongs
+with the gateway.
 
-The two `Private` slots come out **identical** at different indices — that is the
-resolution the automation depends on. The two primaries come out **different**,
-which is the fault, and under the old key-only identity they looked the same.
+## The divergence that makes any local index wrong
 
-**`null` for an unencrypted channel, deliberately.** `mqtt` has no key. If it
-returned a constant, `null === null` would make it match a designated channel and
-a private broadcast would go out in clear.
+mesh-gw raised it, and it is confirmed here from two independent sources.
 
-## ⚠ A MISNAMED PRIMARY IS FIXED BY RENAMING THE RADIO — NEVER BY DESIGNATING IT
+Their resolver, live:
 
-**Read this before changing `channels.pub_key` or a radio's primary channel name.**
+```
+!2687afb1  OMNI   {"public": 0, "private": 2}
+!fa39f7b4  YAGI   {"public": 0, "private": 1}
+```
 
-The section above diagnosed the YAGI correctly on 2026-08-16. The fix was then
-applied **backwards**, and that cost two further days and every scrap of public
-traffic.
+Our own `messages` table, 14 days, which is traffic rather than opinion:
 
-`channels.pub_key` was set to `b7ecd210` — `channelKey('Public','AQ==')`, the
-YAGI's **broken** channel. The OMNI, named in the table above as the **correct**
-one at `865e781a` = `channelKey('','AQ==')`, was then renamed `Public` to match
-it. Both radios ended up transmitting into, and listening on, a channel nobody
-else on the mesh uses.
+```
+OMNI  E9:B0:3F:17:27:91   ch 0 x155    ch 2 x264
+YAGI  F4:12:FA:39:F7:B6   ch 0 x37     ch 1 x679
+```
 
-| | |
+OMNI carries a disabled `mqtt` slot at index 1, so its private sits at 2; YAGI has
+no such slot and its private sits at 1. **Any code holding "private = 2" transmits
+into an unconfigured slot on the YAGI** — silently, with no error.
+
+## The new contract
+
+| we send | gateway does |
 |---|---|
-| public text messages | 85/day → **0** |
-| nodeinfo refreshes | 185/day → **0** |
-| remote traceroutes | every one timed out |
-| Peter's own public messages | no replies for two days |
+| `POST /{id}/messages  {"text": "...", "channel": "private"}` | resolves on the radio addressed |
+| `POST /{id}/traceroute {"to": N, "channel": "public"}` | same, and refuses if the primary was renamed or re-keyed |
 
-Dead from 2026-08-16 ~18:15 until it was found on 2026-08-18.
+`channel` is **required** on `/messages` as of their `eb43840`; omitting it is a
+400. That refusal is about silence, not about PRIMARY — a caller that must say
+which channel it wants cannot land on the public mesh by accident.
 
-### Why nothing caught it
+**If an index is ever needed for anything else, take it from
+`GET /{id}/channels → resolved`. Never derive it.**
 
-**The radios and the config agreed with each other.** `divergences()` compares
-each radio to *our designation* — never to the mesh. Designate the wrong channel
-and every radio becomes "correct" and the check goes silent. A green resolver is
-not evidence that anybody can hear us.
+## The changes, call site by call site
 
-### The signature, so it is recognised in minutes
+| file | before | after |
+|---|---|---|
+| `src/channels.js` | the resolver | **deleted** |
+| `src/mesh-send.js` | `if (!Number.isInteger(channel)) throw` | require the string to be `public` or `private`; pass it through |
+| `src/messages-api.js` | passes `req.body.channel` (an index) | passes the word, unchanged |
+| `src/automation.js` | `indexFor(device, 'pri')`, drop when null | send `channel: 'private'` |
+| `src/callout.js` | `indexFor(gatewayNodeId, 'pub')`, withhold when null | send `channel: 'public'` |
+| `src/resolve.js` | `channels: { pub: …, pri: … }` in the radio record | field removed |
+| `src/ws-relay.js` | `refreshDeviceChannels` normalises name/psk and calls `setDeviceChannels` | the normalising and the call go; the device-list broadcast stays |
 
-**You still hear everyone, and you decrypt nothing from any stranger.** LoRa
-headers are unencrypted, so `from`, `snr` and last-heard keep updating and the
-dashboard looks entirely alive while every payload from a third party fails to
-decrypt. If node-dash decodes its own radios and the alarm units but no outside
-node, suspect the primary's **name** before anything else.
+### The guards stay, and change shape
 
-### The rule
+`automation.js` and `callout.js` each **drop the send** when a channel cannot be
+resolved, rather than falling back to `0`. That reasoning is still right, but the
+condition moves: there is nothing local left to be null. The gateway now answers
+with a **400** when `public` or `private` does not resolve, so the guard becomes
+"the send was refused" instead of "the index was null".
 
-The designation names **the channel the mesh is on**. Not "the channel our radios
-happen to carry", and never "the channel they agree on" — two radios can agree
-and both be wrong, which is precisely what happened here.
+**Neither may fall back to any channel on a refusal.** A private reply on the
+public mesh is the worst outcome that path can produce, and a callout into a
+channel nobody is on spends social capital while logging a success.
 
-### The name is load-bearing and is hashed verbatim
+### The one index that stays, and why it is not resolution
 
-From the firmware itself, `src/mesh/Channels.cpp` — the published documentation
-does not state this:
+`automation.js` gates on the channel a command **arrived** on:
 
-```c
-generateHash() = xorHash(getName(ch)) ^ xorHash(key)
-getName()      = the stored name, EXCEPT an empty name is replaced by the
-                 modem preset display name ("LongFast") when use_preset is set
+```js
+if (!isRole(device, pkt.channel ?? 0, 'pri')) return;   // before
 ```
 
-So empty ≡ `LongFast` ≡ the default public channel, and **any** other string —
-`Public`, a typo, a stray capital — is a private channel of one that looks
-perfectly normal in every UI. Set the primary's name to **empty** and leave it.
+Without it, an `@ping` shouted on the public mesh drives our rotator. That gate
+cannot be written in the two words today, because **inbound events carry an
+integer only** — `docs/gw/API_SSE.md:135`, "`channel` | int | Channel index". The
+gateway does not label a received packet public or private.
 
-## Roles: `pub` and `pri`
-
-Callers ask for a **role**, never an index and never a name:
-
-| config key | role | what it is |
-|---|---|---|
-| `channels.pub_key` | `pub` | the public mesh — LongFast, the channel strangers are on |
-| `channels.pri_key` | `pri` | our own private channel |
-
-The designation is **configured, not inferred**. "The channel both radios share"
-does not single either out, and inferring `pub` from "index 0" is exactly the
-assumption that hid the YAGI fault — index 0 on the YAGI *is* a primary, it is
-just the wrong one.
-
-**Automations run on `pri`.** Peter, 2026-08-16: *"FYI for the time being
-automations will work on private channel."*
-
-## API
-
-| function | returns | notes |
-|---|---|---|
-| `channelKey(name, psk)` | `string \| null` | identity: name **and** key |
-| `designatedKey(role)` | `string \| null` | the configured key for `pub`/`pri` |
-| `indexFor(device, role)` | `number \| null` | **the slot to transmit on** |
-| `roleOf(device, index)` | `'pub' \| 'pri' \| null` | what a received channel IS |
-| `isRole(device, index, role)` | `boolean` | the only permitted membership test |
-| `channelsFor(device)` | `array` | every known channel on that radio |
-| `divergences()` | `array` | radios missing a designated channel — see below |
-| `setDeviceChannels(device, chans)` | — | fed by ws-relay; this module does no HTTP |
-
-### The resolver absorbs the vocabulary; callers do not convert
-
-`device` may be a **BLE MAC** (`E9:B0:3F:17:27:91`) or a **node id**
-(`!2687afb1`), case-insensitive. `ws-relay` registers each radio's table under
-both, because it holds both.
-
-`docs/IDENTITY.md` is LAW that the MAC is canonical — `__ble_addr`, present from
-first scan, surviving reboots and factory resets, while `node_id` is an attribute
-that is null until first sync. Measured 2026-08-16 across 34 live gw events:
-`addr` and `__ble_addr` never differed and were never absent; `node_id` was
-missing on 3 of them.
-
-**Accepting both is not a softening of that law, it is enforcement of it.**
-Callers legitimately hold different vocabularies — `dash-mode.transmitterForMode()`
-returns a node id via `macToNodeId()`, so `callout` is handed `!fa39f7b4` and never
-sees a MAC. If the resolver took MACs only, every caller would grow its own
-conversion, which is how eleven identity helpers across five modules came to exist.
-One boundary converts; nothing beyond it does.
-
-Short forms (`27:91`, `TA2o`) are **not** accepted. Across 1,056 nodes, last-4 hex
-collides 20 times and short names 26 times; they are unambiguous only within our
-own radios, and a resolver that is safe for two devices and unsafe for the mesh is
-a trap. `IDENTITY.md`: *"The 4-char suffix is NOT an identifier."*
-
-**The pair (device, index) is the only thing that identifies a slot**; neither half
-alone is sufficient.
-
-### Where the data comes from is behind this boundary
-
-Peter, 2026-08-16: *"whether or not the resolver gets its data from cache or
-directly from mesh-gw could be changed provided that resolver is the SSOT for
-antenna / channel selection."*
-
-Today `ws-relay` feeds it on device READY. It could feed from `GET /devices` on
-every call instead, and no caller would change. That is the property worth
-protecting: callers ask for a **role on a radio**, never for an index, so the
-source can move without a sweep.
-
-### `indexFor` returns `null`, never a default
-
-A caller that fell back to `0` would transmit on whatever that radio's primary
-happens to be. On the YAGI that is the misnamed channel; on any radio it is the
-public mesh when you asked for private. **Null means "cannot send", not "send
-anyway".**
-
-### `divergences()` — the SSOT reports its own gaps
-
-For each radio, any designated role with no matching slot. This is the check that
-would have caught the YAGI on 12 August instead of five days later:
+So the gate stays, and its number comes from the **gateway's own answer**:
 
 ```
-[{ device: 'F4:12:FA:39:F7:B6', role: 'pub', reason: 'no slot carries the designated key' }]
+GET /{id}/channels -> {"resolved": {"public": 0, "private": 1}}
 ```
 
-A radio that cannot reach the public mesh is not a quiet edge case — it is a radio
-whose every public transmission goes nowhere, silently, while the dashboard shows
-a plausible combined success rate carried by the other radio.
+mesh-gw asked for exactly this in `remove-your-channel-resolver`: *"if you keep
+any index-derived logic at all, source the index from `resolved` rather than from
+your own pass over the channel list."*
 
-## Known callers that still choose a channel themselves
+**This is not a resolver.** It computes nothing, reads no PSK, hashes no name, and
+holds no rule about what makes a channel private. It caches an answer given to it,
+per radio, and compares an integer. If the gateway's answer changes, ours changes
+with it — which is the entire point of removing the second implementation.
 
-Found 2026-08-16 while making this the SSOT. **Not migrated in this task** — each
-needs its own change and its own proof, and Peter's "lots of other places" is a
-scope warning, not an invitation to do them all at once:
+Raised with mesh-gw as `inbound-packets-carry-no-channel-role`: label received
+packets with the resolved role and this last integer disappears too.
 
-**MIGRATED 2026-08-16**, task `channel-callers-onto-resolver`:
+**It fails CLOSED.** No cached answer, or a `private` of `null`, means the gate
+returns false and the automation does not run. Silence is the safe failure; acting
+on a public command is not.
 
-| site | was | now |
-|---|---|---|
-| `src/callout.js` | `channel: 0` hardcoded | `indexFor(dev,'pub')`, and **refused** when it will not resolve |
-| `src/messages-api.js` | `req.body.channel ?? 0` | **400** when the channel is unstated |
-| `src/mesh-send.js` | `channel ?? 0`, and undefined dropped from the body | **throws** `channel required` — the chokepoint every sender crosses |
+### Config keys retired
 
-**`src/imap-receiver.js:112` is deliberately NOT migrated.** Its `ctx.channel ?? 0`
-reads a reply token built in `alerts.js:169/:185` from `pkt.channel` — it **echoes
-the channel the original message arrived on**, which is the same shape as
-`alerts.js` and `persist.js`. Echoing is not choosing. Routing it through the
-resolver would replace a correct answer (reply where they spoke) with a guess
-(reply on whichever role we think fits).
+`channels.pub_name`, `channels.pub_psk`, `channels.pri_name`, `channels.pri_psk`.
+`/config` currently publishes only `channels.*_present` booleans, because the PSK
+is sensitive — after this, the repo has no reason to hold either half.
 
-`src/alerts.js` and `src/persist.js` likewise echo the arrival channel and are
-correct as they stand.
+### Explicitly NOT changed
 
-## What this module does not do
+- **The `channel` column in `messages`.** It records the index a packet was
+  *received* on, which is history and is per-gateway by nature. This task is about
+  what we **send**, and rewriting stored history to a word would destroy the
+  evidence that proved the divergence above.
+- **`src/traceroute.js:507`** — `bridge.post(…/traceroute, { to })` carries no
+  channel. Whether the gateway now refuses that is checked during implementation;
+  if it does, it is fixed here as a channel-carrying send, and if it does not, it
+  is registered rather than tidied.
 
-- **No policy.** "Never transmit on `pub` unattended" is a caller's rule.
-  `callout.js` transmits publicly on purpose and correctly.
-- **No name lookup.** No function takes a channel name; a name is half an
-  identity, and half an identity is how this went wrong.
-- **No HTTP.** `ws-relay`'s `refreshDeviceChannels()` feeds it on every device
-  READY. A second fetcher would be a second source of truth for one question.
-- **No persistence across restarts.** The table is rebuilt from the radios, so a
-  channel edited on a radio is picked up without a migration.
+## Test notes
+
+- no file under `src/` imports `channels.js`, and the file does not exist
+- `grep -rn "indexFor\|channelKey\|designatedKey\|setDeviceChannels" src/` is empty
+- no `psk` or `pub_name`/`pri_name` config read remains in `src/`
+- a send with `channel` omitted is refused by us before it reaches the gateway
+- a send with `channel: 'private'` reaches the gateway carrying the word, not an
+  integer — asserted on the request body, since the index is no longer ours to
+  know
+- the two radios still receive on different private indices, and nothing in `src/`
+  depends on which

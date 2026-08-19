@@ -49,34 +49,31 @@ export const messagesMixin = {
   // The sending radio's configured channels (device_list dev.channels,
   // backend task device-channels-on-list). Fallback before the first fetch:
   // Primary only. Display convenience — no decisions.
-  // The SERVED starting channel for the selected radio. The browser does not
-  // choose one — a channel index means different things on different radios, and
-  // choosing here is what let the form sit on the YAGI's dead `Public` slot.
-  // `null` means the backend could not resolve it, and the form must say so
-  // rather than substitute a number.
+  // The SERVED starting channel — the WORD 'private', from device_list. The
+  // browser still does not choose: it renders what the backend states.
   msgDefaultChannel() {
     const d = this.availableDevices.find(x => x.node_id === this.msgFrom);
-    return d?.default_channel ?? null;
+    return d?.default_channel ?? 'private';
   },
 
-  // True when the current selection does not belong to the selected radio.
+  // WHY THIS NO LONGER EXISTS AS A HAZARD, kept as a record because the bug it
+  // guarded was live and is instructive.
   //
-  // THIS IS NOT "DOES THE INDEX EXIST", AND THE DIFFERENCE IS THE WHOLE BUG.
-  // The original code asked whether the index existed on the new radio and kept
-  // it if so. Caught live 2026-08-16: selecting Private on the YAGI (index 1),
-  // then switching to the OMNI, left the form on index 1 — which on the OMNI is
-  // `mqtt`, an UNENCRYPTED channel. The index existed, so the check passed, and
-  // a private message would have gone out in clear.
+  // The form used to hold an INDEX. Caught 2026-08-16: selecting Private on the
+  // YAGI (index 1), then switching to the OMNI, left the form on index 1 — which
+  // on the OMNI is `mqtt`, UNENCRYPTED. The index existed on both radios, so an
+  // "is this index valid" check passed, and a private message would have gone out
+  // in clear. The guard asked which radio the selection was made on.
   //
-  // A channel selection is only meaningful for the radio it was made on. So the
-  // question is which radio it was made on, not whether the number fits.
+  // 'private' means private on every radio, so switching radios cannot change
+  // what the selection means. The staleness question disappears with the index.
   msgChannelStale() {
-    return this.msgChannelFor !== this.msgFrom;
+    return false;
   },
 
+  // The two choices, and there are only ever two.
   msgFromChannels() {
-    return this.availableDevices.find(d => d.node_id === this.msgFrom)?.channels
-        || [{ index: 0, name: '', role: 'PRIMARY' }];
+    return [{ value: 'public', label: 'PUBLIC' }, { value: 'private', label: 'PRIVATE' }];
   },
 
   displayMessages() {
@@ -97,16 +94,23 @@ export const messagesMixin = {
       return;
     }
     this.msgSent = false;
-    // NO `Number(null)` — IT IS 0, AND 0 IS THE PUBLIC MESH.
-    // The unresolved case must refuse, not coerce. This is the same rule the
-    // backend now enforces in sendMeshText: a channel is stated or the send does
-    // not happen. Coercing here would have quietly reintroduced the defect this
-    // whole change exists to remove.
-    if (!Number.isInteger(Number(this.msgChannel)) || this.msgChannel === null || this.msgChannel === '') {
-      this.showToast('No channel resolved for this radio — nothing sent', 'error', 0);
+    // A CHANNEL IS ONE OF TWO WORDS, AND NEVER A NUMBER.
+    //
+    // This used to coerce with Number() and refuse a non-integer, because the
+    // browser was handed an INDEX. Peter, 2026-08-19: "you need to know nothing
+    // about channels, channel indexes, PSKs, PKI, all you need to know is public
+    // and private." The gateway resolves the word against the radio addressed —
+    // it must, because private is index 2 on one of our radios and 1 on the
+    // other. docs/modules/channels.md.
+    //
+    // The refusal stays and is now exact: anything that is not one of the two
+    // words does not go. There is no coercion left to reintroduce `Number(null)
+    // === 0`, which is the public mesh.
+    if (this.msgChannel !== 'public' && this.msgChannel !== 'private') {
+      this.showToast('Choose Public or Private — nothing sent', 'error', 0);
       return;
     }
-    const text = this.msgText, channel = Number(this.msgChannel), time = new Date().toLocaleTimeString();
+    const text = this.msgText, channel = this.msgChannel, time = new Date().toLocaleTimeString();
     const fromId = this.msgFrom;
     if (!fromId) {
       this.showToast('No sender selected — choose a gateway device before sending', 'error', 0);
