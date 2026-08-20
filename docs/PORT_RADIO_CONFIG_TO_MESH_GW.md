@@ -13,6 +13,37 @@ updated: 2026-08-20
 
 # Porting radio config save / load / verify to mesh-gw
 
+> ## Correction, 2026-08-20 — which LAYER, not just which repo
+>
+> This document says "mesh-gw" throughout without distinguishing **core** from
+> **plugin**. Their plugin host went live (`ee22ae0`) after it was written, with
+> this division:
+>
+> > **core** holds the BLE session, passes bytes, decodes MESHTASTIC PROTOCOL
+> > fields, resolves what a channel index means on a given radio.
+> > **plugin** holds meaning ABOVE that: an application payload's schema,
+> > retention, aggregation, correlation.
+>
+> **By that rule this is CORE.** `AdminMessage`, `Config` and `ModuleConfig` are
+> Meshtastic protocol, not an application payload above it, and the
+> `protect_primary_channel` guard already lives in their `send_admin`.
+>
+> **It must not be a plugin, and the reason is their isolation rule:** *"Ten
+> consecutive failures disable your plugin for the process lifetime."* A config
+> write fails whenever the radio is asleep, reconnecting or mid-reboot — and a
+> save **reboots the radio**, so failures cluster by construction (measured: OMNI
+> `RECONNECTING → READY` on every module-config write, ~16 s). Ten consecutive is
+> a bad afternoon, not a pathological case. The failure mode would be **saving
+> silently stops working until restart**.
+>
+> **Corollary:** the audit chain must live in the *same layer* as the write. If
+> `backup_before_save()` sat in a plugin that got disabled, writes would continue
+> and the chain would grow holes with nothing saying so. Whoever owns `write()`
+> owns the backup. (Backup *ownership* remains Peter's separate topic — §10.3.
+> This is about layer, not repo.)
+>
+> Raised with them as #66; unanswered at the time of writing.
+
 **Status: a handover proposal, not a decision.** Peter is offloading radio-facing
 work to mesh-gw plugins because the gateway knows its own radios. This is the
 inventory, the contract the browser already speaks, and — more valuable than
