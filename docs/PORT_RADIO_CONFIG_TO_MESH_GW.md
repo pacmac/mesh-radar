@@ -250,16 +250,15 @@ async def backup_before_save(device: str) -> str:
    `/config/{section}` adds `__reboot` and `__notes` for the form,
    `radio_backup` carries neither. Not stripping them reports 8 false mismatches.
 
-### The open question we would put to Peter
+### Ownership of the chain is NOT settled by this port
 
-If you own the write, **the backup must move with it** — otherwise a save happens
-with no record whenever node-dash is down or another caller writes directly.
-Atomicity beats convenience.
+Peter, 2026-08-20: *"backups are a different topic"*. He is deciding it separately,
+so nothing here rules on it.
 
-The cost: that chain is currently the only *independent* record of config changes.
-Moving it makes one source where there were two. Peter has separately said he
-wants a second verdict on device exchanges, so this is worth him deciding rather
-than either of us assuming.
+What is worth knowing while you scope the work: `backup_before_save()` sits
+*inside* `write()` today, so replacing `write()` forces the question. The two
+failure modes to avoid are a save with no record (if it is dropped) and two
+partial chains (if both repos keep one). Raise it rather than picking.
 
 ---
 
@@ -393,7 +392,9 @@ the public mesh while it still hears public nodes and decrypts none. Two days,
 
 ---
 
-## 8. What node-dash keeps
+## 8. What node-dash keeps — the presentation layer, and nothing else
+
+Peter, 2026-08-20: *"all we do is provide the presentation layer thats all"*.
 
 - the forms (`app-config.js`, `app-forms.js`) — rendering a served schema
 - which device and section the operator chose
@@ -403,6 +404,14 @@ the public mesh while it still hears public nodes and decrypts none. Two days,
 The browser decides nothing (`docs/BROWSER_CONTRACT.md`). It posts form values and
 renders what comes back. It composes no `AdminMessage`, picks no section order, and
 names no admin field.
+
+**And after this port, neither does our backend.** That is the test to apply to
+anything left behind: if it decides, judges, orders, resolves or composes, it is
+yours. If it only draws, it is ours.
+
+Serve the schema **ready to render** — types resolved, interval fields already
+closed choices, labels present. A raw schema we have to decorate would make us
+decide again, which is the thing being removed.
 
 ---
 
@@ -421,15 +430,31 @@ names no admin field.
 
 ---
 
-## 10. Where we are least sure
+## 10. Settled by Peter — the three open questions are closed
 
-Told plainly, because a spec that hides its soft spots wastes your time:
+An earlier draft of this section listed three things we were unsure of. Peter,
+2026-08-20, answered all three in one sentence:
 
-1. **Whether the interval allowlists belong with you at all.** They are the *app's*
-   curation of what a human may enter, not firmware limits. We think one
-   fully-formed schema beats a schema plus a decorator — but it is arguable, and
-   you may prefer to serve raw and let the UI decorate.
-2. **Where the backup files should live**, per §4. Genuinely Peter's call.
-3. **Whether the plugin boundary is the whole save or only transport.** If it is
-   only transport, the write ends up split across two repos, which is worse than
-   either of us owning it. We would rather you took all of it.
+> backups are a different topic, yes they will validate, all we do is provide the
+> presentation layer thats all
+
+**1. The boundary is the WHOLE save, not transport.** node-dash is the
+presentation layer and nothing else. No `AdminMessage` is composed here, no
+section order chosen, no admin field named, no value judged. Our routes become a
+proxy or disappear.
+
+**2. Validation is yours.** So §5 ports in full — the allowlists, the generator and
+the vendored Kotlin. Serve a schema the UI can render directly, with interval
+fields already reduced to closed choices; do not serve a raw schema expecting us
+to decorate it, because decorating is a decision and we no longer make any.
+
+**3. Backups are a separate topic and are NOT decided by this port.** §4 stays in
+this document because it describes what our code does today and the traps in the
+format — you need that if the audit chain ends up with you. But do not treat "who
+owns the backup" as part of this piece of work. Peter is handling it separately.
+
+The practical consequence: `backup_before_save()` is currently *inside* our
+`write()`, so it comes up the moment you replace `write()`. If the chain has not
+been settled by then, **ask rather than assume** — dropping it silently would end a
+record Peter asked for explicitly, and duplicating it in both repos would give two
+partial chains, which is worse than one.
