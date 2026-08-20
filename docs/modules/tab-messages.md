@@ -1,186 +1,141 @@
 ---
 module: tab-messages
-source: public/partials/tab-messages.html
-source_hash: 8874c10f22aaee77d7c689bc152d837368ef81c75386465abd0c45f92c3ea6ed
-updated: 2026-08-16
+source:
+  - public/partials/tab-messages.html
+  - public/app-messages.js
+  - src/filters.js
+source_hash: 2af1427c0ba3cf59c5b9cbc8ef7548d92957506f29bfb091eece7155031f6dc3
+updated: 2026-08-20
 ---
 
-# Module: tab-messages
+# The messages page is a chat, not a log
 
-## Purpose
+Peter, 2026-08-20:
 
-Messages page: compose card (device/recipient/channel selection, @mention
-autocomplete, quick emoji) and filtered message feed card. Presentation only.
+> the order that messages are displayed seems to be completely random. in fact
+> this whole page is not very intuitive at all and needs re-designing
 
-## Current feed controls and row treatment (2026-07-24)
+> we should display messages like the phone app does it
 
-The feed header contains one compact joined control with four mutually
-exclusive viewer filters: `ALL`, `BCAST`, `DIR`, and `CHAT`. The selected id is
-stored in `msgFilter`; `displayMessages()` owns the corresponding ordered
-subset.
+## First, the ordering is not random
 
-Rows use server-derived delivery facts consistently:
+Measured before changing anything — the served list is strictly descending by
+`ts`, **0 out-of-order transitions across 15 rows**. Two things make it *look*
+random, and only one of them is this page's fault:
 
-- direct messages: warning-tinted left rule;
-- non-primary broadcast/private-channel traffic: success-tinted left rule;
-- primary broadcast chat: neutral row;
-- TX/RX remains visible in the avatar arrow, independent of traffic class.
+1. **Three YAGI rows dated in the future** (up to ~14 h ahead) sit pinned at the
+   top and never move. Registered separately as
+   `messages-carry-timestamps-hours-in-the-future`; **not fixed here**.
+2. **Nothing anchors the eye.** One flat firehose of 12,779 rows with no
+   conversation boundary, no sender continuity, no date break, and replies drawn
+   with no visible relationship to what they answer. Correct order, unreadable
+   presentation. That is what this task fixes.
 
-The toolbar changes only the current viewer's presentation. Message history,
-threading, identity and order remain server-owned and arrive over WebSocket.
+**No `display_stamp` column.** Peter proposed one — a stored sort key that a reply
+bumps — and asked for a better way. The app's answer is better, and the app does
+not reorder anything at all. A bump-on-reply key is a second source of truth for
+"when" (we already have one open timestamp defect), it mutates the past so a
+message you read at position 20 jumps to position 1 hours later, it does not
+compose for reply-to-a-reply, and it destroys "position means time".
 
-## Mobile containment (2026-07-23)
+## What the app actually does
 
-The 12 quick-reply buttons use a six-column grid on phones and a twelve-column
-grid from `sm`, preventing the final “73” action from extending past 390px.
+From `feature/messaging/`, read rather than inferred from the screenshot:
 
-## Scope
+| behaviour | evidence |
+|---|---|
+| newest at the **bottom**, oldest above | `MessageListPaged.kt:226` — `reverseLayout = true` |
+| *(we deliberately differ — see below)* | |
+| **per-conversation**, never one global list | `viewModel.getMessagesFromPaged(contactKey)` |
+| a reply renders **a snippet of its parent** above itself | `MessageScreenComponents.kt:178` — `ReplySnippet(originalMessage, …)` |
+| reactions attach to their message | `message.emojis`, `onSendReaction(emoji, replyId)` |
+| an unread divider, not a badge | `UnreadMessagesDivider` |
+| full timestamps are a **toggle**, not always on | `showFullMessageTimestamps` |
 
-**STYLE_GUIDE.md compliance refactor (task `messages-refactor`).** Zero logic
-changes.
+The screenshot shows the consequence: the same parent quoted twice, above each of
+the two replies to it, while the parent itself stays where it was sent.
 
-Files in scope (style task): `public/partials/tab-messages.html`.
-Files in scope (message-flow-audit): `public/partials/tab-messages.html`,
-`public/app-ws.js` (packet dedupe — see docs/modules/app-ws.md),
-`public/app.js` (msgHistory seed removed),
-`public/app-messages.js` (msgHistory localStorage write removed).
-NOT changed: `src/messages-api.js`, `src/ws-relay.js` (backend verified
-correct against the gw V2 contract).
+## The conversation model
 
-## Changes
+A conversation is the app's `contactKey`. Ours is derivable from what is already
+served — no new storage:
 
-| Location | Before | After |
-|---|---|---|
-| Form row labels From/To/Ch (l.10, 23, 41) | `text-xs text-base-content/60` | `text-sm text-base-content/60` |
-| From/To segmented joins (l.13, 25–26) | `btn-xs` | `btn-sm` (compose form controls, not dense rows) |
-| Direct-recipient select (l.28) | `select-xs` | `select-sm` (matches channel select) |
-| Reply indicator strip (l.50) | `text-xs` | `text-sm` (interactive element) |
-| Direction dot (l.110) | `w-3.5 h-3.5 … text-[9px]` | `w-4 h-4 … text-xs` (banned px size; dot grows 2px) |
+- **a channel** — `is_dm = 0`, grouped by `channel_name`
+- **a direct message** — `is_dm = 1`, grouped by the *other* node
+  (`from_num` when they sent it, `to_num` when we did)
 
-Kept as-is (sanctioned):
-- `:style` reply-depth indent — runtime-computed from data (§7)
-- Mention autocomplete `menu-xs` + `text-xs` — dense list
-- Ack status / device badges `text-xs`/`badge-xs` — feed metadata captions
-- Message body `text-base` — user content, not UI chrome; deliberate emphasis
-- "→ node" hint `text-xs` — caption
+Measured: 11,202 broadcast rows, 1,577 DM rows across **13** distinct partners.
 
-## Message-flow fixes (task `message-flow-audit`)
+The page becomes a **list of conversations**, each showing its latest line and
+time, and an **open conversation** rendered as a chat.
 
-**Live RX dedupe (fixes frozen feed):** with multiple radios the same mesh
-packet arrives as one `packet` event per radio. The handler now dedupes by
-`pktId`: the first arrival appends; later arrivals merge their source device
-into `src` and fill missing rssi/snr — never a second entry. Duplicate feed
-entries previously produced duplicate `x-for` keys, crashing Alpine's keyed
-renderer and freezing the feed until reload.
+## NEWEST AT THE TOP — the one place we do not copy the app
 
-**Feed keys:** `:key` composes `_txKey || pktId + '_' + direction` so a key
-collision is structurally impossible.
+Peter, 2026-08-20, asked directly and answered directly: **"no newest at the TOP"**.
 
-**V2 status vocabulary:** the ACK indicator maps the gw V2 `message_status`
-states (API_SSE §message_status): `sent`/`queued` → ✓ (dim), `relayed` → ↻
-(warning), `delivered` → ✓✓ (success, with ack node), `failed`/`no_ack`/
-`queue_failed` → ✕ (error), `no_ack_needed` → ✓ (broadcast terminal — no
-receipt possible). "awaiting ACK…" shows for DMs in non-terminal states.
-Legacy V1 names (acked/confirmed/sending/retrying) removed.
+The app is bottom-anchored (`reverseLayout = true`) because it is a phone
+messenger you talk *into*. This is a dashboard you *read*, usually to see what
+just happened, and the newest line should be where the eye lands without
+scrolling. That is a product decision about his dashboard, not a correctness
+question, and it is his.
 
-**localStorage msgHistory seed removed** (BROWSER_ARCH messages[] writer
-consolidation): `messages[]` is written only by `message_history` (replace),
-the live `packet` append, and the optimistic TX entry (sanctioned deviation:
-reconciled via the `pkt_id` hint sent to the gw, so status events match).
+**The consequence, stated because it changes what the quote is for.** With newest
+first, a reply is rendered **above** the message it answers — the parent is
+further *down* the page, not up. So the quoted snippet is not a convenience here;
+it is the only thing carrying the context, because scrolling toward the parent
+means scrolling the wrong way through time. Every reply must show its quote.
 
-## Invariants
+Everything else in this document follows the app.
 
-- Send flow remains untouched by the viewer filter.
-- **The channel `<select>` lists the SELECTED RADIO's real channels and nothing
-  else**, each labelled with its served designation (`· PUB` / `· PRI`), and its
-  value comes from `default_channel`. It previously fell back to a literal `0`;
-  `tab-shared.html`'s copy was worse — **eight hardcoded options, 0-7**, unrelated
-  to the radio, with index 0 labelled "Primary". Both are the same source now.
-- The feed iterates `displayMessages()` and keeps the stable server `m.key`.
-- Filter buttons never fetch page data and never mutate message rows.
-- No raw colors; the only remaining `text-[...]` arbitrary sizes are removed
+## The message row
+
+Newest first, oldest below — the reverse of the app, per the section above.
+
+- **sender heading** — `short_name` and `!id`, shown only when the sender changes,
+  so a run from one node reads as one block
+- **own messages** align right and are tinted; others align left
+- **quoted parent** above any message with `reply_id`, showing the parent's sender
+  and text, muted and outlined — the `ReplySnippet` shape
+- **date separator** when the day changes
+- **status** — the existing `status` field, on our own messages only
+- **signal** — `snr`/`rssi`/`hops` stay available but are secondary, not part of
+  the bubble line
+
+## The one backend change
+
+`src/filters.js` gains a resolved `reply_to` on each row: `{ packet_id,
+short_name, text }` for the message this one answers, or `null`.
+
+**Resolved server-side deliberately.** The browser could match `reply_id` against
+`packet_id` within the loaded window, but the parent is frequently outside it —
+3,595 rows carry a `reply_id`, and a reply to something older than the window
+would silently render with no quote. Serving it means the quote is present or
+explicitly absent, and the browser continues to decide nothing
+(`docs/BROWSER_CONTRACT.md`).
+
+## Explicitly NOT in this task
+
+- **The future-timestamp rows.** Registered; fixing them here would mix a data
+  defect into a presentation change.
+- **Reactions.** The app has them; we have no emoji-reaction data on the wire yet.
+  Rendering an empty affordance would imply a feature that does not exist.
+- **Unread tracking.** There is no read state stored, so an unread divider would
+  be invented rather than shown.
+- **Sending.** The compose box, its channel words and its guards were changed
+  hours ago in `2f381eb` and are not touched.
+- **Search within a conversation.** The app has it; it is a separate task.
 
 ## Test notes
 
-Playwright, both themes (guide §8): compose controls legible, filter join
-selects each view, feed renders from WS history, and there are 0 console errors.
-
-## TX row treatment + 200-row window (task `feed-tx-cap-style`, 2026-07-17)
-
-Sent messages were visually near-identical to received ones (only the small
-avatar ↑ badge and ACK tick differed) — easy to scan past in a busy feed.
-The feed row div now adds `bg-success/5 border-l-2 border-l-success` when
-`m.direction === 'tx'` (success = the established TX color, matching the
-avatar badge). Non-partial edit in the same task (module unspecced):
-`app-messages.js` sendMessage trim cap 50 → 200, matching the backend's
-`message_history` depth (task `message-tx-broadcast`) so optimistic sends
-don't shrink the window the next replay refills.
-
-## Named channel select (task `send-channel-names`, 2026-07-17)
-
-The Ch select offered static indexes 0–7 regardless of configuration —
-sending on an unconfigured channel silently fails, and bare numbers mean
-nothing. It now iterates `msgFromChannels()` (the sending radio's
-`dev.channels` from the device_list, backend task `device-channels-on-list`),
-rendering `ch.name` UPPERCASED for display (values stay numeric indexes);
-unconfigured slots don't appear. Fallback before the first channels fetch:
-`[{index:0}]`. Helper `msgFromChannels()` lives in `app-messages.js` (display
-convenience, no decisions).
-
-> **SUPERSEDED 2026-08-16, task `send-form-default-channel`.** Two things above
-> are no longer true and were actively harmful:
->
-> - *"'Primary' for an unnamed index 0"* — labelling index 0 "Primary" asserts a
->   role from a number. On the YAGI index 0 is a primary named `Public` that
->   nothing on the mesh is listening to. Options now carry the **served**
->   designation (`· PUB` / `· PRI`) and never infer one.
-> - *"An `x-effect` resets `msgChannel` to 0 when the From radio changes to one
->   that lacks the selected index."* — the reset target was a literal, and the
->   trigger was wrong. "Lacks the index" is not the failure: selecting Private on
->   the YAGI (index 1) then switching to the OMNI **kept** index 1, which on the
->   OMNI is `mqtt` and unencrypted. The index existed, so nothing fired.
->
-> The trigger is now "was this selection made for a different radio"
-> (`msgChannelFor`), and the value comes from `device_list.default_channel`.
-
-## Per-viewer feed filter (task `message-feed-filters`, step 3, 2026-07-20)
-
-A filter toolbar sits between the "Message Feed" `<h2>` and the feed scroll
-container — three rows (Type / Device / Channel), each a `.join` button group in
-the established `join-item btn btn-xs` style (denser than the compose `btn-sm`
-controls). **Not dropdowns** (Peter). Each row:
-
-- A leading **All** button — `btn-primary` when that dimension's filter array is
-  empty, else `btn-outline`; `@click="clearMsgFilter('<Dim>')"`.
-- One button per option (`x-for`), `btn-primary` when
-  `msgFilterActive('<Dim>', v)` else `btn-outline`; `@click="toggleMsgFilter(...)"`.
-- Multi-select within a row; the three rows AND across dimensions.
-
-Options come from `app-messages.js`: `msgTypeOptions()` (fixed 5 buckets, labelled
-`capitalize`), `msgDeviceOptions()` (distinct feed MACs, labelled via
-`deviceLabel`), `msgChannelOptions()` (distinct **raw** channel numbers — sends
-store index, receives store hash, so Peter tests raw then we refine). The Device
-and Channel rows are `x-show`-guarded on their option count so an empty dimension
-draws nothing.
-
-The feed `x-for` is unchanged (`m in displayMessages()`), but `displayMessages()`
-now returns the filtered subset (see `app-messages.md`). The empty-state line
-switches on `displayMessages().length===0` and reads "No messages match the
-current filters" when `messages.length` is non-zero, else "No messages yet…".
-
-Filter selection is a **per-viewer** localStorage pref (`app.js` state
-`msgFilterType/Device/Channel` via `persistGet`) — not server config. Contract-clean:
-the *classification* of each message is server-computed; the user's show/hide is raw
-input + presentation. Files: `public/partials/tab-messages.html` (toolbar +
-empty-state), `public/app-messages.js` (bucket field, filter methods,
-`displayMessages` filtering), `public/app.js` (3 persisted state fields — unspecced
-aggregate root).
-
-## Filter toolbar removed (task messages-chat-only, 2026-07-20; superseded)
-
-The type/device/channel button groups are gone; the feed is chat-only server-side.
-Empty state is a single case again ("No messages yet…").
-
-The three-dimensional toolbar described above remains removed. The current
-2026-07-24 toolbar is the smaller four-view `ALL/BCAST/DIR/CHAT` control defined
-under “Current feed controls and row treatment”.
+- a conversation list appears, with one entry per channel and one per DM partner
+- opening a conversation shows only that conversation's messages
+- within it, `ts` **decreases** downward: newest first, per Peter's instruction —
+  the opposite of the app, and asserted so a later "make it match the app" change
+  cannot silently flip it
+- a message with `reply_id` renders a quote of its parent above it, with the
+  parent's sender name
+- a reply whose parent is outside the window still renders, with no quote rather
+  than a broken one
+- consecutive messages from one sender show the heading once
+- the page renders at 1600x1000 and 1280x800, in both themes, with no horizontal
+  overflow and nothing clipped

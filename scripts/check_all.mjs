@@ -54,6 +54,10 @@ const CHECKS = [
   { name: 'aim',                    group: 'fast',    cmd: 'node',    args: ['tests/test_aim.mjs'],               needs: '—',                   measured: '210 ms',   timeoutMs: 30_000 },
   { name: 'traceroute_flow',        group: 'fast',    cmd: 'node',    args: ['tests/test_traceroute_flow.mjs'],   needs: '—',                   measured: '2.6 s',    timeoutMs: 60_000 },
 
+  // Live because the parent lookup is a SQL join over real rows — a fixture would
+  // assert the shape of its own mock. Exits 127 when the service is down, which
+  // the register reads as a mistrial rather than a conviction.
+  { name: 'reply_snippet',          group: 'service', cmd: 'node',    args: ['tests/test_reply_snippet.mjs'],     needs: 'node-dash up',        measured: '90 ms',    timeoutMs: 30_000 },
   { name: 'check_snapshot',         group: 'service', cmd: 'node',    args: ['scripts/check_snapshot.mjs'],       needs: 'node-dash up',        measured: '3.9 s',    timeoutMs: 30_000 },
   { name: 'check_contract',         group: 'service', cmd: 'node',    args: ['scripts/check_contract.mjs'],       needs: 'node-dash up',        measured: '5.1 s',    timeoutMs: 60_000 },
   { name: 'no_cache',               group: 'service', cmd: 'node',    args: ['scripts/check_no_cache.mjs'],       needs: 'node-dash up',        measured: '200 ms',   timeoutMs: 30_000 },

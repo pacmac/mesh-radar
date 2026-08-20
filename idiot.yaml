@@ -76,3 +76,28 @@
     runs: 1
   trial: null
   fix: null
+- id: messages-page-is-a-flat-log-not-a-conversation
+  type: new
+  what: the messages page is one flat firehose with no conversations, no quoted parents and nothing anchoring
+    the eye; a reply is served with no snippet of what it answers
+  spec: docs/modules/tab-messages.md
+  files:
+  - src/filters.js
+  - public/app-messages.js
+  - public/partials/tab-messages.html
+  - public/app.js
+  test:
+    command:
+    - node
+    - tests/test_reply_snippet.mjs
+    criterion: every served row carries reply_to, replies resolve their parent, and the page groups into
+      conversations
+    runs: 1
+  trial:
+    file: .proofs/messages-page-is-a-flat-log-not-a-conversation.trial.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-08-20T04:32:47.191'
+    commit: 2f381eb-dirty
+  fix: null

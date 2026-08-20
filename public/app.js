@@ -225,6 +225,10 @@ function dashboard() {
     // here. False until told, so the nav does not offer a page that 404s.
     observatoryEnabled: false,
     msgFilter: 'all',
+    // WHICH CONVERSATION IS OPEN — the app's contactKey. null means "the most
+    // recently active one", resolved in msgThread() rather than defaulted here,
+    // so the page opens on live traffic instead of on whatever was first.
+    msgConvKey: null,
     msgText: '',
     msgSent: false,
     messages: [],

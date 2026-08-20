@@ -1,0 +1,2 @@
+$ node tests/test_reply_snippet.mjs
+66 checks — 143/157 replies resolve a parent, truncated, shaped for the page.

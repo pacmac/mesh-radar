@@ -79,8 +79,63 @@ export function queryMessages(limit = 100) {
         if (name) { channel_name = name; break; }
       }
       return { ...r, channel_name };
+    })
+    // THE QUOTED PARENT, RESOLVED HERE AND NOT IN THE BROWSER.
+    //
+    // A reply carries `reply_id`, which is the PACKET ID of the message it
+    // answers. The page renders a snippet of that parent above the reply — the
+    // app's ReplySnippet (MessageScreenComponents.kt:178).
+    //
+    // WHY SERVER-SIDE. The browser holds only the loaded window, and 3,595 of our
+    // rows carry a reply_id; a reply to anything older than the window would
+    // silently render with no quote and look like a bug rather than a limit. It
+    // is also not the browser's job to go looking (docs/BROWSER_CONTRACT.md) —
+    // it renders what it is given.
+    //
+    // NULL IS AN ANSWER. A parent that no longer exists, or was never heard,
+    // yields null and the reply renders without a quote rather than with an empty
+    // box implying we lost something.
+    //
+    // Peter wants NEWEST FIRST (2026-08-20), so a reply is drawn ABOVE its
+    // parent. That makes this snippet the only thing carrying the context —
+    // scrolling toward the parent means scrolling the wrong way through time.
+    // docs/modules/tab-messages.md.
+    .map(r => {
+      if (r.reply_id == null) return { ...r, reply_to: null };
+      const p = _replyParent.get(r.reply_id);
+      return { ...r, reply_to: p ?? null };
     });
 }
+
+/** Parent lookup for reply snippets: packet_id -> { packet_id, short_name, text }.
+ *
+ *  A separate statement rather than a self-join, because the main query GROUPs by
+ *  packet_id and a correlated subquery inside that grouping is where an N+1 hides
+ *  in plain sight. Prepared once; `.get()` per reply is an index hit on
+ *  messages.packet_id. */
+const _replyParent = {
+  get(packetId) {
+    const row = db.prepare(`
+      SELECT m.packet_id,
+             COALESCE(m.short_name, n.short_name) AS short_name,
+             m.text
+        FROM messages m
+        LEFT JOIN nodes n ON n.num = m.from_num
+       WHERE m.packet_id = ?
+       LIMIT 1
+    `).get(packetId);
+    if (!row) return null;
+    // Truncated HERE, not in the browser: a quote is a reminder of what was said,
+    // and shipping a 200-character parent so the page can cut it to 80 wastes the
+    // wire and lets two layers disagree about the length.
+    const text = String(row.text ?? '');
+    return {
+      packet_id:  row.packet_id,
+      short_name: row.short_name ?? null,
+      text:       text.length > 120 ? text.slice(0, 119) + '…' : text,
+    };
+  },
+};
 
 // queryNodes() REMOVED 2026-08-18, task `filters-dead-mqtt-sql`.
 //

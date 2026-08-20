@@ -102,20 +102,40 @@
           </div>
           <div class="card bg-base-100 shadow flex flex-col min-h-0">
             <div class="card-body flex flex-col min-h-0">
+              <!-- CONVERSATIONS, then the open one. The app is per-conversation
+                   (getMessagesFromPaged(contactKey)) and never shows one global
+                   list; a flat firehose of 12,779 rows is what Peter called "not
+                   very intuitive at all". docs/modules/tab-messages.md. -->
               <div class="flex items-center justify-between gap-3 shrink-0">
-                <h2 class="card-title">Message Feed</h2>
-                <div class="join" aria-label="Message feed filter">
-                  <template x-for="f in [{id:'all',label:'ALL'},{id:'bcast',label:'BCAST'},{id:'dir',label:'DIR'},{id:'chat',label:'CHAT'}]" :key="f.id">
-                    <button class="join-item btn btn-xs font-mono"
-                            :class="msgFilter === f.id ? 'btn-primary' : 'btn-outline btn-neutral'"
-                            @click="msgFilter = f.id"
-                            x-text="f.label"></button>
-                  </template>
-                </div>
+                <h2 class="card-title" x-text="(msgConversations().find(c => c.key === (msgConvKey || msgConversations()[0]?.key))?.label) || 'Messages'"></h2>
+                <span class="text-xs text-base-content/50 font-mono"
+                      x-text="msgThread().length + ' msg'"></span>
+              </div>
+
+              <div class="flex gap-1.5 overflow-x-auto shrink-0 py-1" aria-label="Conversations">
+                <template x-for="c in msgConversations()" :key="c.key">
+                  <button class="btn btn-xs font-mono shrink-0"
+                          :class="c.key === (msgConvKey || msgConversations()[0]?.key) ? 'btn-primary' : 'btn-outline btn-neutral'"
+                          @click="msgOpenConversation(c.key)"
+                          :title="c.preview">
+                    <span x-text="c.isDm ? '@' + c.label : c.label"></span>
+                    <span class="badge badge-xs badge-ghost ml-1" x-text="c.count"></span>
+                  </button>
+                </template>
               </div>
 
               <div class="overflow-y-auto flex-1 min-h-0">
-                <template x-for="m in displayMessages()" :key="m.key">
+                <template x-for="m in msgThread()" :key="m.key">
+                 <div>
+                  <!-- DAY SEPARATOR. Newest-first, so this marks where the list
+                       crosses BACK into the previous day as you read downward. -->
+                  <template x-if="m.dayBreak">
+                    <div class="flex items-center gap-2 pt-3 pb-1">
+                      <div class="h-px flex-1 bg-base-300"></div>
+                      <span class="text-xs font-mono text-base-content/50" x-text="m.dayLabel"></span>
+                      <div class="h-px flex-1 bg-base-300"></div>
+                    </div>
+                  </template>
                   <div class="flex items-start gap-3 py-2"
                        :style="m.replyDepth > 0 ? `margin-left:${m.replyDepth * 2}rem` : ''"
                        :class="(m.isReply ? 'pl-2 ' : 'border-t border-base-200 ') + (!m.broadcast ? 'bg-warning/10 border-l-2 border-l-warning' : (m.privateChannel ? 'bg-success/5 border-l-2 border-l-success' : ''))"
@@ -130,6 +150,20 @@
                       </span>
                     </span>
                     <div class="flex-1 min-w-0">
+                      <!-- THE QUOTED PARENT — the app's ReplySnippet
+                           (MessageScreenComponents.kt:178). It renders ABOVE the
+                           reply, and with newest-first it is the ONLY thing
+                           carrying the context: the parent is further DOWN the
+                           page, so scrolling toward it means scrolling backwards
+                           through time. Absent when the parent was never heard —
+                           no empty box implying we lost something. -->
+                      <template x-if="m.replyTo">
+                        <div class="border-l-2 border-primary/50 bg-base-200/60 rounded-r pl-2 pr-2 py-1 mb-1 text-xs">
+                          <span class="font-semibold text-primary/80"
+                                x-text="(m.replyTo.short_name || 'unknown') + ':'"></span>
+                          <span class="text-base-content/70 break-words" x-text="m.replyTo.text"></span>
+                        </div>
+                      </template>
                       <div class="flex items-center gap-1.5 text-sm">
                         <span x-show="m.isReply" class="text-base-content/40" title="Reply">↩</span>
                         <span class="font-semibold text-base-content" x-text="m.fromLongName || nodeLongName(m.fromNum)"></span>
@@ -172,8 +206,9 @@
                       <div class="text-base text-base-content mt-0.5 break-words" x-text="m.text"></div>
                     </div>
                   </div>
+                 </div>
                 </template>
-                <div x-show="messages.length===0" class="text-base-content/40 italic py-4">No messages yet…</div>
+                <div x-show="msgThread().length===0" class="text-base-content/40 italic py-4">No messages in this conversation…</div>
               </div>
             </div>
           </div>

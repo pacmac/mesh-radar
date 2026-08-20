@@ -38,9 +38,81 @@ export const messagesMixin = {
         direction:          r.direction || 'rx',
         ackStatus:          r.status || null,
         src:                r.rx_devices ? r.rx_devices.split(',').filter(Boolean) : [],
+        // THE QUOTED PARENT, SERVED. {packet_id, short_name, text} or null — the
+        // browser does not go looking for it, and null means the parent was never
+        // heard rather than that we mislaid it. src/filters.js.
+        replyTo:            r.reply_to || null,
+        channelName:        r.channel_name || null,
+        // WHICH CONVERSATION THIS BELONGS TO — the app's contactKey.
+        // A DM belongs to the OTHER node whichever way it went; a broadcast
+        // belongs to its channel. Computed from served fields only: this is
+        // grouping for display, not a decision about routing.
+        convKey:            (r.is_dm === 1)
+          ? 'dm:' + ((r.direction === 'tx') ? (r.to_num >>> 0) : r.from_num)
+          : 'ch:' + (r.channel_name || ('channel ' + (r.channel ?? 0))),
       };
     });
   },
+
+  // ── Conversations ─────────────────────────────────────────────────────────
+  //
+  // The app is per-conversation (getMessagesFromPaged(contactKey)) and never
+  // shows one global list. Ours is derived from the loaded window rather than
+  // stored: a conversation is a channel, or the other end of a DM.
+
+  /** Every conversation present, newest activity first. */
+  msgConversations() {
+    const by = new Map();
+    for (const m of this.messages) {
+      let c = by.get(m.convKey);
+      if (!c) {
+        const isDm = m.convKey.startsWith('dm:');
+        const num  = isDm ? Number(m.convKey.slice(3)) : null;
+        c = {
+          key: m.convKey, isDm, num,
+          label: isDm ? (this.nodeShortName(num) || this.nodeLabel?.(num) || '!' + (num >>> 0).toString(16))
+                      : (m.channelName || 'Channel ' + m.channel),
+          count: 0, latest: 0, preview: '',
+        };
+        by.set(m.convKey, c);
+      }
+      c.count++;
+      if (m.ts >= c.latest) { c.latest = m.ts; c.preview = m.text; }
+    }
+    return [...by.values()].sort((a, b) => b.latest - a.latest);
+  },
+
+  /** The open conversation's messages, NEWEST FIRST.
+   *
+   *  Peter, 2026-08-20: "no newest at the TOP". The app is bottom-anchored
+   *  (reverseLayout = true); this is a dashboard you read rather than a messenger
+   *  you talk into, so the newest line is where the eye lands without scrolling.
+   *
+   *  The rows carry `showSender` and `dayBreak` so the template renders a run
+   *  from one node as one block and marks the day change. Computed once here
+   *  rather than per-row in the template, where it would re-run on every render.
+   *  docs/modules/tab-messages.md. */
+  msgThread() {
+    const key = this.msgConvKey || this.msgConversations()[0]?.key;
+    if (!key) return [];
+    const rows = this.messages.filter(m => m.convKey === key)
+                              .sort((a, b) => b.ts - a.ts);
+    const day = ts => new Date(ts * 1000).toDateString();
+    return rows.map((m, i) => {
+      // NEXT is the OLDER neighbour, because the list descends. A sender heading
+      // shows when this message starts a run, i.e. when the one BELOW it is a
+      // different sender — which reads correctly top-down.
+      const older = rows[i + 1];
+      return {
+        ...m,
+        showSender: !older || older.fromNum !== m.fromNum,
+        dayBreak:   !older || day(older.ts) !== day(m.ts),
+        dayLabel:   new Date(m.ts * 1000).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }),
+      };
+    });
+  },
+
+  msgOpenConversation(key) { this.msgConvKey = key; },
 
   _applyMessageRows(rows) { this.messages = this._mapMessageRows(rows); },
 
