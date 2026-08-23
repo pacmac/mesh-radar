@@ -101,3 +101,83 @@
     at: '2026-08-20T04:32:47.191'
     commit: 2f381eb-dirty
   fix: null
+- id: reply-timestamps-precede-their-command-two-radio-clocks
+  type: bug
+  what: "336 replies carry a ts earlier than the command they answer, because ts is the receiving radio's\
+    \ clock and our two radios differ by ~1s \u2014 so a pong renders above its own ping"
+  spec: docs/modules/tab-messages.md
+  files:
+  - src/bridge-events.js
+  - src/db.js
+  - src/filters.js
+  test:
+    command: null
+    criterion: no message has a ts earlier than the message its reply_id points at
+    runs: 1
+  trial: null
+  fix: null
+- id: no-independent-millisecond-record-of-the-exchange
+  type: new
+  what: 'node-dash cannot give a second verdict on a device exchange: every timestamp is integer SECONDS
+    and comes from the radio''s rx_time, so nothing records our own clock and a 15-min beat specified
+    to +/-10ms cannot be measured'
+  spec: docs/modules/exchange-capture.md
+  files:
+  - src/bridge-events.js
+  - src/db.js
+  - src/ws-relay.js
+  test:
+    command: null
+    criterion: each received packet carries node-dash's own arrival time at ms resolution alongside the
+      gateway's rx_time, per receiving radio
+    runs: 1
+  trial: null
+  fix: null
+- id: a-rejected-send-leaves-no-trace
+  type: bug
+  what: "recordOutbound runs only after a successful gateway result, so a send the gateway rejects leaves\
+    \ nothing in the store \u2014 the operator sees a toast and there is no record to diagnose from afterwards"
+  spec: docs/modules/mesh-send.md
+  files:
+  - src/mesh-send.js
+  test:
+    command: null
+    criterion: a send rejected by the gateway is recorded with its failure reason and the body that was
+      sent
+    runs: 1
+  trial: null
+  fix: null
+- id: relay-transport-column-holds-two-encodings
+  type: bug
+  what: relay_observation.transport stores packet.transport_mechanism verbatim; mesh-gw switched it from
+    string enum names to numerics at 2026-08-22 17:06 so the column holds TRANSPORT_LORA/TRANSPORT_INTERNAL
+    and 0.0/1.0, and callout-runner.js:60 compares to the string and silently misses every row since
+  spec: docs/modules/relay-observation.md
+  files:
+  - src/relay-observation.js
+  - src/callout-runner.js
+  - src/callout.js
+  - src/standing-tasks.js
+  - src/snapshot-api.js
+  - src/db.js
+  test:
+    command:
+    - node
+    - tests/test_transport_encoding.mjs
+    criterion: relay_observation.transport has one canonical encoding and normaliseTransport maps every
+      wire form to it
+    runs: 1
+  trial:
+    file: .proofs/relay-transport-column-holds-two-encodings.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-08-23T08:17:29.306'
+    commit: 83f5ae6-dirty
+  fix:
+    file: .proofs/relay-transport-column-holds-two-encodings.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-08-23T08:19:06.903'
+    commit: 83f5ae6-dirty

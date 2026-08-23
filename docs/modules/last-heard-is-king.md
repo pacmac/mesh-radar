@@ -3,7 +3,7 @@ module: last-heard-is-king
 source:
   - src/db.js
   - src/bridge-events.js
-source_hash: 985552d7df4ee28de77252564f8f42ed29d17c511bdf99eb519a5c42bbb2dd61
+source_hash: 5629eae3c1ba312e4b140da6c4d9a80448888872e059b40ab9e9641b47e5c296
 updated: 2026-08-18
 ---
 

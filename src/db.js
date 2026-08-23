@@ -639,6 +639,50 @@ if (!nodeCols.includes('rf_last_heard')) {
   }
 }
 
+// relay_observation.transport — ONE ENCODING, 2026-08-23.
+//
+// mesh-gw switched transport_mechanism from a string enum NAME to its numeric
+// VALUE at 2026-08-22 17:06, and relay-observation.js stored the field verbatim,
+// so the column ended up holding TRANSPORT_LORA and 1.0 at the same time. Ingest
+// is fixed (normaliseTransport); this repairs the rows written in between.
+//
+// THE MAPPING IS NOT A GUESS. mesh.proto, already verified in
+// relay-observation.js's own comment: INTERNAL=0, LORA=1, LORA_ALT1..3=2..4,
+// MQTT=5, MULTICAST_UDP=6, API=7, UNICAST_UDP=8. Corroborated by proportion —
+// 491k/261k before the change, 11,917/6,261 after, both ~65/35 — but the enum is
+// the authority and the ratio only a check on it.
+//
+// Bijective, so nothing is lost and it is reversible. Keyed so it runs once, and
+// written to survive a partial run: normaliseTransport accepts an already-
+// canonical value unchanged, so re-running is idempotent.
+//
+// Values 2..8 are handled even though none has been observed — the whole defect
+// was assuming the wire would keep sending what it sent yesterday.
+{
+  const KEY = 'migrations.relay_transport_encoding_v1';
+  const done = db.prepare('SELECT value FROM config WHERE key = ?').get(KEY);
+  if (!done) {
+    const MAP = {
+      '0': 'TRANSPORT_INTERNAL', '1': 'TRANSPORT_LORA',
+      '2': 'TRANSPORT_LORA_ALT1', '3': 'TRANSPORT_LORA_ALT2', '4': 'TRANSPORT_LORA_ALT3',
+      '5': 'TRANSPORT_MQTT', '6': 'TRANSPORT_MULTICAST_UDP',
+      '7': 'TRANSPORT_API', '8': 'TRANSPORT_UNICAST_UDP',
+    };
+    const upd = db.prepare(`UPDATE relay_observation SET transport = ? WHERE transport = ?`);
+    let moved = 0;
+    db.transaction(() => {
+      for (const [num, name] of Object.entries(MAP)) {
+        // Both the integer and float spellings: the value reached SQLite as TEXT
+        // and arrived as '0.0' / '1.0', but '0' / '1' is equally possible.
+        for (const form of [num, `${num}.0`]) moved += upd.run(name, form).changes;
+      }
+    })();
+    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)')
+      .run(KEY, JSON.stringify(true));
+    if (moved) console.log(`[migrate] relay_observation.transport normalised (${moved} rows)`);
+  }
+}
+
 // Seed default alert rules (INSERT OR IGNORE preserves user customisations)
 const _seedRules = db.prepare(
   `INSERT OR IGNORE INTO alert_rules (type, enabled, threshold, cooldown_minutes) VALUES (?, ?, ?, ?)`

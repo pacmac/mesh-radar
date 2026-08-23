@@ -57,6 +57,10 @@ const CHECKS = [
   // Live because the parent lookup is a SQL join over real rows — a fixture would
   // assert the shape of its own mock. Exits 127 when the service is down, which
   // the register reads as a mistrial rather than a conviction.
+  // Reads the live store, so it belongs with the service checks even though it
+  // needs no HTTP. Exits 127 if the db or driver is missing — a mistrial, not a
+  // conviction.
+  { name: 'transport_encoding',     group: 'service', cmd: 'node',    args: ['tests/test_transport_encoding.mjs'], needs: 'the store',          measured: '120 ms',   timeoutMs: 30_000 },
   { name: 'reply_snippet',          group: 'service', cmd: 'node',    args: ['tests/test_reply_snippet.mjs'],     needs: 'node-dash up',        measured: '90 ms',    timeoutMs: 30_000 },
   { name: 'check_snapshot',         group: 'service', cmd: 'node',    args: ['scripts/check_snapshot.mjs'],       needs: 'node-dash up',        measured: '3.9 s',    timeoutMs: 30_000 },
   { name: 'check_contract',         group: 'service', cmd: 'node',    args: ['scripts/check_contract.mjs'],       needs: 'node-dash up',        measured: '5.1 s',    timeoutMs: 60_000 },

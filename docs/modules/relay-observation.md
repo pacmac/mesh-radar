@@ -1,7 +1,7 @@
 ---
 module: relay-observation
 source: src/relay-observation.js
-source_hash: 9804b5ba7b12c23794134cd311160ecf5f94c703f7311502c5e086ccbe97f62c
+source_hash: e9ee129f174dfaeb1dc8dd1ea7f59290c82541702f86e053512bb7459a62f888
 updated: 2026-08-03
 ---
 
@@ -45,7 +45,7 @@ costs no airtime to collect.
 | `rx_device` | event `__ble_addr`/`addr`/`device` | which of OUR radios heard it |
 | `hop_start` | `packet.hop_start` | sender's initial hop budget |
 | `hop_limit` | `packet.hop_limit ?? 0` | remaining on arrival |
-| `transport` | `packet.transport_mechanism ?? 'TRANSPORT_INTERNAL'` | how it reached us |
+| `transport` | `normaliseTransport(packet.transport_mechanism)` | how it reached us — **normalised**, never the wire value; see the 2026-08-23 section |
 | `decoded` | `packet.decoded != null` | did we have the key |
 
 ### proto3 zero-omission — the trap this file must not fall into
@@ -195,3 +195,90 @@ zero `[relay-obs] capture failed` lines in 300 log lines, and
 
 Not yet exercised: `pruneRelayObservations` — it fires at 5,000 inserts, roughly four
 hours in. Untested at time of writing and recorded as such.
+
+## `transport` is normalised on the way in — 2026-08-23
+
+Found by mesh-gw while querying our store with Peter's read-only permission, and
+reported rather than touched. They called it the urgent one and they were right.
+
+### What happened
+
+`captureRelayObservation` stored mesh-gw's field **verbatim**:
+
+```js
+transport: packet.transport_mechanism ?? 'TRANSPORT_INTERNAL',
+```
+
+mesh-gw changed `transport_mechanism` from a string enum **name** to its numeric
+**value** at 2026-08-22 17:06. We passed it straight through, so one column now
+holds two encodings:
+
+```
+TRANSPORT_INTERNAL  text  491412   2026-08-03 08:39:39 → 2026-08-22 17:06:26
+TRANSPORT_LORA      text  261371   2026-08-03 08:39:43 → 2026-08-22 17:06:07
+1.0                 text    6261   2026-08-22 17:06:12 → still arriving
+0.0                 text   11917   2026-08-22 17:06:17 → still arriving
+```
+
+Accruing at ~1,145 rows/hour across both radios.
+
+### Why it was blocking rather than untidy
+
+**Six** queries compare this column to a string literal, so every one of them has
+silently excluded every row since 17:06:
+
+| site | literal |
+|---|---|
+| `callout-runner.js:60` | `'TRANSPORT_LORA'` |
+| `callout.js:218` | `'TRANSPORT_LORA'` |
+| `standing-tasks.js:740` | `'TRANSPORT_INTERNAL'` |
+| `standing-tasks.js:893` | `'TRANSPORT_INTERNAL'` |
+| `snapshot-api.js:109` | `'TRANSPORT_LORA'` |
+
+`snapshot-api.js` is the one that matters most: it feeds `snapshot.distribution`
+on `/events`, which is the derived model other consumers read. So the published
+reach model has been computing from a truncated view.
+
+### The canonical form is the NAME, and the mapping is not a guess
+
+This module's own comment already carried the answer, verified against
+`mesh.proto`:
+
+> `INTERNAL=0, LORA=1, LORA_ALT1..3=2..4, MQTT=5, MULTICAST_UDP=6, API=7,
+> UNICAST_UDP=8`
+
+So `0 → TRANSPORT_INTERNAL`, `1 → TRANSPORT_LORA`. Corroborated independently by
+proportion — 491k/261k ≈ 65/35 before the change, 11,917/6,261 ≈ 66/34 after — but
+the enum is the authority and the ratio is only a check on it.
+
+**Names, not numbers**, for three reasons: 97.6 % of rows already are names, all
+six queries already expect names, and a name is self-describing in a feed where a
+bare `1` is not.
+
+### The rule
+
+**Never store a peer's enum verbatim.** Storing the wire value made this module
+correct only for as long as mesh-gw happened to send strings, and nothing here
+would have noticed the day that changed — it took a peer reading our database to
+find it.
+
+`normaliseTransport()` maps every known enum value, numeric or name, to the
+canonical name. An unrecognised value becomes `TRANSPORT_UNKNOWN_<n>`: stable,
+greppable, impossible to confuse with a real name, and visible instead of silently
+passed through.
+
+### Backfill
+
+The 18,178 numeric rows are rewritten to their names. The mapping is bijective, so
+nothing is lost and the change is reversible.
+
+### Test notes
+
+- `SELECT DISTINCT transport` returns only canonical names — no `0.0`, no `1.0`
+- `normaliseTransport` maps `0`, `'0'`, `0.0` and `'TRANSPORT_INTERNAL'` alike
+- an unknown value yields `TRANSPORT_UNKNOWN_<n>` rather than passing through
+- absent still means `TRANSPORT_INTERNAL` — proto3 omits zero-valued fields, so
+  absence is enum 0, **never** "unknown". Same rule as `relay_byte ?? 0` and
+  `hop_limit ?? 0`; `hop_start` stays `null` because absent there is genuinely no
+  information
+- the row count for `'TRANSPORT_LORA'` after backfill exceeds the pre-fix count

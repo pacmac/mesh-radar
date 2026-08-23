@@ -54,6 +54,60 @@ function _maybePrune() {
 //
 // hop_start is NOT defaulted — absent hop_start is genuinely no information, and
 // persist.js treats it the same way.
+
+/** mesh.proto's Transport enum, value -> canonical name.
+ *
+ *  The enum listed in the comment above, made executable. It was already verified
+ *  against mesh.proto and then not used, which is why the column split. */
+const TRANSPORT_BY_VALUE = {
+  0: 'TRANSPORT_INTERNAL',
+  1: 'TRANSPORT_LORA',
+  2: 'TRANSPORT_LORA_ALT1',
+  3: 'TRANSPORT_LORA_ALT2',
+  4: 'TRANSPORT_LORA_ALT3',
+  5: 'TRANSPORT_MQTT',
+  6: 'TRANSPORT_MULTICAST_UDP',
+  7: 'TRANSPORT_API',
+  8: 'TRANSPORT_UNICAST_UDP',
+};
+
+/** NEVER STORE A PEER'S ENUM VERBATIM. This is the whole lesson of 2026-08-23.
+ *
+ *  `transport: packet.transport_mechanism ?? 'TRANSPORT_INTERNAL'` was correct
+ *  only for as long as mesh-gw happened to send enum NAMES. They switched to
+ *  numeric VALUES at 2026-08-22 17:06 and we passed it straight through, so one
+ *  column ended up holding TRANSPORT_LORA and 1.0 at the same time — 18,178 rows
+ *  and climbing at ~1,145/hour.
+ *
+ *  Nothing here noticed. It took mesh-gw reading our database to find it, and by
+ *  then six queries comparing this column to a string literal had been silently
+ *  excluding every new row for fifteen hours — including snapshot-api.js:109,
+ *  which feeds snapshot.distribution on /events.
+ *
+ *  ABSENT IS ENUM 0, NEVER "unknown" — proto3 omits zero-valued fields, the same
+ *  rule as relay_byte and hop_limit above.
+ *
+ *  AN UNRECOGNISED VALUE IS MADE VISIBLE rather than passed through, because
+ *  passing it through is exactly what caused this. TRANSPORT_UNKNOWN_<n> is
+ *  stable, greppable, and cannot be mistaken for a real enum name.
+ *
+ *  docs/modules/relay-observation.md. */
+export function normaliseTransport(raw) {
+  if (raw == null || raw === '') return TRANSPORT_BY_VALUE[0];
+  // Already canonical — accept unchanged so a re-run is idempotent, which the
+  // backfill depends on.
+  if (typeof raw === 'string' && raw.startsWith('TRANSPORT_')) return raw;
+  // '1.0' and 1.0 alike: mesh-gw's numeric arrived through JSON as a float and
+  // reached SQLite as the TEXT '1.0'. Number() takes both; Math.trunc drops the
+  // decimal without rounding a 1.9 up into a different enum member.
+  const n = Number(raw);
+  if (Number.isFinite(n)) {
+    const name = TRANSPORT_BY_VALUE[Math.trunc(n)];
+    return name ?? `TRANSPORT_UNKNOWN_${Math.trunc(n)}`;
+  }
+  return `TRANSPORT_UNKNOWN_${String(raw)}`;
+}
+
 export function captureRelayObservation(packet, device, ts) {
   if (!packet?.from) return;
   insertRelayObservation({
@@ -63,7 +117,7 @@ export function captureRelayObservation(packet, device, ts) {
     rx_device:  device ?? null,
     hop_start:  packet.hop_start ?? null,
     hop_limit:  packet.hop_limit ?? 0,
-    transport:  packet.transport_mechanism ?? 'TRANSPORT_INTERNAL',
+    transport:  normaliseTransport(packet.transport_mechanism),
     decoded:    packet.decoded ? 1 : 0,
   });
   _maybePrune();

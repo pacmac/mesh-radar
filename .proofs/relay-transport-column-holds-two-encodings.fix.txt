@@ -1,0 +1,2 @@
+$ node tests/test_transport_encoding.mjs
+18 checks, 0 failed — 771470 rows across 2 distinct value(s).

@@ -1,0 +1,4 @@
+$ node tests/test_transport_encoding.mjs
+FAIL  every stored transport is a canonical name — found 2 other form(s): "0.0" x12229, "1.0" x6429
+FAIL  relay-observation exports normaliseTransport()
+3 checks, 2 failed — 771441 rows across 4 distinct value(s).
