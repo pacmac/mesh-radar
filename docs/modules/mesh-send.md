@@ -1,8 +1,8 @@
 ---
 module: mesh-send
 source: src/mesh-send.js
-source_hash: 343296b2d2ff02386a111b27b94e5d8f33c6283476bf352d610b4463a54fc36e
-updated: 2026-08-16
+source_hash: 250085818c0dcfa15742e4c67cfc325d1fe4ab9e861d7dc50db8dab05eb9f69c
+updated: 2026-09-03
 ---
 
 # Module: mesh-send

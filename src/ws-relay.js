@@ -6,7 +6,6 @@ import { nodeList } from './node-list.js';
 import { insertTilt, insertEnvHistory, getTiltCal, getConfig, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts, persistNodeMac, loadNodeMacMap } from './db.js';
 import { buildNodeStatus } from './node-status.js';
 import { listFavourites, lastTraceByNode } from './db.js';
-import { queryMessages } from './filters.js';
 import { handleAlertEvent } from './alerts.js';
 import { dashMode, isListenerForMode, isTransmitterForMode } from './dash-mode.js';
 import { resolveNodeLabel, resolveDeviceLabel } from './node-label.js';
@@ -145,12 +144,14 @@ const _liveNodeIds = new Map();
 let _pokeDeviceList = () => {};
 export function pokeDeviceList() { _pokeDeviceList(); }
 
-// Assigned inside attachWsRelay; messages-api calls this after persisting a
-// sent message. A gateway radio never receives its own transmission, so
-// without this rebroadcast only the sending session (optimistic entry) ever
-// saw a TX message (task message-tx-broadcast).
-let _broadcastMessageHistory = () => {};
-export function broadcastMessageHistory() { _broadcastMessageHistory(); }
+// KEPT AS A NO-OP, NOT REMOVED (2026-09-03, task
+// messages-frontend-and-browser-route-removed). bridge-events.js still calls
+// this; that file is currently locked by a separate, unrelated open idiot
+// entry (messages-carry-timestamps-hours-in-the-future), so its own dead
+// call site cannot be removed in this task. A live rebroadcast to the
+// Messages page it used to serve is gone — this just stops it being a
+// crash (`does not provide an export`) instead of a silent no-op.
+export function broadcastMessageHistory() {}
 
 // Assigned inside attachWsRelay; device-remove uses it to drop a removed
 // device from the in-memory state and push a fresh device_list. Before this
@@ -352,75 +353,9 @@ function _handleTiltPayload(b64, devKey, fromNum, handleAlertEvent, broadcast) {
   broadcast(tiltEv);
 }
 
-// Returns the set of own gateway node numbers (uint32) from the live node_id map.
-function _ownNums() {
-  const nums = new Set();
-  for (const nodeId of _liveNodeIds.values()) {
-    if (nodeId && nodeId.startsWith('!')) {
-      const n = parseInt(nodeId.slice(1), 16);
-      if (n) nums.add(n);
-    }
-  }
-  return nums;
-}
-
-// Pre-compute direction, thread_root_packet_id, is_orphan, reply_depth for
-// every row so the browser renders without deriving any of these itself.
-function _enrichMessages(rows) {
-  const own = _ownNums();
-  const byPktId = new Map();
-  for (const r of rows) {
-    r.direction = own.has(r.from_num) ? 'tx' : 'rx';
-    if (r.packet_id) byPktId.set(r.packet_id, r);
-  }
-
-  const rootCache = new Map();
-  function findRoot(pktId, visited) {
-    if (!pktId) return pktId;
-    if (rootCache.has(pktId)) return rootCache.get(pktId);
-    if (visited.has(pktId)) { rootCache.set(pktId, pktId); return pktId; }
-    const r = byPktId.get(pktId);
-    if (!r || !r.reply_id || !byPktId.has(r.reply_id)) {
-      rootCache.set(pktId, pktId);
-      return pktId;
-    }
-    visited.add(pktId);
-    const root = findRoot(r.reply_id, visited);
-    rootCache.set(pktId, root);
-    return root;
-  }
-
-  for (const r of rows) {
-    r.thread_root_packet_id = findRoot(r.packet_id, new Set()) ?? r.packet_id;
-    r.is_orphan             = !!(r.reply_id && !byPktId.has(r.reply_id));
-    let depth = 0, cur = r;
-    const visited = new Set();
-    while (cur && cur.reply_id && byPktId.has(cur.reply_id) && !visited.has(cur.packet_id)) {
-      visited.add(cur.packet_id);
-      cur = byPktId.get(cur.reply_id);
-      depth++;
-    }
-    r.reply_depth = depth;
-  }
-
-  // Sort into display order: threads newest-first (by latest message in thread),
-  // replies within a thread oldest-first directly after their root.
-  const threadLatest = new Map();
-  for (const r of rows) {
-    const root = r.thread_root_packet_id ?? r.packet_id;
-    if (root != null && (r.ts || 0) > (threadLatest.get(root) || 0)) {
-      threadLatest.set(root, r.ts);
-    }
-  }
-  rows.sort((a, b) => {
-    const rootA = a.thread_root_packet_id ?? a.packet_id;
-    const rootB = b.thread_root_packet_id ?? b.packet_id;
-    const latestDiff = (threadLatest.get(rootB) || 0) - (threadLatest.get(rootA) || 0);
-    if (latestDiff !== 0) return latestDiff;
-    return (a.ts || 0) - (b.ts || 0);
-  });
-  return rows;
-}
+// _ownNums()/_enrichMessages() removed 2026-09-03, task
+// messages-frontend-and-browser-route-removed — thread/direction enrichment
+// for a message feed that is no longer served to any consumer.
 
 export function attachWsRelay(server, getRangeTimer = () => ({ active: false, endsAt: null, nodeId: null })) {
   const wss = new WebSocketServer({ noServer: true });
@@ -658,24 +593,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     broadcast(lastDeviceList);
   }
   _pokeDeviceList = broadcastDeviceList;
-  // Enriched message history — used for the on-connect replay and rebroadcast
-  // to all clients after a dash send (message-tx-broadcast). 200 rows: bot
-  // chatter churned the old 50-row window within hours.
-  function buildMessageFeedRows() {
-    // hops_tone: tab-messages.html calls hopsBadge(m.hops), which held the
-    // 0/1/2 threshold in the browser. Same decision, same owner as the node feed.
-    return _enrichMessages(queryMessages(200).map(r => ({
-      ...r, display_name: resolveNodeLabel(r.from_num), hops_tone: hopsTone(r.hops),
-    })));
-  }
-  function buildMessageHistoryEvent(rows) {
-    return { type: 'message_history', messages: rows ?? buildMessageFeedRows() };
-  }
-  _broadcastMessageHistory = () => {
-    try {
-      broadcast(buildMessageHistoryEvent());
-    } catch (e) { console.error('[ws-relay] message history rebroadcast failed:', e.message); }
-  };
+  // message_history build/broadcast removed 2026-09-03, task
+  // messages-frontend-and-browser-route-removed — its only consumer, the
+  // Messages page, is gone. Data capture (persist.js's message inserts) is
+  // unaffected.
 
   _pruneDevice = (mac, nodeId) => {
     const MAC = mac.toUpperCase();
@@ -885,7 +806,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
           device:    ev.__ble_addr ?? ev.addr ?? null,
         });
       } catch (e) { console.error('[message_status] event insert failed:', e.message); }
-      broadcast(ev);
+      // broadcast(ev) removed 2026-09-03, task
+      // messages-frontend-and-browser-route-removed — no frontend consumer
+      // left for this type. The DB writes above (the actual data capture)
+      // are unaffected.
       return;
     }
 
@@ -1278,11 +1202,10 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     }
     sendEnriched(ws, { type: 'node_list', nodes: nodeList.nodes, device_nodes: nodeList.ownDeviceNodes, total: nodeList._cache.size, homePos: nodeList.homePos });
 
-    // All named nodes from cache — unfiltered, for message addressing only
-    const knownNodes = Array.from(nodeList._cache.values())
-      .filter(n => n.user?.long_name)
-      .map(n => ({ num: n.num, display_name: resolveNodeLabel(n.num), user: { short_name: n.user.short_name, long_name: n.user.long_name } }));
-    ws.send(JSON.stringify({ type: 'known_nodes', nodes: knownNodes }));
+    // known_nodes (message @mention addressing) removed 2026-09-03, task
+    // messages-frontend-and-browser-route-removed — its only consumer, the
+    // compose box's @mention autocomplete, is gone with the rest of the
+    // frontend Messages page.
 
     // Tilt calibration
     const cal = getTiltCal();
@@ -1291,9 +1214,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // History snapshots — pushed once on connect; real-time events append from here
     try {
       const since24h = Math.floor(Date.now() / 1000) - 86400;
-
-      const feedRows = buildMessageFeedRows();
-      ws.send(JSON.stringify(buildMessageHistoryEvent(feedRows)));
 
       const tiltRows = queryAllTiltHistory(since24h);
       ws.send(JSON.stringify({ type: 'tilt_history', rows: tiltRows }));

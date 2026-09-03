@@ -8,7 +8,6 @@ import { nodesMixin }     from './app-nodes.js';
 import { rotatorMixin }   from './app-rotator.js';
 import { radarMixin }     from './app-radar.js';
 import { snapshotMixin } from './app-snapshot.js';
-import { messagesMixin }  from './app-messages.js';
 import { rangeMixin }     from './app-range.js';
 import { perfMixin }      from './app-perf.js?v=20260627rewrite';
 import { telemetryMixin } from './app-telemetry.js';
@@ -186,54 +185,14 @@ function dashboard() {
     _radarLabelAngles: null,   // Map num→arm angle — per-node label placement memory
     lastHeardNum:   null,
 
-    // -- Messages -------------------------------------------------------------
-    msgFrom:    persistGet('msgFrom', ''),
-    msgIsDirect: false,
-    msgDirectTo: '',
-    msgReplyId:  null,
-    msgReplyFrom: null,
-    msgInsertNode: null,
-    msgNodeCache:  {},
-    _knownNodes:   [],
-    msgEmojiSet: [
-      {e:'👍',t:'Thumbs up'},{e:'👋',t:'Hello / goodbye'},{e:'🙂',t:'Smile'},
-      {e:'✅',t:'Yes / confirmed'},{e:'❌',t:'No / cancel'},{e:'❓',t:'Question'},
-      {e:'😎',t:'Cool'},{e:'🤔',t:'Thinking'},{e:'🌞',t:'Good morning'},
-      {e:'🍻',t:'Cheers'},{e:'📻',t:'Radio'},{e:'73',t:'73 — best regards (ham)'},
-    ],
-    msgInputHistory: persistGet('msgInputHistory', []),
-    msgHistoryIdx: -1,
-    msgDraft: '',
-    mentionOpen: false,
-    mentionQuery: '',
-    mentionPos: 0,
-    mentionIdx: 0,
-    unreadMessages: 0,
-    // 'public' or 'private', never an index. It was `null` awaiting a served
-    // integer; the value now arrives as a WORD on device_list.default_channel and
-    // the gateway resolves it per radio. null until the first frame.
-    // docs/modules/channels.md.
-    msgChannel: null,
-    // RETAINED, AND NOW ALWAYS EQUAL. It tracked which radio an index had been
-    // chosen for, because index 1 is Private on the YAGI and `mqtt` on the OMNI,
-    // so switching radio silently re-pointed the same number at a different
-    // channel. A word cannot do that. Kept only because tab-shared and
-    // tab-messages both still bind it; msgChannelStale() is now constant false.
-    msgChannelFor: null,
+    // Messages state removed 2026-09-03, task messages-frontend-and-browser-
+    // route-removed — mesh-gw's own dashboard Messages page is the only UI now
+    // (Peter: node-dash "has been demoted"). Message DATA CAPTURE is unaffected
+    // (backend, not this file) — only the browser's own compose/read UI is gone.
     // Whether the observatory/DISC/snapshot subsystem exists at all.
     // SERVED on the settings frame (`observatory.enabled`), never decided
     // here. False until told, so the nav does not offer a page that 404s.
     observatoryEnabled: false,
-    msgFilter: 'all',
-    // WHICH CONVERSATION IS OPEN — the app's contactKey. null means "the most
-    // recently active one", resolved in msgThread() rather than defaulted here,
-    // so the page opens on live traffic instead of on whatever was first.
-    msgConvKey: null,
-    msgText: '',
-    msgSent: false,
-    messages: [],
-    msgIsModal: false,
-    _composeTa: null,
 
     // -- UI state -------------------------------------------------------------
     toasts: [],
@@ -374,7 +333,10 @@ function dashboard() {
 
       if (this.activeNodeId) await this.bootstrapDevice();
 
-      await this.loadMessages();
+      // loadMessages() call removed 2026-09-03, task
+      // messages-frontend-and-browser-route-removed — it was already a no-op
+      // in the deleted app-messages.js ("history arrives via WS message_history
+      // on connect"), which no longer exists either.
 
       this.connectWS();
 
@@ -387,7 +349,7 @@ function dashboard() {
         const nodeNum = nodeNumFromPath();
         if (nodeNum) { this.setNav('node'); this.focusNode(nodeNum); return; }
         const stateTab = e.state?.tab;
-        const t = (stateTab && ['overview','radar','nodes','cfg','range','messages','devices','perf'].includes(stateTab))
+        const t = (stateTab && ['overview','radar','nodes','cfg','range','devices','perf'].includes(stateTab))
           ? stateTab
           : (tabFromPath() ?? 'overview');
         this.setNav(t);
@@ -448,7 +410,7 @@ window.dashboard = function() {
   for (const p of (window.__dashPlugins || [])) Object.assign(state, p.state || {});
   const mixins = [
     uiMixin, navMixin, wsMixin, devicesMixin, nodesMixin,
-    rotatorMixin, radarMixin, messagesMixin, rangeMixin, telemetryMixin, configMixin,
+    rotatorMixin, radarMixin, rangeMixin, telemetryMixin, configMixin,
     componentsMixin, perfMixin, nodeStatusMixin, snapshotMixin,
     // Plugin-contributed mixins. Core does not know what any of them are; a
     // plugin registers itself in window.__dashPlugins from a script emitted

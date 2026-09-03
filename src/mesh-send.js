@@ -5,7 +5,7 @@
 
 import { stmts, syncAlertedAt } from './db.js';
 import { nodeList } from './node-list.js';
-import { getLiveNodeIdByMac, getLiveMacByNodeId, broadcastMessageHistory } from './ws-relay.js';
+import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
 const BROADCAST_NUM = 0xffffffff;
@@ -43,9 +43,11 @@ function recordOutbound({ gatewayNodeId, text, channel, to, reply_id, category, 
     category:    category ?? null,
   });
   syncAlertedAt(packetId);
-  // A radio never hears its own TX — push the fresh history so every connected
-  // session sees the sent message live.
-  broadcastMessageHistory();
+  // The live rebroadcast that stood here served the Messages page (a radio
+  // never hears its own TX, so without it only the sending session saw a
+  // TX message) — that page is gone, task
+  // messages-frontend-and-browser-route-removed, 2026-09-03. This function
+  // still records every outbound send; it just no longer pushes it live.
 }
 
 // Transmit `text` from `gatewayNodeId` and record it. Throws on a gateway error

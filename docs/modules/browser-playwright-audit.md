@@ -14,7 +14,6 @@ source:
   - public/partials/drawer-sidebar.html
   - public/partials/tab-cfg.html
   - public/partials/tab-devices.html
-  - public/partials/tab-messages.html
   - public/partials/tab-perf.html
   - public/partials/tab-radar.html
   - public/style.css
@@ -28,7 +27,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 23439da4e3f228731fd29dd24480c4fc6d248854a1cc1b21d45bc68b4b5da39e
+source_hash: 11d6d08c12968781b5ecc2db1096f793aad6c1309fb5aca46b3699516f5f0dfe
 updated: 2026-09-03
 ---
 

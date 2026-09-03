@@ -214,7 +214,6 @@ export const wsMixin = {
         const primary = devices.find(d => d.cfg?.is_primary && d.addr);
         if (primary) {
           this.activeDevice = primary.addr;
-          if (!this.msgFrom) this.msgFrom = primary.node_id;
         }
       }
       // Theory constants for the perf page's selected radio
@@ -276,14 +275,9 @@ export const wsMixin = {
           this.activeDevice = devices[0].addr;
         }
       }
-      {
-        const preferredFrom = persistGet('msgFrom', '');
-        if (preferredFrom && devices.find(d => d.node_id === preferredFrom)) {
-          if (this.msgFrom !== preferredFrom) this.msgFrom = preferredFrom;
-        } else if (!this.msgFrom || !devices.find(d => d.node_id === this.msgFrom)) {
-          this.msgFrom = this.activeNodeId;
-        }
-      }
+      // msgFrom bookkeeping removed 2026-09-03, task
+      // messages-frontend-and-browser-route-removed — fed the deleted compose
+      // modal's default "From" device.
       // Perf page cold-load: perfDev() resolves once the device list exists.
       // The history re-slice that sat here went with the history itself
       // (2026-08-17, spec docs/modules/traceroute-removal-browser.md); the
@@ -466,15 +460,9 @@ export const wsMixin = {
       return;
     }
 
-    if (ev.type === 'known_nodes') {
-      this._knownNodes = ev.nodes ?? [];
-      return;
-    }
-
-    if (ev.type === 'message_history') {
-      this._applyMessageRows(ev.messages || []);
-      return;
-    }
+    // known_nodes / message_history handling removed 2026-09-03, task
+    // messages-frontend-and-browser-route-removed — the backend no longer
+    // sends either (their only consumer was the deleted Messages page).
 
     if (ev.type === 'tilt_history') {
       // Store all-node tilt rows; expose only the active node's slice
@@ -666,23 +654,9 @@ export const wsMixin = {
     if (ev.type === 'packet') {
       const pkt = ev.data?.packet;
       const portnum = pkt?.decoded?.portnum;
-      if (portnum === 'TEXT_MESSAGE_APP' && pkt?.decoded?.payload) {
-        // The browser NO LONGER builds messages. The feed is written solely by
-        // the server's message_history broadcast (MESSAGE_PIPELINE_REWRITE_SPEC),
-        // which already threads, dedupes across radios and orders the list.
-        // This branch now only drives incidental UI: the unread badge and sound.
-        //
-        // No try/catch swallow here — a failure must surface, not vanish.
-        const fromNum = pkt.from ?? 0;
-        const injectedUser = pkt.decoded.user;
-        const fromNode = !injectedUser ? this.nodes.find(n => n.num === fromNum) : null;
-        const fromName = ev.from_name || injectedUser?.short_name || fromNode?.display_name || fromNode?.user?.short_name || null;
-        const longName = injectedUser?.long_name || fromNode?.user?.long_name || null;
-        if (fromName || longName) {
-          this.msgNodeCache[fromNum] = { num: fromNum, display_name: fromName, user: { short_name: fromName, long_name: longName } };
-        }
-        if (this.tab !== 'messages') { this.unreadMessages++; this.playMsgSound(); }
-      }
+      // The TEXT_MESSAGE_APP special case (unread badge, sound, node-name cache
+      // for the compose box) is gone with the Messages page — 2026-09-03, task
+      // messages-frontend-and-browser-route-removed.
       if (pkt?.from != null) {
         this.lastHeardNum = pkt.from;
         if (this.tab === 'radar') this.drawRadar();
@@ -690,14 +664,11 @@ export const wsMixin = {
       if (this.tab === 'nodes' && portnum === 'TELEMETRY_APP') this.sortNodes(this.nodeSort.key, true);
     }
 
-    if (ev.type === 'message_status' && ev.packet_id != null) {
-      const m = this.messages.find(m => m.pktId === ev.packet_id);
-      if (m) {
-        m.ackStatus = ev.status;
-        if (ev.from_num) m.ackFrom = ev.from_num;
-        if (ev.error_name && ev.error_name !== 'NONE') m.ackError = ev.error_name;
-      }
-    }
+    // message_status delivery-tick handling removed 2026-09-03, task
+    // messages-frontend-and-browser-route-removed — updated this.messages,
+    // which no longer exists (the Messages page is gone). The backend still
+    // records delivery status to the messages table; this was purely a
+    // browser-display update for a page that isn't rendered any more.
 
     if (ev.type === 'range_test_entry' && ev.data) {
       this._rangeStats = null; this._rangeChartCache = null;

@@ -13,7 +13,6 @@ import { execSync } from 'child_process';
 import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId, getAllDeviceCfgs } from './device-config.js';
 import deviceRemoveRouter from './device-remove.js';
 import { registerMacToNumResolver } from './node-filter.js';
-import { queryMessages } from './filters.js';
 import { getConfig, setConfig, clearNodeCache, stmts, migrateNodeDeviceMac, migrateDeviceColumnsToMac, loadNodeMacMap } from './db.js';
 import { scanner } from './scanner.js';
 import { dashMode } from './dash-mode.js';
@@ -27,7 +26,6 @@ import terrainRouter from './terrain-api.js';
 import tracerouteRouter from './traceroute-api.js';
 import radioAdminRouter from './radio-admin-api.js';
 import reachRouter from './reach-api.js';
-import messagesRouter from './messages-api.js';
 import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
 import autoPurgeRouter, { startAutoPurgeScheduler } from './auto-purge-api.js';
@@ -37,7 +35,7 @@ import nodesApi from './nodes-api.js';
 import { registerStartupHandlers } from './startup.js';
 import { initLifecycle } from './lifecycle.js';
 import { startImapReceiver } from './imap-receiver.js';
-import { resolveNodeLabel, registerMacResolver, registerNodeIdResolver } from './node-label.js';
+import { registerMacResolver, registerNodeIdResolver } from './node-label.js';
 import { OpManager } from './op-manager.js';
 import { renderPluginTabs, renderPluginNav, renderPluginHeader, renderPluginScripts } from './browser-plugins.js';
 
@@ -256,12 +254,6 @@ app.get('/status', async (req, res) => {
   }
 });
 
-app.get('/messages', (req, res) => {
-  const limit = parseInt(req.query.limit) || 100;
-  const rows = queryMessages(limit).map(r => ({ ...r, display_name: resolveNodeLabel(r.from_num) }));
-  res.json(rows);
-});
-
 app.delete('/nodes', (req, res) => {
   clearNodeCache();
   nodeList.clear();
@@ -383,8 +375,6 @@ app.use(tracerouteRouter);
 app.use('/radio-admin', radioAdminRouter);
 
 app.use(autoPurgeRouter);
-
-app.use(messagesRouter);
 
 // -- bridge proxy (device mgmt, BLE, per-device config) ---------------------
 

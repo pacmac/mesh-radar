@@ -1,91 +1,6 @@
-        <!-- ===================== MESSAGE MODAL ===================== -->
-        <!-- Opened via openMessageModal('direct'|'broadcast', node). Recipient is fixed — no selector. -->
-        <dialog class="modal" x-ref="msgModalDialog" @close="closeMessageModal()">
-          <div class="modal-box flex flex-col gap-3">
-            <!-- Header: locked recipient -->
-            <div class="flex items-center justify-between">
-              <h3 class="font-bold text-lg font-oxanium"
-                  x-text="msgIsDirect ? 'Direct Message' : 'Broadcast'"></h3>
-              <button class="btn btn-sm btn-ghost" @click="closeMessageModal()">✕</button>
-            </div>
-
-            <!-- To (read-only — locked when modal opens) -->
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-base-content/60 w-12 shrink-0">To</span>
-              <span class="badge badge-info"
-                    x-text="msgIsDirect ? (nodeLongName(msgDirectTo) || nodeShortName(msgDirectTo) || msgDirectTo) : 'All nodes (Broadcast)'"></span>
-            </div>
-
-            <!-- From device (hidden when only 1) -->
-            <div x-show="availableDevices.length > 1" class="flex items-center gap-2">
-              <span class="text-xs text-base-content/60 w-12 shrink-0">From</span>
-              <div class="join">
-                <template x-for="dev in availableDevices" :key="dev.addr">
-                  <button class="join-item btn btn-xs"
-                          :class="msgFrom === dev.node_id ? 'btn-primary' : 'btn-outline'"
-                          @click="msgFrom = dev.node_id; persistSet('msgFrom', dev.node_id)"
-                          x-text="deviceLabel(dev.node_id)"></button>
-                </template>
-              </div>
-            </div>
-
-            <!-- Channel -->
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-base-content/60 w-12 shrink-0">Ch</span>
-              <!-- WAS EIGHT HARDCODED OPTIONS, 0-7, with no relation to the selected
-                   radio and index 0 labelled "Primary". This is the top-bar form on
-                   every page, and it offered channels the radio does not have while
-                   naming one it does have wrongly. Same source as the messages form
-                   now: the radio's real channels, and a SERVED default. -->
-              <select class="select select-bordered select-sm" x-model="msgChannel"
-                      x-effect="if (msgChannel !== 'public' && msgChannel !== 'private') { msgChannel = msgDefaultChannel() }">
-                <template x-for="ch in msgFromChannels()" :key="ch.value">
-                  <option :value="ch.value" x-text="ch.label"></option>
-                </template>
-              </select>
-            </div>
-
-            <!-- Reply indicator -->
-            <div x-show="msgReplyId" class="flex items-center gap-1 text-xs text-base-content/60 bg-base-200 rounded px-2 py-1">
-              <span class="opacity-70">↩ Replying to</span>
-              <span class="font-semibold" x-text="nodeShortName(msgReplyFrom) || '?'"></span>
-              <button class="ml-auto btn btn-xs btn-ghost py-0 h-auto min-h-0 opacity-50" @click="msgReplyId = null; msgReplyFrom = null">✕</button>
-            </div>
-
-            <!-- Message textarea -->
-            <textarea class="textarea textarea-bordered w-full" rows="4"
-                      x-model="msgText" placeholder="Type a message…"
-                      x-ref="msgModalInput"
-                      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-                      @keydown="handleMsgKeydown($event)"
-                      @input="handleMsgInput($event)"
-                      @blur="$nextTick(() => { mentionOpen = false })"></textarea>
-
-            <!-- @mention autocomplete -->
-            <div x-show="mentionOpen" x-cloak
-                 class="bg-base-200 border border-base-300 rounded-box shadow-lg overflow-hidden">
-              <ul class="menu menu-xs p-1 max-h-40 overflow-y-auto">
-                <template x-for="(n, idx) in mentionedNodes()" :key="n.num">
-                  <li><a :class="idx === mentionIdx ? 'active' : ''" @mousedown.prevent="selectMention(n)"
-                         class="flex items-center gap-2">
-                    <span class="contents" x-html="nodeAvatar(n.num, n.user?.short_name, 'sm')"></span>
-                    <span class="font-mono font-semibold text-xs" x-text="'@' + (n.user?.short_name || '?')"></span>
-                    <span class="text-base-content/50 text-xs truncate" x-text="n.user?.long_name || ''"></span>
-                  </a></li>
-                </template>
-              </ul>
-            </div>
-
-            <!-- Send -->
-            <div class="flex items-center gap-2">
-              <button class="btn btn-primary btn-sm flex-1"
-                      :disabled="!msgText.trim()"
-                      @click="sendMessage()">Send</button>
-              <span class="text-success text-sm" x-show="msgSent" x-transition>Sent ✓</span>
-            </div>
-          </div>
-          <form method="dialog" class="modal-backdrop"><button>close</button></form>
-        </dialog>
+        <!-- MESSAGE MODAL removed 2026-09-03, task
+             messages-frontend-and-browser-route-removed — mesh-gw's own
+             dashboard Messages page is the only compose UI now. -->
 
         <!-- ===================== NODE INFO MODAL ===================== -->
         <dialog class="modal" x-ref="nodeInfoDialog">
@@ -180,16 +95,8 @@
                                  letter-spacing:0.10em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
                                  background:transparent;color:rgba(0,255,80,0.65);
                                  border:1px solid rgba(0,255,80,0.22)">POINT</button>
-                  <button @click="openMessageModal('broadcast', nodeInfo)"
-                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
-                                 letter-spacing:0.08em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
-                                 background:transparent;color:rgba(0,255,80,0.65);
-                                 border:1px solid rgba(0,255,80,0.22)">BC MSG</button>
-                  <button @click="openMessageModal('direct', nodeInfo)"
-                          style="flex:1;font-family:'Oxanium',monospace;font-size:11px;font-weight:700;
-                                 letter-spacing:0.08em;padding:0.4rem 0.6rem;border-radius:0.3rem;cursor:pointer;
-                                 background:transparent;color:rgba(0,255,80,0.65);
-                                 border:1px solid rgba(0,255,80,0.22)">DIR MSG</button>
+                  <!-- BC MSG / DIR MSG buttons removed 2026-09-03, task
+                       messages-frontend-and-browser-route-removed. -->
                   <button @click="$refs.nodeInfoDialog?.close()"
                           style="width:100%;font-family:'Oxanium',monospace;font-size:10px;
                                  letter-spacing:0.12em;padding:0.35rem;border-radius:0.3rem;cursor:pointer;

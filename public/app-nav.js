@@ -5,12 +5,12 @@ import { persistGet, persistSet } from './app-persist.js';
 // core names no plugin tab or path (docs/BROWSER_PLUGIN_SPEC.md).
 const _PATH_TO_TAB = {
   '/': 'overview', '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
-  '/config': 'cfg', '/range': 'range', '/messages': 'messages', '/devices': 'devices',
+  '/config': 'cfg', '/range': 'range', '/devices': 'devices',
   '/device-config': 'devices', '/performance': 'perf',
 };
 const _TAB_TO_PATH = {
   overview: '/', radar: '/radar', nodes: '/nodes',
-  cfg: '/config', range: '/range', messages: '/messages', devices: '/devices',
+  cfg: '/config', range: '/range', devices: '/devices',
   perf: '/performance',
 };
 for (const plugin of (window.__dashPlugins || [])) {
@@ -93,7 +93,6 @@ export const navMixin = {
     // replayed on connect). Writing the function to satisfy the call would add
     // the timer the standing rule forbids.
     else if (t === 'range') { this.loadRangeTest(); this.loadRangeTimer(); }
-    else if (t === 'messages') this.unreadMessages = 0;
     else if (t === 'perf') { this.adoptPerfLoraCfg(); }
     // Plugin tab activation, AFTER the core chain — the plugin decides what
     // entering its own tab means. Placing this inside the else-if chain splits

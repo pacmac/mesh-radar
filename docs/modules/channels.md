@@ -2,16 +2,22 @@
 module: channels
 source:
   - src/mesh-send.js
-  - src/messages-api.js
   - src/automation.js
   - src/callout.js
   - src/resolve.js
   - src/ws-relay.js
-source_hash: 74a117125874cad5cd9c0027b8f49e38ee10a1e46cac3c38447c587bf00489f9
+source_hash: 11d92232a878dcf61632621fe206c7acf7ce27478c101bcdcbbccdfd435626ed
 updated: 2026-09-03
 ---
 
 # node-dash knows two words: `public` and `private`
+
+## `src/messages-api.js` removed from this spec's sources (2026-09-03)
+
+The browser's own send route — deleted outright, task
+messages-frontend-and-browser-route-removed. `sendMeshText()` (`mesh-send.js`)
+is unaffected and still the one place every outbound send goes through, now
+called only by `automation.js`/`callout.js` and no longer by an HTTP route.
 
 Peter, 2026-08-19:
 

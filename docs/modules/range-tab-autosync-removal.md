@@ -3,8 +3,8 @@ module: range-tab-autosync-removal
 source:
   - public/app-nav.js
   - public/app-range.js
-source_hash: e5af728c06810e27a77ba32c9225390b620f645d5f01f2981a9a1cf8aaa81ce7
-updated: 2026-08-18
+source_hash: 3894475e9f7dd99883b054747439b494aef7e1b23dd1af76695c6fcf20bb5e52
+updated: 2026-09-03
 ---
 
 # Removal: `_startRangeAutoSync()` is called and has never existed

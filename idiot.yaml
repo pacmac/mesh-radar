@@ -375,3 +375,37 @@
     runs: 1
   trial: null
   fix: null
+- id: messages-frontend-and-browser-route-removed
+  type: new
+  what: "node-dash still serves a full Messages frontend (tab-messages.html, app-messages.js) and a browser-facing\
+    \ send route (messages-api.js POST /:nodeId/messages) even though mesh-gw's own dashboard Messages\
+    \ page (docs/gw/modules/dashboard_messages.md) is now the only place this should exist (Peter, 2026-09-03:\
+    \ node-dash 'has been demoted', zero node-dash frontend for messages). Message DATA CAPTURE (the messages\
+    \ table, persist.js ingestion) is explicitly kept \u2014 precedent: traceroute-removal-backend.md\
+    \ 'keep the data, drop the reads'."
+  spec: docs/modules/messages-api.md
+  files:
+  - src/messages-api.js
+  - src/index.js
+  - src/mesh-send.js
+  - src/ws-relay.js
+  - public/app-messages.js
+  - public/app.js
+  - public/partials/tab-messages.html
+  - public/partials/tab-shared.html
+  - public/partials/drawer-sidebar.html
+  - public/index.html
+  test:
+    command:
+    - bash
+    - /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_messages_removed.sh
+    criterion: tab-messages.html/app-messages.js gone, no real import statement references them
+    runs: 1
+  trial:
+    file: .proofs/messages-frontend-and-browser-route-removed.trial.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T18:34:16.473'
+    commit: fed1cfa-dirty
+  fix: null

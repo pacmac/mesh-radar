@@ -49,16 +49,9 @@ export const nodesMixin = {
     return this.nodes;
   },
 
-  allMsgNodes() {
-    const base = this._knownNodes.length ? this._knownNodes : this.nodes;
-    const nums = new Set(base.map(n => n.num));
-    const extra = Object.values(this.msgNodeCache).filter(n => !nums.has(n.num));
-    return [...base, ...extra].sort((a, b) => {
-      const an = (a.user?.long_name || a.user?.short_name || '').toLowerCase();
-      const bn = (b.user?.long_name || b.user?.short_name || '').toLowerCase();
-      return an < bn ? -1 : an > bn ? 1 : 0;
-    });
-  },
+  // allMsgNodes() removed 2026-09-03, task
+  // messages-frontend-and-browser-route-removed — its only caller was the
+  // deleted message compose modal's recipient picker.
 
   setNodeSource(src) {
     this.nodeSource = src;
@@ -175,11 +168,13 @@ export const nodesMixin = {
     }).catch(() => {});
   },
 
+  // _knownNodes/msgNodeCache fallbacks removed 2026-09-03, task
+  // messages-frontend-and-browser-route-removed — both were populated only by
+  // the deleted Messages page (nodes seen solely via a message, not yet in
+  // the main node cache). this.nodes is the sole source now.
   nodeLabel(num) {
     if (num == null) return '';
-    const n = this.nodes.find(n => n.num === num)
-           ?? this._knownNodes.find(n => n.num === num)
-           ?? this.msgNodeCache[num];
+    const n = this.nodes.find(n => n.num === num);
     return n?.display_name || n?.user?.short_name || '';
   },
 
@@ -187,9 +182,7 @@ export const nodesMixin = {
 
   nodeLongName(num) {
     if (num == null) return '';
-    const n = this.nodes.find(n => n.num === num)
-           ?? this._knownNodes.find(n => n.num === num)
-           ?? this.msgNodeCache[num];
+    const n = this.nodes.find(n => n.num === num);
     return n?.user?.long_name || n?.user?.short_name || this.nodeLabel(num);
   },
 
