@@ -5,8 +5,8 @@ source:
   - src/aim.js
   - src/traceroute-api.js
   - src/config-api.js
-source_hash: 12f0cfe10efd9c27b373e9c075d00bdfafcd9729f565ac40b99c4b434cf54566
-updated: 2026-08-18
+source_hash: f404d2d15de835fef49e3d5eb35015f127b66bc5ad47acff6649acb3a096cff1
+updated: 2026-09-03
 ---
 
 # The corrected argument contract

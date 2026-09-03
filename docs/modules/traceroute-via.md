@@ -4,8 +4,8 @@ source:
   - src/aim.js
   - src/traceroute.js
   - src/traceroute-api.js
-source_hash: 5d74039f1c3b302b2c041e5594eabd9fc3898507eb79baee9a7215ce7f1aeac7
-updated: 2026-08-18
+source_hash: 1b1e8a213929c9fd888b042b399461de88551ea7d95475138ccd8cb1a6680fb2
+updated: 2026-09-03
 ---
 
 # `via` — aim at a chosen node instead of the derived one

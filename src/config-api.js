@@ -7,7 +7,14 @@ import { logEvent } from './hooks.js';
 import { nodeList } from './node-list.js';
 import { modeConfigAll, isValidRole, isValidAim, isValidRadio, modeVocabulary, MODE_KEYS } from './dash-mode.js';
 import { calloutConfig, renderTemplate } from './callout.js';
-import { HOLD_CEILING_MS } from './rotator.js';
+// The shared-rotator hold ceiling used to be imported from rotator.js, which
+// clamped every caller to it. mesh-gw's aim plugin now owns and enforces this
+// itself (LOCK_MAX_MS, clamped not refused —
+// docs/gw/modules/radio_rotator_config.md, "there is no reason to hold longer
+// than a minute"). This validates form input against that same documented
+// fact rather than importing a client-side copy of a constant that no longer
+// exists (2026-09-03, task rotator-command-via-meshgw-aim).
+const MESHGW_HOLD_CEILING_SEC = 60;
 
 const router = Router();
 
@@ -130,8 +137,8 @@ export const DEFAULTS = {
   // names a mode that does nothing.
   //
   // For a DIRECTIONAL radio this is also how long the beam is held, so raising
-  // it holds a rotator the garage alarm shares for longer. rotator.js's
-  // HOLD_CEILING_MS clamps that independently.
+  // it holds a rotator the garage alarm shares for longer. mesh-gw's aim
+  // plugin clamps that independently now.
   'traceroute.timeout_sec':   60,
   // DISCOVERY STRATEGY. One key, because this list governs two things at once:
   // the generic PUT below rejects anything not in it, and ws-relay's
@@ -305,10 +312,9 @@ export const DISCOVERY_LIMITS = {
   attempts_per_target: [1, 50],
   cooldown_min:        [1, 1440],
   max_silence_days:    [1, 365],
-  // IMPORTED, NOT RESTATED. The shared-rotator hold ceiling is rotator policy
-  // and rotator.js owns it (2026-08-17). It was the literal 120 here and a
-  // separate literal in traceroute.js; the form and the pointer could drift.
-  hold_sec:            [0, HOLD_CEILING_MS / 1000],
+  // mesh-gw's own ceiling now (see the import comment above) — was 120 here
+  // when rotator.js owned it locally; mesh-gw's is 60.
+  hold_sec:            [0, MESHGW_HOLD_CEILING_SEC],
   proven_min_hits:     [1, 50],
   proven_min_rate:     [0, 100],
   new_node_hours:      [0, 720],

@@ -5,8 +5,8 @@ source:
   - src/aim.js
   - src/resolve.js
   - src/traceroute-api.js
-source_hash: fe10ee5c6768b02e41d1fc443a83de628e79b9e6b2e8d8740d766896c46780d5
-updated: 2026-08-18
+source_hash: ec7a75c477ed167a13e69a30ce9cfd82f13f3d9cb657d12d699812bd30c92c36
+updated: 2026-09-03
 ---
 
 # The traceroute flow, as Peter specified it

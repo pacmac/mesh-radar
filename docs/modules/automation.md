@@ -1,8 +1,8 @@
 ---
 module: automation
 source: src/automation.js
-source_hash: eef97cc8a5fa2f17a5172808a7d2100e17e9f317fa5e3548989ad94fbeb82e0a
-updated: 2026-08-16
+source_hash: 86afd93890d8eff1d936d926af546e1f988cba18a24824feaf4d6d16ec12fc2f
+updated: 2026-09-03
 ---
 
 # Module: automation

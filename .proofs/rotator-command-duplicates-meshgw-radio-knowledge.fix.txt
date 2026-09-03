@@ -1,0 +1,6 @@
+$ bash -c 
+count=$(grep -l "from './rotator.js'" src/*.js 2>/dev/null | wc -l)
+echo "files still importing rotator.js: $count"
+test "$count" -eq 0
+
+files still importing rotator.js: 0

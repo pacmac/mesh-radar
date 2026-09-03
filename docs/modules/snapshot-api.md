@@ -1,8 +1,8 @@
 ---
 module: snapshot-api
 source: src/snapshot-api.js
-source_hash: 995a0a1a819a332e1cbe5a8bba0483650f543e343fb59c65a7c454c010927977
-updated: 2026-08-06
+source_hash: 56c16fddcaee57545f8b7d0f0652f013d708bc0151c524cad7e7f5f1697b6ef8
+updated: 2026-09-03
 ---
 
 # Module: snapshot-api
@@ -199,6 +199,26 @@ anchors carry no creation timestamp. Null says "cannot measure"; 0 would claim
 
 Verified on `all`: 115 first-ever contacts · 16 new doors · 1104 first heard ·
 471.8 km furthest new contact (B14) · 25093 attempts at 14.7%.
+
+## Door identity is not this module's — 2026-08-23
+
+`distribution()` built its own door query inline and `newGround()` built a second
+one, and **neither excluded `0xFFFFFFFF`**, so `/events` published the broadcast
+address as the fourth-busiest relay in the mesh. Found by mesh-gw reading our
+store, not by us.
+
+Both now defer to `src/reach.js`:
+
+- `distribution().doors` — `doorUsage({ since })`, the single door-usage query.
+  This module keeps the presentation (`pct`, `doors_total`) and holds no SQL for
+  it. `doorUsage` returns plain `{num, uses, name}` and takes no view on layout.
+- `newGround().new_doors` — a *first-appearance* count over the same `route[0]`,
+  not a usage ranking, so it cannot call `doorUsage()`. It imports `BROADCAST` and
+  states the rule in its own SQL.
+
+Both were wrong at once, and the harness that checks them made the same omission,
+so **54 assertions across six windows passed throughout**. Full reasoning and the
+five-implementation table: `docs/modules/reach.md`.
 
 **The check that was missing:** vary the window, assert the render changes. Six
 windows produced six distinct renders. A value identical across every window is

@@ -18,7 +18,7 @@ import { getConfig } from './db.js';
 import { isPrivateChannel } from './ws-relay.js';
 import { sendMeshText } from './mesh-send.js';
 import { nodeList } from './node-list.js';
-import { rotator } from './rotator.js';
+import { point } from './aim-client.js';
 import { bearing as bearingOf, signalQuality, numToNodeId, nodeIdToNum } from './utils.js';
 import { resolveDeviceLabel } from './node-label.js';
 import { fmtStamp } from './format.js';
@@ -164,7 +164,7 @@ export const VERBS = {
       // THE ROTATOR IS SHARED with the garage alarm. point() already waits out
       // another holder's stated hold rather than fighting it; `by` names us in
       // its lock, and the hold is a brief one we release.
-      const r = await rotator.point(az, { hold: POINT_HOLD_MS, by: 'automation' });
+      const r = await point(az, { hold: POINT_HOLD_MS, by: 'automation' });
       if (r?.busy)    return reply(device, pktId, `point: ${az}deg busy, retry in ${Math.round((r.retryInMs ?? 0) / 1000)}s`);
       if (r?.timeout) return reply(device, pktId, `point: ${az}deg timed out`);
       if (!r?.ok)     return reply(device, pktId, `point: ${az}deg failed`);

@@ -1,4 +1,4 @@
-import { rotator } from './rotator.js';
+import { move, events } from './aim-client.js';
 import { dashMode, isTransmitterForMode } from './dash-mode.js';
 import { stmts, getConfig, insertRangeTestEntry, recordYagiTargeted, recordYagiContact } from './db.js';
 import { nodeList } from './node-list.js';
@@ -67,10 +67,10 @@ function pointAt(node) {
 
   log.info(`→ ${node.label} (${node.num}) az=${node.az.toFixed(1)}°`);
   try {
-    rotator.move(node.az, { by: 'active-tracker' });
+    move(node.az, { by: 'active-tracker' });
     recordYagiTargeted(node.num);
     const info = stmts.getNodeinfoByNum.get(node.num) ?? {};
-    rotator.emit('point_target', {
+    events.emit('point_target', {
       point_target:       node.num,
       az:                 node.az,
       _mode:              dashMode.value,
@@ -121,7 +121,7 @@ export const activeTracker = {
       if (snr  != null) _lastSnr  = snr;
 
       log.debug(`signal from ${_firedNum} rssi=${rssi ?? '?'} snr=${snr ?? '?'}`);
-      rotator.emit('signal_update', { signal_num: _firedNum, rssi, snr, ts: Date.now() });
+      events.emit('signal_update', { signal_num: _firedNum, rssi, snr, ts: Date.now() });
       try {
         recordYagiContact(_firedNum, rssi, snr);
         // via_mqtt: 0 stated explicitly, not left to the wrapper's default. This

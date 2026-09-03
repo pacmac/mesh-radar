@@ -3,6 +3,25 @@ import { fetchJSON, nextFrame } from './app-helpers.js';
 import { buildForm, collectForm } from './app-forms.js';
 
 export const rotatorMixin = {
+  // ONE-SHOT — see the call site (app-radar.js initRadar). GET
+  // /plugins/aim/status directly from mesh-gw; sets rotatorConnected /
+  // yagiAz from its answer, same fields the old live status frame set.
+  async _checkRotatorStatus() {
+    if (!this.meshgwBase) return;
+    try {
+      const res = await fetch(`${this.meshgwBase}/plugins/aim/status`);
+      const s = await res.json().catch(() => ({}));
+      this.rotatorConnected = !!s.reachable;
+      if (s.az != null) {
+        this.yagiAz = s.az;
+        if (this.tab === 'radar') this._animateBeam(s.az);
+      }
+    } catch {
+      this.rotatorConnected = false;
+    }
+  },
+
+
   _onRotatorEvent(data) {
     // Only mark connected when firmware telemetry is present — a bare {_mode} event
     // is sent on WS connect to seed the persisted mode even when rotator is offline.
@@ -80,8 +99,10 @@ export const rotatorMixin = {
     if (lbl) lbl.textContent = Math.round(newAz) + '°';
   },
 
+  // Node-dash's own rx/tx-role mode, not rotator hardware — moved out from
+  // under /rotator (2026-09-03, task rotator-command-via-meshgw-aim).
   async setRotatorMode(m) {
-    await fetchJSON('/rotator/mode', 'POST', { mode: m });
+    await fetchJSON('/mode', 'POST', { mode: m });
   },
 
 
@@ -97,31 +118,62 @@ export const rotatorMixin = {
     await fetchJSON('/rotator/active', 'POST', { name });
   },
 
+  // Straight to mesh-gw's aim plugin now — node-dash no longer selects or
+  // commands a radio for pointing (2026-09-03, task
+  // rotator-command-via-meshgw-aim; docs/gw/modules/aim_plugin.md). No `radio`
+  // named: aim resolves whichever radio has a rotator configured. this.meshgwBase
+  // is server-supplied (settings WS, meshgw_port) — never a hardcoded LAN address.
   async moveRotator(az) {
-    if (az == null) return;
+    if (az == null || !this.meshgwBase) return;
     this.rotatorStatus = { ...this.rotatorStatus, target: Number(az) };
     if (this.tab === 'radar') this._drawTargetArm();
-    await fetchJSON('/rotator/move', 'POST', { az: Number(az) });
+    try {
+      const res = await fetch(`${this.meshgwBase}/plugins/aim/point`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bearing_deg: Number(az), by: 'browser' }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (body?.az != null) {
+        this.yagiAz = body.az;
+        if (this.tab === 'radar') this._animateBeam(body.az);
+      }
+    } catch (e) {
+      console.warn('moveRotator failed', e);
+    }
   },
 
+  // FIRMWARE CALIBRATION — OUT OF SCOPE (2026-09-03, task
+  // rotator-command-via-meshgw-aim). node-dash no longer connects to a
+  // rotator to relay setvar/calibrate/offset commands; mesh-gw's aim plugin
+  // has no such surface either (point/status/where/ledger only — rare,
+  // one-time physical setup, not a command path). Use the rotator's own
+  // native web UI (port 80 on its host) for these. Left wired rather than
+  // deleted so the panel fails visibly (rotatorCalError) instead of silently.
   async applyPwmRunPct() {
     if (this.pwmRunPctInput == null) return;
     const pct = Math.max(1, Math.min(100, this.pwmRunPctInput)) / 100;
-    await fetchJSON('/rotator/setvar', 'POST', { action: 'setPwmRunPct', val: pct.toFixed(2) });
+    try {
+      await fetchJSON('/rotator/setvar', 'POST', { action: 'setPwmRunPct', val: pct.toFixed(2) });
+    } catch (e) { this.rotatorCalError = String(e); }
   },
 
   async applyPwmFreq() {
     if (this.pwmFreqInput == null) return;
     const freq = Math.max(10, Math.min(20000, this.pwmFreqInput));
-    await fetchJSON('/rotator/setvar', 'POST', { action: 'setPwmFreq', val: String(freq) });
+    try {
+      await fetchJSON('/rotator/setvar', 'POST', { action: 'setPwmFreq', val: String(freq) });
+    } catch (e) { this.rotatorCalError = String(e); }
   },
 
+  // node-dash's own sweep, not rotator hardware — moved out from under
+  // /rotator (2026-09-03, task rotator-command-via-meshgw-aim).
   startScan() {
-    fetchJSON('/rotator/scan/start', 'POST').catch(() => {});
+    fetchJSON('/scan/start', 'POST').catch(() => {});
   },
 
   abortScan() {
-    fetchJSON('/rotator/scan/abort', 'POST').catch(() => {});
+    fetchJSON('/scan/abort', 'POST').catch(() => {});
   },
 
   // Adapt the device schema (flat {id,label,group,type,min,max,value}) into

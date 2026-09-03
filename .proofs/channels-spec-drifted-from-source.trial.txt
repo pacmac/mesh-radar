@@ -1,0 +1,4 @@
+$ bash -c 
+python scripts/check_specs.py 2>&1 | grep "^  ok      channels" 
+
+  ok      channels

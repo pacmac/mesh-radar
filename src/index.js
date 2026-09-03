@@ -15,15 +15,13 @@ import deviceRemoveRouter from './device-remove.js';
 import { registerMacToNumResolver } from './node-filter.js';
 import { queryMessages } from './filters.js';
 import { getConfig, setConfig, clearNodeCache, stmts, migrateNodeDeviceMac, migrateDeviceColumnsToMac, loadNodeMacMap } from './db.js';
-import { rotator } from './rotator.js';
 import { scanner } from './scanner.js';
+import { dashMode } from './dash-mode.js';
 import { nodeList } from './node-list.js';
 import { attachWsRelay, getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 import { BRIDGE_CONFIG_SCHEMA } from './bridge-config-schema.js';
-import { ROTATOR_CONFIG_SCHEMA } from './rotator-config-schema.js';
 import { startAlertPoller } from './alerts.js';
 import alertsRouter from './alerts-api.js';
-import rotatorRouter from './rotator-api.js';
 import clustersRouter from './clusters-api.js';
 import terrainRouter from './terrain-api.js';
 import tracerouteRouter from './traceroute-api.js';
@@ -321,7 +319,23 @@ app.put('/home_pos', (req, res) => {
              alt: getConfig('home.alt', null) });
 });
 
-app.use('/rotator', rotatorRouter);
+// -- dash mode + scan control ------------------------------------------------
+// PASV/ACTV/SCAN and the scan start/abort buttons used to live under
+// /rotator/*, which read as rotator-hardware knowledge it never was — dash
+// mode is node-dash's own rx/tx-role concept (dash-mode.js) and scan is
+// node-dash's own sweep (scanner.js), neither commands a radio directly any
+// more (both now call mesh-gw's aim plugin — 2026-09-03, task
+// rotator-command-via-meshgw-aim). Moved here, out from under a router that
+// no longer exists.
+app.post('/mode', (req, res) => {
+  const m = Number(req.body?.mode);
+  if (![0, 1, 2].includes(m)) return res.status(400).json({ error: 'mode must be 0, 1 or 2' });
+  dashMode.set(m);
+  res.json({ mode: m });
+});
+app.post('/scan/start', (req, res) => { scanner.start(); res.json({ ok: true }); });
+app.post('/scan/abort', (req, res) => { scanner.abort(); res.json({ ok: true }); });
+
 app.use('/', terrainRouter);
 // The observatory's own routers. Not mounted while it is disabled, so its routes
 // 404 rather than serving a board built from a frozen table. Mounted at root
@@ -332,8 +346,6 @@ if (getConfig('observatory.enabled', false)) {
   app.use('/', reachRouter);
   app.use('/', snapshotRouter);
 }
-
-app.get('/schema/rotator_config', (req, res) => res.json(ROTATOR_CONFIG_SCHEMA));
 
 // node-dash-owned schema endpoints (must be before bridge proxy)
 app.get('/schema/bridge_config', (req, res) => res.json(BRIDGE_CONFIG_SCHEMA));
@@ -487,7 +499,6 @@ server.listen(PORT, () => {
     logEvent({ kind: 'deploy', source: 'index', summary: 'started (revision unknown)' });
   }
   bridge.start();
-  rotator.start();
   startAlertPoller(nodeList);
   // Standing analysis tasks — mine the stored data for findings, no airtime.
   // Task `hooks-standing-tasks`.
@@ -515,8 +526,9 @@ server.listen(PORT, () => {
     const savedNodes = getConfig('scan_nodes', []);  // read BEFORE setScanActive clears cache
     nodeList.setScanActive(true, false);  // clear in-memory cache but keep SQLite scan_nodes intact
     if (savedNodes.length) nodeList.restoreScanNodes(savedNodes);
-    // Wait for rotator to connect before resuming movement
-    rotator.once('status', () => scanner.resume(savedScan));
+    // No connection to wait for any more — mesh-gw's aim plugin is stateless
+    // per command (2026-09-03, task rotator-command-via-meshgw-aim).
+    scanner.resume(savedScan);
   }
 });
 

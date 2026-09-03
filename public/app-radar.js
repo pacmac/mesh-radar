@@ -98,6 +98,12 @@ export const radarMixin = {
       this.refreshRadar();
       this.geocodeNodes();
       if (this.yagiAz != null) this._animateBeam(this.yagiAz);
+      // ONE-SHOT connectivity check, not a live feed — mesh-gw's aim plugin has
+      // none to subscribe to (2026-09-03, task rotator-command-via-meshgw-aim;
+      // "stop diagnosing the rotator... busy or done is the whole contract").
+      // Form-population-shaped GET, fired once on entering the tab, same as the
+      // sanctioned config-editor reads — not polling.
+      this._checkRotatorStatus();
     } finally {
       this._initRadarRunning = false;
     }

@@ -3,14 +3,23 @@ module: radio-resolve-and-aim
 source:
   - src/resolve.js
   - src/aim.js
-  - src/rotator.js
   - src/config-api.js
   - src/traceroute.js
-source_hash: b8445e714a29c05b000868c8637000f489cfc606fbed5d495212166311f24a19
-updated: 2026-08-17
+source_hash: 084224dc69be936f1d163a7b834f2c658894bf06219a64cba641f9953873a36a
+updated: 2026-09-03
 ---
 
 # Spec: resolve, aim, traceroute — three functions, one direction of call
+
+## `src/rotator.js` removed from this spec's sources (2026-09-03)
+
+Deleted outright — task `rotator-command-via-meshgw-aim`. `aim.js` now points via
+`aim-client.js` (mesh-gw's `aim` plugin) instead of a direct v4/v5 connection.
+`resolve.js` never imported `rotator.js` directly (verified: not in its import
+list), so this is a source-list correction, not a behaviour change to resolve.js
+itself. Its own in-file comment about `rotator.js:18-19` owning `ROTATOR_WS_URL`/
+`ROTATOR_V5_WS_URL` is now stale prose — noted, not fixed here (out of scope: not
+one of the files this task's ledger entry names).
 
 ## Purpose
 

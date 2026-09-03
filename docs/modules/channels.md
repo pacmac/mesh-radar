@@ -7,8 +7,8 @@ source:
   - src/callout.js
   - src/resolve.js
   - src/ws-relay.js
-source_hash: 944e40901d7552e85549676e4191a5d1d1e50e6040a360c8d63dc8b473400f95
-updated: 2026-08-19
+source_hash: 74a117125874cad5cd9c0027b8f49e38ee10a1e46cac3c38447c587bf00489f9
+updated: 2026-09-03
 ---
 
 # node-dash knows two words: `public` and `private`

@@ -16,8 +16,8 @@ source:
   - public/feature-flags.js
   - public/partials/tab-perf.html
   - public/partials/tab-shared.html
-source_hash: 4cafa415f2bea5ef054abd1c52cb832c4762009688817131a86a252a066fcdda
-updated: 2026-08-17
+source_hash: ca5268aea7d755ea0d7da8d73d722833e51424a70b42b4bfd1392e4831d91123
+updated: 2026-09-03
 ---
 
 # Removal spec: every trace of traceroute in `public/`

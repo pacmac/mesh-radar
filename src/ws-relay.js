@@ -1,6 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { bridge } from './bridge.js';
-import { rotator } from './rotator.js';
+import { events as aimEvents } from './aim-client.js';
 import { scanner } from './scanner.js';
 import { nodeList } from './node-list.js';
 import { insertTilt, insertEnvHistory, getTiltCal, getConfig, queryRangeTestLog, queryAllTiltHistory, queryAllEnvHistory, stmts, persistNodeMac, loadNodeMacMap } from './db.js';
@@ -130,22 +130,6 @@ function radarOverlays() {
 //
 // src/link-budget.js is untouched and still serves the per-RADIO budget the
 // Performance page shows. Only the per-ROW attachment is gone.
-
-function makeRotatorThrottle(sendFn) {
-  let lastMs    = 0;
-  let lastBusy  = undefined;
-  let lastStall = undefined;
-  let lastDir   = undefined;
-  return (data) => {
-    const now          = Date.now();
-    const stateChanged = data.busy !== lastBusy || data.stall !== lastStall || data.dir !== lastDir;
-    const interval     = data.busy ? 100 : 1000;
-    if (stateChanged || now - lastMs >= interval) {
-      lastMs = now; lastBusy = data.busy; lastStall = data.stall; lastDir = data.dir;
-      sendFn(data);
-    }
-  };
-}
 
 // State event types from the bridge BLE state machine — buffered per device
 const STATE_EVENT_TYPES = new Set(['device_state', 'device_data']);
@@ -712,7 +696,17 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     for (const [key, fallback] of Object.entries(CONFIG_DEFAULTS)) {
       config[key] = getConfig(key, fallback);
     }
-    return { type: 'settings', config };
+    return {
+      type: 'settings',
+      config,
+      // The PORT the browser reaches mesh-gw's aim plugin on directly, for
+      // rotator commands (2026-09-03, task rotator-command-via-meshgw-aim) —
+      // "post_to is why a hardcoded write URL is refused and a server-supplied
+      // one is not" (mesh-gw's own dashboard.md). Same host as this page
+      // (window.location.hostname); only the port differs and only the
+      // server knows it (BRIDGE_URL). Never hardcode a LAN address in client JS.
+      meshgw_port: new URL(process.env.BRIDGE_URL || 'http://localhost:8001').port || '8001',
+    };
   }
   _broadcastSettings = () => broadcast(settingsEvent());
 
@@ -911,25 +905,23 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     broadcast(ev);
   });
 
-  // Rotator status frames also carry the switchable target list + active target
-  // so the browser can render a data-driven v4/v5 selector without a REST GET.
-  rotator.on('status', makeRotatorThrottle((data) => broadcast({
-    type: 'rotator',
-    data: { ...data, targets: rotator.targets, active_target: rotator.activeTarget },
-  })));
+  // Rotator status/target-list/schema broadcasting — REMOVED 2026-09-03, task
+  // rotator-command-via-meshgw-aim. node-dash no longer holds a live rotator
+  // connection to report status from, and mesh-gw's aim plugin has no push
+  // feed to relay ("stop diagnosing the rotator... busy or done is the whole
+  // contract" — docs/gw/modules/aim_plugin.md). What remains — point_target,
+  // signal_update — describes active-tracker's OWN tracking state, not the
+  // rotator's wire status, and now comes from aim-client.js's events bus.
   let lastPointTarget  = null;
   let lastSignalUpdate = null;
-  rotator.on('point_target', (data) => {
+  aimEvents.on('point_target', (data) => {
     lastPointTarget = data;
     broadcast({ type: 'rotator', data });
   });
-  rotator.on('signal_update', (data) => {
+  aimEvents.on('signal_update', (data) => {
     lastSignalUpdate = data;
     broadcast({ type: 'signal_update', data });
   });
-  // v5 device config schema — pushed on (re)fetch so the browser builds its
-  // rotator config form from the device's own field list (shared buildForm).
-  rotator.on('schema', (schema) => broadcast({ type: 'rotator', data: { schema } }));
   dashMode.on('change',      (data) => { broadcast({ type: 'rotator', data }); broadcastDeviceList(); });
 
   scanner.on('start',    (data) => broadcast({ type: 'scan_start',    data }));
@@ -1013,7 +1005,9 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     function buildRadarContext() {
       const mode      = dashMode.value;      // 0=PASV, 1=ACTV, 2=SCAN
       const targetNum = lastPointTarget?.point_target ?? null;
-      const armAz     = (mode !== 0) ? (rotator.status?.target ?? null) : null;
+      // No live rotator status to sample any more — lastPointTarget already
+      // carries the az from the most recent command (2026-09-03).
+      const armAz     = (mode !== 0) ? (lastPointTarget?.az ?? null) : null;
 
       // focus_node: WHICH NODE GETS CROSSHAIRS. Renamed from traceroute_node —
       // 2026-08-17, task `traceroute-remove-backend-remainder`.
@@ -1076,7 +1070,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     //
     // What remains is what never depended on a traceroute: the rotator's own
     // target, the mode, and the scan.
-    rotator.on('point_target', () => broadcastRadarContext());
+    aimEvents.on('point_target', () => broadcastRadarContext());
     dashMode.on('change', () => broadcastRadarContext());
     scanner.on('contact', () => broadcastRadarContext());
   }
@@ -1262,18 +1256,11 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       broadcastDeviceList();
     }
 
-    // Always send current dash mode + switchable targets — rotator may be
-    // offline but mode is persisted and the selector must still render so the
-    // user can switch TO an offline/other device.
-    ws.send(JSON.stringify({ type: 'rotator', data: {
-      _mode: dashMode.value,
-      targets: rotator.targets,
-      active_target: rotator.activeTarget,
-      schema: rotator.schema,
-    } }));
-    if (rotator.connected && Object.keys(rotator.status).length > 0) {
-      ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
-    }
+    // Always send current dash mode so the mode selector renders even before
+    // any rotator command has been issued this session. No more switchable
+    // target list or live status to replay (2026-09-03) — node-dash holds
+    // neither any more.
+    ws.send(JSON.stringify({ type: 'rotator', data: { _mode: dashMode.value } }));
     if (lastPointTarget) {
       ws.send(JSON.stringify({ type: 'rotator', data: lastPointTarget }));
     }
@@ -1367,18 +1354,9 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       ws.send(JSON.stringify(state));
     }
 
-    // Always send current dash mode + switchable targets — rotator may be
-    // offline but mode is persisted and the selector must still render so the
-    // user can switch TO an offline/other device.
-    ws.send(JSON.stringify({ type: 'rotator', data: {
-      _mode: dashMode.value,
-      targets: rotator.targets,
-      active_target: rotator.activeTarget,
-      schema: rotator.schema,
-    } }));
-    if (rotator.connected && Object.keys(rotator.status).length > 0) {
-      ws.send(JSON.stringify({ type: 'rotator', data: { ...rotator.status, _mode: dashMode.value } }));
-    }
+    // Always send current dash mode — no more switchable target list or live
+    // status to replay (2026-09-03, task rotator-command-via-meshgw-aim).
+    ws.send(JSON.stringify({ type: 'rotator', data: { _mode: dashMode.value } }));
     if (lastPointTarget) {
       ws.send(JSON.stringify({ type: 'rotator', data: lastPointTarget }));
     }
@@ -1401,9 +1379,6 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       if (!evAddr || evAddr === addr || ev.node_id === nodeId || ev.type?.startsWith('ota_')) sendEnriched(ws, ev);
     }
 
-    const onRotatorStatus = makeRotatorThrottle((data) => {
-      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
-    });
     const onRotatorTarget = (data) => {
       if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'rotator', data }));
     };
@@ -1428,9 +1403,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     }
 
     bridge.on('event', onEvent);
-    rotator.on('status',        onRotatorStatus);
-    rotator.on('point_target',  onRotatorTarget);
-    rotator.on('signal_update', onSignalUpdate);
+    aimEvents.on('point_target',  onRotatorTarget);
+    aimEvents.on('signal_update', onSignalUpdate);
     dashMode.on('change', onDashMode);
     scanner.on('start',    onScanStart);
     scanner.on('progress', onScanProgress);
@@ -1440,9 +1414,8 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
 
     ws.on('close', () => {
       bridge.off('event', onEvent);
-      rotator.off('status',        onRotatorStatus);
-      rotator.off('point_target',  onRotatorTarget);
-      rotator.off('signal_update', onSignalUpdate);
+      aimEvents.off('point_target',  onRotatorTarget);
+      aimEvents.off('signal_update', onSignalUpdate);
       dashMode.off('change', onDashMode);
       scanner.off('start',    onScanStart);
       scanner.off('progress', onScanProgress);

@@ -3,8 +3,8 @@ module: traceroute-via-bearing
 source:
   - src/aim.js
   - src/traceroute-api.js
-source_hash: 62e9e4549af88cc8936c59a35348f2390084306eb65bb13e01f98d513fe3940f
-updated: 2026-08-18
+source_hash: b0230e5ce5bceda76f290297352a55292b01f73af4dd8f6434e6589ebbbba658
+updated: 2026-09-03
 ---
 
 # `via` accepts a BEARING as well as a node

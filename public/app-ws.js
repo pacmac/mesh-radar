@@ -117,6 +117,18 @@ export const wsMixin = {
       // went with the traceroute history (2026-08-17). The config key itself
       // stays in the store for whatever replaces it.
       if (cfg['range_test.duration']) this.rangeDuration = cfg['range_test.duration'];
+      // Rotator commands go straight from the browser to mesh-gw's aim plugin
+      // now (2026-09-03, task rotator-command-via-meshgw-aim) — same host as
+      // this page, only the port differs, and only the server knows it.
+      // SERVER-SUPPLIED, never a hardcoded LAN address in client JS.
+      if (ev.meshgw_port) {
+        const hadBase = !!this.meshgwBase;
+        this.meshgwBase = `${location.protocol}//${location.hostname}:${ev.meshgw_port}`;
+        // Settings can arrive after initRadar() already ran and no-opped for
+        // lack of a base URL — catch up the one-shot check here instead of
+        // leaving rotatorConnected stuck false for the rest of the session.
+        if (!hadBase && this.tab === 'radar') this._checkRotatorStatus();
+      }
       if (this.tab === 'radar' && this.homePos) this.refreshRadar();
       return;
     }

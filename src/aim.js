@@ -16,7 +16,8 @@
 //   decideAim()  pure policy over stored evidence. Touches no hardware, so it
 //                is testable without moving a rotator that is shared with the
 //                garage alarm.
-//   aimAt()      the ONLY caller of rotator.point() in this path.
+//   aimAt()      the ONLY caller of point() (aim-client.js -> mesh-gw's aim
+//                plugin) in this path.
 //
 // THE HOLD CEILING IS NO LONGER HERE. It moved into rotator.js, where Peter said
 // it belonged — the ruling was quoted inside traceroute.js all along
@@ -29,7 +30,7 @@ import { stmts, getConfig } from './db.js';
 import { nodeIdToNum } from './utils.js';
 import { resolveNodeLabel } from './node-label.js';
 import { discoveryConfig } from './config-api.js';
-import { rotator } from './rotator.js';
+import { point } from './aim-client.js';
 // doorAim (doors.js) and provenDoors (node-kind.js) are no longer imported: both
 // served the two rules retired 2026-08-18 when the target reduced to
 // node-or-relay. doors.js is untouched and still used elsewhere.
@@ -349,7 +350,8 @@ export async function aimAt(bearing, holdMs_, opts = {}) {
     //   timeoutMs discovery.aim_timeout_sec  the existing budget for an aim
     //   patience  NOT PASSED — the rotator honours the hold it was told about
     //
-    // THE CEILING IS NOT APPLIED HERE ANY MORE. rotator.point() clamps it, so it
+    // THE CEILING IS NOT APPLIED HERE ANY MORE. mesh-gw's aim plugin clamps it
+    // (LOCK_MAX_MS, 60 s), so it
     // binds every caller and not just this one.
     // THE HOLD IS THE CALLER'S SECOND ARGUMENT. Peter, 2026-08-18: "aim accepts
     // min 2 args bearing and hold time (ms ???) which is the same as the timeout
@@ -359,8 +361,9 @@ export async function aimAt(bearing, holdMs_, opts = {}) {
     // replaces, on a rotator shared with the garage alarm — raised with Peter
     // before he gave the instruction, and recorded in
     // docs/modules/traceroute-flow.md rather than argued again here. The
-    // backstop is unchanged and independent: rotator.point() clamps every caller
-    // to its own HOLD_CEILING_MS, so no timeout however large becomes a lockout.
+    // backstop is unchanged and independent: mesh-gw's aim plugin clamps every
+    // caller to its own hold ceiling, so no timeout however large becomes a
+    // lockout.
     //
     // Falls back to the config only when the caller passes nothing, which keeps
     // aimAt() usable on its own.
@@ -369,7 +372,7 @@ export async function aimAt(bearing, holdMs_, opts = {}) {
       : (Number(d.hold_sec) > 0 ? Number(d.hold_sec) * 1000 : undefined);
     const aimMs  = opts.settle_ms ?? (Number(d.aim_timeout_sec) > 0 ? Number(d.aim_timeout_sec) * 1000 : undefined);
 
-    let r = await rotator.point(az, {
+    let r = await point(az, {
       by: 'aim',
       ...(holdMs !== undefined ? { hold: holdMs } : {}),
       ...(aimMs  !== undefined ? { timeoutMs: aimMs } : {}),
@@ -402,7 +405,7 @@ export async function aimAt(bearing, holdMs_, opts = {}) {
     const maxRetries = Number.isFinite(Number(d.aim_retries)) ? Number(d.aim_retries) : 0;
     for (let i = 0; i < maxRetries; i++) {
       if (half == null || !r || r.az == null || r.busy || errOf(r.az) <= half) break;
-      r = await rotator.point(az, {
+      r = await point(az, {
         by: 'aim',
         ...(holdMs !== undefined ? { hold: holdMs } : {}),
         ...(aimMs  !== undefined ? { timeoutMs: aimMs } : {}),

@@ -4,8 +4,8 @@ source:
   - src/index.js
   - public/sw.js
   - public/index.html
-source_hash: f257187d9d653c0a77bff89054d8adb45f654f9cc4352d11368d9ab320c579aa
-updated: 2026-08-17
+source_hash: 2bbe4b66471cc8c39dea04483e39454113b470172f1cddaa694d61c489235cda
+updated: 2026-09-03
 ---
 
 # Module: no-cache

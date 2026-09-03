@@ -1,8 +1,8 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: a2fb1b3131358071e355247c6a955bc556c15d1ecee13dbce575a8ea7fdbe911
-updated: 2026-08-17
+source_hash: 72c793ccf4db33fad05c4099d7c0e7c112dfc8beb1bec5e1a94b702bf5e21c37
+updated: 2026-09-03
 ---
 
 # Module: config-api

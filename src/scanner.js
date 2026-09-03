@@ -1,16 +1,18 @@
 import { EventEmitter } from 'events';
-import { rotator } from './rotator.js';
+import { point } from './aim-client.js';
 import { isListenerForMode } from './dash-mode.js';
 import { getConfig, setConfig } from './db.js';
 
-// poll_idle_ms / poll_busy_ms — how often the scanner asks the rotator whether
-// it has arrived. Basis: the rotator's own move cadence; polling faster than it
-// can move only adds WS traffic. These are the two knobs Peter is most likely to
-// want when the antenna changes.
+// move_giveup_ms — how long to wait for a step's point() to resolve before
+// moving on regardless. mesh-gw's aim plugin answers synchronously (arrived,
+// busy, or its own timeout) per call — 2026-09-03, task
+// rotator-command-via-meshgw-aim — so there is no separate poll cadence to
+// tune any more; poll_idle_ms/poll_busy_ms are gone with the poll loop they
+// timed. move_giveup_ms is now point()'s own timeoutMs.
 //
 // Declared and overridable — Peter, 2026-08-04: "all timings need to be vars.
 // some if not all will be selected to be configurables / knobs."
-const TIMING_DEFAULTS = { poll_idle_ms: 600, poll_busy_ms: 200, move_giveup_ms: 25_000 };
+const TIMING_DEFAULTS = { move_giveup_ms: 25_000 };
 const timing = () => ({ ...TIMING_DEFAULTS, ...(getConfig('scanner_timing', {}) || {}) });
 
 
@@ -26,7 +28,6 @@ class Scanner extends EventEmitter {
     this._timer    = null;
     this._aborted  = false;
     this._contacts = {};
-    this._pollStart = 0;
   }
 
   get active()   { return this._active; }
@@ -98,32 +99,24 @@ class Scanner extends EventEmitter {
     }
   }
 
-  _doStep() {
+  async _doStep() {
     if (this._aborted || this._az >= 360) { this._end(); return; }
     this._dwellAz = null;
     setConfig('scan_state', { active: true, az: this._az, step: this._step, dwell: this._dwell, contacts: this._contacts, preMode: this._preMode });
     this.emit('progress', { az: this._az, dwell_az: null });
-    rotator.move(this._az, { by: 'scanner' });
-    this._pollStart = Date.now();
-    this._timer = setTimeout(() => this._pollIdle(), timing().poll_idle_ms);
-  }
-
-  _pollIdle() {
-    if (this._aborted) { this._end(); return; }
-    // move_giveup_ms — how long to wait for a step before moving on regardless.
-    // Was an inline 25000. Peter: "timings CANNOT be hard coded FULL STOP."
-    const timedOut = Date.now() - this._pollStart > timing().move_giveup_ms;
-    if (!rotator.status.busy || timedOut) {
-      this._dwellAz = this._az;
-      this.emit('progress', { az: this._az, dwell_az: this._az });
-      this._timer = setTimeout(() => {
-        this._dwellAz = null;
-        this._az += this._step;
-        this._doStep();
-      }, this._dwell * 1000);
-    } else {
-      this._timer = setTimeout(() => this._pollIdle(), timing().poll_busy_ms);
-    }
+    // Fail fast, never queue behind a hold — a sweep step that waited out the
+    // garage alarm's hold would stall the whole scan; move on to the next
+    // bearing instead. mesh-gw's aim plugin resolves this call itself (arrived
+    // or busy) or gives up at its own timeoutMs — no separate poll needed.
+    await point(this._az, { by: 'scanner', patienceMs: 0, timeoutMs: timing().move_giveup_ms });
+    if (this._aborted) return;
+    this._dwellAz = this._az;
+    this.emit('progress', { az: this._az, dwell_az: this._az });
+    this._timer = setTimeout(() => {
+      this._dwellAz = null;
+      this._az += this._step;
+      this._doStep();
+    }, this._dwell * 1000);
   }
 
   _end() {

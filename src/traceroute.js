@@ -20,9 +20,7 @@ import { bridge }       from './bridge.js';
 import { nodeList }     from './node-list.js';
 import { stmts, getConfig, radioAirtime } from './db.js';
 import { pasvConfig } from './config-api.js';
-import { getRotatorAddress } from './device-config.js';
 import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
-import { rotator } from './rotator.js';
 // dash-mode is NO LONGER IMPORTED HERE, and that is the point rather than tidying.
 //
 // `modeAim(modeKey)` used to supply the aim policy when a caller did not, and
@@ -151,7 +149,6 @@ class TracerouteManager extends EventEmitter {
     // Kept current so inFlight()'s replay reports where a run actually IS,
     // not where it started.
     ctx.phase = phase;
-    const rs = rotator.status ?? {};
     this.emit('status', {
       id: runId,
       phase,
@@ -161,10 +158,13 @@ class TracerouteManager extends EventEmitter {
       aim:    ctx.aim,
       known_route: ctx.known_route,
       timing: ctx.timing,
-      // The rotator's own live view, sampled at emit time. Included for every
-      // phase — including an omni's, where it says what the beam happens to be
-      // doing for somebody else while we transmit omnidirectionally.
-      rotator: { az: rs.az ?? null, busy: !!rs.busy, held: !!rs.held },
+      // The live `rotator: {az, busy, held}` snapshot that used to ride on
+      // every phase is GONE (2026-09-03, task rotator-command-via-meshgw-aim)
+      // — node-dash no longer holds a live rotator status cache to sample from
+      // (mesh-gw's aim plugin has no push feed, and polling for one was
+      // explicitly rejected — "stop diagnosing the rotator... busy or done is
+      // the whole contract"). `ctx.aim` already carries what THIS run's own
+      // aim attempt reported on arrival; that is the provenance that matters.
       ...extra,
     });
     // Terminal phases end the run. Keeping the context would leak one object per
@@ -179,12 +179,10 @@ class TracerouteManager extends EventEmitter {
    *  connects mid-trace. Without it a browser opening during a 60 s trace sees
    *  nothing until the next transition, which may be the end of it. */
   inFlight() {
-    const rs = rotator.status ?? {};
     return [...this._runs.entries()].map(([id, ctx]) => ({
       id, phase: ctx.phase, ts: Math.floor(Date.now() / 1000),
       target: ctx.target, radio: ctx.radio, aim: ctx.aim,
       known_route: ctx.known_route, timing: ctx.timing,
-      rotator: { az: rs.az ?? null, busy: !!rs.busy, held: !!rs.held },
     }));
   }
 
@@ -532,17 +530,15 @@ class TracerouteManager extends EventEmitter {
     // because the antenna had moved on (the shared neighbour, or the next
     // mission) while we waited. Observed exactly that on 2026-08-04.
     //
-    // The aim context carries what the rotator REPORTED on arrival. Only fall
-    // back to a live sample when there is no aim context at all — a bare
-    // dispatch() — and even then it is the honest best available.
-    let rotatorAz = aim?.az_actual ?? aim?.az ?? null;
-    const rotMac = getRotatorAddress();
+    // The aim context carries what the rotator REPORTED on arrival. No live
+    // fallback sample exists any more (2026-09-03, task
+    // rotator-command-via-meshgw-aim — node-dash holds no live rotator status
+    // cache) — a bare dispatch() with no aim context now honestly records
+    // null rather than a live-at-record-time guess.
+    const rotatorAz = aim?.az_actual ?? aim?.az ?? null;
     // Compare in MAC space (IDENTITY.md): a node_id-side compare can never
     // match a MAC-vocabulary device, which silently skipped the az stamp.
     const devMac = String(device).includes(':') ? device : getLiveMacByNodeId(device);
-    if (rotatorAz == null && rotMac && devMac === rotMac && rotator.status?.az != null) {
-      rotatorAz = Number(rotator.status.az);
-    }
     // from_num derives only from a !hex id — never parseInt a MAC (=233).
     const devId = String(device).includes(':') ? getLiveNodeIdByMac(device) : device;
     const row = {
@@ -616,17 +612,12 @@ class TracerouteManager extends EventEmitter {
     // replies, recorded nothing about the aim that produced them.
     //
     // rotator_az comes from the aim context for the same reason it does in
-    // _recordFailure: re-sampling rotator.status.az HERE reads the azimuth at
-    // REPLY time, which can be a full timeout after the beam was pointed, and the
-    // rotator is shared. az_actual is what it reported on arrival.
+    // _recordFailure: re-sampling live status HERE would read the azimuth at
+    // REPLY time, which can be a full timeout after the beam was pointed, and
+    // the rotator is shared. az_actual is what it reported on arrival — and
+    // it is the only source now (no live status cache, 2026-09-03).
     const aim = pendingEntry?.aim ?? null;
-    let rotatorAz = aim ? (aim.az_actual ?? aim.az ?? null) : null;
-    if (rotatorAz == null && txDevice) {
-      const rotMac = getRotatorAddress();
-      if (rotMac && txDevice === rotMac && rotator.status?.az != null) {
-        rotatorAz = Number(rotator.status.az);
-      }
-    }
+    const rotatorAz = aim ? (aim.az_actual ?? aim.az ?? null) : null;
 
     const result = {
       from:            pkt.from,

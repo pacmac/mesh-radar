@@ -3,7 +3,7 @@ module: node-recency-ssot
 source:
   - src/ws-relay.js
   - src/db.js
-source_hash: 6bcb14674e14c7b2a6998befbe24d787d66f566c98c255dcd7ccc7696e8cf2d2
+source_hash: b3bf798d90f5b70cc6f8bb22dd53f38f30a5306b1b8d79c3bf0c31cff13abefb
 updated: 2026-09-03
 ---
 

@@ -1,6 +1,5 @@
 import { scanner } from './scanner.js';
 import { dashMode, transmitterForMode } from './dash-mode.js';
-import { rotator } from './rotator.js';
 import { activeTracker } from './active-tracker.js';
 import { nodeList } from './node-list.js';
 import { FF } from './feature-flags.js';
@@ -54,7 +53,9 @@ export function initLifecycle() {
   // empty listener. PASV mode still exists and still listens; it no longer acts.
 
   // -- rotator lifecycle -------------------------------------------------------
-  rotator.on('connected', () => {});
+  // No connection to track any more — mesh-gw's aim plugin is stateless per
+  // command (2026-09-03, task rotator-command-via-meshgw-aim). This listener
+  // was already a no-op.
 
   // ACTV's traceroute dispatch on `point_target` — REMOVED 2026-08-17, task
   // `traceroute-callers-rewrite`. It held BOTH paths: a V1 legacy bridge.post()
