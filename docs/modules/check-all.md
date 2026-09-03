@@ -3,7 +3,7 @@ module: check-all
 source:
   - scripts/check_all.mjs
   - package.json
-source_hash: 9a0b363f270ccc643b74bef7c07d0244835a0c20e7e4d7693310fdc97da9b77c
+source_hash: b3b4b0b4309e3109bc57309889b3e8fab0667bb25c6438f15a67bee78b949161
 updated: 2026-09-03
 ---
 
@@ -72,10 +72,12 @@ Runtimes measured 2026-08-13 on this machine, service up, warm 700 MB store.
 >
 > This table has drifted repeatedly and is now materially behind the runner —
 > `interval_tables`, `interval_options`, `no_channel_resolver`, `resolve`,
-> `aim`, `traceroute_flow`, `transport_encoding`, `reply_snippet` and `doors`
-> are all registered and only the last is listed (`radio_admin` was itself
-> removed 2026-09-03, task `devices-removal-residue-cleanup` — its subject,
-> src/radio-admin.js, is deleted). **The runner is the
+> `aim`, `traceroute_flow`, `transport_encoding` and `doors` are all registered
+> and only the last is listed (`radio_admin` and `reply_snippet` were
+> themselves removed 2026-09-03 — src/radio-admin.js is deleted, task
+> `devices-removal-residue-cleanup`; `reply_snippet` tested the deleted
+> Messages page via a deleted endpoint, task `handover-check-audit-fixes`).
+> **The runner is the
 > inventory; `npm run check:list` prints it.** Reconciling the table is a task of
 > its own and is not attempted here — recorded rather than silently left, because
 > the failure this file exists to prevent is exactly a list nobody notices is

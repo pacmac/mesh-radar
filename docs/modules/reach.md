@@ -7,7 +7,7 @@ source:
   - tests/test_doors.mjs
   - scripts/check_all.mjs
   - scripts/check_snapshot.mjs
-source_hash: 1857c9cf80b762c2438ed0be463cb0809e94f9efd2a5338c49912e919346f50d
+source_hash: 0f04d2ffd1874e920e30652dc03ce50c08594f8f6654bdc17b684c1dcc93cf2c
 updated: 2026-09-03
 ---
 

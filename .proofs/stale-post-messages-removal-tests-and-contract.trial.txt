@@ -1,0 +1,4 @@
+$ bash /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_stale_messages_tests.sh
+FAIL: tests/test_reply_snippet.mjs still exists — tests a deleted page's feature via a deleted endpoint
+FAIL: check_all.mjs still registers reply_snippet
+FAIL: test_node.py still requires known_nodes/message_history, both deliberately removed

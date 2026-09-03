@@ -607,3 +607,38 @@
     failures: 0
     at: '2026-09-03T19:35:29.632'
     commit: acff848-dirty
+- id: stale-post-messages-removal-tests-and-contract
+  type: bug
+  what: "Three separate leftovers from the 2026-09-03 messages-frontend-and-browser-route-removed task,\
+    \ none caught because npm run check was never run after it: (1) tests/test_reply_snippet.mjs fetches\
+    \ GET /messages (deleted with the page) and tests reply-snippet rendering for a page that no longer\
+    \ exists \u2014 the whole test's premise is gone. (2) tests/test_node.py's WS on-connect contract\
+    \ still requires known_nodes and message_history (ws-relay.js:596,1205 have comments confirming both\
+    \ were deliberately removed \u2014 'its only consumer, the Messages page, is gone' \u2014 the test\
+    \ was never updated to match)."
+  spec: docs/modules/check-all.md
+  files:
+  - tests/test_reply_snippet.mjs
+  - tests/test_node.py
+  - scripts/check_all.mjs
+  test:
+    command:
+    - bash
+    - /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_stale_messages_tests.sh
+    criterion: reply_snippet gone from disk and registry; known_nodes/message_history gone from test_node.py's
+      WS contract
+    runs: 1
+  trial:
+    file: .proofs/stale-post-messages-removal-tests-and-contract.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-03T19:59:15.609'
+    commit: b8c6009-dirty
+  fix:
+    file: .proofs/stale-post-messages-removal-tests-and-contract.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T20:00:38.580'
+    commit: b8c6009-dirty

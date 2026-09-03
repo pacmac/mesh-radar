@@ -70,7 +70,9 @@ const CHECKS = [
   // so it sits with the service group; exits 127 if the db or driver is missing,
   // which the register reads as a mistrial rather than a conviction.
   { name: 'doors',                  group: 'service', cmd: 'node',    args: ['tests/test_doors.mjs'],             needs: 'the store',           measured: '150 ms',   timeoutMs: 30_000 },
-  { name: 'reply_snippet',          group: 'service', cmd: 'node',    args: ['tests/test_reply_snippet.mjs'],     needs: 'node-dash up',        measured: '90 ms',    timeoutMs: 30_000 },
+  // reply_snippet REMOVED 2026-09-03, task handover-check-audit-fixes — it
+  // tested the Messages page's reply-quote rendering via GET /messages, both
+  // deleted with the page (messages-frontend-and-browser-route-removed).
   { name: 'check_snapshot',         group: 'service', cmd: 'node',    args: ['scripts/check_snapshot.mjs'],       needs: 'node-dash up',        measured: '3.9 s',    timeoutMs: 30_000 },
   { name: 'check_contract',         group: 'service', cmd: 'node',    args: ['scripts/check_contract.mjs'],       needs: 'node-dash up',        measured: '5.1 s',    timeoutMs: 60_000 },
   { name: 'no_cache',               group: 'service', cmd: 'node',    args: ['scripts/check_no_cache.mjs'],       needs: 'node-dash up',        measured: '200 ms',   timeoutMs: 30_000 },

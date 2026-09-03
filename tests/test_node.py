@@ -249,8 +249,8 @@ def static_checks():
 
 # Events that must appear in the initial burst
 REQUIRED_ON_CONNECT = {
-    "device_list", "node_list", "known_nodes", "tilt_cal",
-    "message_history", "tilt_history", "env_history",
+    "device_list", "node_list", "tilt_cal",
+    "tilt_history", "env_history",
     "range_test_log", "range_test_timer",
     # traceroute_history REMOVED from the required set 2026-08-17, task
     # `traceroute-remove-backend-remainder` — the replay itself was deliberately
@@ -258,6 +258,13 @@ REQUIRED_ON_CONNECT = {
     # kept the whole suite red for a replay nobody wants back, which trains
     # readers to ignore a FAIL. Its schema below is retained: if the event ever
     # returns it must still be well-formed.
+    #
+    # known_nodes and message_history REMOVED from the required set 2026-09-03,
+    # task `handover-check-audit-fixes` — both deliberately removed
+    # (ws-relay.js:596,1205, task `messages-frontend-and-browser-route-removed`):
+    # their only consumer, the Messages page's @mention autocomplete and its own
+    # history replay, is gone with the rest of the frontend. Same reasoning as
+    # traceroute_history above — schemas retained below.
 }
 
 # Expected event schemas (required top-level fields)
