@@ -409,3 +409,99 @@
     at: '2026-09-03T18:34:16.473'
     commit: fed1cfa-dirty
   fix: null
+- id: devices-management-removed-meshgw-owns-it
+  type: new
+  what: "node-dash still owns full device management (BLE pairing, OTA flashing, radio config writes via\
+    \ a hand-built AdminMessage implementation, device removal, per-device auto-purge editing) even though\
+    \ mesh-gw's dashboard now covers radio config editing and Peter has ruled node-dash is 'no longer\
+    \ responsible to manage devices' (2026-09-03) \u2014 mesh-gw provides these as services, node-dash\
+    \ must use them not duplicate them"
+  spec: docs/modules/tab-devices.md
+  files:
+  - src/radio-admin.js
+  - src/radio-admin-api.js
+  - src/device-remove.js
+  - src/device-config.js
+  - src/op-manager.js
+  - src/index.js
+  - public/partials/tab-devices.html
+  - public/app-devices.js
+  - public/app.js
+  - public/app-config.js
+  - public/partials/drawer-sidebar.html
+  - public/index.html
+  test:
+    command:
+    - bash
+    - /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_devices_removed.sh
+    criterion: device-management modules deleted, no imports remain
+    runs: 1
+  trial:
+    file: .proofs/devices-management-removed-meshgw-owns-it.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-03T18:47:57.553'
+    commit: 65d0937-dirty
+  fix:
+    file: .proofs/devices-management-removed-meshgw-owns-it.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T19:03:19.079'
+    commit: 65d0937-dirty
+- id: interval-options-orphaned-by-radio-admin-removal
+  type: bug
+  what: "src/interval-options.js and src/interval-tables.js (its generated dependency, from scripts/gen_interval_tables.mjs)\
+    \ are now imported by nothing \u2014 their sole consumer, src/radio-admin-api.js, was deleted 2026-09-03\
+    \ (task devices-management-removed-meshgw-owns-it). Dead code, out of scope for that task (not named\
+    \ in its spec); needs its own decide-and-delete pass."
+  spec: docs/modules/interval-options.md
+  files:
+  - src/interval-options.js
+  - src/interval-tables.js
+  test:
+    command: null
+    criterion: null
+    runs: 1
+  trial: null
+  fix: null
+- id: playwright-audit-spec-describes-removed-device-management
+  type: bug
+  what: "docs/modules/browser-playwright-audit.md and tests/test_playwright.py still describe/assert the\
+    \ removed device-management surface as current: /devices route, Devices page data surfaces (Radio/Channels/Owner/Firmware/Maintenance\
+    \ tabs), the OMNI channel round-trip performed via the Devices UI, BLE scan/connect/pair/disconnect/remove\
+    \ and OTA upload/download/flash forbidden-control lists. All gone 2026-09-03 (task devices-management-removed-meshgw-owns-it)\
+    \ \u2014 mesh-gw's own dashboard now owns this. Needs a real rewrite of both the spec and the test\
+    \ suite; out of scope for that task (large, separate body of work), flagged with a stale-content banner\
+    \ in the meantime."
+  spec: docs/modules/browser-playwright-audit.md
+  files:
+  - tests/test_playwright.py
+  test:
+    command: null
+    criterion: null
+    runs: 1
+  trial: null
+  fix: null
+- id: backend-still-proxies-removed-device-management-routes
+  type: bug
+  what: "src/index.js still lists /devices and /device-config in PAGES (serves the SPA shell for direct\
+    \ navigation to routes the browser no longer has a tab for) and still proxies /devices, /ble, /ble_devices,\
+    \ /ota through BRIDGE_PREFIXES to mesh-gw \u2014 live pass-through for BLE scan/connect/pair, device\
+    \ removal, and OTA flash/download, none of which any node-dash browser code calls any more after 2026-09-03\
+    \ (task devices-management-removed-meshgw-owns-it). Not broken (no crash, no wrong behavior \u2014\
+    \ PAGES falls back to the default tab, BRIDGE_PREFIXES is a working passthrough), but it keeps node-dash\
+    \ reachable as a device-management conduit, which is exactly what Peter's ruling ('no longer responsible\
+    \ to manage devices') was against. Needs a decision on whether to also close the proxy, out of scope\
+    \ for that task (large surface, and closing a live bridge proxy touches shared infrastructure \u2014\
+    \ warrants its own careful pass)."
+  spec: docs/modules/index.md
+  files:
+  - src/index.js
+  test:
+    command: null
+    criterion: null
+    runs: 1
+  trial: null
+  fix: null

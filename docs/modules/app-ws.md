@@ -1,7 +1,7 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: 420309150ca535bc25b0bbe0491d5aca2e0e9bd8ef8fc5c70d3ad36fb811835a
+source_hash: ece16a90a8e841b58bff340ea63c5d60ee55d822eb06227757765a93bc5b27f4
 updated: 2026-09-03
 ---
 
@@ -156,6 +156,19 @@ into `_tiltHistoryAll[node]` / `envHistory[nid]` on every WS reconnect. Each is
 now `.slice(-MAX_HISTORY_ROWS)`; charts only ever show a recent window. Other
 live arrays were already capped (events 80, messages 50, perfHistory 200,
 _trHistAll 500).
+
+## NEED_PAIR handling and OTA progress events — REMOVED 2026-09-03
+
+Both sections below (NEED_PAIR dismissal, NEED_PAIR rejected-PIN messaging)
+describe browser code that no longer exists: the `needPairDev` detection
+block, the `device_state` NEED_PAIR/OFFLINE handler, and every `ota_*`
+WS-event handler (`ota_start`/`progress`/`complete`/`error`,
+`ota_download_start`/`progress`/`complete`/`error`) were all deleted from
+`app-ws.js`, task `devices-management-removed-meshgw-owns-it` — BLE pairing
+and OTA flashing are mesh-gw's job now, and their overlays are gone from
+`index.html`. Unhandled WS event types fall through this handler safely (no
+`default:` case needed). Left below as a record of the reasoning, not a
+current contract.
 
 ## NEED_PAIR dismissal on success (task `pair-modal-dismiss`, 2026-07-16)
 

@@ -1,8 +1,8 @@
 ---
 module: op-manager
 source: src/op-manager.js
-source_hash: aed33dce8d62142f4d0a0ff90713c27af0ddd795c0334ae361581c4f32cd00aa
-updated: 2026-07-22
+source_hash: e7c49dd2b6ff6b15eff15b489844a9932de5e8cd636a4ebdad11ed9ec7d0c77d
+updated: 2026-09-03
 ---
 
 # Module: op-manager
@@ -73,7 +73,8 @@ Each transition calls `_transition(op, state)` which:
 
 ## REGISTRY
 
-32 named operations in 3 classes. Each entry:
+14 named operations in 3 classes (2026-09-03: down from 32 — see "Removed
+2026-09-03" below). Each entry:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -86,19 +87,14 @@ Each transition calls `_transition(op, state)` which:
 | `example_payload` | object | Safe test payload for `test_ops.py` and the manifest |
 | `timeout_s` | number | Maximum seconds for the full operation |
 | `reboot` | boolean | Whether a radio reboot is expected (informational; not used by runners) |
-| `confirming` | string | Mode only: `'http_200'` or `'device_state_ready'` |
+| `confirming` | string | Mode only: `'http_200'` or `'device_state_ready'` (no current op uses `device_state_ready` — its last user, `ble_connect`, was removed 2026-09-03; the branch stays, unreachable, in `_modeRunner`) |
 
-### Class 1 — Local (14 ops)
+### Class 1 — Local (10 ops)
 
 Written to node-dash's own config/DB. Read-back is immediate.
 
 | Kind | Write endpoint | Read-back |
 |---|---|---|
-| `device_config_label` | `PUT /device-config/:target` | same |
-| `device_config_color` | `PUT /device-config/:target` | same |
-| `device_config_primary` | `PUT /device-config/:target` | same |
-| `ble_auto_connect` | `PATCH /ble_devices/:target` | `/bridge_config` |
-| `antenna_config` | `PUT /device-config/:target` | same |
 | `home_position` | `PUT /home_pos` | same |
 | `bridge_config` | `PUT /bridge_config` | same |
 | `alert_config` | `PUT /alerts/config` | same |
@@ -109,43 +105,46 @@ Written to node-dash's own config/DB. Read-back is immediate.
 | `tilt_cal` | `PUT /tilt_cal` | same |
 | `clear_range_test_log` | `DELETE /range_test/log` | same |
 
-### Class 2 — Radio (6 ops)
+### Class 2 — Radio (1 op)
 
-Written through node-dash to mesh-gw and then to the radio. Operations use a
-read-back only where the gateway endpoint provides fresh confirmation. A
-successful `channel_config` means mesh-gw accepted and completed its BLE write;
-it does not claim that the radio firmware acknowledged or echoed the value.
+Written through node-dash to mesh-gw and then to the radio.
 
 | Kind | Write endpoint | Read-back |
 |---|---|---|
-| `radio_config_section` | `PUT /:target/config/:section` | none |
-| `channel_config` | `PUT /:target/channels/:index` | none (gateway 2xx) |
-| `owner_info` | `PUT /:target/owner` | same |
-| `fixed_position_push` | `PUT /:target/fixed_position` | same |
-| `fixed_position_clear` | `DELETE /:target/fixed_position` | none |
 | `send_message` | `POST /:target/messages` | none |
 
-### Class 3 — Mode (12 ops)
+### Class 3 — Mode (3 ops)
 
 Action triggers. Confirmation is either the HTTP 200 response or a WS `device_state` event.
 
 | Kind | Trigger | Confirming |
 |---|---|---|
-| `wipe_nodedb` | `POST /purge-nodedb` | `http_200` |
-| `rotator_mode_pasv` | `POST /rotator/mode` | `http_200` |
-| `rotator_mode_actv` | `POST /rotator/mode` | `http_200` |
-| `rotator_move` | `POST /rotator/move` | `http_200` |
-| `rotator_scan_start` | `POST /rotator/scan/start` | `http_200` |
-| `rotator_scan_abort` | `POST /rotator/scan/abort` | `http_200` |
 | `range_test_start` | `POST /range_test/start` | `http_200` |
 | `range_test_stop` | `POST /range_test/stop` | `http_200` |
 | `send_alert_test` | `POST /alerts/test` | `http_200` |
-| `ble_connect` | `POST /devices` | `device_state_ready` |
-| `ble_disconnect` | `DELETE /devices/:target` | `http_200` |
 
 `send_traceroute` was removed 2026-08-17 (task `traceroute-callers-rewrite`).
 Its endpoint, node-dash's own `POST /:target/traceroute`, no longer exists.
 No op dispatches a traceroute.
+
+## Removed 2026-09-03 (task `devices-management-removed-meshgw-owns-it`)
+
+node-dash "is no longer responsible to manage devices" (Peter, 2026-09-03) —
+mesh-gw owns BLE pairing, radio config, and device removal now; duplicating
+those as ops here would be exactly the re-invention Peter ruled against.
+
+- **Local**: `device_config_label`, `device_config_color`,
+  `device_config_primary`, `antenna_config` — all wrote through the now-deleted
+  `/device-config` REST API. `ble_auto_connect` — wrote `PATCH /ble_devices/:target`,
+  gone with the BLE pairing surface.
+- **Radio**: `radio_config_section`, `channel_config`, `owner_info`,
+  `fixed_position_push`, `fixed_position_clear` — already removed 2026-08-18
+  (see the radio-admin history below); this task did not touch them further.
+- **Mode**: `wipe_nodedb` — device management. `rotator_mode_pasv`/`rotator_mode_actv`/
+  `rotator_move`/`rotator_scan_start`/`rotator_scan_abort` — already dead (their
+  endpoints were deleted 2026-09-03 in the earlier rotator-to-aim task and missed
+  in that pass; cleaned up here rather than left as a second stale reference).
+  `ble_connect`/`ble_disconnect` — BLE pairing, mesh-gw's job now.
 
 ## Runners
 
@@ -247,7 +246,7 @@ the browser re-reads after a save rather than trusting what it sent.
   terminal `success`
 - **channel write rejected**: fake gateway returns non-2xx → exactly one PUT, no
   GET, terminal `error` containing the HTTP status
-- **manifest**: `GET /ops/manifest` → `count: 32`, one entry per REGISTRY key
+- **manifest**: `GET /ops/manifest` → `count: 14`, one entry per REGISTRY key
 
 ## Out of scope
 

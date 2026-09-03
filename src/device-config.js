@@ -1,8 +1,13 @@
-import { Router } from 'express';
+// The REST API for EDITING this store is gone (2026-09-03, task
+// devices-management-removed-meshgw-owns-it — node-dash "no longer
+// responsible to manage devices"). What remains is read-only: the getter
+// functions every backend module below still depends on (dash-mode, doors,
+// resolve, node-filter, node-list, node-label, lifecycle, startup,
+// snapshot-api, ws-relay), and the config storage they read. Values are
+// frozen at whatever they currently hold — there is no longer any UI or API
+// to change them, by design.
 import { getConfig, setConfig, deleteConfig, getConfigByPrefix } from './db.js';
-import { pokeDeviceList } from './ws-relay.js';
 
-const router = Router();
 const PREFIX = 'device_cfg.';
 const MAC_RE    = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i;
 const NODEID_RE = /^![0-9a-f]+$/i;
@@ -127,12 +132,6 @@ export function ensureDeviceCfgMac(addr, nodeId) {
   }
 }
 
-// Removes a device's cfg row. Accepts a MAC (canonical, stored uppercase) or
-// a legacy !hexid key (stored as-is). Task device-remove-op.
-export function deleteDeviceCfg(key) {
-  deleteConfig(PREFIX + (key.startsWith('!') ? key : key.toUpperCase()));
-}
-
 // One-time idempotent cleanup: drop malformed cfg rows created before key
 // validation existed (e.g. device_cfg.UNDEFINED from PUT /device-config/undefined).
 for (const key of Object.keys(getConfigByPrefix(PREFIX))) {
@@ -142,96 +141,3 @@ for (const key of Object.keys(getConfigByPrefix(PREFIX))) {
   }
 }
 
-// GET /device-config  →  all configs keyed by MAC address
-router.get('/', (req, res) => {
-  res.json(getAllDeviceCfgs());
-});
-
-// GET /device-config/:address  (MAC or !hexid)
-router.get('/:address', (req, res) => {
-  const raw = req.params.address;
-  if (!MAC_RE.test(raw) && !NODEID_RE.test(raw)) {
-    return res.status(400).json({ error: `not a device key: ${raw}` });
-  }
-  if (raw.startsWith('!')) {
-    const mac = _nodeIdToMac?.(raw);
-    if (mac) return res.json(getDeviceCfg(mac));
-    // Device not currently live — read legacy !hexid key directly if present.
-    const stored = getConfig(PREFIX + raw, null);
-    return res.json(stored ? { ...DEFAULT, ...stored } : { ...DEFAULT });
-  }
-  res.json(getDeviceCfg(raw));
-});
-
-// PUT /device-config/:address  (MAC or !hexid)
-router.put('/:address', (req, res) => {
-  const raw = req.params.address;
-  if (!MAC_RE.test(raw) && !NODEID_RE.test(raw)) {
-    return res.status(400).json({ error: `not a device key: ${raw}` });
-  }
-  let mac;
-  if (raw.startsWith('!')) {
-    mac = _nodeIdToMac?.(raw);
-    if (!mac) return res.status(404).json({ error: `Device ${raw} is not currently live` });
-    // Migrate any legacy !hexid-keyed entry to MAC on first write.
-    const legacy = getConfig(PREFIX + raw, null);
-    if (legacy !== null) {
-      if (getConfig(PREFIX + mac, null) === null) setConfig(PREFIX + mac, legacy);
-      deleteConfig(PREFIX + raw);
-    }
-  } else {
-    mac = raw.toUpperCase();
-  }
-
-  const existing = getDeviceCfg(mac);
-  const updated = { ...existing };
-
-  const {
-    label, is_rotator, is_primary, load_nodes_on_boot,
-    antenna_type, beam_deg, gain_dbi, cable_loss_db,
-    fixed_lat, fixed_lon, color, ble_pin, antenna_height_m,
-  } = req.body;
-
-  if (label !== undefined)               updated.label               = label || null;
-  if (is_rotator !== undefined)          updated.is_rotator          = !!is_rotator;
-  if (load_nodes_on_boot !== undefined)  updated.load_nodes_on_boot  = !!load_nodes_on_boot;
-  if (antenna_type !== undefined)        updated.antenna_type        = antenna_type || null;
-  if (beam_deg !== undefined)            updated.beam_deg            = Number(beam_deg) || 360;
-  if (gain_dbi !== undefined)            updated.gain_dbi            = Number(gain_dbi) || 0;
-  if (cable_loss_db !== undefined)       updated.cable_loss_db       = Number(cable_loss_db) || 0;
-  if (ble_pin !== undefined)             updated.ble_pin             = ble_pin || null;
-
-  const homePosChanged = (fixed_lat !== undefined || fixed_lon !== undefined);
-  // ABSENT IS NOT CLEARED — the `!== undefined` guard already gets that right, so
-  // a partial PATCH is safe. What is NOT safe is a form that always submits every
-  // field: a blank input arrives as '' and wipes a stored position. That is the
-  // shape that emptied fixed_lat/fixed_lon on all four devices.
-  //
-  // An explicit '' or null still clears, because an operator must be able to
-  // unset one. The protection is that a caller who says nothing changes nothing.
-  if (antenna_height_m !== undefined)
-    updated.antenna_height_m = antenna_height_m != null && antenna_height_m !== ''
-      ? Number(antenna_height_m) : null;
-  if (fixed_lat !== undefined) updated.fixed_lat = fixed_lat != null && fixed_lat !== '' ? Number(fixed_lat) : null;
-  if (fixed_lon !== undefined) updated.fixed_lon = fixed_lon != null && fixed_lon !== '' ? Number(fixed_lon) : null;
-  if (color !== undefined)     updated.color     = color || null;
-
-  if (is_primary !== undefined) {
-    if (is_primary) {
-      for (const [id, cfg] of Object.entries(getAllDeviceCfgs())) {
-        if (id !== mac && cfg?.is_primary) {
-          setConfig(PREFIX + id, { ...cfg, is_primary: false });
-        }
-      }
-    }
-    updated.is_primary = !!is_primary;
-  }
-
-  setConfig(PREFIX + mac, updated);
-  if (homePosChanged && updated.is_primary) _onHomePosChange?.();
-  // device_list carries per-device cfg (C2) — push the fresh settings
-  pokeDeviceList();
-  res.json(updated);
-});
-
-export default router;

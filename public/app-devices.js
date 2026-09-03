@@ -1,4 +1,8 @@
-// Device and BLE management mixin.
+// Device selection and BLE status display. All device-MANAGEMENT (BLE pairing,
+// radio config editing, OTA flashing, removal) is gone — mesh-gw owns it
+// (2026-09-03, task devices-management-removed-meshgw-owns-it). What remains
+// is what the rest of the app needs to know WHICH device is active and
+// whether it is reachable.
 import { fetchJSON } from './app-helpers.js';
 import { persistSet } from './app-persist.js';
 
@@ -20,8 +24,6 @@ export const devicesMixin = {
     return this.deviceBleStates[nodeId]?.ble_state || 'offline';
   },
 
-  devIsReady(nodeId) { return this.devBleState(nodeId) === 'ready'; },
-
   devIsSaving(nodeId) {
     return Object.keys(this.ops).some(k => k.endsWith('_' + nodeId) && this.ops[k]?.loading);
   },
@@ -38,11 +40,6 @@ export const devicesMixin = {
     this.nodeTotal = 0;
     this.nodeCount = 0;
     this.loraCfg = {};
-    this.allSections = [];
-    this.channels = [];
-    this.ownerSchema = null;
-    this.ownerData = {};
-    this.fixedPosition = { lat: null, lon: null, alt: null, loaded: false, saved: false, error: '' };
   },
 
   // Accepts the device MAC (canonical) or a node_id during transition.
@@ -60,151 +57,6 @@ export const devicesMixin = {
 
   async bootstrapDevice() {
     // node_list arrives via WS on connect — no HTTP calls needed
-  },
-
-  async wipeNodeDb(nodeId) {
-    if (!confirm(`Wipe node database on ${nodeId}?\n\nThis will send nodedb_reset to the radio. The radio will rebuild its node list from scratch.`)) return false;
-    await fetchJSON(`/${nodeId}/admin`, 'POST', { message: { nodedb_reset: true }, want_response: false });
-  },
-
-  async saveAutoPurge(nodeId) {
-    const s = this.autoPurge[nodeId];
-    if (!s) return;
-    try {
-      await fetchJSON('/auto-purge', 'PUT', { device: nodeId, enabled: s.enabled, purge_time: s.purge_time });
-    } catch (e) {
-      this.showToast('Failed to save auto-purge settings', 'error');
-    }
-  },
-
-  autoPurgeSetting(nodeId) {
-    return this.autoPurge[nodeId] || { enabled: false, purge_time: '02:00', last_run_ts: null };
-  },
-
-  autoPurgeLastStr(nodeId) {
-    const ts = this.autoPurge[nodeId]?.last_run_ts;
-    if (!ts) return 'never';
-    const diffSec = Math.floor(Date.now() / 1000) - ts;
-    if (diffSec < 120) return 'just now';
-    if (diffSec < 3600) return Math.round(diffSec / 60) + 'm ago';
-    return Math.round(diffSec / 3600) + 'h ago';
-  },
-
-  async disconnectDevice(addr) {
-    // gw DELETE /devices/{addr} is keyed on the BLE MAC, not node_id.
-    await fetchJSON('/devices/' + encodeURIComponent(addr), 'DELETE');
-    if (this.activeDevice === addr) this.activeDevice = '';
-    if (!this.activeDevice && this.availableDevices.length > 0) {
-      await this.selectDevice(this.availableDevices[0].addr);
-    }
-  },
-
-  async backupRadioConfig(nodeId) {
-    const data = await fetchJSON(`/${nodeId}/radio_backup`);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), {
-      href: url,
-      download: `meshtastic-${nodeId}-${new Date().toISOString().slice(0, 10)}.json`,
-    });
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  },
-
-  async pushFixedPosition(nodeId) {
-    const cfg = this.deviceConfigs[nodeId] || {};
-    const lat = cfg.fixed_lat;
-    const lon = cfg.fixed_lon;
-    if (lat == null || lon == null) throw new Error('No fixed position configured — set it in Config → Radio → Device');
-    const body = { latitude_i: Math.round(lat * 1e7), longitude_i: Math.round(lon * 1e7) };
-    const res = await fetchJSON(`/${nodeId}/fixed_position`, 'PUT', body);
-    if (res?.error) throw new Error(res.error?.message || 'Push failed');
-    if (res?.detail) throw new Error(res.detail);
-    if (!res?.verified) throw new Error('Position not verified by device');
-  },
-
-  async saveBleCfg(addr, field, value) {
-    // gw PATCH /ble_devices/{address} is keyed on the BLE MAC (dev.addr).
-    const dev = this.availableDevices.find(d => d.addr === addr);
-    if (dev) dev[field] = value;
-    try {
-      await fetchJSON(`/ble_devices/${encodeURIComponent(addr)}`, 'PATCH', { [field]: value });
-    } catch (e) {
-      console.warn('saveBleCfg failed', e);
-      if (dev) dev[field] = !value;
-    }
-  },
-
-  async saveDeviceCfg(nodeId, field, value) {
-    const existing = this.deviceConfigs[nodeId] || {};
-    const updated = { ...existing, [field]: value };
-    this.deviceConfigs = { ...this.deviceConfigs, [nodeId]: updated };
-    if (field === 'is_primary' && value) {
-      const next = { ...this.deviceConfigs };
-      for (const id of Object.keys(next)) {
-        if (id !== nodeId) next[id] = { ...next[id], is_primary: false };
-      }
-      this.deviceConfigs = next;
-      // Set-primary also becomes the active radio — explicit user action
-      const mac = (this.availableDevices || []).find(d => d.node_id === nodeId || d.addr === nodeId)?.addr;
-      if (mac) { this.activeDevice = mac; persistSet('activeDevice', mac); }
-    }
-    try {
-      await fetchJSON(`/device-config/${encodeURIComponent(nodeId)}`, 'PUT', { [field]: value });
-    } catch (e) {
-      console.warn('saveDeviceCfg failed', e);
-    }
-  },
-
-  async saveAntennaCfg() {
-    this.antennaSaved = false;
-    this.antennaError = '';
-    const nodeId = this.cfgRadioId;
-    if (!nodeId) return;
-    const cfg = this.deviceConfigs[nodeId] || {};
-    const body = {
-      antenna_type:  cfg.antenna_type  ?? null,
-      beam_deg:      Number(cfg.beam_deg)      || 360,
-      gain_dbi:      Number(cfg.gain_dbi)      || 0,
-      cable_loss_db: Number(cfg.cable_loss_db) || 0,
-    };
-    try {
-      const updated = await fetchJSON(`/device-config/${encodeURIComponent(nodeId)}`, 'PUT', body);
-      this.deviceConfigs = { ...this.deviceConfigs, [nodeId]: { ...cfg, ...updated } };
-      this.antennaSaved = true;
-      setTimeout(() => { this.antennaSaved = false; }, 2000);
-      this.drawRadar();
-    } catch (e) {
-      this.antennaError = String(e);
-    }
-  },
-
-  async saveHomePosCfg() {
-    this.homePosSaved = false;
-    this.homePosError = '';
-    try {
-      const updated = await fetchJSON('/home_pos', 'PUT', {
-        lat: this.homeLat != null && this.homeLat !== '' ? Number(this.homeLat) : null,
-        lon: this.homeLon != null && this.homeLon !== '' ? Number(this.homeLon) : null,
-      });
-      this.homeLat = updated.lat ?? null;
-      this.homeLon = updated.lon ?? null;
-      this.homePosSaved = true;
-      setTimeout(() => { this.homePosSaved = false; }, 2000);
-    } catch (e) {
-      this.homePosError = String(e);
-    }
-  },
-
-  togglePacketSource(nodeId, checked) {
-    let sources = [...this.packetSources];
-    if (checked && !sources.includes(nodeId)) sources.push(nodeId);
-    else if (!checked) sources = sources.filter(id => id !== nodeId);
-    if (sources.length === this.availableDevices.length) sources = [];
-    this.packetSources = sources;
-    fetchJSON('/config/packet_sources', 'PUT', { value: sources }).catch(() => {});
   },
 
   deviceLabel(nodeId) {
@@ -240,218 +92,23 @@ export const devicesMixin = {
     this.deviceConfigs = configs;
   },
 
-  _drainReadbackQueue(nodeId) {
-    const queue = this._readbackQueues[nodeId];
-    if (!queue || !queue.length) return;
-    this._readbackQueues = { ...this._readbackQueues, [nodeId]: [] };
-    for (const fn of queue) fn();
-  },
-
-  // -- BLE connect flow -------------------------------------------------------
-  async bleScan() {
-    this.bleScanning = true;
-    this.bleError = '';
+  // Not device management — this is the Config tab's home-position field,
+  // which happens to live in this mixin (2026-09-03: left in place rather
+  // than moved, to avoid an unrelated diff mid-removal).
+  async saveHomePosCfg() {
+    this.homePosSaved = false;
+    this.homePosError = '';
     try {
-      const data = await fetchJSON('/ble/scan');
-      this.bleDevices = data.devices || [];
-      if (this.bleDevices.length === 0) this.bleError = 'No Meshtastic devices found.';
-    } catch (e) {
-      this.bleError = 'Scan failed: ' + (e.message || e);
-    } finally {
-      this.bleScanning = false;
-    }
-  },
-
-  async submitPairPin() {
-    if (!this.needPairAddr || !this.needPairPin) return;
-    this.needPairBusy  = true;
-    this.needPairError = '';
-    try {
-      // Save PIN to node-dash device config
-      await fetchJSON(`/device-config/${encodeURIComponent(this.needPairAddr)}`, 'PUT', {
-        ble_pin: this.needPairPin,
+      const updated = await fetchJSON('/home_pos', 'PUT', {
+        lat: this.homeLat != null && this.homeLat !== '' ? Number(this.homeLat) : null,
+        lon: this.homeLon != null && this.homeLon !== '' ? Number(this.homeLon) : null,
       });
-      // Wake mesh-gw pairing retry loop
-      await fetchJSON(`/ble/${encodeURIComponent(this.needPairAddr)}/pair`, 'POST');
-      // needPairBusy stays true — WS event clears it when device transitions out of NEED_PAIR
+      this.homeLat = updated.lat ?? null;
+      this.homeLon = updated.lon ?? null;
+      this.homePosSaved = true;
+      setTimeout(() => { this.homePosSaved = false; }, 2000);
     } catch (e) {
-      this.needPairError = 'Submit failed: ' + (e.message || String(e));
-      this.needPairBusy  = false;
+      this.homePosError = String(e);
     }
-  },
-
-  async bleRemove(address) {
-    try {
-      // Backend removal operation — gw forget + full local cleanup; the
-      // device_list rebroadcast removes the card and re-selects activeDevice.
-      await fetchJSON(`/device/${encodeURIComponent(address)}`, 'DELETE');
-      const dev = this.bleDevices.find(d => d.address?.toUpperCase() === address.toUpperCase());
-      if (dev) { dev.paired = false; dev.trusted = false; }
-    } catch (e) {
-      this.bleError = 'Remove failed: ' + (e.message || e);
-      this.showToast('Remove failed: ' + (e.message || e), 'error');
-      return false;   // asyncOp: suppress the success toast (result===false path)
-    }
-  },
-
-  async bleConnect(address, pin) {
-    const addr = address || this.bleAddress;
-    if (!addr) return;
-    this.bleAddress = addr;
-    this.bleConnecting = true;
-    this.bleError = '';
-    try {
-      const resolvedPin = pin ?? this.blePin ?? '';
-      if (resolvedPin) {
-        // Persist the PIN before connecting — the initial connect POST only
-        // sends it for THIS one-time attempt; mesh-gw's BLE agent re-reads
-        // it later from device-config (e.g. after a restart or reconnect),
-        // and without this it never landed there at all (task pin-save-path,
-        // 2026-07-25, mesh-gw report mcpp-chat mesh-gw--node-dash#5 —
-        // C7:1C:98:7A:B8:0F: user entered 308130, GET /device-config kept
-        // returning the old 123456). Same persist call submitPairPin already
-        // makes for the NEED_PAIR-correction path.
-        await fetchJSON(`/device-config/${encodeURIComponent(addr)}`, 'PUT', { ble_pin: resolvedPin });
-      }
-      await fetchJSON('/devices', 'POST', { address: addr, pin: resolvedPin });
-      const deadline = Date.now() + 60000;
-      const bleKey = 'ble:' + addr.toUpperCase();
-      const addrUpper = addr.toUpperCase();
-      let connected = false;
-      let needPair  = false;
-      while (Date.now() < deadline) {
-        await new Promise(r => setTimeout(r, 1000));
-        const pending = this.deviceBleStates[bleKey];
-        if (pending?.ble_state === 'error') {
-          this.bleError = 'Connect failed: ' + (pending.ble_error || 'device disconnected');
-          break;
-        }
-        const dev = this.availableDevices.find(d => d.addr?.toUpperCase() === addrUpper);
-        if (dev) {
-          const devState = this.deviceBleStates[dev.node_id];
-          if (devState?.ble_state === 'error') {
-            this.bleError = 'Connect failed: ' + (devState.ble_error || 'device disconnected');
-            break;
-          }
-          if (devState?.ble_state === 'ready') {
-            if (!this.activeDevice) await this.selectDevice(dev.addr ?? dev.node_id);
-            connected = true;
-            break;
-          }
-          if (devState?.ble_state === 'need_pair') {
-            // The device_list watcher (app-ws.js) already opens the NEED_PAIR
-            // overlay with the gateway's real reason — stop polling silently
-            // rather than falling through to a generic timeout that would
-            // fight the overlay for attention (task render-pair-message,
-            // 2026-07-25, mcpp-chat mesh-gw--node-dash#4).
-            needPair = true;
-            break;
-          }
-        }
-      }
-      if (!connected && !needPair && !this.bleError) {
-        this.bleError = 'Connect timed out — check device and try again';
-      }
-    } catch (e) {
-      this.bleError = 'Connect failed: ' + (e.message || e);
-    } finally {
-      this.bleConnecting = false;
-    }
-  },
-
-  // -- OTA firmware management ------------------------------------------------
-
-  async loadOtaFiles(nodeId) {
-    await this.asyncOp('otaFiles_' + nodeId, async () => {
-      const d = await fetchJSON(`/ota/firmware?node_id=${encodeURIComponent(nodeId)}`);
-      this.otaFiles = { ...this.otaFiles, [nodeId]: d };
-      if (!this.otaSelectedFile[nodeId] && d.files?.length)
-        this.otaSelectedFile = { ...this.otaSelectedFile, [nodeId]: d.files[0].name };
-    });
-  },
-
-  async loadOtaReleases() {
-    await this.asyncOp('otaReleases', async () => {
-      const d = await fetchJSON('/ota/releases');
-      this.otaReleases = d.releases || [];
-      if (!this.otaSelectedRelease && this.otaReleases.length)
-        this.otaSelectedRelease = this.otaReleases[0].tag;
-    });
-  },
-
-  otaAssetsForDevice(nodeId) {
-    const hwRaw = (this.otaFiles[nodeId]?.hw_model || this.nodeById(nodeId)?.user?.hw_model || '').toUpperCase();
-    if (!hwRaw || !this.otaSelectedRelease) return [];
-    const rel = (this.otaReleases || []).find(r => r.tag === this.otaSelectedRelease);
-    if (!rel) return [];
-
-    const NRF52   = new Set(['RAK4631','NRF52840','NRF52_DK','TECHO','TECHO_V0','TECHO_V1','TECHO_V2','PPR1']);
-    const ESP32S3 = ['HELTEC_V3','HELTEC_W36','HELTEC_MESH_NODE_T114','SEEED_XIAO_S3','TBEAM_S3_CORE','NANO_G2_ULTRA','TRACKER_T1000_E','T_WATCH_S3'];
-    const ESP32C3 = ['SEEED_XIAO_C3','TLORA_T3S3_V1','HELTEC_HT62'];
-    const ESP32C6 = ['T_ECHO_V3','STATION_G2'];
-    const RP2040  = ['RP2040_LORA'];
-
-    let platform = 'esp32';
-    if (NRF52.has(hwRaw)) platform = 'nrf52840';
-    else if (ESP32S3.some(m => hwRaw.includes(m))) platform = 'esp32s3';
-    else if (ESP32C3.some(m => hwRaw.includes(m))) platform = 'esp32c3';
-    else if (ESP32C6.some(m => hwRaw.includes(m))) platform = 'esp32c6';
-    else if (RP2040.some(m => hwRaw.includes(m))) platform = 'rp2040';
-
-    return rel.assets.filter(a => a.name.startsWith('firmware-') && a.name.toLowerCase().includes(platform));
-  },
-
-  async downloadOtaAsset(nodeId, url, filename) {
-    // HTTP call just triggers; WS events ota_download_* drive ops key to completion.
-    this.asyncOpStart('otaDownload_' + nodeId);
-    try {
-      await fetchJSON('/ota/firmware/download', 'POST', { node_id: nodeId, url, filename });
-    } catch (e) {
-      this.asyncOpEnd('otaDownload_' + nodeId, false, e.message);
-    }
-  },
-
-  async uploadOtaFile(nodeId, file) {
-    await this.asyncOp('otaUpload_' + nodeId, async () => {
-      const fd = new FormData();
-      fd.append('node_id', nodeId);
-      fd.append('file', file);
-      const res = await fetch('/ota/firmware/upload', { method: 'POST', body: fd });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
-      await this.loadOtaFiles(nodeId);
-      if (data?.filename) this.otaSelectedFile = { ...this.otaSelectedFile, [nodeId]: data.filename };
-    });
-  },
-
-  async flashOta(nodeId, bleAddr, filename) {
-    if (!filename || this.opLoading('otaFlash_' + nodeId)) return;
-    // HTTP trigger; WS events ota_start/progress/complete/error drive ops key.
-    this.asyncOpStart('otaFlash_' + nodeId);
-    try {
-      const d = await fetchJSON('/ota', 'POST', { node_id: nodeId, ble_addr: bleAddr, firmware: filename });
-      if (!d.started) this.asyncOpEnd('otaFlash_' + nodeId, false, 'Bridge did not start OTA');
-    } catch (e) {
-      this.asyncOpEnd('otaFlash_' + nodeId, false, e.message);
-    }
-  },
-
-  async prepareOtaVersion(nodeId, filename) {
-    const key = 'otaPrepare_' + nodeId + '_' + filename;
-    await this.asyncOp(key, async () => {
-      await fetchJSON('/ota/firmware/prepare', 'POST', { node_id: nodeId, filename });
-      await this.loadOtaFiles(nodeId);
-    });
-  },
-
-  async deleteOtaFile(nodeId, filename) {
-    if (!confirm(`Delete ${filename}?\n\nThis cannot be undone.`)) return;
-    await this.asyncOp('otaFiles_' + nodeId, async () => {
-      await fetchJSON(`/ota/firmware?node_id=${encodeURIComponent(nodeId)}&filename=${encodeURIComponent(filename)}`, 'DELETE');
-      const cur = this.otaFiles[nodeId];
-      this.otaFiles = { ...this.otaFiles, [nodeId]: { ...cur, files: (cur?.files || []).filter(f => f.name !== filename) } };
-      if (this.otaSelectedFile[nodeId] === filename)
-        this.otaSelectedFile = { ...this.otaSelectedFile, [nodeId]: '' };
-    });
   },
 };

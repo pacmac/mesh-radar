@@ -16,7 +16,7 @@ source:
   - public/feature-flags.js
   - public/partials/tab-perf.html
   - public/partials/tab-shared.html
-source_hash: 7c1f31c1d27138f48292014c71bf9bdbf030090edffe331c6d8c1588cf6bef87
+source_hash: 9d8c01b2af3d3d26cbfa9ca10174cd4b5b62dcd217a9aa486dfb6a08838d9698
 updated: 2026-09-03
 ---
 

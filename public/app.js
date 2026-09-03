@@ -52,8 +52,6 @@ function dashboard() {
         ? ((this.availableDevices || []).find(d => d.node_id === v || d.addr === v)?.addr ?? '')
         : '';
     },
-    cfgRadioId:    '',
-    radioTab:      'device',
     availableDevices: [],
     deviceBleStates:  {},
     // Served band tables (WS `verdict_bands`). Null until connect — callers
@@ -101,18 +99,6 @@ function dashboard() {
     rotatorMode:      0,
     pwmRunPctInput:   null,
     pwmFreqInput:     null,
-
-    // -- OTA ------------------------------------------------------------------
-    // All loading/progress/error state lives in ops[key] via asyncOp/asyncOpStart/End.
-    // Keys: 'otaFiles_!id', 'otaReleases', 'otaDownload_!id', 'otaFlash_!id', 'otaUpload_!id'
-    otaFiles:          {},   // nodeId -> {files, hw_model, dir, error}
-    otaSelectedFile:   {},   // nodeId -> filename string
-    otaFetchOpen:      {},   // nodeId -> bool (GitHub fetch panel expanded)
-    otaReleases:       null, // [{tag, name, assets, ...}]
-    otaSelectedRelease:  '',
-    otaNvsDeadline:      null,  // Unix ms; set during OTA_SERIAL_WAIT, cleared otherwise
-    otaNvsCountdownSecs: null,  // live seconds remaining; driven by setInterval in app-ws.js
-    _nvsCountdownTimer:  null,  // internal interval handle
 
     // -- Scan -----------------------------------------------------------------
     scanMode:      false,
@@ -198,21 +184,6 @@ function dashboard() {
     toasts: [],
     ops:    {},
 
-    // -- BLE setup ------------------------------------------------------------
-    bleDevices:   [],
-    bleScanning:  false,
-    bleConnecting: false,
-    bleAddress:   '',
-    blePin:       '',
-    blePins:      {},   // per-device PIN: { [address]: pin }
-    bleError:     '',
-
-    // NEED_PAIR overlay — shown when a BLE device requires a PIN to pair
-    needPairAddr:  null,   // MAC address of device stuck in NEED_PAIR
-    needPairPin:   '',     // user-entered PIN value
-    needPairError: '',     // e.g. "Wrong PIN — try again"
-    needPairBusy:  false,  // true while submitting
-
     // -- Telemetry / tilt / env -----------------------------------------------
     envHistory:  {},
     envWindow:   persistGet('envWindow', 72),
@@ -234,14 +205,6 @@ function dashboard() {
     alertTestOk:      false,
 
     // -- Config tab -----------------------------------------------------------
-    allSections: [],
-    channels:    [],
-    channelSchema: null,
-    ownerSchema:   null,
-    ownerData:     {},
-    ownerSaved:    false,
-    ownerError:    '',
-    fixedPosition: { lat: null, lon: null, alt: null, loaded: false, saved: false, error: '' },
     bridgeConfigSchema: null,
     bridgeConfigSaved:  false,
     bridgeConfigError:  '',
@@ -349,7 +312,7 @@ function dashboard() {
         const nodeNum = nodeNumFromPath();
         if (nodeNum) { this.setNav('node'); this.focusNode(nodeNum); return; }
         const stateTab = e.state?.tab;
-        const t = (stateTab && ['overview','radar','nodes','cfg','range','devices','perf'].includes(stateTab))
+        const t = (stateTab && ['overview','radar','nodes','cfg','range','perf'].includes(stateTab))
           ? stateTab
           : (tabFromPath() ?? 'overview');
         this.setNav(t);

@@ -229,39 +229,6 @@ export const wsMixin = {
       }
       this.deviceBleStates = { ...this.deviceBleStates, ...existing };
 
-      // NEED_PAIR overlay — driven from device_list (always reflects current state).
-      // device_state replay on page load can be stale; device_list is authoritative.
-      // Covers BOTH first-time pairing (has_pin===false, no reason to show) and
-      // a stored-but-rejected PIN (has_pin===true, mesh-gw's own message/
-      // action_text explain why) — task render-pair-message, 2026-07-25:
-      // the has_pin===false-only gate previously never opened for a rejected
-      // stored PIN, so the only feedback was bleConnect()'s generic 60s
-      // timeout, mesh-gw report mcpp-chat mesh-gw--node-dash#4.
-      const needPairDev = devices.find(d => d.ble_state === 'need_pair');
-      if (needPairDev && !this.needPairBusy) {
-        if (this.needPairAddr !== needPairDev.addr) {
-          this.needPairAddr  = needPairDev.addr;
-          this.needPairError = needPairDev.has_pin
-            ? (needPairDev.message || needPairDev.action_text || '') : '';
-          this.needPairPin   = this.deviceConfigs[needPairDev.node_id]?.ble_pin || '';
-        }
-      } else if (!needPairDev && this.needPairAddr) {
-        const prevDev = devices.find(d => d.addr === this.needPairAddr);
-        const s = prevDev?.ble_state;
-        if (s === 'discovering' || s === 'syncing' || s === 'ready') {
-          // Pairing succeeded — dismiss even while busy. Nothing else clears
-          // needPairBusy on success (only wrong-PIN/OFFLINE do), so gating
-          // this on !needPairBusy left the modal up forever (pair-modal-dismiss).
-          this.showToast('Device paired successfully', 'success');
-          this.needPairAddr = null;
-          this.needPairBusy = false;
-          this.needPairPin  = '';
-        } else if (!this.needPairBusy) {
-          // Device vanished while the modal was idle — dismiss without toast.
-          this.needPairAddr = null;
-        }
-      }
-
       // Active-device adoption (see docs/modules/app-ws.md):
       // the persisted preference is written ONLY by explicit user actions.
       // Re-adopt it when its device reappears; outage fallback is display-only.
@@ -283,99 +250,13 @@ export const wsMixin = {
       // (2026-08-17, spec docs/modules/traceroute-removal-browser.md); the
       // theory constants still need adopting.
       if (this.tab === 'perf' && devices.length) this.adoptPerfLoraCfg();
-      if (!this.cfgRadioId || !devices.find(d => d.node_id === this.cfgRadioId)) {
-        this.cfgRadioId = this.activeNodeId;
-      }
       return;
     }
 
-    // NEED_PAIR — BLE device requires a PIN to complete pairing.
-    // device_state events flow directly from node-dash WS relay.
-    // NEED_PAIR wrong-PIN feedback — device_list handles show/dismiss;
-    // device_state handles the wrong-PIN case when we actively submitted.
-    if (ev.type === 'device_state' && ev.addr && this.needPairAddr === ev.addr) {
-      if (ev.state === 'NEED_PAIR' && this.needPairBusy) {
-        this.needPairError = 'Incorrect PIN — check the device display and try again';
-        this.needPairBusy  = false;
-      } else if (ev.state === 'OFFLINE' && this.needPairBusy) {
-        this.needPairError = 'Pairing failed — wrong PIN?';
-        this.needPairBusy  = false;
-      }
-    }
-
-    // OTA flash — WS drives the ops key for the duration of the flash.
-    // ws-relay.js translates device_state OTA_* → ota_start/progress/complete/error with ev.node_id.
-    if (ev.type === 'ota_start' && (ev.node_id || ev.device)) {
-      this.asyncOpStart('otaFlash_' + (ev.node_id || ev.device));
-      return;
-    }
-    if (ev.type === 'ota_progress' && (ev.node_id || ev.device)) {
-      this.asyncOpProgress('otaFlash_' + (ev.node_id || ev.device), ev.data?.pct ?? 0);
-      const newDeadline = ev.data?.deadline ?? null;
-      if (newDeadline !== this.otaNvsDeadline) {
-        this.otaNvsDeadline = newDeadline;
-        if (this._nvsCountdownTimer) { clearInterval(this._nvsCountdownTimer); this._nvsCountdownTimer = null; }
-        if (newDeadline) {
-          this.otaNvsCountdownSecs = Math.max(0, Math.round((newDeadline - Date.now()) / 1000));
-          this._nvsCountdownTimer = setInterval(() => {
-            this.otaNvsCountdownSecs = Math.max(0, Math.round((this.otaNvsDeadline - Date.now()) / 1000));
-            if (this.otaNvsCountdownSecs <= 0) { clearInterval(this._nvsCountdownTimer); this._nvsCountdownTimer = null; }
-          }, 1000);
-        } else {
-          this.otaNvsCountdownSecs = null;
-        }
-      }
-      // Show prominent toast for status events requiring user action (once per status change)
-      const st = ev.data?.status;
-      if (st && st !== this._lastOtaStatus) {
-        this._lastOtaStatus = st;
-        if (st === 'nvs_erase_required' || st === 'nvs_erase_waiting') {
-          const msg = ev.data?.message || 'Hold BOOT and press RESET on the device';
-          this.showToast(msg, 'warning', 0);  // 0 = persistent until dismissed
-        } else if (st === 'nvs_erasing') {
-          this.showToast('NVS erasing — do not power off', 'info', 5000);
-        } else if (st === 'nvs_erased') {
-          this.showToast('NVS cleared — reconnecting…', 'success', 4000);
-        }
-      }
-      return;
-    }
-    if (ev.type === 'ota_complete' && (ev.node_id || ev.device)) {
-      if (this._nvsCountdownTimer) { clearInterval(this._nvsCountdownTimer); this._nvsCountdownTimer = null; }
-      this.otaNvsDeadline = null; this.otaNvsCountdownSecs = null;
-      this.asyncOpEnd('otaFlash_' + (ev.node_id || ev.device), true);
-      return;
-    }
-    if (ev.type === 'ota_error' && (ev.node_id || ev.device)) {
-      if (this._nvsCountdownTimer) { clearInterval(this._nvsCountdownTimer); this._nvsCountdownTimer = null; }
-      this.otaNvsDeadline = null; this.otaNvsCountdownSecs = null;
-      this.asyncOpEnd('otaFlash_' + (ev.node_id || ev.device), false, ev.data?.error || 'OTA failed');
-      return;
-    }
-
-    // OTA download — WS drives the ops key; HTTP trigger just starts the task
-    if (ev.type === 'ota_download_start' && (ev.node_id || ev.device)) {
-      this.asyncOpStart('otaDownload_' + (ev.node_id || ev.device));
-      return;
-    }
-    if (ev.type === 'ota_download_progress' && (ev.node_id || ev.device)) {
-      this.asyncOpProgress('otaDownload_' + (ev.node_id || ev.device), ev.data?.pct ?? 0);
-      return;
-    }
-    if (ev.type === 'ota_download_complete' && (ev.node_id || ev.device)) {
-      const _ota_dev = ev.node_id || ev.device;
-      this.asyncOpEnd('otaDownload_' + _ota_dev, true);
-      this.loadOtaFiles(_ota_dev).then(() => {
-        const fname = ev.filename || ev.extracted;
-        if (fname && !this.otaSelectedFile[_ota_dev])
-          this.otaSelectedFile = { ...this.otaSelectedFile, [_ota_dev]: fname };
-      });
-      return;
-    }
-    if (ev.type === 'ota_download_error' && (ev.node_id || ev.device)) {
-      this.asyncOpEnd('otaDownload_' + (ev.node_id || ev.device), false, ev.data?.error || 'Download failed');
-      return;
-    }
+    // BLE pairing and OTA flash/download progress events (need_pair, ota_*) are
+    // no longer consumed — mesh-gw owns both flows and their UI now (2026-09-03,
+    // task devices-management-removed-meshgw-owns-it). Unhandled WS event types
+    // fall through safely below.
 
     if (ev.type === 'text_message') return; // handled via TEXT_MESSAGE_APP packet path
 

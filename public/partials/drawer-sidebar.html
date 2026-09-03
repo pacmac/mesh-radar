@@ -86,16 +86,15 @@
           </a>
         </li>
         <!-- plugin: nav -->
-        </li>
         <!-- Messages nav item removed 2026-09-03, task
              messages-frontend-and-browser-route-removed — mesh-gw's own
              dashboard Messages page is the only UI now. -->
-        <li class="mt-2 border-t border-base-200 pt-2">
-          <a :class="tab==='devices' && 'active'" @click="setNav('devices')">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
-            Devices
-            <span class="badge badge-sm ml-auto" :class="availableDevices.length ? 'badge-success' : 'badge-ghost'" x-text="availableDevices.length"></span>
-          </a>
+        <!-- Devices nav item removed 2026-09-03, task
+             devices-management-removed-meshgw-owns-it — mesh-gw's own Radios
+             page is the only device-management UI now. The device selector
+             (above, in the logo block) and the per-device status footer
+             (below) stay: node-dash still needs to know WHICH device is
+             active and whether it is reachable. -->
       </ul>
 
       <!-- Status footer inside sidebar -->

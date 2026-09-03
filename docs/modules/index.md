@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: 635b48cfee320127780e02c51073d8eb062f3ba29f17e5c01afa03a1330bc925
+source_hash: 18f86641e4c024a71151249bc3be81684ea35c84af86fe23cfff63bfacf86701
 updated: 2026-09-03
 ---
 
@@ -35,16 +35,29 @@ the mesh-gw except to proxy (see `bridge.js`), or hold runtime state beyond the
 
 ## Dependencies
 
-Routers mounted: `config-api`, `nodes-api`, `device-config`,
-`device-remove`, `rotator-api`, `performance-api`, `geocode`,
-`range-test-api`, `traceroute-api`, `auto-purge-api`, `messages-api`, `alerts-api`,
-`op-manager`. Infrastructure: `bridge`, `ws-relay` (`attachWsRelay`),
-`db` (config + migration statements), `rotator`, `scanner`,
-`node-list`, `alerts` (`startAlertPoller`), `imap-receiver`, `startup`,
-`lifecycle`, `node-filter`, `node-label`, `device-config`
-(`resolvePrimaryNodeId`), `bridge-config-schema`, `rotator-config-schema`,
+Routers mounted (2026-09-03): `config-api`, `nodes-api`, `terrain`, `clusters`,
+`reach`, `snapshot-api`, `performance-api`, `geocode`, `range-test-api`,
+`traceroute-api`, `auto-purge-api`, `alerts-api`, `op-manager`, plus
+`proxyToBridge` for `BRIDGE_PREFIXES` and any `!hexid`/MAC-shaped path.
+Infrastructure: `bridge`, `ws-relay` (`attachWsRelay`), `db` (config +
+migration statements), `aim-client`, `scanner`, `node-list`, `alerts`
+(`startAlertPoller`), `imap-receiver`, `startup`, `lifecycle`, `node-filter`,
+`node-label`, `device-config` (named exports only — `resolvePrimaryNodeId`,
+resolvers, `onHomePosChange`; no router, no default export), `bridge-config-schema`,
 `bridge-events`. Env: `PORT` (default 8000), `BRIDGE_URL` (default
 `http://localhost:8001`).
+
+**Removed 2026-09-03** (task `devices-management-removed-meshgw-owns-it`):
+`device-config`'s router, `device-remove`, `radio-admin`, `radio-admin-api`.
+**Removed earlier, same session**: `rotator-api`, `rotator`, `rotator-config-schema`
+(task `rotator-command-duplicates-meshgw-radio-knowledge` — replaced by
+`aim-client`), `messages-api` (task `messages-frontend-and-browser-route-removed`).
+
+**Not yet addressed** (filed separately,
+`backend-still-proxies-removed-device-management-routes`): `PAGES` still lists
+`/devices` and `/device-config`, and `BRIDGE_PREFIXES` still proxies `/devices`,
+`/ble`, `/ble_devices`, `/ota` through to mesh-gw — nothing in the browser calls
+any of them any more, but the pass-through is still live.
 
 ## Public interface
 

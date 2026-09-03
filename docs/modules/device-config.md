@@ -1,7 +1,7 @@
 ---
 module: device-config
 source: src/device-config.js
-source_hash: 186812a4987a3f6e75225b3266948d1a4f5508b68f26b210e29056bbbff4b97d
+source_hash: 05b9bd4a2b0df1fe7b9411b9ff59304546ebcf75448fa9513185cd7df3dbf057
 updated: 2026-09-03
 ---
 
@@ -11,8 +11,15 @@ updated: 2026-09-03
 
 Per-device configuration registry for BLE radios. Stores antenna properties,
 role flags (rotator, primary), and fallback home position per MAC address.
-Provides helper accessors used throughout the backend and exposes a REST API
-for reading and updating device configs.
+Provides read-only helper accessors used throughout the backend.
+
+**No write path (2026-09-03, task `devices-management-removed-meshgw-owns-it`).**
+The REST router (GET/PUT `/device-config[/:address]`), `deleteDeviceCfg`, and
+every browser control that wrote here (label, antenna fields, BLE PIN) are
+gone — node-dash "is no longer responsible to manage devices" (Peter,
+2026-09-03). Values are frozen at whatever they currently hold. Only the
+mesh-gw `install`-object merge in `getDeviceCfg` (below) still changes what a
+caller reads, and that is mesh-gw pushing data in, not a local write.
 
 ## Responsibilities
 
@@ -20,8 +27,6 @@ for reading and updating device configs.
 - Provide `getRotatorAddress()` and `getPrimaryMac()` for role-based device lookup
 - Migrate legacy `!hexid`-keyed config entries to canonical uppercase MAC keys via `ensureDeviceCfgMac`
 - Notify callers when the primary device's home position changes (`onHomePosChange`)
-- Expose a `_nodeIdToMac` resolver (registered at startup) for !hexid → MAC lookups in REST endpoints
-- Serve REST endpoints for GET/PUT device configuration by address
 
 ## Dependencies
 
@@ -51,10 +56,10 @@ export function registerInstallLookup(fn)           // fn(MAC) → mesh-gw insta
 
 // Migration helper
 export function ensureDeviceCfgMac(addr, nodeId)    // migrate legacy !hexid key → MAC or bootstrap empty
-
-// REST router (mounted at /device-config by index.js)
-export default router
 ```
+
+No default export, no router — the REST surface (GET/PUT `/device-config[/:address]`,
+`deleteDeviceCfg`) is gone (2026-09-03).
 
 ## Config key format
 
@@ -81,24 +86,6 @@ Keys are always normalised to uppercase by `getDeviceCfg` and `ensureDeviceCfgMa
 | `color` | null | DaisyUI theme color for badges/radar |
 | `ble_pin` | null | BLE pairing PIN — SSOT here; paired status lives in bleak_db, never here |
 
-## REST API
-
-### `GET /device-config`
-Returns `{ [MAC]: cfg }` for all configured devices.
-
-### `GET /device-config/:address`
-Address may be a MAC or `!hexid`.
-- MAC: returns `getDeviceCfg(mac)`
-- `!hexid`: resolves to MAC via `_nodeIdToMac` if device is live; otherwise reads the legacy `device_cfg.!hexid` key directly; falls back to DEFAULT
-
-### `PUT /device-config/:address`
-Address may be a MAC or `!hexid`.
-- `!hexid`: must be currently live (404 if not). Migrates any legacy `!hexid` key to MAC on first write.
-- Accepts a partial body — only fields present in the request body are updated.
-- **`is_primary` singleton**: when setting `is_primary=true`, clears `is_primary` from all other devices.
-- **Home-pos callback**: if `fixed_lat` or `fixed_lon` changed AND `is_primary=true`, calls `_onHomePosChange()`.
-- Returns the updated config object.
-
 ## `ensureDeviceCfgMac(addr, nodeId)` migration logic
 
 Called by `ws-relay.js` when a device appears in a `device_state` event.
@@ -121,7 +108,7 @@ Identity is never inferred from MAC-suffix arithmetic.
 
 | Caller | Imports |
 |---|---|
-| `index.js` | all exports; mounts router; registers both resolvers; calls `onHomePosChange` |
+| `index.js` | named exports only (no router); registers both resolvers; calls `onHomePosChange` |
 | `dash-mode.js` | `getRotatorAddress`, `getPrimaryMac`, `macToNodeId` (per-mode transmitter resolution) |
 | `lifecycle.js` | `getRotatorAddress`, `onHomePosChange` |
 | `active-tracker.js` | `getRotatorAddress` |
@@ -135,25 +122,20 @@ Identity is never inferred from MAC-suffix arithmetic.
 ## Invariants
 
 - `getRotatorAddress()` and `getPrimaryMac()` scan all configs on every call — no cache. Multiple calls may return different results if the config DB changes between calls (rare in practice).
-- `is_primary` is a singleton: the PUT endpoint enforces at most one primary device. `getPrimaryMac()` returns the first match if multiple are set (should not happen in normal use).
+- `is_primary` is a singleton in storage, but nothing writes it any more (2026-09-03) — whatever was last set stands.
 - `getDeviceCfg(address)` always returns a complete object with all DEFAULT fields. Missing keys from DB are filled with defaults. Callers can destructure safely.
-- `_nodeIdToMac` is null until `registerNodeIdToMacResolver` is called. REST endpoints gracefully handle `null` by treating the !hexid as unresolvable.
+- `_nodeIdToMac` is null until `registerNodeIdToMacResolver` is called; `resolvePrimaryNodeId()`/`macToNodeId()` treat a null resolver or an unresolvable id by falling through to the raw MAC.
 - `_macToNodeId` is null until `registerMacToNodeIdResolver` is called. `resolvePrimaryNodeId()` falls back to returning the raw MAC if the resolver is null or returns null.
 - `resolvePrimaryNodeId()` returns null if no primary device is configured; returns the MAC as fallback if `_macToNodeId` has no mapping (device not yet live).
-- `_onHomePosChange` fires only when `is_primary=true` on the device being updated. Changes to a non-primary device's home position are silently ignored.
+- `_onHomePosChange` is registered but nothing calls it any more — the write path that used to fire it (`PUT /device-config/:address`) is gone (2026-09-03). Kept as dead wiring rather than torn out; no caller depends on it firing.
 
 ## Test notes
 
-- **getRotatorAddress**: one device with `is_rotator=true` → returns its MAC; none → returns null
+- **getRotatorAddress**: one device with `is_rotator=true` (locally, or via a live mesh-gw `install.antenna.rotator`) → returns its MAC; none → returns null
 - **getPrimaryMac**: one device with `is_primary=true` → returns its MAC; none → returns null
-- **PUT is_primary singleton**: device A already primary → PUT device B with `is_primary=true` → A's `is_primary` cleared; B's set
-- **PUT homePos callback**: primary device, change `fixed_lat` → `_onHomePosChange` called; non-primary device change → not called
 - **ensureDeviceCfgMac migration**: MAC has no entry, nodeId has legacy entry → MAC gets the data, nodeId entry deleted
 - **ensureDeviceCfgMac bootstrap**: MAC has no entry, nodeId not in DB → MAC bootstrapped with DEFAULT
 - **ensureDeviceCfgMac idempotent**: MAC already exists → no change
-- **GET !hexid live**: `_nodeIdToMac('!abc')` returns a MAC → returns that device's cfg
-- **GET !hexid not live, legacy exists**: `_nodeIdToMac` returns null, legacy `device_cfg.!abc` present → returns legacy merged with DEFAULT
-- **PUT !hexid not live**: 404 response
 
 ## Out of scope
 
@@ -161,23 +143,16 @@ Identity is never inferred from MAC-suffix arithmetic.
 - Which radio is currently connected — `bridge.js` / `ws-relay.js` own the live device list
 - Home position computation — `active-tracker.js` reads `getConfig('home.lat')` separately; the `fixed_lat/fixed_lon` here are device-specific fallbacks
 
-## Phase C2
+## The REST router, `deleteDeviceCfg`, and key validation are gone (2026-09-03)
 
-The PUT handler calls `pokeDeviceList()` after writing so the enriched
-`device_list` (which carries each device's `cfg`) rebroadcasts immediately.
-GET /device-config remains for tooling but the browser no longer calls it.
-
-## Key validation + removal (task `device-remove-op`, 2026-07-16)
-
-- `GET/PUT /:address` reject keys that are neither MAC- nor `!hexid`-shaped
-  with 400 — this kills the `device_cfg.UNDEFINED` creation path (a browser
-  bug once sent `PUT /device-config/undefined`; the perf task filtered the
-  phantom in the UI and deferred the real cleanup here).
-- `ensureDeviceCfgMac` bootstraps a default row only for MAC-shaped keys.
-- `deleteDeviceCfg(key)` exported — removes a cfg row by MAC (uppercased) or
-  legacy `!hexid` key (as stored). Called by `device-remove.js`.
-- One-time idempotent purge at module load deletes any malformed
-  `device_cfg.*` rows, logging each purged key.
+Superseding the two sections that used to live here (Phase C2's `PUT` handler,
+and `device-remove-op`'s `GET/PUT /:address` key validation): node-dash "is no
+longer responsible to manage devices" (Peter, 2026-09-03, task
+`devices-management-removed-meshgw-owns-it`). There is no router, no `PUT`, no
+`pokeDeviceList()` call, no `deleteDeviceCfg` export, and no `device-remove.js`
+(deleted with it — it existed only to call `deleteDeviceCfg`). The malformed-key
+purge at module load (below `DEFAULT`, still present) is the one write-adjacent
+thing that remains, and it only ever deletes, never accepts new input.
 
 ## Absent is not cleared, and a sparse read must not become a write (2026-08-05)
 
@@ -406,13 +381,11 @@ Registration, right after `lastDeviceState` is declared (line 447):
 - Rotator connection endpoint (`ROTATOR_WS_URL`/`ROTATOR_V5_WS_URL`/`rotator_targets`) and
   whether rotator commands should route through mesh-gw's `/plugins/aim/point` — real,
   larger questions, deliberately left for a separate task.
-- The `tab-devices.html` "Save label" control still PUTs to `/device-config/:address`
-  locally (`op-manager.js` `device_config_label`, class `Local`). Once mesh-gw is SSOT for
-  `label`, a local write is silently overridden on the next `install` event (last-write-wins
-  toward mesh-gw, since `getDeviceCfg` always prefers `install` when present) rather than
-  rejected — worth a UI follow-up (grey out / repoint the field) but not a correctness bug
-  in this task's scope: no data is corrupted, the write just stops being the thing that
-  sticks.
+- **Resolved 2026-09-03, not by the UI follow-up flagged here — by removal.** The
+  `tab-devices.html` "Save label" control and `op-manager.js`'s `device_config_label`
+  op (the local write this bullet described) no longer exist at all; see
+  "The REST router... are gone" below. The overridden-not-rejected concern never
+  needed its follow-up because there is no local write left to override.
 
 ### Restored 2026-08-05
 

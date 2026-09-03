@@ -5,12 +5,11 @@ import { persistGet, persistSet } from './app-persist.js';
 // core names no plugin tab or path (docs/BROWSER_PLUGIN_SPEC.md).
 const _PATH_TO_TAB = {
   '/': 'overview', '/overview': 'overview', '/radar': 'radar', '/nodes': 'nodes',
-  '/config': 'cfg', '/range': 'range', '/devices': 'devices',
-  '/device-config': 'devices', '/performance': 'perf',
+  '/config': 'cfg', '/range': 'range', '/performance': 'perf',
 };
 const _TAB_TO_PATH = {
   overview: '/', radar: '/radar', nodes: '/nodes',
-  cfg: '/config', range: '/range', devices: '/devices',
+  cfg: '/config', range: '/range',
   perf: '/performance',
 };
 for (const plugin of (window.__dashPlugins || [])) {
@@ -105,11 +104,5 @@ export const navMixin = {
   d(path) {
     const key = this.activeDevice || this.activeNodeId;
     return key ? '/' + key + path : path;
-  },
-
-  // Like d() but uses cfgRadioId for Radio Config tab operations.
-  cd(path) {
-    const id = this.cfgRadioId || this.activeNodeId;
-    return id ? '/' + id + path : path;
   },
 };

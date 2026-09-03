@@ -2,12 +2,20 @@
 module: interval-options
 source:
   - src/interval-options.js
-  - src/radio-admin-api.js
-source_hash: aa57007139bb73a7f138269e9cb8745733b0b3f4fddbb037e79c59b387926f03
-updated: 2026-08-18
+source_hash: 66f1d7cee74f4016670bd9a928c279962afb3f0eafa3ecbc35e1bfd7a410d8bf
+updated: 2026-09-03
 ---
 
 # Bad values are made unenterable, because that is how the phone app does it
+
+**ORPHANED 2026-09-03.** This module's only consumer, `src/radio-admin-api.js`
+(`GET /radio-admin/schema/:section`, described below), was deleted along with
+the rest of node-dash's device-management surface — task
+`devices-management-removed-meshgw-owns-it`, mesh-gw now owns radio config
+editing. Nothing imports `decorateSchema` any more. Left in place rather than
+deleted here because that deletion is out of this task's scope; tracked at
+`interval-options-orphaned-by-radio-admin-removal`. The history below still
+describes real, if currently unreachable, code.
 
 Peter, 2026-08-18: *"in fact none of the fields are validated. I can enter any
 value I like for things like send freq for metadata, node dash allows it and saves
@@ -131,11 +139,12 @@ strings used as both value and label, and reusing it would make the select emit
 the STRING `"1800"` where the protobuf needs an int — sending a wrong-typed value
 to fix wrong-valued ones.
 
-### `src/radio-admin-api.js` — `GET /radio-admin/schema/:section`
+### `src/radio-admin-api.js` — `GET /radio-admin/schema/:section` (DELETED 2026-09-03)
 
-node-dash serves the decorated schema. mesh-gw's `/schema` is untouched and still
-the source of the fields themselves; this only replaces the control for mapped
-interval fields.
+This route served the decorated schema. mesh-gw's `/schema` was untouched and
+still the source of the fields themselves; this only replaced the control for
+mapped interval fields. Gone along with the rest of `radio-admin-api.js` — see
+the ORPHANED note above.
 
 ### `public/app-forms.js` — render `choice`
 

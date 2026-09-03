@@ -35,13 +35,6 @@ export const uiMixin = {
   opErr(key)     { return this.ops[key]?.err || null; },
   opPct(key)     { return this.ops[key]?.pct ?? null; },
 
-  // Key of any currently-active otaFlash_ op (loading, done, or errored) — used by OTA overlay.
-  get activeFlashKey() {
-    return Object.keys(this.ops).find(
-      k => k.startsWith('otaFlash_') && (this.ops[k]?.loading || this.ops[k]?.ok || this.ops[k]?.err)
-    ) || null;
-  },
-
   // For WS-tracked streaming operations: HTTP just triggers; WS drives state to done.
   asyncOpStart(key) {
     this.ops = { ...this.ops, [key]: { loading: true, ok: false, err: null, pct: null } };

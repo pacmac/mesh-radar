@@ -1,7 +1,7 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: 7a0b8e7e44c0d7cb8d9328bc683277484c38fed36b3b3bf5c3a93d7ba7cc57c5
+source_hash: 0ca1d1a4187b1ce3b7ed2aea784b19618100ac775b10f639898fbe45a2cc73c4
 updated: 2026-09-03
 ---
 
@@ -11,6 +11,17 @@ updated: 2026-09-03
 
 Sidebar drawer: logo block, active-device indicator + selector, nav menu,
 device status footer, toast container. Presentation only.
+
+## Devices nav item removed (2026-09-03, task `devices-management-removed-meshgw-owns-it`)
+
+There is no Devices page any more — mesh-gw's own Radios page is the only
+device-management UI now. The nav `<li>` (badge showing `availableDevices.length`,
+routed `setNav('devices')`) is gone. The device selector `<select>` (logo
+block) and the per-device status footer (bottom of the sidebar) stay
+unchanged — node-dash still needs to know which device is active and whether
+it is reachable, which is display/selection, not management. Fixed a stray
+orphan `</li>` left over from the earlier Messages nav-item removal in the
+same edit.
 
 ## Control nav item (task `pac-host-command-surface`, 2026-07-25)
 

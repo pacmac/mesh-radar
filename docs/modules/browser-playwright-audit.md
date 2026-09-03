@@ -13,7 +13,6 @@ source:
   - public/sw.js
   - public/partials/drawer-sidebar.html
   - public/partials/tab-cfg.html
-  - public/partials/tab-devices.html
   - public/partials/tab-perf.html
   - public/partials/tab-radar.html
   - public/style.css
@@ -27,11 +26,19 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 11d6d08c12968781b5ecc2db1096f793aad6c1309fb5aca46b3699516f5f0dfe
+source_hash: 50dda72e4d3eb84053160fc93f2acc6c5b0ff8c8a0bbc9bd29055ba898d9abae
 updated: 2026-09-03
 ---
 
 # Module: browser-playwright-audit
+
+**STALE CONTENT 2026-09-03.** `public/partials/tab-devices.html` is deleted and
+every Devices/BLE/OTA/radio-admin section below (route inventory, required data
+surfaces, forbidden-control list, the OMNI channel round-trip via the Devices
+UI) describes a page that no longer exists — mesh-gw's own dashboard owns all
+of it now (task `devices-management-removed-meshgw-owns-it`). Left un-rewritten
+here; tracked at `playwright-audit-spec-describes-removed-device-management`
+for a real pass over this spec and `tests/test_playwright.py` together.
 
 
 

@@ -34,42 +34,10 @@ const REGISTRY = new Map([
 
   // ── Class 1 — Local ───────────────────────────────────────────────────────
 
-  ['device_config_label', {
-    class: 'Local', description: 'Device alias label',
-    method: 'PUT', endpoint: p => `/device-config/${p.target}`,
-    read_back_path: p => `/device-config/${p.target}`, match_fields: ['label'],
-    example_payload: { target: '!2687afb1', values: { label: 'OpTest' } },
-    timeout_s: 5, reboot: false,
-  }],
-  ['device_config_color', {
-    class: 'Local', description: 'Device UI colour tag',
-    method: 'PUT', endpoint: p => `/device-config/${p.target}`,
-    read_back_path: p => `/device-config/${p.target}`, match_fields: ['color'],
-    example_payload: { target: '!2687afb1', values: { color: 'blue' } },
-    timeout_s: 5, reboot: false,
-  }],
-  ['device_config_primary', {
-    class: 'Local', description: 'Set primary device flag',
-    method: 'PUT', endpoint: p => `/device-config/${p.target}`,
-    read_back_path: p => `/device-config/${p.target}`, match_fields: ['is_primary'],
-    example_payload: { target: '!2687afb1', values: { is_primary: true } },
-    timeout_s: 5, reboot: false,
-  }],
-  ['ble_auto_connect', {
-    class: 'Local', description: 'BLE auto-connect toggle',
-    method: 'PATCH', endpoint: p => `/ble_devices/${p.target}`,
-    read_back_path: () => '/bridge_config', match_fields: [],
-    example_payload: { target: 'E9:B0:3F:17:27:91', values: { auto_connect: true } },
-    timeout_s: 5, reboot: false,
-  }],
-  ['antenna_config', {
-    class: 'Local', description: 'Antenna type, beam, gain, cable loss',
-    method: 'PUT', endpoint: p => `/device-config/${p.target}`,
-    read_back_path: p => `/device-config/${p.target}`,
-    match_fields: ['antenna_type', 'beam_deg', 'gain_dbi', 'cable_loss_db'],
-    example_payload: { target: '!2687afb1', values: { antenna_type: 'yagi', beam_deg: 30, gain_dbi: 8, cable_loss_db: 1 } },
-    timeout_s: 5, reboot: false,
-  }],
+  // device_config_label/color/primary, ble_auto_connect, antenna_config
+  // removed 2026-09-03, task devices-management-removed-meshgw-owns-it — all
+  // wrote through the now-deleted /device-config REST API. node-dash is "no
+  // longer responsible to manage devices."
   ['home_position', {
     class: 'Local', description: 'Global radar home position (lat/lon)',
     method: 'PUT', endpoint: () => '/home_pos',
@@ -184,54 +152,14 @@ const REGISTRY = new Map([
   // ── Class 3 — Mode ────────────────────────────────────────────────────────
   // ModeRunner: trigger → wait for confirming WS event or HTTP response
 
-  ['wipe_nodedb', {
-    class: 'Mode', description: 'Wipe device node database (managed reboot cycle)',
-    method: 'POST', endpoint: () => '/purge-nodedb',
-    read_back_path: null, match_fields: [],
-    confirming: 'http_200',
-    example_payload: { target: '!2687afb1', values: {} },
-    timeout_s: 70, reboot: true,
-  }],
-  ['rotator_mode_pasv', {
-    class: 'Mode', description: 'Set rotator to PASSIVE mode',
-    method: 'POST', endpoint: () => '/rotator/mode',
-    read_back_path: null, match_fields: [],
-    confirming: 'http_200',
-    example_payload: { target: null, values: { mode: 0 } },
-    timeout_s: 5, reboot: false,
-  }],
-  ['rotator_mode_actv', {
-    class: 'Mode', description: 'Set rotator to ACTIVE mode',
-    method: 'POST', endpoint: () => '/rotator/mode',
-    read_back_path: null, match_fields: [],
-    confirming: 'http_200',
-    example_payload: { target: null, values: { mode: 1 } },
-    timeout_s: 5, reboot: false,
-  }],
-  ['rotator_move', {
-    class: 'Mode', description: 'Move rotator to azimuth',
-    method: 'POST', endpoint: () => '/rotator/move',
-    read_back_path: null, match_fields: [],
-    confirming: 'http_200',
-    example_payload: { target: null, values: { az: 0 } },
-    timeout_s: 10, reboot: false,
-  }],
-  ['rotator_scan_start', {
-    class: 'Mode', description: 'Start rotator scan',
-    method: 'POST', endpoint: () => '/rotator/scan/start',
-    read_back_path: null, match_fields: [],
-    confirming: 'http_200',
-    example_payload: { target: null, values: {} },
-    timeout_s: 5, reboot: false,
-  }],
-  ['rotator_scan_abort', {
-    class: 'Mode', description: 'Abort rotator scan',
-    method: 'POST', endpoint: () => '/rotator/scan/abort',
-    read_back_path: null, match_fields: [],
-    confirming: 'http_200',
-    example_payload: { target: null, values: {} },
-    timeout_s: 5, reboot: false,
-  }],
+  // wipe_nodedb removed 2026-09-03, task
+  // devices-management-removed-meshgw-owns-it — device management.
+  //
+  // rotator_mode_pasv/actv, rotator_move, rotator_scan_start/abort were
+  // ALREADY DEAD before this task — their endpoints (/rotator/mode,
+  // /rotator/move, /rotator/scan/*) were deleted in task
+  // rotator-command-via-meshgw-aim (2026-09-03) and missed in that pass.
+  // Removed now rather than left as a second stale reference.
   ['range_test_start', {
     class: 'Mode', description: 'Start range test TX',
     method: 'POST', endpoint: () => '/range_test/start',
@@ -256,23 +184,9 @@ const REGISTRY = new Map([
     example_payload: { target: null, values: {} },
     timeout_s: 15, reboot: false,
   }],
-  ['ble_connect', {
-    class: 'Mode', description: 'Connect BLE device',
-    method: 'POST', endpoint: () => '/devices',
-    read_back_path: null, match_fields: [],
-    confirming: 'device_state_ready',
-    // target must be the BLE MAC address — used by _waitForStateChange to match ev.addr
-    example_payload: { target: 'E9:B0:3F:17:27:91', values: { address: 'E9:B0:3F:17:27:91' } },
-    timeout_s: 30, reboot: false,
-  }],
-  ['ble_disconnect', {
-    class: 'Mode', description: 'Disconnect BLE device',
-    method: 'DELETE', endpoint: p => `/devices/${p.target}`,
-    read_back_path: null, match_fields: [],
-    confirming: 'http_200',
-    example_payload: { target: 'E9:B0:3F:17:27:91', values: {} },
-    timeout_s: 10, reboot: false,
-  }],
+  // ble_connect/ble_disconnect removed 2026-09-03, task
+  // devices-management-removed-meshgw-owns-it — BLE pairing is device
+  // management, mesh-gw's job now.
   // 'send_traceroute' — REMOVED 2026-08-17, task `traceroute-callers-rewrite`.
   //
   // It was the FOURTH dispatch path, and the least visible: not a call to

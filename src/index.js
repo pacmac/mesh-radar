@@ -10,8 +10,7 @@ import { logEvent } from './hooks.js';
 import { startStandingTasks } from './standing-tasks.js';
 import { startCalloutRunner } from './callout-runner.js';
 import { execSync } from 'child_process';
-import deviceConfigRouter, { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId, getAllDeviceCfgs } from './device-config.js';
-import deviceRemoveRouter from './device-remove.js';
+import { registerNodeIdToMacResolver, registerMacToNodeIdResolver, resolvePrimaryNodeId, getAllDeviceCfgs } from './device-config.js';
 import { registerMacToNumResolver } from './node-filter.js';
 import { getConfig, setConfig, clearNodeCache, stmts, migrateNodeDeviceMac, migrateDeviceColumnsToMac, loadNodeMacMap } from './db.js';
 import { scanner } from './scanner.js';
@@ -24,7 +23,6 @@ import alertsRouter from './alerts-api.js';
 import clustersRouter from './clusters-api.js';
 import terrainRouter from './terrain-api.js';
 import tracerouteRouter from './traceroute-api.js';
-import radioAdminRouter from './radio-admin-api.js';
 import reachRouter from './reach-api.js';
 import { createPerformanceRouter } from './performance-api.js';
 import rangeTestRouter, { getRangeTimer } from './range-test-api.js';
@@ -270,9 +268,6 @@ app.get('/nodes', (req, res) => {
 
 app.use('/config', configRouter);
 app.use(nodesApi);
-app.use('/device-config', deviceConfigRouter);
-// The ONE device-removal operation — gw forget + local state cleanup (device-remove-op)
-app.use('/device', deviceRemoveRouter);
 
 app.get('/home_pos', (_req, res) => {
   res.json({ lat: getConfig('home.lat', null), lon: getConfig('home.lon', null),
@@ -361,18 +356,10 @@ app.use('/range_test', rangeTestRouter);
 // A path the proxy regex cannot match is the fix that cannot regress.
 app.use(tracerouteRouter);
 
-// RADIO CONFIG WRITES — spec docs/modules/radio-admin.md.
-//
-// Mounted under a fixed prefix that carries NO node id, for the same reason the
-// traceroute router above does: a `/{nodeId}/...` path falls through to the
-// `/!hex` proxy at the bottom of this file the moment a handler is missing, and
-// then goes to mesh-gw unexamined. The device travels in the BODY.
-//
-// This replaces five deleted op-manager ops (radio_config_section,
-// channel_config, owner_info, fixed_position_push, fixed_position_clear) which
-// wrote through mesh-gw's cooked PUT surface and validated themselves against a
-// cache written from their own input.
-app.use('/radio-admin', radioAdminRouter);
+// RADIO CONFIG WRITES removed 2026-09-03, task
+// devices-management-removed-meshgw-owns-it — node-dash "no longer responsible
+// to manage devices"; mesh-gw's own dashboard Radios page now covers
+// Radio/Device/Network/Security/Antenna/Modules config editing.
 
 app.use(autoPurgeRouter);
 
