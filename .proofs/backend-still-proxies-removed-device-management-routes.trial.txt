@@ -1,0 +1,5 @@
+$ bash /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_backend_proxy_scoped.sh
+FAIL: BRIDGE_PREFIXES still proxies '/ble' (dead device-management surface)
+FAIL: BRIDGE_PREFIXES still proxies '/ble_devices' (dead device-management surface)
+FAIL: BRIDGE_PREFIXES still proxies '/ota' (dead device-management surface)
+FAIL: PAGES still serves the SPA shell for the removed /device-config page

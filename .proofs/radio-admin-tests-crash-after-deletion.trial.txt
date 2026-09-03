@@ -1,0 +1,4 @@
+$ bash /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_radio_admin_tests.sh
+FAIL: tests/test_radio_admin.mjs still exists — its subject module/function is deleted
+FAIL: tests/test_channel_write.mjs still exists — its subject module/function is deleted
+FAIL: check_all.mjs still registers radio_admin or channel_write

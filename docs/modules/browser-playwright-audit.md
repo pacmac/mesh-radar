@@ -17,7 +17,6 @@ source:
   - public/partials/tab-radar.html
   - public/style.css
   - public/debug.html
-  - tests/test_channel_write.mjs
   - public/vendor/alpinejs-3.15.12.min.js
   - public/vendor/chart.umd-4.min.js
   - public/vendor/daisyui-4.12.14.min.css
@@ -26,19 +25,25 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 50dda72e4d3eb84053160fc93f2acc6c5b0ff8c8a0bbc9bd29055ba898d9abae
+source_hash: 8ccd0844f60e26bf90d54cf59b8fe5d9d59b9bc143afe851224ee544ca7d1d99
 updated: 2026-09-03
 ---
 
 # Module: browser-playwright-audit
 
-**STALE CONTENT 2026-09-03.** `public/partials/tab-devices.html` is deleted and
-every Devices/BLE/OTA/radio-admin section below (route inventory, required data
-surfaces, forbidden-control list, the OMNI channel round-trip via the Devices
-UI) describes a page that no longer exists — mesh-gw's own dashboard owns all
-of it now (task `devices-management-removed-meshgw-owns-it`). Left un-rewritten
-here; tracked at `playwright-audit-spec-describes-removed-device-management`
-for a real pass over this spec and `tests/test_playwright.py` together.
+## Devices/BLE/OTA surface removed from this audit (2026-09-03)
+
+`public/partials/tab-devices.html` is deleted (task
+`devices-management-removed-meshgw-owns-it`) and mesh-gw's own dashboard owns
+device management now. Removed from the suite and this spec accordingly (task
+`devices-removal-residue-cleanup`): the `/messages`, `/device-config` and
+`/devices` route cases, the Devices-card safe-interaction check, and the whole
+guarded OMNI channel write/read-back/restore apparatus
+(`audit_live_channel` and its helpers) — it drove the write through the
+Devices page's Channels UI and the `channel_config` op, both gone. `/devices`
+still exists as a backend device-listing endpoint and is exercised directly by
+`test_node.py` (its WS-only-guard 410), but there is no browser page for it to
+route-check any more.
 
 
 
@@ -145,27 +150,23 @@ python3 tests/test_playwright.py
 - `PLAYWRIGHT_TIMEOUT` — assertion timeout in milliseconds; default `15000`.
 - `PLAYWRIGHT_ARTIFACT_DIR` — artifact root; default
   `.playwright-mcp/audit`.
-- `PLAYWRIGHT_LIVE_CHANNEL` — optional channel index. The live acceptance run
-  uses `3`; only `3` or `4` is accepted.
-- `PLAYWRIGHT_OMNI_NODE_ID` — expected OMNI node id; live default
-  `!2687afb1`.
-- `PLAYWRIGHT_OMNI_MAC` — optional stronger identity assertion.
+- `PLAYWRIGHT_OMNI_NODE_ID` — expected OMNI node id (used only by the
+  node-focus route case); live default `!2687afb1`.
 - `PLAYWRIGHT_ALARM_NODE_ID` — a unit pac-host knows about; default `!987ab80f`.
 - `PLAYWRIGHT_CORE_NODE_ID` — an ordinary mesh node, **not** a gateway radio and
   **not** an alarm unit; default `!30327710`. Both properties matter: a gateway
   would not prove the plugin leaves ordinary nodes alone.
 
-The default run is passive and safe. Supplying `PLAYWRIGHT_LIVE_CHANNEL`
-enables exactly the reversible OMNI channel test and no other live write.
+**Passive only (2026-09-03).** `PLAYWRIGHT_LIVE_CHANNEL` and `PLAYWRIGHT_OMNI_MAC`
+are gone with the guarded OMNI channel write test — its write path (Devices
+page's Channels UI, `channel_config` op) no longer exists. There is no live
+write left in this suite to guard.
 
 ### Result
 
-- Exit `0` only when every selected test passes and live-test cleanup succeeds.
-- Exit non-zero on any failure, cleanup failure, or unsafe target mismatch.
+- Exit `0` only when every test passes.
+- Exit non-zero on any failure.
 - Output one line per case plus totals grouped by page.
-- A cleanup failure is always prominent and names the affected device/channel.
-- Secrets and channel PSKs are never printed or stored in artifacts. Reports
-  may contain only `psk_present` and character/byte length.
 
 ## State
 
@@ -174,9 +175,6 @@ The test runner owns only transient test state:
 - collected console/page/network failures;
 - current viewport and route;
 - page inventory results;
-- original OMNI channel snapshot held in memory;
-- whether the temporary write happened;
-- cleanup outcome;
 - artifact paths.
 
 It must use a fresh browser context for deterministic navigation state. A
@@ -186,9 +184,6 @@ No test may rely on a developer's existing browser localStorage.
 ## Events emitted
 
 _N/A._ The runner observes `/events`; it does not add application events.
-
-For the live channel case it observes the existing `config_op` lifecycle and
-requires terminal `success` for both write and restoration.
 
 ## Boot records a deploy
 
@@ -229,18 +224,19 @@ The SPA routes are:
 | `/overview` | Overview |
 | `/radar` | Radar |
 | `/nodes` | Nodes |
-| `/messages` | Messages |
 | `/config` | Config |
-| `/devices` | Devices |
 | `/range` | Range Test |
 | `/performance` | Performance |
 | `/node/!<hex>` | Node focus |
 
 `/debug` is a separate debug monitor and must return its own HTML page.
 
-`/device-config` is a legacy route. It must redirect to `/devices` or
-deterministically render Devices; it must never restore an unrelated persisted
-tab.
+**No `/messages`, `/device-config` or `/devices` case (2026-09-03).** Both
+pages are gone — mesh-gw's own dashboard owns Messages and device management
+now (`messages-frontend-and-browser-route-removed`,
+`devices-management-removed-meshgw-owns-it`). `/devices` still exists
+server-side as a device-listing endpoint (WS-only guarded, exercised by
+`test_node.py`), but there is no browser page or tab to route-check.
 
 Every direct navigation above returns HTTP 200 HTML. The WS-only guard rejects
 browser `fetch()` page-data requests but never rejects a document navigation.
@@ -251,8 +247,8 @@ browser `fetch()` page-data requests but never rejects a document navigation.
 - An unknown or removed persisted `activeTab`, including `control`, falls back
   to `overview` and is replaced with a valid value.
 - `popstate` uses the same route table as cold navigation.
-- Config exposes only real subtabs: Bridge, Rotator, Modes, Radar and Alerts.
-- Radio, Channels and Owner exist only inside the selected Devices card.
+- Config exposes only real subtabs: Bridge, Rotator, Modes, Radar, Callout and
+  Alerts.
 - No sidebar link may select a tab or subtab without rendered content.
 
 ### Required data surfaces
@@ -265,11 +261,9 @@ After WS initialisation:
 - Radar: radar canvas/SVG, range control, node filters and rotator mode state
   exist.
 - Nodes: count, sort, filters and at least one card or a designed empty state.
-- Messages: compose controls and authoritative Message Feed.
-- Config: all five real subtabs; each form subtab either loads its sanctioned
-  form data or shows a visible error/loading state.
-- Devices: one strip per `device_list` entry and Settings/Radio/Channels/Owner/
-  Firmware/Maintenance for the expanded OMNI card.
+- Config: all six real subtabs (Bridge, Rotator, Modes, Radar, Callout, Alerts);
+  each form subtab either loads its sanctioned form data or shows a visible
+  error/loading state.
 - Range: radio/node filters, stats/empty state, visualisation and log.
 - Performance: radio choice, Simple/Expert, stats, both charts, history and
   auto-traceroute controls.
@@ -289,65 +283,30 @@ The passive suite may:
 - switch read-only display modes and chart windows;
 - change local-only filter controls in a fresh context;
 - switch Config subtabs and load forms;
-- expand the OMNI Devices card and its six tabs;
-- select OMNI as the display/test radio;
 - toggle Debug filters, Pause and local Clear;
 - trigger controls documented as no-op refreshes.
-
-Where a preference writes node-dash configuration, the runner snapshots,
-changes, verifies, restores and verifies the original value. These cases are
-separate from the strictly passive run.
 
 The audit must not activate:
 
 - any YAGI control or YAGI-backed request;
 - PASV/ACTV/SCAN/ABORT, rotator Point/Target, motor variables or calibration;
 - traceroute or auto-traceroute transmission;
-- message Send;
 - range Start/Stop TX;
 - tilt calibration;
-- radio section, owner, fixed-position, antenna or role writes;
-- BLE scan/connect/pair/disconnect/retry/remove;
 - packet-source changes;
-- auto-purge setting changes or node DB wipe;
-- alert test email or credential changes;
-- OTA upload/download/prepare/delete/flash;
-- backup restore.
+- alert test email or credential changes.
 
 Those controls are verified for presence, correct labels, disabled/loading
 bindings and safe target labelling only.
 
-### OMNI channel round-trip
-
-The live case is authorised only when all guards pass:
-
-1. The target `device_list` entry has label exactly `OMNI`, node id equal to
-   `PLAYWRIGHT_OMNI_NODE_ID`, and BLE state `ready`.
-2. The YAGI node id is not the selected target.
-3. Channel is numeric `3` or `4`.
-4. The original channel is unused: absent/empty settings and no active role.
-5. The original full channel object is captured in memory and redacted before
-   any diagnostic output.
-
-The case then:
-
-1. Opens Devices -> OMNI -> Channels through user-visible navigation.
-2. Expands the chosen channel and verifies the schema-generated controls.
-3. Writes a unique short audit name and `SECONDARY` role using the page Save
-   button.
-4. Requires a successful `config_op`, success UI, and retained local form
-   values.
-5. Resyncs OMNI only, then requires bulk `/channels` read-back containing the
-   audit values. The resync is required because mesh-gw's channel cache is
-   stale until reconnect.
-6. Restores the exact original channel state in a `finally` block and resyncs.
-7. Requires successful restoration and a second bulk read-back equivalent to
-   the original semantic state.
-8. Re-enables auto-connect in the final cleanup and leaves OMNI ready and the
-   channel unused.
-
-If any guard fails, no write occurs and the suite fails rather than choosing a
-different device or channel.
+**No live write case (2026-09-03).** The guarded OMNI channel round-trip is
+gone with the Devices page and the `channel_config` op — see "Devices/BLE/OTA
+surface removed from this audit" above. Everything BLE/OTA/radio-write-shaped
+that used to be in the forbidden list above it (BLE scan/connect/pair/
+disconnect/remove, auto-purge/node-DB-wipe, radio section/owner/
+fixed-position/antenna/role writes, OTA upload/download/prepare/delete/flash,
+backup restore, message Send) is removed rather than kept as a forbidden-list
+entry: there is no control left in the browser that could activate any of it.
 
 ### Layout and assets
 
@@ -408,15 +367,16 @@ vendored assets.
 ### Phase C — safe interaction audit
 
 - Exercise local/navigation controls and modal open/close.
-- Switch every Config subtab and every OMNI Devices subtab.
+- Switch every Config subtab.
 - Confirm dangerous controls are correctly targeted and expose the expected
   disabled/running/error UI without activating them.
 
-### Phase D — reversible writes
+### Phase D — RETIRED (2026-09-03)
 
-- Run preference snapshot/change/restore cases.
-- Run the guarded OMNI channel 3 round-trip.
-- Treat restoration as part of the test, not teardown best effort.
+Went with the guarded OMNI channel round-trip — its write path no longer
+exists (see "No live write case" above). Nothing in `test_playwright.py`
+implements a "Phase D" any more; kept as a heading only so the phase numbering
+below stays legible against the history further down this file.
 
 ### Phase E — visual matrix
 

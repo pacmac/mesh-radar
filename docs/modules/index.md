@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: 18f86641e4c024a71151249bc3be81684ea35c84af86fe23cfff63bfacf86701
+source_hash: b8f4811a9cef51e417732af654c8131f6359346488cdce73d4eb895e0ecd965b
 updated: 2026-09-03
 ---
 
@@ -53,11 +53,15 @@ resolvers, `onHomePosChange`; no router, no default export), `bridge-config-sche
 (task `rotator-command-duplicates-meshgw-radio-knowledge` — replaced by
 `aim-client`), `messages-api` (task `messages-frontend-and-browser-route-removed`).
 
-**Not yet addressed** (filed separately,
-`backend-still-proxies-removed-device-management-routes`): `PAGES` still lists
-`/devices` and `/device-config`, and `BRIDGE_PREFIXES` still proxies `/devices`,
-`/ble`, `/ble_devices`, `/ota` through to mesh-gw — nothing in the browser calls
-any of them any more, but the pass-through is still live.
+**Resolved 2026-09-03** (task `devices-removal-residue-cleanup`, entry
+`backend-still-proxies-removed-device-management-routes`): `PAGES` no longer
+lists `/messages` or `/device-config` (both pages are gone); `BRIDGE_PREFIXES`
+no longer proxies `/ble`, `/ble_devices`, `/ota` or `/sections` — zero
+remaining callers, verified by grepping every `public/*.js` and test file.
+`/devices` stays in both — it is a real, tested (`test_node.py`) device-listing
+endpoint, unrelated to device management; there is just no browser page or tab
+for it any more. `/schema` also stays: still serves `/schema/bridge_config`
+and `/schema/rotator_config`, both live.
 
 ## Public interface
 
@@ -88,12 +92,15 @@ None exported — this is the top-level script (`node src/index.js`, run under P
    `nodeIdToNum`) to `window`. The browser's copy is generated from the one source.
 4. **SPA page stubs** — for each known page path, serve assembled `index.html`
    **only** when `Accept: text/html` (a navigation); an XHR/`fetch()` falls through
-   to the API. Registered **before** conflicting API routes (e.g. `/messages`,
-   `/config`, `/devices`) so the browser gets the SPA while XHR hits the API.
-5. node-dash APIs: `GET /status`, `GET /messages`, `GET|DELETE /nodes`, then the
-   mounted routers, `GET|PUT /home_pos`, `/rotator`, the node-dash-owned schema
-   endpoints (`/schema/rotator_config`, `/schema/bridge_config`) **before** the
-   bridge proxy, then performance/geocode/range/traceroute/auto-purge/messages.
+   to the API. Registered **before** conflicting API routes (e.g. `/config`,
+   `/devices`) so the browser gets the SPA while XHR hits the API.
+5. node-dash APIs: `GET /status`, `GET|DELETE /nodes`, `GET|PUT /home_pos`,
+   `POST /mode`, `POST /scan/start`, `POST /scan/abort`, then the mounted
+   routers, then the node-dash-owned `GET /schema/bridge_config` (registered
+   before the bridge proxy so it wins over the `/schema` `BRIDGE_PREFIXES`
+   entry — `GET /schema/rotator_config` has no local handler and falls through
+   to that same `/schema` prefix, proxied to mesh-gw), then
+   performance/geocode/range/traceroute/auto-purge.
 6. **Bridge proxy** — `proxyToBridge` forwards to `${BRIDGE_URL}${originalUrl}` for
    the `BRIDGE_PREFIXES` and for per-device paths (`/!hex…` and `/AA:BB:…:FF…`
    regexes). MAC is the canonical device key (IDENTITY.md §2).

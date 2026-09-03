@@ -1,0 +1,5 @@
+$ bash /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_playwright_audit_stale.sh
+FAIL: test_playwright.py still has a RouteCase for a removed page
+FAIL: audit_live_channel (drives the deleted Devices->Channels UI) still present
+FAIL: test_playwright.py still exercises the deleted Devices card
+FAIL: browser-playwright-audit.md still documents the removed Devices/BLE/OTA surface as current

@@ -3,8 +3,8 @@ module: check-all
 source:
   - scripts/check_all.mjs
   - package.json
-source_hash: 5c4d25136a20a05a7e7424c290d721d167ab35dde44a8d6faa6e79447b661d1e
-updated: 2026-08-17
+source_hash: 9a0b363f270ccc643b74bef7c07d0244835a0c20e7e4d7693310fdc97da9b77c
+updated: 2026-09-03
 ---
 
 # Module: check-all
@@ -60,6 +60,7 @@ Runtimes measured 2026-08-13 on this machine, service up, warm 700 MB store.
 | `scripts/check_contract.mjs` | service | node-dash up | 5,148 ms | 60 s |
 | `scripts/check_no_cache.mjs` | service | node-dash up | 200 ms | 30 s |
 | `tests/test_node.py` | service | node-dash up | ~35 s | 180 s |
+| `tests/test_doors.mjs` | service | the store | 150 ms | 30 s |
 | `tests/test_page_snapshot.py` | slow | node-dash + browser | measured in Observe | 600 s |
 | `tests/test_playwright.py` | slow | node-dash + browser | measured in Observe | 600 s |
 | `tests/test_ops.py` | **unsafe** | **a live radio** | not run | — |
@@ -68,6 +69,22 @@ Runtimes measured 2026-08-13 on this machine, service up, warm 700 MB store.
 > `check_all.mjs` but missing from this table, and `test_channels.mjs` was added
 > 2026-08-14. A table that claims to list the checks and does not is the same
 > failure as a check nothing invokes — the reader trusts it and stops looking.
+>
+> This table has drifted repeatedly and is now materially behind the runner —
+> `interval_tables`, `interval_options`, `no_channel_resolver`, `resolve`,
+> `aim`, `traceroute_flow`, `transport_encoding`, `reply_snippet` and `doors`
+> are all registered and only the last is listed (`radio_admin` was itself
+> removed 2026-09-03, task `devices-removal-residue-cleanup` — its subject,
+> src/radio-admin.js, is deleted). **The runner is the
+> inventory; `npm run check:list` prints it.** Reconciling the table is a task of
+> its own and is not attempted here — recorded rather than silently left, because
+> the failure this file exists to prevent is exactly a list nobody notices is
+> stale.
+
+`doors` is in the **service** group because it reads the live store, not because
+it needs HTTP — same placement and same reason as `transport_encoding`. It exits
+127 when the db or driver is missing, which the register reads as a mistrial
+rather than a conviction.
 
 **Timeouts are derived, with a floor.** Each is ~6-12x the measured runtime,
 except that anything under a second gets a 30 s floor: below that, process

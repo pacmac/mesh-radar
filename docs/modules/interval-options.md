@@ -8,14 +8,23 @@ updated: 2026-09-03
 
 # Bad values are made unenterable, because that is how the phone app does it
 
-**ORPHANED 2026-09-03.** This module's only consumer, `src/radio-admin-api.js`
-(`GET /radio-admin/schema/:section`, described below), was deleted along with
-the rest of node-dash's device-management surface — task
-`devices-management-removed-meshgw-owns-it`, mesh-gw now owns radio config
-editing. Nothing imports `decorateSchema` any more. Left in place rather than
-deleted here because that deletion is out of this task's scope; tracked at
-`interval-options-orphaned-by-radio-admin-removal`. The history below still
-describes real, if currently unreachable, code.
+**UNCONSUMED BY NODE-DASH, KEPT DELIBERATELY, 2026-09-03.** This module's only
+consumer, `src/radio-admin-api.js` (`GET /radio-admin/schema/:section`,
+described below), was deleted along with the rest of node-dash's
+device-management surface — task `devices-management-removed-meshgw-owns-it`,
+mesh-gw now owns radio config editing. Nothing imports `decorateSchema` any
+more.
+
+**Not dead code to delete.** `docs/PORT_RADIO_CONFIG_TO_MESH_GW.md` marks this
+file, `src/interval-tables.js`, `scripts/gen_interval_tables.mjs` and
+`vendor/meshtastic-android/FixedUpdateIntervals.kt` as **port** — the
+deliberate reference mesh-gw needs to replicate the same interval validation
+on their side. An earlier finding here (`interval-options-orphaned-by-radio-
+admin-removal`) treated this as dead code and proposed deleting it; that was
+wrong, and the finding was withdrawn (task `devices-removal-residue-cleanup`)
+before anything was deleted. Both `npm run check` entries for this chain
+(`interval_tables`, `interval_options`) still pass standalone and stay
+registered. The history below still describes real, currently-preserved code.
 
 Peter, 2026-08-18: *"in fact none of the fields are validated. I can enter any
 value I like for things like send freq for metadata, node dash allows it and saves

@@ -1,8 +1,12 @@
 """
 Structured node-dash browser acceptance audit.
 
-Passive by default. Set PLAYWRIGHT_LIVE_CHANNEL=3 (or 4) to enable the
-guarded OMNI channel write/read-back/restore test.
+Passive only. The guarded OMNI channel write/read-back/restore test and the
+Devices-page safe-interaction check were removed 2026-09-03 (task
+devices-removal-residue-cleanup) — the page and the write path they drove
+(Devices -> Channels -> Save, channel_config op) are gone. mesh-gw's own
+dashboard owns radio config editing now; there is nothing left here to
+exercise it through.
 """
 
 from __future__ import annotations
@@ -12,21 +16,18 @@ import json
 import os
 import re
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
-from playwright.async_api import BrowserContext, Page, async_playwright
+from playwright.async_api import Page, async_playwright
 
 
 BASE = os.environ.get("NODE_DASH_URL", "http://localhost:8000").rstrip("/")
 HEADLESS = os.environ.get("PLAYWRIGHT_HEADLESS", "1") != "0"
 TIMEOUT = int(os.environ.get("PLAYWRIGHT_TIMEOUT", "15000"))
 ARTIFACT_DIR = Path(os.environ.get("PLAYWRIGHT_ARTIFACT_DIR", ".playwright-mcp/audit"))
-LIVE_CHANNEL = os.environ.get("PLAYWRIGHT_LIVE_CHANNEL", "").strip()
 OMNI_NODE_ID = os.environ.get("PLAYWRIGHT_OMNI_NODE_ID", "!2687afb1")
-OMNI_MAC = os.environ.get("PLAYWRIGHT_OMNI_MAC", "E9:B0:3F:17:27:91").upper()
 # Plugin-boundary audit. ALARM = a unit pac-host knows about; CORE = an ordinary
 # mesh node it does not. Env-overridable so the test is not wired to one install.
 ALARM_NODE_ID = os.environ.get("PLAYWRIGHT_ALARM_NODE_ID", "!987ab80f")
@@ -55,10 +56,15 @@ ROUTES = (
     RouteCase("/overview", "overview", ("Live Event Feed",), "overview"),
     RouteCase("/radar", "radar", ("PASV", "ACTV", "SCAN"), "radar"),
     RouteCase("/nodes", "nodes", ("NodeDB",), "nodes"),
-    RouteCase("/messages", "messages", ("Send Text", "Message Feed"), "messages"),
+    # No /messages case: the compose/read UI left 2026-09-03
+    # (messages-frontend-and-browser-route-removed) — mesh-gw's own dashboard
+    # Messages page is the only UI now.
     RouteCase("/config", "cfg", ("Bridge", "Rotator", "Modes", "Radar", "Alerts"), "config"),
-    RouteCase("/device-config", "devices", ("Connected radios",), "device-config-legacy"),
-    RouteCase("/devices", "devices", ("Connected radios",), "devices"),
+    # No /device-config or /devices case: the Devices page left 2026-09-03
+    # (devices-management-removed-meshgw-owns-it) — mesh-gw's own Radios page
+    # owns device management now. `/devices` still exists as a backend
+    # device-listing endpoint (test_node.py exercises its WS-only guard
+    # directly), but there is no browser page or tab for it any more.
     RouteCase("/range", "range", ("Range Test Log",), "range"),
     # "Traceroute History" dropped 2026-08-18: the surface was stripped from this
     # page on 2026-08-17 (86400ab, docs/modules/traceroute-removal-browser.md)
@@ -307,242 +313,26 @@ async def audit_safe_interactions(browser) -> None:
         "Config has no dead Radio subtab",
     )
 
-    await page.goto(BASE + "/devices", wait_until="domcontentloaded")
-    state = await settle_app(page)
-    omni = next((d for d in state["devices"] if d.get("label") == "OMNI"), None)
-    RESULTS.check(omni is not None, "OMNI device is present")
-    if omni:
-        strip = page.locator('div[role="button"]', has_text="OMNI").first
-        await strip.click()
-        for label in ("Settings", "Radio", "Channels", "Owner", "Firmware", "Maintenance"):
-            button = page.get_by_role("button", name=label, exact=True).first
-            await button.click()
-            await page.wait_for_timeout(350)
-            RESULTS.check(await button.is_visible(), f"OMNI Devices tab {label} opens")
-        RESULTS.check(
-            await page.get_by_role("button", name="Wipe node DB", exact=True).is_visible(),
-            "dangerous maintenance controls are visible but untouched",
-        )
-
     await page.goto(BASE + "/performance", wait_until="domcontentloaded")
     await settle_app(page)
-    await page.get_by_role("button", name="Expert", exact=True).click()
+    # No Simple/Expert toggle since 2026-08-17 (traceroute-removal-browser) —
+    # the page dropped every traceroute-derived measurement and now shows
+    # link-budget theory only. Nothing left to toggle; assert the theory
+    # heading that replaced it instead.
     RESULTS.check(
-        await page.get_by_text("EIRP", exact=True).is_visible(),
-        "Performance Expert display toggles",
+        await page.get_by_text("Link budget — theory", exact=True).is_visible(),
+        "Performance link-budget theory section renders",
     )
-    await page.get_by_role("button", name="Simple", exact=True).click()
     await context.close()
 
 
-def channel_at(payload: dict, index: int) -> dict:
-    channels = payload.get("channels", [])
-    if isinstance(channels, list):
-        return channels[index] if index < len(channels) else {}
-    return channels.get(str(index), {})
-
-
-async def api_json(page: Page, path: str) -> dict:
-    return await page.evaluate(
-        """async (path) => {
-          const r=await fetch(path);
-          if (!r.ok) throw new Error(`${path} HTTP ${r.status}`);
-          return await r.json();
-        }""",
-        path,
-    )
-
-
-async def api_request(page: Page, path: str, method: str, body: dict | None = None) -> dict:
-    return await page.evaluate(
-        """async ({path,method,body}) => {
-          const opts={method, headers:{}};
-          if (body !== null) {
-            opts.headers['Content-Type']='application/json';
-            opts.body=JSON.stringify(body);
-          }
-          const r=await fetch(path, opts);
-          const data=await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(`${path} HTTP ${r.status}: ${data.detail || data.error || ''}`);
-          return data;
-        }""",
-        {"path": path, "method": method, "body": body},
-    )
-
-
-async def wait_op(page: Page, op_id: str, timeout: float = 90.0) -> dict:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        result = await api_json(page, f"/ops/{op_id}")
-        if result.get("state") in ("success", "error"):
-            return result
-        await asyncio.sleep(0.5)
-    raise TimeoutError(f"operation {op_id} did not finish")
-
-
-async def restore_channel(page: Page, index: int, original: dict) -> None:
-    values = {
-        "index": index,
-        "settings": dict(original.get("settings") or {}),
-        "role": original.get("role") or "DISABLED",
-    }
-    op_id = await page.evaluate(
-        """async ({target,index,values}) => {
-          const r=await fetch('/ops', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({
-              kind:'channel_config', target,
-              payload:{index, values}
-            })
-          });
-          if (!r.ok) throw new Error(`restore submit HTTP ${r.status}`);
-          return (await r.json()).op_id;
-        }""",
-        {"target": OMNI_NODE_ID, "index": index, "values": values},
-    )
-    outcome = await wait_op(page, op_id)
-    if outcome.get("state") != "success":
-        raise RuntimeError(outcome.get("error") or "channel restore failed")
-
-
-async def wait_omni_ready(page: Page) -> None:
-    await page.wait_for_function(
-        """({target,mac}) => {
-          const d=document.querySelector('[x-data="dashboard()"]')?._x_dataStack?.[0];
-          const dev=d?.availableDevices?.find(x =>
-            x.node_id === target && x.addr?.toUpperCase() === mac);
-          return dev?.ble_state === 'ready';
-        }""",
-        {"target": OMNI_NODE_ID, "mac": OMNI_MAC},
-        timeout=120_000,
-    )
-    await page.wait_for_timeout(1000)
-
-
-async def resync_omni(page: Page) -> None:
-    encoded = quote(OMNI_MAC, safe="")
-    await api_request(page, f"/devices/{encoded}", "DELETE")
-    await page.wait_for_timeout(500)
-    await api_request(
-        page, f"/ble_devices/{encoded}", "PATCH", {"auto_connect": True}
-    )
-    await wait_omni_ready(page)
-
-
-async def audit_live_channel(browser) -> None:
-    if not LIVE_CHANNEL:
-        print("\nLIVE CHANNEL: SKIP (set PLAYWRIGHT_LIVE_CHANNEL=3 or 4)")
-        return
-    print("\nLIVE CHANNEL")
-    if LIVE_CHANNEL not in ("3", "4"):
-        RESULTS.check(False, "live channel guard", "only channel 3 or 4 is allowed")
-        return
-    index = int(LIVE_CHANNEL)
-    context: BrowserContext = await browser.new_context(viewport=VIEWPORTS["desktop"])
-    page = await context.new_page()
-    page.set_default_timeout(90_000)
-    attempted = False
-    original: dict = {}
-    try:
-        await page.goto(BASE + "/devices", wait_until="domcontentloaded")
-        state = await settle_app(page)
-        omni = next((d for d in state["devices"] if d.get("label") == "OMNI"), None)
-        yagi = next((d for d in state["devices"] if d.get("label") == "YAGI"), None)
-        guards = (
-            omni is not None
-            and omni.get("node_id") == OMNI_NODE_ID
-            and omni.get("ble_state") == "ready"
-            and (not OMNI_MAC or omni.get("addr", "").upper() == OMNI_MAC)
-            and (not yagi or yagi.get("node_id") != OMNI_NODE_ID)
-        )
-        if not RESULTS.check(guards, "OMNI identity/ready guard"):
-            return
-
-        payload = await api_json(page, f"/{OMNI_NODE_ID}/channels")
-        original = channel_at(payload, index)
-        unused = not (original.get("settings") or {}) and not original.get("role")
-        if not RESULTS.check(unused, f"OMNI channel {index} is unused"):
-            return
-
-        strip = page.locator('div[role="button"]', has_text="OMNI").first
-        await strip.click()
-        await page.get_by_role("button", name="Channels", exact=True).first.click()
-        collapse = page.locator(".collapse", has_text=f"Channel {index}").first
-        await collapse.locator('input[type="checkbox"]').first.check()
-        await page.wait_for_selector(f"#ch_{index} [data-field='name']")
-
-        audit_name = f"PW{int(time.time()) % 100000:05d}"[:8]
-        await page.locator(f"#ch_{index} [data-field='name']").fill(audit_name)
-        await page.locator(f"#ch_{index} [data-field='role']").select_option("SECONDARY")
-        save = collapse.get_by_role("button", name="Save", exact=True)
-        attempted = True
-        await save.click()
-        await page.wait_for_function(
-            """({index,target}) => {
-              const d=document.querySelector('[x-data="dashboard()"]')?._x_dataStack?.[0];
-              const op=d?.ops?.[`ch_${index}_${target}`];
-              return !!op && (op.ok === true || !!op.err);
-            }""",
-            {"index": index, "target": OMNI_NODE_ID},
-            timeout=90_000,
-        )
-        op_state = await page.evaluate(
-            """({index,target}) => {
-              const d=document.querySelector('[x-data="dashboard()"]')?._x_dataStack?.[0];
-              return d?.ops?.[`ch_${index}_${target}`] || null;
-            }""",
-            {"index": index, "target": OMNI_NODE_ID},
-        )
-        RESULTS.check(bool(op_state and op_state.get("ok")), "channel Save reaches success UI")
-
-        local = await page.evaluate(
-            """({index,target,name}) => {
-              const d=document.querySelector('[x-data="dashboard()"]')?._x_dataStack?.[0];
-              const ch=d?.channels?.find(x => x.index === index)?.data;
-              return ch?.role === 'SECONDARY' && ch?.settings?.name === name;
-            }""",
-            {"index": index, "target": OMNI_NODE_ID, "name": audit_name},
-        )
-        RESULTS.check(local, "channel UI retains accepted values")
-
-        # mesh-gw's bulk channel cache is stale until the next device sync.
-        # Resync OMNI only, then verify what the radio persisted.
-        await resync_omni(page)
-        readback = await api_json(page, f"/{OMNI_NODE_ID}/channels")
-        changed = channel_at(readback, index)
-        RESULTS.check(
-            changed.get("role") == "SECONDARY"
-            and (changed.get("settings") or {}).get("name") == audit_name,
-            "channel bulk read-back matches saved values",
-            "read-back did not contain audit name/role",
-        )
-    except Exception as exc:
-        RESULTS.check(False, "OMNI channel round-trip completed", str(exc))
-    finally:
-        if attempted and original is not None:
-            try:
-                await wait_omni_ready(page)
-                await restore_channel(page, index, original)
-                await resync_omni(page)
-                restored = channel_at(
-                    await api_json(page, f"/{OMNI_NODE_ID}/channels"), index
-                )
-                clean = not (restored.get("settings") or {}) and not restored.get("role")
-                RESULTS.check(clean, f"OMNI channel {index} restored unused")
-            except Exception as exc:
-                RESULTS.check(False, f"OMNI channel {index} restoration", str(exc))
-        if OMNI_MAC:
-            try:
-                await api_request(
-                    page,
-                    f"/ble_devices/{quote(OMNI_MAC, safe='')}",
-                    "PATCH",
-                    {"auto_connect": True},
-                )
-                await wait_omni_ready(page)
-            except Exception as exc:
-                RESULTS.check(False, "OMNI final ready/auto-connect restoration", str(exc))
-        await context.close()
+# channel_at, api_json, api_request, wait_op, restore_channel, wait_omni_ready,
+# resync_omni, and audit_live_channel — the OMNI channel write/read-back/
+# restore apparatus — were removed 2026-09-03 (task
+# devices-removal-residue-cleanup). They drove the write through the Devices
+# page's Channels UI and the channel_config op, both deleted
+# (devices-management-removed-meshgw-owns-it). mesh-gw's own dashboard owns
+# radio config editing now; this suite has no write path left to guard.
 
 
 async def _node_page_facts(page, path: str) -> dict:
@@ -680,7 +470,6 @@ async def main() -> int:
         await audit_plugin_boundary(browser)
         await audit_invalid_persisted_tab(browser)
         await audit_safe_interactions(browser)
-        await audit_live_channel(browser)
         await browser.close()
 
     RESULTS.check(not root_artifacts(), "no root-level browser artifacts", ", ".join(root_artifacts()))

@@ -466,6 +466,14 @@
     runs: 1
   trial: null
   fix: null
+  withdrawn:
+    why: "Wrong conclusion \u2014 docs/PORT_RADIO_CONFIG_TO_MESH_GW.md marks src/interval-options.js,\
+      \ src/interval-tables.js, scripts/gen_interval_tables.mjs, and vendor/meshtastic-android/FixedUpdateIntervals.kt\
+      \ as 'port' (not 'port or delete'): they are the deliberate reference mesh-gw needs to replicate\
+      \ interval validation. Not dead code to delete \u2014 orphaned from node-dash's own runtime consumption\
+      \ only, and both npm run check entries (interval_tables, interval_options) still pass standalone.\
+      \ Corrected the spec note instead."
+    at: '2026-09-03T19:21:43.754'
 - id: playwright-audit-spec-describes-removed-device-management
   type: bug
   what: "docs/modules/browser-playwright-audit.md and tests/test_playwright.py still describe/assert the\
@@ -478,12 +486,27 @@
   spec: docs/modules/browser-playwright-audit.md
   files:
   - tests/test_playwright.py
+  - docs/modules/browser-playwright-audit.md
   test:
-    command: null
-    criterion: null
+    command:
+    - bash
+    - /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_playwright_audit_stale.sh
+    criterion: no stale RouteCase, no audit_live_channel, no dead-page assertions, spec content matches
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/playwright-audit-spec-describes-removed-device-management.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-03T19:23:26.571'
+    commit: acff848-dirty
+  fix:
+    file: .proofs/playwright-audit-spec-describes-removed-device-management.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T19:35:29.367'
+    commit: acff848-dirty
 - id: backend-still-proxies-removed-device-management-routes
   type: bug
   what: "src/index.js still lists /devices and /device-config in PAGES (serves the SPA shell for direct\
@@ -500,8 +523,87 @@
   files:
   - src/index.js
   test:
-    command: null
-    criterion: null
+    command:
+    - bash
+    - /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_backend_proxy_scoped.sh
+    criterion: dead BLE/OTA prefixes and /device-config page gone; /devices stays
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/backend-still-proxies-removed-device-management-routes.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-03T19:23:26.694'
+    commit: acff848-dirty
+  fix:
+    file: .proofs/backend-still-proxies-removed-device-management-routes.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T19:35:29.500'
+    commit: acff848-dirty
+- id: radio-admin-tests-crash-after-deletion
+  type: bug
+  what: "tests/test_radio_admin.mjs imports src/radio-admin.js (ERR_MODULE_NOT_FOUND, crashes) and tests/test_channel_write.mjs\
+    \ imports channelWriteBody from public/app-config.js (TypeError: not a function, throws) \u2014 both\
+    \ deleted 2026-09-03, task devices-management-removed-meshgw-owns-it. check_all.mjs still registers\
+    \ both (radio_admin, channel_write) in the fast group, which npm run check runs by default."
+  spec: docs/modules/check-all.md
+  files:
+  - tests/test_radio_admin.mjs
+  - tests/test_channel_write.mjs
+  - scripts/check_all.mjs
+  test:
+    command:
+    - bash
+    - /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_radio_admin_tests.sh
+    criterion: crashing test files deleted, check_all.mjs no longer registers them
+    runs: 1
+  trial:
+    file: .proofs/radio-admin-tests-crash-after-deletion.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-03T19:22:53.431'
+    commit: acff848-dirty
+  fix:
+    file: .proofs/radio-admin-tests-crash-after-deletion.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T19:35:29.234'
+    commit: acff848-dirty
+- id: playwright-perf-expert-toggle-crashes-suite
+  type: bug
+  what: "tests/test_playwright.py's audit_safe_interactions clicks a Performance page 'Expert' toggle\
+    \ button and asserts 'EIRP' text \u2014 both removed from public/app-perf.js and public/partials/tab-perf.html\
+    \ by the 2026-08-17 traceroute-removal-browser task (the page now shows link-budget theory only, no\
+    \ Simple/Expert modes). The click times out after 15s and crashes the whole suite with an uncaught\
+    \ exception before RESULTS prints anything \u2014 every check after 'SAFE INTERACTIONS' (persisted\
+    \ nav migration onward in file order, i.e. later top-to-bottom code but the crash aborts the whole\
+    \ run) never ran. Found live while verifying the devices-management-removal fixes; unrelated root\
+    \ cause (traceroute removal, not devices removal), fixed alongside since it was blocking a clean Observe\
+    \ pass on the same file."
+  spec: docs/modules/browser-playwright-audit.md
+  files:
+  - tests/test_playwright.py
+  test:
+    command:
+    - bash
+    - /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_perf_expert_gone.sh
+    criterion: no dead Expert/Simple assertion, suite no longer crashes there
+    runs: 1
+  trial:
+    file: .proofs/playwright-perf-expert-toggle-crashes-suite.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-03T19:34:23.478'
+    commit: acff848-dirty
+  fix:
+    file: .proofs/playwright-perf-expert-toggle-crashes-suite.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T19:35:29.632'
+    commit: acff848-dirty

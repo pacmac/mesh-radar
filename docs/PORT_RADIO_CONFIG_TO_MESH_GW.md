@@ -59,10 +59,23 @@ where we got something wrong we would rather you told us than reproduced it.
 
 ## 1. What exists here now
 
+> **Update, 2026-09-03.** `src/radio-admin.js` and `src/radio-admin-api.js` are
+> **deleted**, not merely proposed for it — Peter ruled node-dash "is no longer
+> responsible to manage devices" and ordered the whole device-management
+> surface removed (task `devices-management-removed-meshgw-owns-it`), ahead of
+> any confirmation that a port had landed on your side. If you were building
+> against the routes below as a live reference, they are only in git history
+> now (this repo, pre-2026-09-03) — the shapes and pseudo-code in this document
+> are unaffected and still the contract. `src/interval-options.js`,
+> `src/interval-tables.js`, `scripts/gen_interval_tables.mjs` and the vendored
+> Kotlin are untouched — still here, still **port**, still generatable —
+> because node-dash no longer consuming them itself does not change what you
+> need to replicate the same validation.
+
 | file | lines | fate |
 |---|---|---|
-| `src/radio-admin.js` | 174 | **port** — the seven verbs and the audit chain |
-| `src/radio-admin-api.js` | 168 | **port or delete** — the routes below |
+| `src/radio-admin.js` | 174 | **DELETED 2026-09-03** — was: port, the seven verbs and the audit chain |
+| `src/radio-admin-api.js` | 168 | **DELETED 2026-09-03** — was: port or delete, the routes below |
 | `src/interval-options.js` | 125 | **port** — makes bad values unenterable |
 | `src/interval-tables.js` | 74 | **port** — generated, do not hand-edit |
 | `scripts/gen_interval_tables.mjs` | 217 | **port** — the generator |

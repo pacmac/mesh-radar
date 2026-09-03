@@ -23,13 +23,14 @@ const CHECKS = [
   // archive/observatory-and-discovery-2026-08-18.tar.gz, and the test went with
   // it. It asserted that only index.js/inferences.js/observatory-ws.js could
   // import the engine; with no engine there is nothing to import.
-  { name: 'channel_write',          group: 'fast',    cmd: 'node',    args: ['tests/test_channel_write.mjs'],     needs: '—',                   measured: '30 ms',    timeoutMs: 30_000 },
-  // op_manager REPLACED BY radio_admin 2026-08-18. Its only subject was
-  // `channel_config`, one of the five radio-config ops deleted with the rewrite;
-  // a test for a deleted op is not a test. The new one asserts the phone app's
-  // method: admin pass-through, no session passkey, no reboot command, no edit
-  // transaction, and a backup per save.
-  { name: 'radio_admin',            group: 'fast',    cmd: 'node',    args: ['tests/test_radio_admin.mjs'],       needs: '—',                   measured: '90 ms',    timeoutMs: 30_000 },
+  //
+  // channel_write and radio_admin REMOVED 2026-09-03, task
+  // devices-management-removed-meshgw-owns-it — their subjects,
+  // channelWriteBody() (public/app-config.js) and src/radio-admin.js, were both
+  // deleted. mesh-gw's own dashboard owns radio config editing now; a test for a
+  // function that no longer exists crashed instead of testing anything
+  // (docs/modules/check-all.md, task devices-removal-residue-cleanup).
+  //
   // interval_tables regenerates src/interval-tables.js from the vendored Kotlin
   // and diffs. Red if anyone hand-edits the generated file, or re-vendors a newer
   // source without regenerating. It canNOT see upstream moving while our vendored
@@ -86,7 +87,12 @@ const CHECKS = [
   // permanent failure is indistinguishable from an ignored one, so the remaining
   // red is named here.
   { name: 'page_snapshot',          group: 'slow',    cmd: 'python3', args: ['tests/test_page_snapshot.py'],      needs: 'node-dash + browser', measured: 'minutes',  timeoutMs: 600_000, known: 'layout cut=1 at 1280x800, both themes — ledger: slow-browser-checks-fail-with-nothing-recording-it' },
-  { name: 'playwright_audit',       group: 'slow',    cmd: 'python3', args: ['tests/test_playwright.py'],         needs: 'node-dash + browser', measured: 'minutes',  timeoutMs: 600_000, known: 'iphone/messages YAGI control clipped out of viewport — a REAL defect, deliberately left failing' },
+  // known: 'iphone/messages YAGI control clipped out of viewport' RETIRED
+  // 2026-09-03 — the /messages RouteCase it fired on is gone
+  // (messages-frontend-and-browser-route-removed), so that exact failure name
+  // can never occur again. Re-checked live in the Observe pass of task
+  // devices-removal-residue-cleanup; updated below if anything real surfaced.
+  { name: 'playwright_audit',       group: 'slow',    cmd: 'python3', args: ['tests/test_playwright.py'],         needs: 'node-dash + browser', measured: 'minutes',  timeoutMs: 600_000 },
 ];
 
 // NEVER run by this runner. Not a group — an exclusion, printed on every run

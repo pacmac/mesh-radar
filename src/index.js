@@ -235,7 +235,12 @@ const _servePage = (req, res, next) =>
 // mt-alarm-1 serves its own Control page on :8791.
 // '/observatory' and '/snapshot' are added only when the observatory is enabled —
 // Peter, 2026-08-17: "I do not want to see this in the dashboard."
-const PAGES = ['/','/overview','/radar','/nodes','/messages','/config','/device-config','/devices','/range','/performance'];
+// '/messages' and '/device-config' removed 2026-09-03 — both pages are gone
+// (messages-frontend-and-browser-route-removed,
+// devices-management-removed-meshgw-owns-it). '/devices' STAYS: it is a real
+// backend device-listing endpoint (WS-only guarded below), unrelated to the
+// deleted Devices page — there is just no browser tab for it any more.
+const PAGES = ['/','/overview','/radar','/nodes','/config','/devices','/range','/performance'];
 if (getConfig('observatory.enabled', false)) PAGES.push('/observatory', '/snapshot');
 for (const p of PAGES) {
   app.get(p, _servePage);
@@ -380,7 +385,15 @@ async function proxyToBridge(req, res) {
   }
 }
 
-const BRIDGE_PREFIXES = ['/devices', '/ble', '/ble_devices', '/sections', '/schema', '/bridge_config', '/node_filter', '/mqtt_publish', '/mqtt_proxy', '/ota'];
+// '/ble', '/ble_devices', '/ota' and '/sections' removed 2026-09-03 — all four
+// were device-management proxy surfaces (BLE pairing, OTA flash/download, the
+// radio-admin section list) with zero remaining callers once
+// devices-management-removed-meshgw-owns-it deleted the browser code that
+// called them (verified: grepped public/*.js and every test file). '/devices'
+// stays — it is a real, tested (test_node.py) device-listing endpoint,
+// unrelated to device management. '/schema' stays — still serves
+// /schema/bridge_config and /schema/rotator_config, both live.
+const BRIDGE_PREFIXES = ['/devices', '/schema', '/bridge_config', '/node_filter', '/mqtt_publish', '/mqtt_proxy'];
 for (const prefix of BRIDGE_PREFIXES) {
   app.use(prefix, proxyToBridge);
 }

@@ -1,0 +1,2 @@
+$ bash /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_backend_proxy_scoped.sh
+PASS: dead BLE/OTA proxy prefixes and the dead /device-config page route are gone; /devices stays

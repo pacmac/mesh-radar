@@ -1,0 +1,2 @@
+$ bash /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_perf_expert_gone.sh
+FAIL: test_playwright.py still asserts on the removed Expert/Simple Performance toggle
