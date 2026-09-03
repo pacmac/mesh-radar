@@ -3,8 +3,8 @@ module: node-recency-ssot
 source:
   - src/ws-relay.js
   - src/db.js
-source_hash: 11a09ea1f7262e0ce843b2b8a6b18db41c4f93453096154cbb7e8d50f797aee6
-updated: 2026-08-18
+source_hash: 6bcb14674e14c7b2a6998befbe24d787d66f566c98c255dcd7ccc7696e8cf2d2
+updated: 2026-09-03
 ---
 
 # Last trace is recorded and never published

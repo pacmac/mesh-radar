@@ -3,8 +3,8 @@ module: traceroute-status-feed
 source:
   - src/traceroute.js
   - src/ws-relay.js
-source_hash: 8dd66f05aac8451293ca26d704441978c179aa13716ecea731e4a0e23c8a27f1
-updated: 2026-08-18
+source_hash: ad283d84060bae2a314c18e8600a541a4a5d8ef2991ed8a7be86ea068cb62f48
+updated: 2026-09-03
 ---
 
 # `traceroute_status` — the whole state of a traceroute, over WS

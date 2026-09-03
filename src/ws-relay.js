@@ -60,7 +60,7 @@ function withRangeBudget(e, loraFor) {
   };
 }
 
-import { ensureDeviceCfgMac, getDeviceCfg } from './device-config.js';
+import { ensureDeviceCfgMac, getDeviceCfg, registerInstallLookup } from './device-config.js';
 import { DEFAULTS as CONFIG_DEFAULTS } from './config-api.js';
 import { getAutoPurgeCfg } from './auto-purge-api.js';
 import { lookupGeocode } from './geocode.js';
@@ -445,6 +445,11 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // Seeded from device_snapshot on bridge connect, then kept live by WS events.
   // Replayed to new frontend clients on connect — no per-client HTTP calls.
   const lastDeviceState = {};
+  // mesh-gw SSOT wiring (2026-09-03): device-config.js cannot import this
+  // module (this module already imports getDeviceCfg from device-config.js),
+  // so the live `install` lookup is handed over by callback — same pattern as
+  // registerMacToNodeIdResolver.
+  registerInstallLookup(mac => lastDeviceState[mac]?.install ?? null);
   // Last-known device list — replayed to new frontend clients on connect.
   // Composed from lastDeviceState in memory — no HTTP calls after startup.
   let lastDeviceList = null;

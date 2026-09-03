@@ -7,8 +7,8 @@ source:
   - src/lifecycle.js
   - src/index.js
   - src/db.js
-source_hash: eb6d608c11caa722aede260ffc58b19ae78af727304fbd2df180d3414fc93b61
-updated: 2026-08-17
+source_hash: 6d19422b8114dc231d5ce7a18eee1b7ca1923c317e84899c0bfbad7ee9f918df
+updated: 2026-09-03
 ---
 
 # Removal spec: the rest of the traceroute surface in `src/`

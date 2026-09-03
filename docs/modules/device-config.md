@@ -1,8 +1,8 @@
 ---
 module: device-config
 source: src/device-config.js
-source_hash: 9efcad0a3c87d8f9379e3feda52fbe40c745206a965c5cfe59551aada6fafbd3
-updated: 2026-07-16
+source_hash: 186812a4987a3f6e75225b3266948d1a4f5508b68f26b210e29056bbbff4b97d
+updated: 2026-09-03
 ---
 
 # Module: device-config
@@ -41,10 +41,13 @@ export function resolvePrimaryNodeId()              // → !hexid|MAC|null — l
 export function macToNodeId(mac)                    // → !hexid|MAC|null — resolve any MAC to its live node ID (falls through to MAC)
 
 // Config read helpers
-export function getDeviceCfg(address)               // → {...DEFAULT, ...stored} — by MAC (normalised to uppercase)
-export function getAllDeviceCfgs()                   // → { [MAC]: cfg } — all devices
+export function getDeviceCfg(address)               // → {...DEFAULT, ...stored, ...meshGwOwnedFields} — by MAC (normalised to uppercase)
+export function getAllDeviceCfgs()                   // → { [MAC]: cfg } — all devices, same merge as getDeviceCfg
 export function getPrimaryMac()                      // → MAC|null — first device with is_primary=true
-export function getRotatorAddress()                  // → MAC|null — first device with is_rotator=true
+export function getRotatorAddress()                  // → MAC|null — first device with is_rotator=true (mesh-gw-sourced)
+
+// mesh-gw SSOT wiring (call once at startup, from ws-relay.js)
+export function registerInstallLookup(fn)           // fn(MAC) → mesh-gw install object|null — live, from lastDeviceState
 
 // Migration helper
 export function ensureDeviceCfgMac(addr, nodeId)    // migrate legacy !hexid key → MAC or bootstrap empty
@@ -65,8 +68,8 @@ Keys are always normalised to uppercase by `getDeviceCfg` and `ensureDeviceCfgMa
 
 | Field | Default | Meaning |
 |---|---|---|
-| `label` | null | Display label (OMNI, YAGI, Y, O, etc.) |
-| `is_rotator` | false | This radio is physically mounted on the rotator |
+| `label` | null | Display label (OMNI, YAGI, Y, O, etc.) — **mesh-gw SSOT**, see below |
+| `is_rotator` | false | This radio is physically mounted on the rotator — **mesh-gw SSOT**, see below |
 | `is_primary` | false | This radio drives the Overview tab / status display |
 | `load_nodes_on_boot` | false | Pre-load node list when bridge connects (slow) |
 | `antenna_type` | null | Text description e.g. "DL6WU 5el Yagi" |
@@ -218,6 +221,198 @@ New. It never existed — zero references in `src/` or `public/` before this —
 is why setting it never persisted. Metres above sea level at the mast base.
 Nothing else in the system had an elevation to work from, including the link
 budget.
+
+## mesh-gw is now SSOT for `label` and `is_rotator` (2026-09-03)
+
+Peter, 2026-09-03: *"mesh-gw has expanded a lot. it is now the SSOT for devices, so our
+datastore needs to relinquish that to mesh-gw."*
+
+mesh-gw shipped `docs/gw/modules/device_install_object.md` (2026-09-01) — an `install`
+object per device, carried on every `device_data`/`device_snapshot` WS event and already
+flowing into `ws-relay.js`'s `lastDeviceState[addr].install` (spread there via
+`Object.assign(flat, d.data_event)` / `{...existing, ...fields, data_event: ev}` — no new
+fetch, no new subscription):
+
+```json
+"install": {
+  "alias": "YAGI2",
+  "description": "9-element yagi on the roof mast, ...",
+  "antenna": { "directional": true, "rotator": { "host": "...", "port": 81, "api_ver": "v5", "url": "...", "lat": ..., "lon": ..., "alt": ... } }
+}
+```
+
+**Measured live, same day, proving the local copy had drifted:** after the physical Yagi
+swap (`F4:12:FA:39:F7:B6` → `FC:0A:85:C6:EC:B7`, "YAGI2"), `device_cfg` for the new MAC sat
+at `{label:null, is_rotator:false}` — bootstrap defaults, never populated — while mesh-gw's
+`install` already had `alias:"YAGI2", antenna.rotator:{...}` correct and complete.
+`getRotatorAddress()` returned `null`: no `device_cfg` row anywhere had `is_rotator:true`,
+because the flag had been cleared from the old MAC during the swap and never set on the
+new one. Every consumer below was silently running with "no rotator configured" while a
+working rotator sat connected the whole time.
+
+**Symptom already seen in this session, independently:** the Garage node's Signal tile
+showed `F4:12:FA:39:F7:B6` (a raw MAC, not a name) for its most-recent-but-one radio —
+`node-label.js resolveDeviceLabel()` falls back to the bare MAC exactly when
+`getAllDeviceCfgs()[mac].label` is null, which is this same gap.
+
+### What moves, what stays
+
+Field-by-field survey (Investigate phase) against mesh-gw's live `/devices` response:
+
+| `device_cfg` field | mesh-gw equivalent | this task |
+|---|---|---|
+| `label` | `install.alias` | **relinquished** |
+| `is_rotator` | `install.antenna.rotator != null` | **relinquished** |
+| `is_primary`, `load_nodes_on_boot`, `antenna_type`, `beam_deg`, `gain_dbi`, `cable_loss_db`, `antenna_height_m`, `fixed_lat`, `fixed_lon`, `color`, `ble_pin` | none seen (`ble_pin` deliberately excluded by mesh-gw, per `radio_rotator_config.md`; `beam_deg`'s mesh-gw analogue `antenna.beamwidth_deg` is `null` in every live sample; `antenna.rotator.alt` is mast ASL altitude, not `antenna_height_m`'s "height above ground") | **stays local**, unchanged |
+
+Rotator **connection endpoint** (`install.antenna.rotator.{host,port,api_ver,url}`, and the
+self-sufficient `point` route for commanding it without v4/v5 dialect knowledge) is real and
+usable, but is a separate, larger change — `rotator.js` currently sources its targets from
+`ROTATOR_WS_URL`/`ROTATOR_V5_WS_URL` env vars / the `rotator_targets` config key, connecting
+**directly** to the mast, not through mesh-gw. Swapping that source, or routing rotator
+commands through mesh-gw's `/plugins/aim/point` instead of a direct connection, touches live
+shared hardware and is **explicitly out of scope for this task** — a candidate follow-up,
+not bundled in here.
+
+### The mechanism: one merge point, not nine call-site edits
+
+`getDeviceCfg()` already normalises `{...DEFAULT, ...stored}` for every caller. Both
+mesh-gw-owned fields fold in at that single point — `getAllDeviceCfgs()` and
+`getRotatorAddress()` are the only other functions in this file that read config directly
+rather than through `getDeviceCfg()`, so they are the only other edits needed. Every
+external consumer (`resolve.js`, `dash-mode.js`, `node-filter.js`, `doors.js`,
+`node-label.js`, `node-list.js`, `lifecycle.js`, `startup.js`, `ws-relay.js`'s own `cfg:`
+field) needs **no changes** — they already call `getDeviceCfg`/`getAllDeviceCfgs`/
+`getRotatorAddress` and inherit the fix.
+
+**Wiring, to avoid a circular import.** `device-config.js` cannot import `ws-relay.js`
+(`ws-relay.js` already imports `getDeviceCfg`/`ensureDeviceCfgMac` from here). Same pattern
+already used for `_nodeIdToMac`/`_macToNodeId`: `ws-relay.js` calls
+`registerInstallLookup(mac => lastDeviceState[mac]?.install ?? null)` once, inside
+`attachWsRelay()`, right after `lastDeviceState` is declared.
+
+### Exact diff
+
+**`src/device-config.js`**
+
+Add, near `registerMacToNodeIdResolver` (after line 18):
+
+```js
+// BEFORE — nothing here
+
+// AFTER
+let _installFor = null;
+// Registered once by ws-relay.js. Returns mesh-gw's live `install` object for a
+// MAC, or null before the device has reported one. mesh-gw SSOT for `label` and
+// `is_rotator` — docs/gw/modules/device_install_object.md.
+export function registerInstallLookup(fn) { _installFor = fn; }
+```
+
+`getDeviceCfg` (lines 63-65):
+
+```js
+// BEFORE
+export function getDeviceCfg(address) {
+  return { ...DEFAULT, ...getConfig(PREFIX + address.toUpperCase(), {}) };
+}
+
+// AFTER
+export function getDeviceCfg(address) {
+  const mac     = address.toUpperCase();
+  const stored  = getConfig(PREFIX + mac, {});
+  const install = _installFor?.(mac) ?? null;
+  return {
+    ...DEFAULT,
+    ...stored,
+    // mesh-gw is SSOT for these two once it has reported an install object —
+    // a stale local flag must never outrank a live one (2026-09-03).
+    ...(install ? { label: install.alias ?? null, is_rotator: install.antenna?.rotator != null } : {}),
+  };
+}
+```
+
+`getAllDeviceCfgs` (lines 68-70):
+
+```js
+// BEFORE
+export function getAllDeviceCfgs() {
+  return getConfigByPrefix(PREFIX);
+}
+
+// AFTER
+export function getAllDeviceCfgs() {
+  const stored = getConfigByPrefix(PREFIX);
+  const merged = {};
+  for (const mac of Object.keys(stored)) merged[mac] = getDeviceCfg(mac);
+  return merged;
+}
+```
+
+`getRotatorAddress` (lines 81-86) — same iteration shape, reads through the merge instead of
+the raw stored row:
+
+```js
+// BEFORE
+export function getRotatorAddress() {
+  for (const [mac, cfg] of Object.entries(getConfigByPrefix(PREFIX))) {
+    if (cfg?.is_rotator) return mac;
+  }
+  return null;
+}
+
+// AFTER
+export function getRotatorAddress() {
+  for (const mac of Object.keys(getConfigByPrefix(PREFIX))) {
+    if (getDeviceCfg(mac).is_rotator) return mac;
+  }
+  return null;
+}
+```
+
+`getPrimaryMac` is **not touched** — `is_primary` has no mesh-gw equivalent and stays
+entirely local.
+
+**`src/ws-relay.js`**
+
+Import (line 63):
+
+```js
+// BEFORE
+import { ensureDeviceCfgMac, getDeviceCfg } from './device-config.js';
+
+// AFTER
+import { ensureDeviceCfgMac, getDeviceCfg, registerInstallLookup } from './device-config.js';
+```
+
+Registration, right after `lastDeviceState` is declared (line 447):
+
+```js
+// BEFORE
+  const lastDeviceState = {};
+
+// AFTER
+  const lastDeviceState = {};
+  registerInstallLookup(mac => lastDeviceState[mac]?.install ?? null);
+```
+
+### Explicitly NOT changed by this task
+
+- `resolve.js`, `dash-mode.js`, `node-filter.js`, `doors.js`, `node-label.js`,
+  `node-list.js`, `lifecycle.js`, `startup.js` — inherit the fix through the accessors
+  they already call. No edits.
+- `is_primary`, `load_nodes_on_boot`, `antenna_type`, `beam_deg`, `gain_dbi`,
+  `cable_loss_db`, `antenna_height_m`, `fixed_lat`, `fixed_lon`, `color`, `ble_pin` — no
+  mesh-gw equivalent exists yet; stay local, unchanged.
+- Rotator connection endpoint (`ROTATOR_WS_URL`/`ROTATOR_V5_WS_URL`/`rotator_targets`) and
+  whether rotator commands should route through mesh-gw's `/plugins/aim/point` — real,
+  larger questions, deliberately left for a separate task.
+- The `tab-devices.html` "Save label" control still PUTs to `/device-config/:address`
+  locally (`op-manager.js` `device_config_label`, class `Local`). Once mesh-gw is SSOT for
+  `label`, a local write is silently overridden on the next `install` event (last-write-wins
+  toward mesh-gw, since `getDeviceCfg` always prefers `install` when present) rather than
+  rejected — worth a UI follow-up (grey out / repoint the field) but not a correctness bug
+  in this task's scope: no data is corrupted, the write just stops being the thing that
+  sticks.
 
 ### Restored 2026-08-05
 

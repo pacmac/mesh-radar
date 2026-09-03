@@ -17,6 +17,13 @@ export function registerNodeIdToMacResolver(fn) { _nodeIdToMac = fn; }
 let _macToNodeId = null;
 export function registerMacToNodeIdResolver(fn) { _macToNodeId = fn; }
 
+// Registered once by ws-relay.js. Returns mesh-gw's live `install` object for a
+// MAC, or null before the device has reported one. mesh-gw is SSOT for `label`
+// and `is_rotator` — docs/gw/modules/device_install_object.md,
+// docs/modules/device-config.md ("mesh-gw is now SSOT...", 2026-09-03).
+let _installFor = null;
+export function registerInstallLookup(fn) { _installFor = fn; }
+
 export function resolvePrimaryNodeId() {
   return macToNodeId(getPrimaryMac());
 }
@@ -61,15 +68,29 @@ const DEFAULT = {
 
 // Key is always uppercase MAC address e.g. "E9:B0:3F:17:27:91"
 export function getDeviceCfg(address) {
-  return { ...DEFAULT, ...getConfig(PREFIX + address.toUpperCase(), {}) };
+  const mac     = address.toUpperCase();
+  const stored  = getConfig(PREFIX + mac, {});
+  const install = _installFor?.(mac) ?? null;
+  return {
+    ...DEFAULT,
+    ...stored,
+    // mesh-gw is SSOT for these two once it has reported an install object —
+    // a stale local flag must never outrank a live one (2026-09-03).
+    ...(install ? { label: install.alias ?? null, is_rotator: install.antenna?.rotator != null } : {}),
+  };
 }
 
-// Returns { [MAC]: cfg }
+// Returns { [MAC]: cfg } — same mesh-gw merge as getDeviceCfg, for every stored device.
 export function getAllDeviceCfgs() {
-  return getConfigByPrefix(PREFIX);
+  const stored = getConfigByPrefix(PREFIX);
+  const merged = {};
+  for (const mac of Object.keys(stored)) merged[mac] = getDeviceCfg(mac);
+  return merged;
 }
 
-// Returns the BLE MAC address of the primary device.
+// Returns the BLE MAC address of the primary device. is_primary has no
+// mesh-gw equivalent, so this reads the local store directly (unaffected by
+// the SSOT change above).
 export function getPrimaryMac() {
   for (const [mac, cfg] of Object.entries(getConfigByPrefix(PREFIX))) {
     if (cfg?.is_primary) return mac;
@@ -78,9 +99,11 @@ export function getPrimaryMac() {
 }
 
 // Returns MAC address of the rotator device (for device identity comparisons).
+// Reads through getDeviceCfg so a mesh-gw-reported rotator is recognised even
+// when the local store was never told (2026-09-03).
 export function getRotatorAddress() {
-  for (const [mac, cfg] of Object.entries(getConfigByPrefix(PREFIX))) {
-    if (cfg?.is_rotator) return mac;
+  for (const mac of Object.keys(getConfigByPrefix(PREFIX))) {
+    if (getDeviceCfg(mac).is_rotator) return mac;
   }
   return null;
 }

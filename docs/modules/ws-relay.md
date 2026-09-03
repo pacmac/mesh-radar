@@ -1,8 +1,8 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: b42fd0d230aa07dd15a455e015d481890a7814b029941bbb2139824defed0876
-updated: 2026-08-17
+source_hash: 45d72764625ed1d476248c5a704dd4f09f7f808aaa5a41b865790c46248c0d00
+updated: 2026-09-03
 ---
 
 # Module: ws-relay
@@ -933,3 +933,19 @@ errors. Reaching the catch here means the fetch or the ascending-order assertion
 failed, and the model is replaced with `state: 'error'` carrying the message — the
 page must say a read failed rather than render an empty panel that looks like
 "no data".
+
+## mesh-gw install lookup wired for device-config.js (task `device-cfg-relinquish-to-meshgw`, 2026-09-03)
+
+`device-config.js` is now SSOT-relinquished to mesh-gw for `label`/`is_rotator` — full
+account in `docs/modules/device-config.md`. This module already flattens mesh-gw's
+`install` object onto `lastDeviceState[addr]` for every `device_snapshot`/`device_state`/
+`device_data` event (nothing new here); the only change is handing that data over:
+
+```js
+// right after lastDeviceState is declared, inside attachWsRelay()
+registerInstallLookup(mac => lastDeviceState[mac]?.install ?? null);
+```
+
+Same registration-callback pattern as `registerMacToNodeIdResolver` — `device-config.js`
+cannot import this module (this module already imports `getDeviceCfg`/`ensureDeviceCfgMac`
+from it), so the live lookup is handed over rather than imported.

@@ -181,3 +181,116 @@
     failures: 0
     at: '2026-08-23T08:19:06.903'
     commit: 83f5ae6-dirty
+- id: broadcast-address-counted-as-a-door
+  type: bug
+  what: snapshot-api.js:222 builds distribution.doors inline with no broadcast filter, so 0xFFFFFFFF is
+    published on /events as a relay; doors.js excludes it and the archived relay.usage excluded it with
+    the reason written down
+  spec: docs/modules/reach.md
+  files:
+  - src/reach.js
+  - src/snapshot-api.js
+  test:
+    command:
+    - node
+    - tests/test_doors.mjs
+    criterion: no door published by any caller is 4294967295, and there is one door-usage query rather
+      than two
+    runs: 1
+  trial:
+    file: .proofs/broadcast-address-counted-as-a-door.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-08-23T09:46:10.826'
+    commit: bbfc9ee-dirty
+  fix:
+    file: .proofs/broadcast-address-counted-as-a-door.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-08-23T09:52:51.312'
+    commit: bbfc9ee-dirty
+- id: device-cfg-ignores-live-rotator-install
+  type: bug
+  what: GET /device-config/:address reads only the local device_cfg store and never reflects mesh-gw's
+    live install object; is_rotator/label stay at stale/default values for a radio mesh-gw already reports
+    as the rotator (FC:0A:85:C6:EC:B7 shows is_rotator:false, label:null while mesh-gw's install has antenna.rotator
+    set and alias:YAGI2)
+  spec: docs/modules/device-config.md
+  files:
+  - src/device-config.js
+  - src/ws-relay.js
+  test:
+    command:
+    - bash
+    - -c
+    - '
+
+      curl -s http://192.168.10.205:8000/device-config/FC:0A:85:C6:EC:B7 | python3 -c "
+
+      import json,sys
+
+      d=json.load(sys.stdin)
+
+      print(\"is_rotator=\", d[\"is_rotator\"], \"label=\", d[\"label\"])
+
+      assert d[\"is_rotator\"] is True and d[\"label\"]==\"YAGI2\", \"not yet mesh-gw-sourced\"
+
+      print(\"PASS\")
+
+      "
+
+      '
+    criterion: GET /device-config/FC:0A:85:C6:EC:B7 returns is_rotator:true and label:"YAGI2"
+    runs: 1
+  trial:
+    file: .proofs/device-cfg-ignores-live-rotator-install.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-03T08:49:54.577'
+    commit: bbfc9ee-dirty
+  fix:
+    file: .proofs/device-cfg-ignores-live-rotator-install.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T08:51:25.065'
+    commit: bbfc9ee-dirty
+- id: rotator-v4-target-host-unreachable
+  type: bug
+  what: "rotator.js's v4 target (ws://192.168.10.186:81, from ROTATOR_WS_URL/rotator_targets) is unreachable\
+    \ (EHOSTUNREACH on every 5s reconnect, confirmed live in pm2 logs after a routine restart) while mesh-gw's\
+    \ live install.antenna.rotator reports the ACTIVE rotator for the current Yagi at 192.168.10.185:81\
+    \ (v5) \u2014 node-dash may be pointed at a decommissioned rotator"
+  spec: docs/modules/rotator.md
+  files:
+  - src/rotator.js
+  test:
+    command: null
+    criterion: rotator.js connects successfully (no EHOSTUNREACH) to whichever host mesh-gw's install.antenna.rotator
+      names as current
+    runs: 1
+  trial: null
+  fix: null
+- id: channels-spec-drifted-from-source
+  type: bug
+  what: "docs/modules/channels.md's source_hash is stale against its 5 listed source files (src/mesh-send.js,\
+    \ src/messages-api.js, src/automation.js, src/callout.js, src/resolve.js) per scripts/check_specs.py\
+    \ \u2014 pre-existing, unrelated to the device-cfg-relinquish-to-meshgw task; none of those 5 files\
+    \ were touched by that task. Needs its own investigation of what changed and whether the doc still\
+    \ describes it accurately before the hash is bumped"
+  spec: docs/modules/channels.md
+  files:
+  - src/mesh-send.js
+  - src/messages-api.js
+  - src/automation.js
+  - src/callout.js
+  - src/resolve.js
+  test:
+    command: null
+    criterion: 'python scripts/check_specs.py reports channels: ok'
+    runs: 1
+  trial: null
+  fix: null

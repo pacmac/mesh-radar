@@ -1,0 +1,11 @@
+$ bash -c 
+curl -s http://192.168.10.205:8000/device-config/FC:0A:85:C6:EC:B7 | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(\"is_rotator=\", d[\"is_rotator\"], \"label=\", d[\"label\"])
+assert d[\"is_rotator\"] is True and d[\"label\"]==\"YAGI2\", \"not yet mesh-gw-sourced\"
+print(\"PASS\")
+"
+
+is_rotator= True label= YAGI2
+PASS
