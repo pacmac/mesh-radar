@@ -1,0 +1,3 @@
+$ node tests/test_doors.mjs
+note: 181 completed traceroutes have the broadcast address as route[0]
+8 checks, 0 failed

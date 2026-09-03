@@ -274,6 +274,12 @@
     runs: 1
   trial: null
   fix: null
+  withdrawn:
+    why: "moot \u2014 src/rotator.js (the module that connected to 192.168.10.186:81) was deleted entirely,\
+      \ task rotator-command-via-meshgw-aim, 2026-09-03. Rotator commanding now goes through mesh-gw's\
+      \ aim plugin, which resolves the correct live host (192.168.10.185, v5, confirmed reachable) itself.\
+      \ The specific v4-target-unreachable defect no longer has code that could exhibit it"
+    at: '2026-09-03T18:12:33.171'
 - id: channels-spec-drifted-from-source
   type: bug
   what: "docs/modules/channels.md's source_hash is stale against its 5 listed source files (src/mesh-send.js,\
@@ -289,8 +295,83 @@
   - src/callout.js
   - src/resolve.js
   test:
-    command: null
+    command:
+    - bash
+    - -c
+    - "\npython scripts/check_specs.py 2>&1 | grep \"^  ok      channels\" \n"
     criterion: 'python scripts/check_specs.py reports channels: ok'
+    runs: 1
+  trial:
+    file: .proofs/channels-spec-drifted-from-source.trial.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T18:12:26.091'
+    commit: 82fff89-dirty
+  fix: null
+- id: rotator-command-duplicates-meshgw-radio-knowledge
+  type: bug
+  what: 'node-dash commands the rotator directly (src/rotator.js''s own v4/v5 WebSocket client, ROTATOR_WS_URL/ROTATOR_V5_WS_URL)
+    instead of through mesh-gw''s aim plugin, duplicating radio/dialect/host knowledge mesh-gw''s install
+    object and aim plugin already own. Peter, 2026-09-03: ''you dont need to know anything about rotators
+    either, mesh-gw has aim ... node-dash has been demoted for several things, our role has changed.''
+    11 backend files import rotator.js directly.'
+  spec: docs/modules/rotator.md
+  files:
+  - src/aim.js
+  - src/automation.js
+  - src/active-tracker.js
+  - src/scanner.js
+  - src/index.js
+  - src/lifecycle.js
+  - src/config-api.js
+  - src/traceroute.js
+  - src/snapshot-api.js
+  - src/ws-relay.js
+  - src/rotator.js
+  - src/rotator-api.js
+  - src/aim-client.js
+  test:
+    command:
+    - bash
+    - -c
+    - '
+
+      count=$(grep -l "from ''./rotator.js''" src/*.js 2>/dev/null | wc -l)
+
+      echo "files still importing rotator.js: $count"
+
+      test "$count" -eq 0
+
+      '
+    criterion: no src/*.js file imports from './rotator.js'
+    runs: 1
+  trial:
+    file: .proofs/rotator-command-duplicates-meshgw-radio-knowledge.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-03T17:55:33.299'
+    commit: 82fff89-dirty
+  fix:
+    file: .proofs/rotator-command-duplicates-meshgw-radio-knowledge.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-03T18:12:36.465'
+    commit: 82fff89-dirty
+- id: resolve-js-comment-cites-deleted-rotator-file
+  type: bug
+  what: "src/resolve.js's comment near getRotatorAddress() usage cites 'rotator.js:18-19 already owns\
+    \ the connection (ROTATOR_WS_URL / ROTATOR_V5_WS_URL...)' \u2014 that file was deleted 2026-09-03\
+    \ (task rotator-command-via-meshgw-aim). Stale prose, not a functional bug; out of scope for that\
+    \ task since resolve.js was never in its file list"
+  spec: docs/modules/radio-resolve-and-aim.md
+  files:
+  - src/resolve.js
+  test:
+    command: null
+    criterion: resolve.js contains no reference to rotator.js
     runs: 1
   trial: null
   fix: null

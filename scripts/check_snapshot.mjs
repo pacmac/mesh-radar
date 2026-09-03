@@ -16,6 +16,17 @@ const HOML = `(SELECT CAST(value AS REAL) FROM config WHERE key='home.lon')`;
 const KM = `6371*2*asin(sqrt(power(sin((radians(n.lat)-radians(${HOME}))/2),2)+cos(radians(${HOME}))*cos(radians(n.lat))*power(sin((radians(n.lon)-radians(${HOML}))/2),2)))`;
 const since = d => d > 0 ? `strftime('%s','now')-${d*86400}` : '0';
 
+// 0xFFFFFFFF — the broadcast address, which is not a node and is therefore not a
+// door. Written out as a LITERAL rather than imported from src/reach.js, on
+// purpose: this file exists to check the board against the store independently,
+// and a check that imports the code it is checking asserts only that the code
+// equals itself. It restates the RULE; reach.js implements it.
+//
+// It was absent here until 2026-08-23 and its absence was invisible, because
+// snapshot-api.js made the same omission — two wrongs agreeing across 54 checks
+// and six windows. It only went red when the board was fixed.
+const BCAST = 4294967295;
+
 let bad = 0, checks = 0;
 const cmp = (win, field, live, sql) => {
   checks++;
@@ -51,7 +62,7 @@ for (const [i, d] of WINDOWS.entries()) {
       d>0 ? q(`SELECT COUNT(*) FROM nodeinfo WHERE first_heard>${since(d)}`)
           : q(`SELECT COUNT(*) FROM nodeinfo WHERE first_heard IS NOT NULL`));
   cmp(w,'new_doors', g.new_doors,
-      q(`WITH x AS (SELECT json_extract(route,'$[0]') n2, MIN(ts) fs FROM traceroute_history WHERE status='ok' AND json_array_length(route)>0 GROUP BY 1) SELECT COUNT(*) FROM x WHERE n2 IS NOT NULL AND fs>${since(d)}`));
+      q(`WITH x AS (SELECT json_extract(route,'$[0]') n2, MIN(ts) fs FROM traceroute_history WHERE status='ok' AND json_array_length(route)>0 GROUP BY 1) SELECT COUNT(*) FROM x WHERE n2 IS NOT NULL AND n2!=${BCAST} AND fs>${since(d)}`));
   cmp(w,'first_contacts', g.first_contacts,
       q(`WITH c AS (SELECT to_num, MIN(ts) fo FROM traceroute_history WHERE status='ok' GROUP BY 1) SELECT COUNT(*) FROM c WHERE fo>${since(d)}`));
   cmp(w,'attempts', p.attempts, q(`SELECT COUNT(*) FROM traceroute_history WHERE ts>${since(d)}`));
@@ -59,7 +70,7 @@ for (const [i, d] of WINDOWS.entries()) {
   cmp(w,'bands_total', b.bands.reduce((s,x)=>s+x.count,0),
       q(`SELECT COUNT(*) FROM nodes n WHERE n.lat IS NOT NULL AND n.lat!=0 AND n.last_heard>${since(d)} AND ${KM}<=500`));
   cmp(w,'doors_total', b.doors_total,
-      q(`SELECT COUNT(DISTINCT json_extract(route,'$[0]')) FROM traceroute_history WHERE status='ok' AND json_array_length(route)>0 AND ts>${since(d)}`));
+      q(`SELECT COUNT(DISTINCT json_extract(route,'$[0]')) FROM traceroute_history WHERE status='ok' AND json_array_length(route)>0 AND json_extract(route,'$[0]')!=${BCAST} AND ts>${since(d)}`));
 }
 console.log(`\n${checks} checks across 6 windows, ${bad} mismatches`);
 process.exit(bad ? 1 : 0);

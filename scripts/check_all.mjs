@@ -61,6 +61,14 @@ const CHECKS = [
   // needs no HTTP. Exits 127 if the db or driver is missing — a mistrial, not a
   // conviction.
   { name: 'transport_encoding',     group: 'service', cmd: 'node',    args: ['tests/test_transport_encoding.mjs'], needs: 'the store',          measured: '120 ms',   timeoutMs: 30_000 },
+  // Door identity had THREE implementations, two live and disagreeing about
+  // whether 0xFFFFFFFF is a relay, and /events published the broadcast as the
+  // fourth-busiest door in the mesh. mesh-gw found it by reading our store.
+  // Asserts the OUTPUT of reach.doorUsage(), not the SQL — a test that greps for
+  // a filter passes the day somebody writes a fourth query. Reads the live store,
+  // so it sits with the service group; exits 127 if the db or driver is missing,
+  // which the register reads as a mistrial rather than a conviction.
+  { name: 'doors',                  group: 'service', cmd: 'node',    args: ['tests/test_doors.mjs'],             needs: 'the store',           measured: '150 ms',   timeoutMs: 30_000 },
   { name: 'reply_snippet',          group: 'service', cmd: 'node',    args: ['tests/test_reply_snippet.mjs'],     needs: 'node-dash up',        measured: '90 ms',    timeoutMs: 30_000 },
   { name: 'check_snapshot',         group: 'service', cmd: 'node',    args: ['scripts/check_snapshot.mjs'],       needs: 'node-dash up',        measured: '3.9 s',    timeoutMs: 30_000 },
   { name: 'check_contract',         group: 'service', cmd: 'node',    args: ['scripts/check_contract.mjs'],       needs: 'node-dash up',        measured: '5.1 s',    timeoutMs: 60_000 },

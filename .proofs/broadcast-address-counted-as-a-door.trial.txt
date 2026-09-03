@@ -1,0 +1,4 @@
+$ node tests/test_doors.mjs
+note: 181 completed traceroutes have the broadcast address as route[0]
+FAIL  src/reach.js exports doorUsage()
+0 checks, 1 failed

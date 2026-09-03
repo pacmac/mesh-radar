@@ -39,6 +39,18 @@ import db, { getConfig } from './db.js';
 
 const DEFAULTS = { sector_deg: 30, max_plausible_km: 500 };
 
+// 0xFFFFFFFF. Not a node, and it can never become one — it is the destination
+// every broadcast carries, and it turns up in route[0] because a traceroute's
+// route array is a list of addresses rather than a list of relays.
+//
+// This constant is here, at the top of the module that owns door identity, and
+// NOT copied into each caller. It was copied before: doors.js filtered it in
+// three places, the archived inferences.js `relay.usage` filtered it with the
+// reasoning written down, and snapshot-api.js built its own query and did not —
+// so /events published the broadcast as the fourth-busiest relay in the mesh.
+// mesh-gw found that by reading our store, not us. See docs/modules/reach.md.
+export const BROADCAST = 4294967295;
+
 export function reachConfig() {
   return { ...DEFAULTS, ...(getConfig('reach', {}) || {}) };
 }
@@ -58,6 +70,46 @@ function geo(h, lat, lon) {
   const y = Math.sin(dl) * Math.cos(p2);
   const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
   return { km, deg: (Math.atan2(y, x) * 180 / Math.PI + 360) % 360 };
+}
+
+/** Which nodes our traffic leaves through, most-used first — THE door query.
+ *
+ *  A "door" is the first hop of a completed traceroute: the node our transmission
+ *  reached with no relay in between. It is the only place door identity exists,
+ *  because `route` is populated on success only.
+ *
+ *  Singular on purpose. There were three implementations of this, two of them
+ *  live and disagreeing about whether the broadcast address is a relay, and the
+ *  cost of that was not a wrong number on a card — it was that the knowledge
+ *  which resolved it had already been written down twice and could not be found
+ *  from the code that needed it.
+ *
+ *  `since` is a unix seconds bound; omit it for all of history. Callers get plain
+ *  rows — `{num, uses, name}` — and decide their own presentation. Percentages,
+ *  truncation and labels are a consumer's business, not this function's.
+ */
+export function doorUsage({ since = null } = {}) {
+  const rows = since == null
+    ? db.prepare(`
+        SELECT json_extract(t.route,'$[0]') num, COUNT(*) uses,
+               COALESCE(n.short_name, '?') name
+          FROM traceroute_history t
+          LEFT JOIN nodes n ON n.num = json_extract(t.route,'$[0]')
+         WHERE t.status = 'ok' AND json_array_length(t.route) > 0
+         GROUP BY 1 ORDER BY uses DESC, num ASC`).all()
+    : db.prepare(`
+        SELECT json_extract(t.route,'$[0]') num, COUNT(*) uses,
+               COALESCE(n.short_name, '?') name
+          FROM traceroute_history t
+          LEFT JOIN nodes n ON n.num = json_extract(t.route,'$[0]')
+         WHERE t.status = 'ok' AND json_array_length(t.route) > 0 AND t.ts > ?
+         GROUP BY 1 ORDER BY uses DESC, num ASC`).all(since);
+
+  // `num ASC` above is not decoration. Ties in `uses` are common in a small mesh,
+  // and SQLite's order within a tie is not guaranteed, so a ranking could change
+  // between two calls over the SAME window — which makes "the top door" a thing
+  // no caller can reason about or test.
+  return rows.filter(d => d.num != null && d.num !== BROADCAST);
 }
 
 /** Every node we have PROVEN a direct RF link to, with the evidence for it. */
@@ -80,7 +132,12 @@ export function provenLinks() {
   for (const r of db.prepare(`
       SELECT json_extract(route,'$[0]') num, COUNT(*) n FROM traceroute_history
        WHERE status='ok' AND json_array_length(route) > 0 GROUP BY 1`).all()) {
-    if (r.num != null) place(r.num, 'first-hop', r.n);
+    // Same route[0] source as doorUsage, so the same exclusion. It has never
+    // actually leaked here, but only because `place()` needs a `nodes` row with a
+    // position and 0xFFFFFFFF has none — an accident of the store, not a rule.
+    // The day something writes that row, this becomes a proven RF link to the
+    // broadcast address.
+    if (r.num != null && r.num !== BROADCAST) place(r.num, 'first-hop', r.n);
   }
   for (const r of db.prepare(`
       SELECT to_num num, COUNT(*) n FROM traceroute_history

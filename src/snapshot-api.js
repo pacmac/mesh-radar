@@ -21,7 +21,7 @@
 import { Router } from 'express';
 import db, { getConfig } from './db.js';
 import { getAllDeviceCfgs } from './device-config.js';
-import { rotator } from './rotator.js';
+import { doorUsage, BROADCAST } from './reach.js';
 
 const router = Router();
 
@@ -219,13 +219,11 @@ export function distribution(days = windowDays()) {
 
   // Every door, not a truncated list — an earlier version of the CARD dropped
   // rows to fix a layout problem, which is deleting data to fix a CSS bug.
-  const doors = db.prepare(`
-    SELECT json_extract(t.route,'$[0]') num, COUNT(*) uses,
-           COALESCE(n.short_name, '?') name
-      FROM traceroute_history t
-      LEFT JOIN nodes n ON n.num = json_extract(t.route,'$[0]')
-     WHERE t.status = 'ok' AND json_array_length(t.route) > 0 AND t.ts > ?
-     GROUP BY 1 ORDER BY uses DESC`).all(since).filter(d => d.num != null);
+  //
+  // The query used to live here, inline, and was the third copy of it. It omitted
+  // the broadcast exclusion the other two had, so this feed published 0xFFFFFFFF
+  // as the fourth-busiest relay in the mesh. Door identity belongs to reach.js.
+  const doors = doorUsage({ since });
 
   const maxBand = Math.max(1, ...bands.map(b => b.count));
   const maxUses = Math.max(1, ...doors.map(d => d.uses));
@@ -253,11 +251,18 @@ export function newGround(days = windowDays()) {
     : one('SELECT COUNT(*) n FROM nodeinfo WHERE first_heard IS NOT NULL');
 
   // A door is "new" when its FIRST EVER appearance falls inside the window.
+  //
+  // `num != BROADCAST` for the same reason doorUsage() excludes it: 0xFFFFFFFF is
+  // not a node. This counted it, and was wrong on the all-time window only —
+  // the broadcast first appeared in route[0] on 2026-06-25, before every bounded
+  // window — which is exactly the kind of defect that survives, because five of
+  // the six windows agree with a check that makes the same mistake.
   const newDoors = one(`
     WITH d AS (SELECT json_extract(route,'$[0]') num, MIN(ts) first_seen
                  FROM traceroute_history
                 WHERE status='ok' AND json_array_length(route)>0 GROUP BY 1)
-    SELECT COUNT(*) n FROM d WHERE num IS NOT NULL AND first_seen > ?`, since);
+    SELECT COUNT(*) n FROM d WHERE num IS NOT NULL AND num != ? AND first_seen > ?`,
+    BROADCAST, since);
 
   // Same rule for contacts: first ever completed traceroute to that node.
   const firstContacts = one(`
@@ -345,18 +350,18 @@ export function health() {
         names.length ? null : 'no devices configured');
   } catch { add('Radios', null, 'device config unavailable'); }
 
-  // Rotator: which variant is selected. Live azimuth lives on the rotator WS,
-  // which this REST handler does not hold — so it is NOT claimed here.
-  const variant = getConfig('rotator_active', null);
-  add('Rotator', variant ? String(variant).replace(/"/g, '') : null,
-      variant ? null : 'no rotator selected');
-  // rotator.status IS reachable here (rotator.js:138) — the previous "not
-  // exposed to this endpoint" was another absence asserted without looking.
-  try {
-    const st = rotator?.status ?? {};
-    add('Live azimuth', st.az != null ? `${Math.round(st.az)}°${st.busy ? ' · moving' : ''}` : null,
-        st.az == null ? 'rotator not reporting' : null);
-  } catch { add('Live azimuth', null, 'rotator unavailable'); }
+  // Rotator: node-dash no longer selects or connects to a rotator directly —
+  // mesh-gw's aim plugin commands it (2026-09-03, task
+  // rotator-command-via-meshgw-aim). 'rotator_active' (the old v4/v5 target
+  // switch) has no successor; there is nothing to display here any more.
+  //
+  // Live azimuth: aim-client.js's status() would answer this, but it is
+  // async and board()/health() are a synchronous composition chain called
+  // from a WS push handler — making the whole chain async to add one
+  // incidental health-panel line is out of scope for this pass. Honestly
+  // unmeasurable from here rather than fabricated or silently dropped.
+  add('Rotator', null, 'no longer selected here — commanded via mesh-gw aim');
+  add('Live azimuth', null, 'requires an async fetch — not available from this synchronous panel');
 
   // Callout transmitter: a real, checkable safety state.
   const co = getConfig('callout', {}) || {};
