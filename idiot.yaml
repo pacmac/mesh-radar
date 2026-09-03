@@ -179,8 +179,8 @@
     exit: 0
     runs: 1
     failures: 0
-    at: '2026-08-23T08:19:06.903'
-    commit: 83f5ae6-dirty
+    at: '2026-09-03T19:51:02.704'
+    commit: a640efc-dirty
 - id: broadcast-address-counted-as-a-door
   type: bug
   what: snapshot-api.js:222 builds distribution.doors inline with no broadcast filter, so 0xFFFFFFFF is
