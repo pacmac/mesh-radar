@@ -25,7 +25,7 @@ source:
   - public/vendor/fonts/dm-sans-italic-latin.woff2
   - public/vendor/fonts/jetbrains-mono-latin.woff2
   - public/vendor/fonts/oxanium-latin.woff2
-source_hash: 8ccd0844f60e26bf90d54cf59b8fe5d9d59b9bc143afe851224ee544ca7d1d99
+source_hash: 8467a5cb349fa164c90e1fb8abd1a064e3a2b0cd1fea82780c7342ad06e93812
 updated: 2026-09-03
 ---
 
@@ -247,8 +247,9 @@ browser `fetch()` page-data requests but never rejects a document navigation.
 - An unknown or removed persisted `activeTab`, including `control`, falls back
   to `overview` and is replaced with a valid value.
 - `popstate` uses the same route table as cold navigation.
-- Config exposes only real subtabs: Bridge, Rotator, Modes, Radar, Callout and
-  Alerts.
+- Config exposes only real subtabs: Bridge, Modes, Radar, Discovery, Callout
+  and Alerts. (Rotator removed 2026-09-04, task
+  rotator-config-tab-removed-meshgw-owns-it — mesh-gw owns rotator config now.)
 - No sidebar link may select a tab or subtab without rendered content.
 
 ### Required data surfaces
@@ -261,8 +262,8 @@ After WS initialisation:
 - Radar: radar canvas/SVG, range control, node filters and rotator mode state
   exist.
 - Nodes: count, sort, filters and at least one card or a designed empty state.
-- Config: all six real subtabs (Bridge, Rotator, Modes, Radar, Callout, Alerts);
-  each form subtab either loads its sanctioned form data or shows a visible
+- Config: all six real subtabs (Bridge, Modes, Radar, Discovery, Callout,
+  Alerts); each form subtab either loads its sanctioned form data or shows a visible
   error/loading state.
 - Range: radio/node filters, stats/empty state, visualisation and log.
 - Performance: radio choice, Simple/Expert, stats, both charts, history and

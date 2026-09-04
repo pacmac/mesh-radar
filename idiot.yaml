@@ -642,3 +642,79 @@
     failures: 0
     at: '2026-09-03T20:00:38.580'
     commit: b8c6009-dirty
+- id: spa-catchall-masks-deleted-api-routes-as-200
+  type: bug
+  what: "Any deleted backend API route now falls through to the SPA catch-all (src/index.js's final app.get)\
+    \ and returns 200 text/html instead of 404 \u2014 worse than a 404 for a caller checking status codes,\
+    \ since it reads as success. Confirmed live: 2026-09-04, mesh-gw hit this on GET /device-config/{mac}\
+    \ (deleted with the devices-management removal) \u2014 their BLE pairing agent silently treated the\
+    \ HTML body as 'no PIN configured' for however long the route had been gone, discovered only when\
+    \ a re-pair was attempted. Same trap already caught me twice this session verifying /ble, /ota, /messages\
+    \ 'still respond 200' as false positives before checking Content-Type. General fix would be a catch-all\
+    \ for API-shaped paths (or an explicit list of retired routes) returning 404 instead of the SPA shell\
+    \ \u2014 not attempted here, filed per the standing 'record incidental bugs, don't expand in-flight\
+    \ work' rule."
+  spec: docs/modules/index.md
+  files:
+  - src/index.js
+  test:
+    command: null
+    criterion: null
+    runs: 1
+  trial: null
+  fix: null
+- id: rotator-config-tab-removed-meshgw-owns-it
+  type: new
+  what: "Config->Rotator sub-tab (Device switch, Status telemetry, Motor & Scan schema form, Calibration)\
+    \ is entirely dead: no /rotator/* backend route exists (deleted 2026-09-03, task rotator-command-via-meshgw-aim),\
+    \ src/ws-relay.js confirms rotator status/target-list/schema WS broadcasting was removed the same\
+    \ day, and mesh-gw confirmed today (mesh-gw--node-dash#103) GET /schema/rotator_config never comes\
+    \ back \u2014 rotator configuration moved into their per-radio install/antenna object, which is device\
+    \ configuration they own per Peter's 2026-09-03 ruling. Commanding (moveRotator/aim) is unaffected\
+    \ and stays."
+  spec: docs/modules/tab-cfg.md
+  files:
+  - public/app-rotator.js
+  - public/app.js
+  - public/app-config.js
+  - public/partials/tab-cfg.html
+  test:
+    command:
+    - bash
+    - /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_rotator_cfg_removed.sh
+    criterion: no dead rotator-config functions/UI remain, everything still parses
+    runs: 1
+  trial:
+    file: .proofs/rotator-config-tab-removed-meshgw-owns-it.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-04T12:15:06.351'
+    commit: f87fde1-dirty
+  fix:
+    file: .proofs/rotator-config-tab-removed-meshgw-owns-it.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-04T12:25:49.548'
+    commit: f87fde1-dirty
+- id: device-list-missing-state-when-state-event-never-arrived
+  type: bug
+  what: "test_node.py: device_list.devices[0] (OMNI, E9:B0:3F:17:27:91) missing field 'state' \u2014 sample\
+    \ shows state_event: {} (empty). OMNI is currently OFFLINE (mesh-gw restarted this morning, mesh-gw--node-dash#99/#100)\
+    \ and appears to have sent zero device_state events since reconnecting, so ws-relay.js's lastDeviceState[addr]\
+    \ never got seeded with a state_event at all, not even OFFLINE. Found live while running npm run check\
+    \ for an unrelated task (rotator-config-tab-removed-meshgw-owns-it) \u2014 zero src/ changes in that\
+    \ task, so not caused by it. Could be transient (OMNI still recovering) or a genuine gap in ws-relay.js's\
+    \ device_list flattening when a device has never reported state. Needs investigation of src/ws-relay.js\
+    \ and live re-check once/if OMNI reconnects, not chased here."
+  spec: docs/modules/ws-relay.md
+  files:
+  - src/ws-relay.js
+  - tests/test_node.py
+  test:
+    command: null
+    criterion: null
+    runs: 1
+  trial: null
+  fix: null

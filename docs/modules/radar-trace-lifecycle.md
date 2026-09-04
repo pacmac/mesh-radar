@@ -4,8 +4,8 @@ source:
   - public/app-radar.js
   - public/app-ws.js
   - public/app.js
-source_hash: aaca8289abf08c9ca5d48faf41db05bd4a25342d2ce5c5cac268dc8bd6956068
-updated: 2026-09-03
+source_hash: 1653b217028d98e9c97bce7a27d8e1f8e69f9be6e4c3c239aeb5bf776d7d96c2
+updated: 2026-09-04
 ---
 
 # A trace's visual lifecycle, and a UI timer that is in scope

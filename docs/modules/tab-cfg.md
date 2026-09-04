@@ -1,17 +1,66 @@
 ---
 module: tab-cfg
 source: public/partials/tab-cfg.html
-source_hash: 453dd0ab08785e2820654ab6a6b4f102aec8109db60db5bf141bbeddcfc3e004
-updated: 2026-08-03
+source_hash: 82bd66849ddfd2e10226b987eacab0a828e4ea9bba759b8d9996fd29662a6855
+updated: 2026-09-04
 ---
 
 # Module: tab-cfg
 
 ## Purpose
 
-Config page HTML template: five sub-tabs (Bridge, Rotator, Modes, Radar,
-Alerts). Per-radio section/channel/owner forms live on Devices. Presentation
-only.
+Config page HTML template: six sub-tabs (Bridge, Modes, Radar, Discovery,
+Callout, Alerts). Per-radio section/channel/owner forms and rotator
+configuration are both gone — mesh-gw owns device configuration now. All
+zero-decision presentation.
+
+## Rotator sub-tab removed (2026-09-04, task `rotator-config-tab-removed-meshgw-owns-it`)
+
+Superseding every section below that describes it (Rotator device selector,
+Variant-aware rotator config, v5 config built from the device schema): the
+whole Rotator sub-tab — Device switch, Status telemetry, Motor & Scan schema
+form, Calibration — is deleted. It was already **entirely dead** before
+deletion, not merely redundant:
+
+- No `/rotator/*` backend route has existed since 2026-09-03 (task
+  `rotator-command-via-meshgw-aim` deleted them all — commanding moved to
+  mesh-gw's `aim` plugin).
+- `src/ws-relay.js` itself documents removing rotator status/target-list/
+  schema WS broadcasting the same day — so `rotatorTargets`, `rotatorSchema`,
+  and every `rotatorStatus.*` telemetry field this sub-tab displayed (`az`,
+  `pwmMin`, `pwmRun`, `state`, `curMa`, `holdPct`, `sps`, `usteps`, …) could
+  never populate again regardless of this deletion.
+- mesh-gw confirmed (`mesh-gw--node-dash`#103) `GET /schema/rotator_config`
+  is not coming back under that name: rotator **configuration** (host, port,
+  API dialect) moved into their per-radio `install.antenna.rotator` object,
+  served on `GET /devices` — already flowing through this app's own
+  `device_data`/`device_snapshot` handling — and is device configuration
+  they own, the same ruling already applied to Devices/BLE/OTA
+  (`devices-management-removed-meshgw-owns-it`, 2026-09-03).
+
+**Commanding is unaffected and stays.** `moveRotator`, `_checkRotatorStatus`,
+`_onRotatorEvent` (for `point_target`/mode, not telemetry), `setRotatorMode`,
+`startScan`/`abortScan` all still work exactly as before — none of them ever
+went through `/rotator/*`; they use `aim-client.js`/mesh-gw's `aim` plugin
+directly and live entirely on the Radar page, not Config.
+
+**`scanStep`/`scanDwell`/`actvDwell` are NOT changed by this task.** They are
+node-dash's own settings (not device config), displayed read-only on
+`tab-radar.html`. They were already frozen at their `app.js` hardcoded
+defaults before this deletion — the only thing that ever loaded or saved them
+(`loadRotatorCfg`/`saveRotatorConfig`, via the also-dead
+`/rotator/firmware_config`) was already non-functional. This deletion changes
+nothing about their behaviour; giving them a real, editable home is a
+separate, not-yet-filed gap.
+
+**Two live bugs caught only by looking, not by any check** — the same
+sidebar Config submenu that still offered "Rotator" (which would have opened
+a blank pane the moment this landed) also lacked "Discovery", which
+`tab-cfg.html`'s own tab strip has had for a while. See
+`docs/modules/drawer-sidebar.md`. Also dropped, in the same pass: `app.js`'s
+dead `antennaSaved`/`antennaError` state (zero references — leftover from
+`saveAntennaCfg`, deleted in the earlier Devices removal and never cleaned
+up).
 
 ## Mobile containment (2026-07-23)
 
@@ -32,6 +81,15 @@ given and submits the user's selection; the backend (`dash-mode` +
 `config-api`) owns validation and the effect on reception/dispatch, and the
 Devices-page RX/TX badges reflect the resulting live roles (BROWSER_CONTRACT).
 State + handlers live in `app.js` / `app-config.js` (unspecced mixins).
+
+## History — describes the deleted Rotator sub-tab, kept for the reasoning
+
+The three sections below (Rotator device selector, Variant-aware rotator
+config, v5 config built from the DEVICE schema) are not a current spec — see
+"Rotator sub-tab removed" above. Preserved because the reasoning (why v4/v5
+needed separate schemas, why the device's own schema was used over a
+hardcoded one) may matter again if mesh-gw ever needs to know what this used
+to do.
 
 ## Rotator device selector (task `rotator-switch-ui`, 2026-07-07)
 
@@ -192,7 +250,9 @@ that context reads as arbitrary.
 ## Invariants
 
 - Zero changes to Alpine expressions, handlers, `x-ref` names, and the
-  `sec_*`/`ch_*`/`owner_form`/`bridge_cfg_form`/`rotator_cfg_form` mount IDs
+  `sec_*`/`ch_*`/`owner_form`/`bridge_cfg_form` mount IDs (historical — several
+  of these mount points, including `rotator_cfg_form`, no longer exist; see
+  the removal notes above and in `app-devices.md`/`app-config.md`)
 - No raw colors introduced; no inline styles remain
 - `buildForm`/`collectForm` behavior byte-identical apart from the one class
   string
@@ -203,7 +263,7 @@ Playwright, both themes, 1440×900 (guide §8):
 - All five sub-tabs render; Radio sub-tabs (Device/Channels/Owner) switch
 - Open one protobuf section — generated labels at caption size, eyebrow style
   on group boxes
-- Rotator: PWM rows show sm controls; calibration buttons uniform btn-sm
+- (Rotator sub-tab test — historical, section deleted 2026-09-04)
 - Alerts: SMTP grid labels legible; rules table intact with input-xs rows
 - Devices spot-check (label-text bump)
 - 0 console errors
@@ -214,8 +274,9 @@ The Radio tab (radio selector + Device/Channels/Owner sub-tabs: antenna card,
 tilt calibration, schema section collapses with the fixed-position panel,
 channel collapses, owner form) moved into the Devices page strips — per-radio
 configuration belongs with the radio, and expanding a strip replaces the
-selector. Config keeps the system-level tabs: Bridge / Rotator / Modes /
-Radar / Alerts.
+selector. Config kept the system-level tabs at the time: Bridge / Rotator /
+Modes / Radar / Alerts (Discovery joined later; Rotator itself left
+2026-09-04 — see "Rotator sub-tab removed" above).
 
 Related non-partial edits in the same task (modules unspecced): `app.js`
 sanitizes the persisted `cfgTab` (`'radio'` → `'bridge'`, new default

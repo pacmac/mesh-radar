@@ -5,9 +5,8 @@
 <div class="pref-backend contents">
         <!-- ===================== CONFIG ===================== -->
         <div x-show="tab==='cfg'" class="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
-          <div class="tabs tabs-bordered grid grid-cols-4 sm:grid-cols-7 w-full sm:w-fit shrink-0">
+          <div class="tabs tabs-bordered grid grid-cols-3 sm:grid-cols-6 w-full sm:w-fit shrink-0">
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='bridge'  && 'tab-active font-semibold'" @click="switchCfgTab('bridge')">Bridge</a>
-            <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='rotator' && 'tab-active font-semibold'" @click="switchCfgTab('rotator')">Rotator</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='modes'   && 'tab-active font-semibold'" @click="switchCfgTab('modes')">Modes</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='radar'   && 'tab-active font-semibold'" @click="switchCfgTab('radar')">Radar</a>
             <a class="tab px-1 sm:px-4 text-xs sm:text-sm" :class="cfgTab==='discovery' && 'tab-active font-semibold'" @click="switchCfgTab('discovery')">Discovery</a>
@@ -31,177 +30,15 @@
             </div>
           </div>
 
-          <!-- ==================== ROTATOR TAB ==================== -->
-          <div x-show="cfgTab==='rotator'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">
-            <!-- Device (v4/v5 switch) -->
-            <div class="card bg-base-100 shadow">
-              <div class="card-body py-3">
-                <h2 class="card-title">Device</h2>
-                <div class="flex items-center gap-2 flex-wrap">
-                  <template x-for="t in rotatorTargets" :key="t.name">
-                    <button class="btn btn-sm"
-                            :class="t.name === rotatorStatus.active_target ? 'btn-primary' : 'btn-outline'"
-                            @click="selectRotatorTarget(t.name)"
-                            x-text="t.name.toUpperCase()"></button>
-                  </template>
-                  <span class="text-xs opacity-60 ml-1" x-show="rotatorStatus.variant"
-                        x-text="'API ' + (rotatorStatus.api ?? '4 (legacy)') + (rotatorConnected ? '' : ' · offline')"></span>
-                </div>
-                <p class="text-xs font-mono opacity-50 mt-1"
-                   x-text="rotatorTargets.find(t => t.name === rotatorStatus.active_target)?.url || ''"></p>
-                <p class="text-xs opacity-50 mt-0.5">Switching reconnects live. <code>ROTATOR_WS_URL</code> overrides the default target URL.</p>
-              </div>
-            </div>
-
-            <!-- Status -->
-            <div class="card bg-base-100 shadow">
-              <div class="card-body py-3">
-                <h2 class="card-title">Status</h2>
-                <div class="text-sm grid grid-cols-2 gap-x-6 gap-y-1 mt-1">
-                  <div class="flex justify-between">
-                    <span class="opacity-60">Connection</span>
-                    <span :class="rotatorConnected ? 'text-success' : 'text-error'" x-text="rotatorConnected ? 'Connected' : 'Disconnected'"></span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="opacity-60">Bearing</span>
-                    <span class="font-mono" x-text="rotatorStatus.az != null ? rotatorStatus.az.toFixed(1) + '°' : '–'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.pwmMin != null">
-                    <span class="opacity-60">PWM min</span>
-                    <span class="font-mono" x-text="rotatorStatus.pwmMin ?? '–'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.pwmRun != null">
-                    <span class="opacity-60">PWM run</span>
-                    <span class="font-mono" x-text="rotatorStatus.pwmRun ?? '–'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.pwmRunPct != null">
-                    <span class="opacity-60">PWM run %</span>
-                    <span class="font-mono" x-text="rotatorStatus.pwmRunPct != null ? Math.round(rotatorStatus.pwmRunPct * 100) + '%' : '–'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.blDeg != null">
-                    <span class="opacity-60">Backlash</span>
-                    <span class="font-mono" x-text="rotatorStatus.blDeg != null ? (+rotatorStatus.blDeg).toFixed(1) + '°' : '–'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.yagiOffset != null">
-                    <span class="opacity-60">Yagi offset</span>
-                    <span class="font-mono" x-text="rotatorStatus.yagiOffset != null ? (+rotatorStatus.yagiOffset).toFixed(1) + '°' : '–'"></span>
-                  </div>
-                  <!-- v5 stepper telemetry -->
-                  <div class="flex justify-between" x-show="rotatorStatus.state != null">
-                    <span class="opacity-60">State</span>
-                    <span class="font-mono" x-text="rotatorStatus.state ?? '–'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.northOffset != null && rotatorStatus.variant==='v5'">
-                    <span class="opacity-60">North offset</span>
-                    <span class="font-mono" x-text="rotatorStatus.northOffset != null ? (+rotatorStatus.northOffset).toFixed(1) + '°' : '–'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.curMa != null">
-                    <span class="opacity-60">Run current</span>
-                    <span class="font-mono" x-text="rotatorStatus.curMa + ' mA'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.holdPct != null">
-                    <span class="opacity-60">Hold current</span>
-                    <span class="font-mono" x-text="rotatorStatus.holdPct + '%'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.sps != null">
-                    <span class="opacity-60">Step rate</span>
-                    <span class="font-mono" x-text="rotatorStatus.sps + ' sps'"></span>
-                  </div>
-                  <div class="flex justify-between" x-show="rotatorStatus.usteps != null">
-                    <span class="opacity-60">Microsteps</span>
-                    <span class="font-mono" x-text="rotatorStatus.usteps"></span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Motor & Scan config (schema-driven) -->
-            <div class="card bg-base-100 shadow">
-              <div class="card-body py-3">
-                <h2 class="card-title">Motor &amp; Scan</h2>
-                <div class="flex items-center justify-between gap-2 mb-2" x-show="rotatorStatus.pwmRunPct != null">
-                  <label class="text-sm">Motor speed %
-                    <span class="text-xs font-mono opacity-60" x-text="rotatorStatus.pwmRun != null ? '(pwmRun ' + rotatorStatus.pwmRun + ')' : ''"></span>
-                  </label>
-                  <div class="flex items-center gap-1">
-                    <input type="number" class="input input-sm w-20 text-right font-mono" min="1" max="100"
-                           x-model.number="pwmRunPctInput"
-                           :placeholder="rotatorStatus.pwmRunPct != null ? Math.round(rotatorStatus.pwmRunPct * 100) : 25">
-                    <span class="text-xs opacity-50">%</span>
-                    <button class="btn btn-sm btn-primary" :disabled="pwmRunPctInput == null" @click="applyPwmRunPct()">Set</button>
-                  </div>
-                </div>
-                <div class="flex items-center justify-between gap-2 mb-3" x-show="rotatorStatus.pwmFreq != null">
-                  <label class="text-sm">PWM frequency</label>
-                  <div class="flex items-center gap-1">
-                    <input type="number" class="input input-sm w-24 text-right font-mono" min="10" max="20000"
-                           x-model.number="pwmFreqInput"
-                           :placeholder="rotatorStatus.pwmFreq ?? 1000">
-                    <span class="text-xs opacity-50">Hz</span>
-                    <button class="btn btn-sm btn-primary" :disabled="pwmFreqInput == null" @click="applyPwmFreq()">Set</button>
-                  </div>
-                </div>
-                <!-- x-ignore: buildForm renders plain DOM with manual listeners; Alpine must
-                     not walk/teardown this subtree, else rebuilding it on a variant switch
-                     throws _x_effects errors -->
-                <div id="rotator_cfg_form" class="mt-2" x-ignore></div>
-                <div class="flex items-center gap-2 mt-3">
-                  <button class="btn btn-sm btn-primary" :disabled="!rotatorCfgSchema" @click="saveRotatorConfig()">Apply to Firmware</button>
-                  <span class="text-success text-sm" x-show="rotatorCfgSaved" x-transition>Sent ✓</span>
-                  <span class="text-error text-sm" x-show="rotatorCfgError" x-text="rotatorCfgError"></span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Calibration -->
-            <div class="card bg-base-100 shadow">
-              <div class="card-body py-3">
-                <h2 class="card-title">Calibration</h2>
-                <div class="flex flex-col gap-4">
-                  <div>
-                    <p class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2">Yagi offset</p>
-                    <div class="flex items-end gap-2 flex-wrap">
-                      <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs">Direct (0–359°)</span></label>
-                        <input type="number" min="0" max="359" step="1" class="input input-sm input-bordered w-28 font-mono"
-                               :placeholder="(rotatorStatus.yagiOffset ?? rotatorStatus.northOffset) != null ? (+(rotatorStatus.yagiOffset ?? rotatorStatus.northOffset)).toFixed(1) : '0'"
-                               x-model="rotatorOffsetInput">
-                      </div>
-                      <button class="btn btn-sm btn-primary mb-0.5" @click="setRotatorOffset(rotatorOffsetInput)">Set</button>
-                    </div>
-                    <div x-show="(rotatorStatus.variant || 'v4') === 'v4'">
-                      <p class="text-sm text-base-content/60 mt-1">Or use compass-guided: point YAGI to North, then:</p>
-                      <div class="flex gap-2 flex-wrap mt-1">
-                        <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsStart')">1. Move to North</button>
-                        <button class="btn btn-sm btn-outline" @click="rotatorCalibrate('qmcOsEnd')">2. Set North Here</button>
-                      </div>
-                    </div>
-                  </div>
-                  <!-- v4 calibration routines (compass + PWM hardware) -->
-                  <div x-show="(rotatorStatus.variant || 'v4') === 'v4'">
-                    <p class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2">Calibration routines (~20 s each)</p>
-                    <div class="flex gap-2 flex-wrap">
-                      <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('calMotor')">Motor</button>
-                      <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('qmcCali')">Compass</button>
-                      <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('calPwmMin')">PWM Min</button>
-                    </div>
-                  </div>
-                  <!-- v5 encoder/stepper calibration -->
-                  <div x-show="rotatorStatus.variant === 'v5'">
-                    <p class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50 mb-2">Encoder calibration</p>
-                    <div class="flex gap-2 flex-wrap">
-                      <button class="btn btn-sm btn-warning btn-outline" @click="rotatorCalibrate('dirtest')">Direction test (+10°)</button>
-                    </div>
-                    <p class="text-xs text-base-content/50 mt-1">North set (<code>caltrue &lt;bearing&gt;</code>) and encoder-sign trim need a bearing argument — a later task.</p>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-success text-sm" x-show="rotatorCalSent" x-transition>Sent ✓</span>
-                    <span class="text-error text-sm" x-show="rotatorCalError" x-text="rotatorCalError"></span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <!-- Rotator sub-tab removed 2026-09-04, task
+               rotator-config-tab-removed-meshgw-owns-it — device switch,
+               firmware telemetry, Motor & Scan schema form, and calibration
+               all wrote/read through /rotator/* routes deleted 2026-09-03
+               (rotator-command-via-meshgw-aim). mesh-gw confirmed
+               (mesh-gw--node-dash#103) rotator CONFIGURATION moved into
+               their per-radio install/antenna object, which is device
+               configuration they own — same ruling as Devices/BLE/OTA.
+               COMMANDING (moveRotator/aim) is unaffected; see Radar. -->
 
           <!-- ===================== MODES ===================== -->
           <div x-show="cfgTab==='modes'" class="flex-1 min-h-0 flex flex-col gap-3 max-w-2xl overflow-y-auto">

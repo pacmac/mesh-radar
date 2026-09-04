@@ -1,6 +1,9 @@
-// Bridge/rotator/alerts configuration tabs mixin. Per-radio config editing
-// (sections, channels, owner, fixed position) is gone — mesh-gw's own Radios
-// page owns it now (2026-09-03, task devices-management-removed-meshgw-owns-it).
+// Bridge/modes/radar/callout/discovery/alerts configuration tabs mixin.
+// Per-radio config editing (sections, channels, owner, fixed position) and
+// rotator config (device switch, firmware settings, calibration) are both
+// gone — mesh-gw owns device configuration now (2026-09-03/04, tasks
+// devices-management-removed-meshgw-owns-it and
+// rotator-config-tab-removed-meshgw-owns-it).
 import { fetchJSON, nextFrame } from './app-helpers.js';
 import { persistSet } from './app-persist.js';
 import { buildForm, collectForm } from './app-forms.js';
@@ -15,7 +18,6 @@ export const configMixin = {
     this.cfgTab = name;
     persistSet('cfgTab', name);
     if (name === 'bridge')         this.loadBridgeConfig();
-    else if (name === 'rotator')   this.loadRotatorCfg();
     else if (name === 'modes')     this.loadModesCfg();
     else if (name === 'radar')     this.loadRadarCfg();
     else if (name === 'alerts')    this.loadAlertRules();

@@ -1,7 +1,7 @@
 ---
 module: drawer-sidebar
 source: public/partials/drawer-sidebar.html
-source_hash: 0ca1d1a4187b1ce3b7ed2aea784b19618100ac775b10f639898fbe45a2cc73c4
+source_hash: b482052d0290311bf275887253872b2f407b3792a99ba42ad7060bb94943be43
 updated: 2026-09-03
 ---
 
@@ -22,6 +22,20 @@ unchanged — node-dash still needs to know which device is active and whether
 it is reachable, which is display/selection, not management. Fixed a stray
 orphan `</li>` left over from the earlier Messages nav-item removal in the
 same edit.
+
+## Config submenu: Rotator removed, Discovery added (2026-09-04, task `rotator-config-tab-removed-meshgw-owns-it`)
+
+This partial carries its **own separate** copy of the Config sub-tab list
+(the sidebar's `<details><ul>` under "Config"), independent of `tab-cfg.html`'s
+own tab strip — the two are not generated from one source and drifted:
+`tab-cfg.html` already had a `Discovery` tab this list never got, and this
+list still offered `Rotator` after `tab-cfg.html`'s Rotator content was
+deleted, which would have opened a blank Config pane. Found live during
+that task's Observe pass (rendered right there in the sidebar) rather than
+by a check — nothing asserts these two lists agree. Both fixed to read
+Bridge / Modes / Radar / Discovery / Callout / Alerts, matching
+`tab-cfg.html` exactly. Also closed a second stray missing `</ul>` before
+`</details>` in the same block, same defect class as the `</li>` above.
 
 ## Control nav item (task `pac-host-command-surface`, 2026-07-25)
 

@@ -1,6 +1,11 @@
-// Rotator control and configuration mixin.
-import { fetchJSON, nextFrame } from './app-helpers.js';
-import { buildForm, collectForm } from './app-forms.js';
+// Rotator control mixin. Rotator CONFIGURATION (device switch, firmware
+// settings schema, calibration) is gone — mesh-gw owns it now (2026-09-04,
+// task rotator-config-tab-removed-meshgw-owns-it; mesh-gw--node-dash#103
+// confirmed rotator config moved into their per-radio install/antenna
+// object, served on GET /devices — device configuration, same ruling as
+// Devices/BLE/OTA). COMMANDING stays: aim resolves and points, this mixin
+// only relays the live status and the point request.
+import { fetchJSON } from './app-helpers.js';
 
 export const rotatorMixin = {
   // ONE-SHOT — see the call site (app-radar.js initRadar). GET
@@ -27,14 +32,6 @@ export const rotatorMixin = {
     // is sent on WS connect to seed the persisted mode even when rotator is offline.
     if (data.az != null || 'busy' in data || 'point_target' in data) this.rotatorConnected = true;
 
-    // Switchable target list lives in its OWN stable state (not the per-frame
-    // rotatorStatus), updated only when the list actually changes — otherwise the
-    // Device-card x-for would tear down and rebuild on every status frame.
-    if (data.targets && JSON.stringify(data.targets) !== JSON.stringify(this.rotatorTargets)) {
-      this.rotatorTargets = data.targets;
-    }
-    // v5 device config schema (present on connect-replay + schema event; null on v4)
-    if ('schema' in data) this.rotatorSchema = data.schema;
     // A device switch (possibly from another client) invalidates the previous
     // firmware's telemetry — drop stale fields so variant-gated rows hide.
     // (variant/active_target arrive via this frame + the fwData spread below.)
@@ -106,18 +103,6 @@ export const rotatorMixin = {
   },
 
 
-  // Switch the active rotator device (v4/v5). Optimistic: reflect the choice
-  // immediately; the WS stream confirms and supplies the detected variant.
-  async selectRotatorTarget(name) {
-    if (!name || name === this.rotatorStatus.active_target) return;
-    // Switching device invalidates the old firmware's telemetry — reset so
-    // variant-gated rows (v4 PWM, etc.) don't linger while the new device
-    // reconnects. The WS stream repopulates + supplies the detected variant.
-    // (rotatorTargets is separate stable state and is left intact.)
-    this.rotatorStatus = { active_target: name };
-    await fetchJSON('/rotator/active', 'POST', { name });
-  },
-
   // Straight to mesh-gw's aim plugin now — node-dash no longer selects or
   // commands a radio for pointing (2026-09-03, task
   // rotator-command-via-meshgw-aim; docs/gw/modules/aim_plugin.md). No `radio`
@@ -143,29 +128,6 @@ export const rotatorMixin = {
     }
   },
 
-  // FIRMWARE CALIBRATION — OUT OF SCOPE (2026-09-03, task
-  // rotator-command-via-meshgw-aim). node-dash no longer connects to a
-  // rotator to relay setvar/calibrate/offset commands; mesh-gw's aim plugin
-  // has no such surface either (point/status/where/ledger only — rare,
-  // one-time physical setup, not a command path). Use the rotator's own
-  // native web UI (port 80 on its host) for these. Left wired rather than
-  // deleted so the panel fails visibly (rotatorCalError) instead of silently.
-  async applyPwmRunPct() {
-    if (this.pwmRunPctInput == null) return;
-    const pct = Math.max(1, Math.min(100, this.pwmRunPctInput)) / 100;
-    try {
-      await fetchJSON('/rotator/setvar', 'POST', { action: 'setPwmRunPct', val: pct.toFixed(2) });
-    } catch (e) { this.rotatorCalError = String(e); }
-  },
-
-  async applyPwmFreq() {
-    if (this.pwmFreqInput == null) return;
-    const freq = Math.max(10, Math.min(20000, this.pwmFreqInput));
-    try {
-      await fetchJSON('/rotator/setvar', 'POST', { action: 'setPwmFreq', val: String(freq) });
-    } catch (e) { this.rotatorCalError = String(e); }
-  },
-
   // node-dash's own sweep, not rotator hardware — moved out from under
   // /rotator (2026-09-03, task rotator-command-via-meshgw-aim).
   startScan() {
@@ -176,132 +138,4 @@ export const rotatorMixin = {
     fetchJSON('/scan/abort', 'POST').catch(() => {});
   },
 
-  // Adapt the device schema (flat {id,label,group,type,min,max,value}) into
-  // buildForm object-groups keyed by `group` + nested data — the SAME builder
-  // the radio config uses (no second form builder).
-  _deviceSchemaGroups(schema) {
-    const groups = {}, data = {};
-    for (const c of schema) {
-      const g = c.group || 'device';
-      (groups[g] ??= []).push({ name: c.id, label: c.label, type: c.type === 'bool' ? 'bool' : 'int', min: c.min, max: c.max });
-      (data[g] ??= {})[c.id] = c.type === 'bool' ? !!c.value : c.value;
-    }
-    const fields = Object.entries(groups).map(([name, f]) => ({ name, type: 'object', fields: f }));
-    return { fields, data };
-  },
-
-  async loadRotatorCfg() {
-    try {
-      const needsSchema = !this.rotatorCfgSchema;
-      const [schema, data] = await Promise.all([
-        needsSchema ? fetchJSON('/schema/rotator_config') : Promise.resolve(this.rotatorCfgSchema),
-        fetchJSON('/rotator/firmware_config'),
-      ]);
-      if (needsSchema) this.rotatorCfgSchema = schema;
-      if (data?.scan?.step_deg  != null) this.scanStep  = Number(data.scan.step_deg);
-      if (data?.scan?.dwell_sec != null) this.scanDwell = Number(data.scan.dwell_sec);
-      if (data?.actv?.dwell_sec != null) this.actvDwell = Number(data.actv.dwell_sec);
-
-      const variant = this.rotatorStatus?.variant || 'v4';
-      const useDevice = variant === 'v5' && Array.isArray(this.rotatorSchema) && this.rotatorSchema.length > 0;
-      let fields, formData;
-      if (useDevice) {
-        // v5: build from the DEVICE's own grouped schema; append the node-dash
-        // scan/actv groups (which the device doesn't own) from the hardcoded schema.
-        const dev = this._deviceSchemaGroups(this.rotatorSchema);
-        const extra = (schema.variants?.v5?.fields ?? schema.fields ?? []).filter(f => f.name === 'scan' || f.name === 'actv');
-        fields = [...dev.fields, ...extra];
-        formData = { ...dev.data, scan: data.scan, actv: data.actv };
-      } else {
-        // v4 (or before schema arrives): hardcoded per-variant fields.
-        fields = schema.variants?.[variant]?.fields ?? schema.fields;
-        formData = data;
-      }
-      this._rotatorCfgFields = fields;
-      await nextFrame();
-      const el = document.getElementById('rotator_cfg_form');
-      if (el && !el.dataset.dirty) {
-        el.innerHTML = '';
-        el.dataset.formRoot = '1';
-        el.dataset.variant = variant;
-        el.dataset.device = useDevice ? '1' : '';
-        el.appendChild(buildForm(fields, formData, []));
-      }
-    } catch (e) {
-      console.warn('Failed to load rotator cfg', e);
-    }
-  },
-
-  async saveRotatorConfig() {
-    this.rotatorCfgSaved = false;
-    this.rotatorCfgError = '';
-    try {
-      const el = document.getElementById('rotator_cfg_form');
-      const variant = this.rotatorStatus?.variant || 'v4';
-      const fields = this._rotatorCfgFields
-        ?? (this.rotatorCfgSchema.variants?.[variant]?.fields ?? this.rotatorCfgSchema.fields);
-      const payload = collectForm(el, fields);
-
-      if (el.dataset.device === '1') {
-        // v5 device settings — set each CHANGED field via /rotator/config; the
-        // device validates and returns { ok, msg, value }. Surface any ERRs.
-        const errs = [];
-        for (const c of (this.rotatorSchema ?? [])) {
-          const g = c.group || 'device';
-          const nv = payload[g]?.[c.id];
-          if (nv == null) continue;
-          const same = c.type === 'bool' ? ((nv ? 1 : 0) === c.value) : (Number(nv) === Number(c.value));
-          if (same) continue;
-          const value = c.type === 'bool' ? (nv ? 1 : 0) : Number(nv);
-          const r = await fetchJSON('/rotator/config', 'POST', { id: c.id, value });
-          if (!r?.ok) errs.push(`${c.label}: ${r?.msg ?? 'failed'}`);   // don't mutate reactive rotatorSchema
-        }
-        // scan/actv are node-dash config, not device settings.
-        if (payload.scan || payload.actv) {
-          await fetchJSON('/rotator/firmware_config', 'POST', { scan: payload.scan, actv: payload.actv });
-        }
-        el.removeAttribute('data-dirty');
-        if (payload?.scan?.step_deg  != null) this.scanStep  = Number(payload.scan.step_deg);
-        if (payload?.scan?.dwell_sec != null) this.scanDwell = Number(payload.scan.dwell_sec);
-        if (payload?.actv?.dwell_sec != null) this.actvDwell = Number(payload.actv.dwell_sec);
-        if (errs.length) { this.rotatorCfgError = errs.join('; '); }
-        else { this.rotatorCfgSaved = true; setTimeout(() => { this.rotatorCfgSaved = false; }, 2000); }
-      } else {
-        // v4 hardcoded path — unchanged.
-        await fetchJSON('/rotator/firmware_config', 'POST', payload);
-        el.removeAttribute('data-dirty');
-        if (payload?.scan?.step_deg  != null) this.scanStep  = Number(payload.scan.step_deg);
-        if (payload?.scan?.dwell_sec != null) this.scanDwell = Number(payload.scan.dwell_sec);
-        if (payload?.actv?.dwell_sec != null) this.actvDwell = Number(payload.actv.dwell_sec);
-        this.rotatorCfgSaved = true;
-        setTimeout(() => { this.rotatorCfgSaved = false; }, 2000);
-      }
-    } catch (e) {
-      this.rotatorCfgError = String(e);
-    }
-  },
-
-  async rotatorCalibrate(procedure) {
-    this.rotatorCalSent = false;
-    this.rotatorCalError = '';
-    try {
-      await fetchJSON('/rotator/calibrate', 'POST', { procedure });
-      this.rotatorCalSent = true;
-      setTimeout(() => { this.rotatorCalSent = false; }, 2000);
-    } catch (e) {
-      this.rotatorCalError = String(e);
-    }
-  },
-
-  async setRotatorOffset(offset) {
-    this.rotatorCalSent = false;
-    this.rotatorCalError = '';
-    try {
-      await fetchJSON('/rotator/offset', 'POST', { offset: parseFloat(offset) });
-      this.rotatorCalSent = true;
-      setTimeout(() => { this.rotatorCalSent = false; }, 2000);
-    } catch (e) {
-      this.rotatorCalError = String(e);
-    }
-  },
 };

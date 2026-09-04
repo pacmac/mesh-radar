@@ -1,0 +1,11 @@
+$ bash /tmp/claude-0/-usr-share-pac-dev-projects-mt-radar-node-dash/24ffa156-2dc3-4a65-9b3c-e6a019507dc6/scratchpad/check_rotator_cfg_removed.sh
+FAIL: loadRotatorCfg still referenced
+FAIL: saveRotatorConfig still referenced
+FAIL: _deviceSchemaGroups still referenced
+FAIL: applyPwmRunPct still referenced
+FAIL: applyPwmFreq still referenced
+FAIL: rotatorCalibrate still referenced
+FAIL: setRotatorOffset still referenced
+FAIL: selectRotatorTarget still referenced
+FAIL: tab-cfg.html still has the Rotator sub-tab content
+FAIL: tab-cfg.html still has the Rotator nav button

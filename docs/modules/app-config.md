@@ -1,7 +1,7 @@
 ---
 module: app-config
 source: public/app-config.js
-source_hash: 64bc29ecf152435f50a39c2089a5db6070d10afe142ad9e8de54c535560702cd
+source_hash: e8bfdc05105a97f0ed331a6725d25206d3fd8e5e76c6f06dcc69ee507da89b77
 updated: 2026-09-03
 ---
 
@@ -9,11 +9,15 @@ updated: 2026-09-03
 
 ## Purpose
 
-Browser config mixin (Domain 2): Config-page tabs — Bridge, Rotator, Modes,
-Radar, Callout, Alerts. Per-radio config editing (device/module sections,
+Browser config mixin (Domain 2): Config-page tabs — Bridge, Modes, Radar,
+Discovery, Callout, Alerts. Per-radio config editing (device/module sections,
 channels, owner, fixed position) is gone — mesh-gw's own Radios page is the
 only place any of that can be done now (2026-09-03, task
-`devices-management-removed-meshgw-owns-it`).
+`devices-management-removed-meshgw-owns-it`). Rotator config (device switch,
+firmware settings, calibration) is also gone (2026-09-04, task
+`rotator-config-tab-removed-meshgw-owns-it`) — see `docs/modules/tab-cfg.md`
+for that removal; this mixin's own `switchCfgTab` just dropped the
+`'rotator'` branch.
 
 ## Removed 2026-09-03
 

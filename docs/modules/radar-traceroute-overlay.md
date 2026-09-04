@@ -5,8 +5,8 @@ source:
   - public/app-ws.js
   - public/app.js
   - public/partials/tab-radar.html
-source_hash: a91e99984af83b9f718a36bcab2f9af34104c3a06f27e1f9fa17a5628f3ec45f
-updated: 2026-09-03
+source_hash: cbccc1296be7684b48db079960bd9973461caca043620842098bb80f20caa6f5
+updated: 2026-09-04
 ---
 
 # The radar watches a traceroute happening

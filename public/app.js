@@ -30,7 +30,7 @@ function dashboard() {
     // 'radio' shim: the Radio config tab moved to the Devices page
     // (radio-config-into-devices) — a persisted 'radio' would strand the
     // user on a tab that no longer exists.
-    cfgTab:        (t => t === 'radio' ? 'bridge' : t)(persistGet('cfgTab', 'bridge')),
+    cfgTab:        (t => (t === 'radio' || t === 'rotator') ? 'bridge' : t)(persistGet('cfgTab', 'bridge')),
     // Observatory sub-tab. Defaults to the board — the dashboard is the page;
     // the raw feeds are diagnostics you go looking for.
     obsTab:        persistGet('obsTab', 'board'),
@@ -93,12 +93,8 @@ function dashboard() {
     _sigTick:        0,
     rotatorStatus:   {},
     rotatorConnected: false,
-    rotatorTargets:  [],
-    rotatorSchema:   null,   // v5 device config schema (pushed over WS)
     rotatorManualAz:  null,
     rotatorMode:      0,
-    pwmRunPctInput:   null,
-    pwmFreqInput:     null,
 
     // -- Scan -----------------------------------------------------------------
     scanMode:      false,
@@ -208,9 +204,6 @@ function dashboard() {
     bridgeConfigSchema: null,
     bridgeConfigSaved:  false,
     bridgeConfigError:  '',
-    rotatorCfgSchema: null,
-    rotatorCfgSaved:  false,
-    rotatorCfgError:  '',
     radarCfg:         { display: {}, pasv: {}, actv: {}, scan: {} },
     radarCfgSaved:    false,
     radarCfgError:    '',
@@ -224,11 +217,6 @@ function dashboard() {
     // server's RX_ROLES/TX_ROLES with the page's own labels. Served now via
     // GET /config/mode-vocabulary. Task `serve-mode-vocabulary`.
     modeVocab: null,
-    rotatorCalSent:   false,
-    rotatorCalError:  '',
-    rotatorOffsetInput: '',
-    antennaSaved: false,
-    antennaError: '',
     homePosSaved: false,
     homePosError: '',
     homeLat: null,
@@ -323,23 +311,6 @@ function dashboard() {
       this.$watch('envWindow',         () => this.loadEnvHistory(this.activeNodeId));
       this.$watch('rangeNodeFilter',   () => { this._rangeStats = null; this._rangeChartCache = null; });
       this.$watch('rangeRxFilter',     () => { this._rangeStats = null; this._rangeChartCache = null; this.rangeNodeFilter = ''; });
-      this.$watch('rotatorStatus.variant', () => {
-        // Device switched — rebuild the firmware config form against the new
-        // variant's schema (v4 PWM ↔ v5 stepper) if the rotator cfg tab is open.
-        if (this.tab === 'cfg' && this.cfgTab === 'rotator') {
-          const el = document.getElementById('rotator_cfg_form');
-          if (el) delete el.dataset.dirty;
-          this.loadRotatorCfg();
-        }
-      });
-      this.$watch('rotatorSchema', () => {
-        // v5 device schema (re)arrived — rebuild the config form from it.
-        if (this.tab === 'cfg' && this.cfgTab === 'rotator') {
-          const el = document.getElementById('rotator_cfg_form');
-          if (el) delete el.dataset.dirty;
-          this.loadRotatorCfg();
-        }
-      });
       // The seven perf-chart watchers are gone with the charts they redrew —
       // 2026-08-17, spec docs/modules/traceroute-removal-browser.md. Every one
       // of them existed to re-render a plot of traceroute_history rows.
