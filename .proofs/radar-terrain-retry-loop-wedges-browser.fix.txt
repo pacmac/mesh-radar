@@ -1,0 +1,2 @@
+$ node tests/test_radar_terrain_retry_throttle.mjs
+radar terrain retry throttle: 1 checks passed

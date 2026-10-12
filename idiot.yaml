@@ -1238,3 +1238,35 @@
     failures: 0
     at: '2026-10-12T01:35:28.335'
     commit: 9dc008b-dirty
+- id: radar-terrain-retry-loop-wedges-browser
+  type: bug
+  what: 'app-radar.js''s _drawRadarTerrain() retries _loadTerrain() on every drawRadar() call while terrainData
+    is null (never sampled), and the retry''s .finally() calls drawRadar() again, re-entering _drawRadarTerrain()
+    in a cycle with no backoff or one-shot guard. On a fresh deployment where terrain has never been sampled
+    (confirmed on the Pi: no operator has ever run POST /terrain/sample there), this is an unthrottled
+    recursive async retry that starves the browser''s event loop completely -- confirmed live via Playwright,
+    even a trivial page.evaluate(''1+1'') hung on /radar while the root page and a raw WS connection both
+    worked fine. Likely the real cause of ''the page won''t load at all''.'
+  spec: docs/modules/app-radar.md
+  files:
+  - public/app-radar.js
+  test:
+    command:
+    - node
+    - tests/test_radar_terrain_retry_throttle.mjs
+    criterion: the terrain-null nudge fires at most once per page load, not in an unthrottled retry loop
+    runs: 1
+  trial:
+    file: .proofs/radar-terrain-retry-loop-wedges-browser.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-12T02:18:36.200'
+    commit: 38871e5-dirty
+  fix:
+    file: .proofs/radar-terrain-retry-loop-wedges-browser.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-12T02:19:03.439'
+    commit: 38871e5-dirty

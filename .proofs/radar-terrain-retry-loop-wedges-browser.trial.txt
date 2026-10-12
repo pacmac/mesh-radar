@@ -1,0 +1,2 @@
+$ node tests/test_radar_terrain_retry_throttle.mjs
+FAIL: SAFETY_CAP exceeded — unthrottled retry loop confirmed (>50 sends with no real data ever arriving)

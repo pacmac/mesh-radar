@@ -1,11 +1,37 @@
 ---
 module: app-radar
 source: public/app-radar.js
-source_hash: c8b7c11352fc9695cf792b2eaae3953c7b38d9c2ae943082be9e15c778326956
-updated: 2026-09-03
+source_hash: 59e9c8ae6509a75b9eb7dc2f6aa86fa3663a0116afe7c268c1415700b3683948
+updated: 2026-10-12
 ---
 
 # Module: app-radar
+
+## Terrain nudge is one-shot, not retry-forever — 2026-10-12 (idiot entry radar-terrain-retry-loop-wedges-browser)
+
+`_drawRadarTerrain()` used to retry `_loadTerrain()` on every `drawRadar()`
+call while `terrainData` is null, and the retry's `.finally()` called
+`drawRadar()` again — re-entering `_drawRadarTerrain()`, finding
+`terrainData` still null, and retrying again. On a deployment where terrain
+has never been sampled (no operator has ever run `POST /terrain/sample` —
+true of a fresh Pi install), that is forever: an unthrottled recursive retry
+that starves the browser's event loop completely. Confirmed live via
+Playwright against the Pi — even `page.evaluate('1+1')` hung on `/radar`,
+while the root page and a raw WS connection both worked fine. Very likely
+the real explanation for "the page won't load at all", independent of the
+ws-relay memory leak fixed earlier the same day.
+
+`_terrainLoading` is now a permanent one-shot "asked" flag — set once, never
+reset back to false — and the self-triggered `drawRadar()` call in
+`.finally()` is gone (it was redundant: the WS `'radar'` message handler
+already calls `drawRadar()` itself whenever real terrain data arrives).
+`tests/test_radar_terrain_retry_throttle.mjs` drives `_drawRadarTerrain()`
+directly with a duck-typed component (`terrainData: null`, a `drawRadar()`
+that re-enters `_drawRadarTerrain()` exactly as the real mixin does) and
+asserts the nudge fires at most once; a safety cap inside the fake `wsSend`
+calls `process.exit(1)` past `_loadTerrain()`'s own swallowing try/catch so
+a still-broken retry terminates the test instead of hanging it, the same way
+it hangs the real browser.
 
 ## Purpose
 

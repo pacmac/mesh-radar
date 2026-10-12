@@ -210,9 +210,20 @@ export const radarMixin = {
     if (!this.layerOn('terrain')) { img.setAttribute('href', ''); path?.setAttribute('d', ''); return; }
     const d = this.terrainData;
     if (d == null) {
+      // ONE-SHOT, not retry-forever. _terrainLoading used to be reset to
+      // false in .finally() and immediately re-drive drawRadar() — which
+      // re-enters here, finds terrainData still null (nothing on the wire
+      // changed what we hold), and asks again. On a deployment where terrain
+      // has never been sampled (no operator has ever run POST
+      // /terrain/sample — true of a fresh Pi install) that is forever: an
+      // unthrottled recursive retry that starves the browser's event loop
+      // completely (idiot entry radar-terrain-retry-loop-wedges-browser).
+      // The real data, if it ever arrives, comes via the WS 'radar' message
+      // handler, which already calls drawRadar() itself — re-triggering it
+      // here was always redundant with that path.
       if (!this._terrainLoading) {
         this._terrainLoading = true;
-        this._loadTerrain().finally(() => { this._terrainLoading = false; this.drawRadar(); });
+        this._loadTerrain();
       }
       return;
     }
