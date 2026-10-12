@@ -1,8 +1,8 @@
 ---
 module: app-ws
 source: public/app-ws.js
-source_hash: ece16a90a8e841b58bff340ea63c5d60ee55d822eb06227757765a93bc5b27f4
-updated: 2026-09-03
+source_hash: 25cce3744ca7ad2a1a570a49219dd8dae28ed121c59459d58448a929b0467e30
+updated: 2026-10-11
 ---
 
 # Module: app-ws
@@ -141,6 +141,9 @@ set-primary persist.
 - `settings`: assigns nodeFilters/nodeSource/radar prefs/packetSources/
   failure epoch/range duration — replaces the deleted `loadConfig` GET;
   arrives on connect and after every config write (all tabs live).
+  `nodeSource`'s fallback changed from `'both'` to `'all'` (2026-10-11,
+  idiot entry `node-source-filter-hardcodes-omni-yagi-browser`) —
+  `docs/modules/node-filter.md`.
 - `geocode_result`: resolves the pending `wsGeocode(num)` promise.
 - `wsGeocode(num)`: client→server RPC with 30 s timeout; replaces the
   `geocodeNode` fetch helper (radar batch + node info panel both use it).

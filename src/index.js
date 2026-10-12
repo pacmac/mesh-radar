@@ -376,6 +376,13 @@ async function proxyToBridge(req, res) {
   if (req.method !== 'GET' && req.method !== 'DELETE') {
     opts.body = JSON.stringify(req.body);
   }
+  // mesh-gw's send_auth (docs/gw/modules/send_auth.md) now gates this proxy's
+  // routes too (PUT /bridge_config, mqtt_publish, and the read GET /bridge_config
+  // itself) — this function does its own raw fetch rather than bridge.js's, so
+  // it never got that fix. Same unconditional attach as bridge.js's fetch():
+  // idiot entry proxy-to-bridge-missing-x-mesh-gw-key.
+  const meshGwKey = getConfig('mesh_gw.send_key', '');
+  if (meshGwKey) opts.headers['x-mesh-gw-key'] = meshGwKey;
   try {
     const upstream = await fetch(url, opts);
     const text = await upstream.text();

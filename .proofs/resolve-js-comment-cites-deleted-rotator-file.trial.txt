@@ -1,0 +1,2 @@
+$ bash -c n=$(grep -c "rotator\.js" src/resolve.js); echo "matches=$n"; [ "$n" -eq 0 ]
+matches=1

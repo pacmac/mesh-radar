@@ -5,8 +5,8 @@ source:
   - src/aim.js
   - src/config-api.js
   - src/traceroute.js
-source_hash: 084224dc69be936f1d163a7b834f2c658894bf06219a64cba641f9953873a36a
-updated: 2026-09-03
+source_hash: 2695b03d9e449268e2017b040b2ba0e4225daa97561233a36d17f857cc18fd24
+updated: 2026-09-10
 ---
 
 # Spec: resolve, aim, traceroute — three functions, one direction of call
@@ -17,9 +17,34 @@ Deleted outright — task `rotator-command-via-meshgw-aim`. `aim.js` now points 
 `aim-client.js` (mesh-gw's `aim` plugin) instead of a direct v4/v5 connection.
 `resolve.js` never imported `rotator.js` directly (verified: not in its import
 list), so this is a source-list correction, not a behaviour change to resolve.js
-itself. Its own in-file comment about `rotator.js:18-19` owning `ROTATOR_WS_URL`/
-`ROTATOR_V5_WS_URL` is now stale prose — noted, not fixed here (out of scope: not
-one of the files this task's ledger entry names).
+itself. Its stale in-file comment about `rotator.js:18-19` owning `ROTATOR_WS_URL`/
+`ROTATOR_V5_WS_URL` was fixed 2026-09-10 (task `resolve-directional-defers-to-meshgw`,
+`idiot` entry `resolve-js-comment-cites-deleted-rotator-file`).
+
+## `directional` now defers to mesh-gw's live antenna data (2026-09-10)
+
+Reproduced live: YAGI2's local `device_cfg.beam_deg` had never been set (defaulted
+to 360, "omnidirectional"), so `resolveRadio('rotator').directional` came back
+`false` for a real 9-element mast-mounted Yagi. `traceroute.js`'s directional
+branch (below) never fired, and a live traceroute transmitted with `aim_mode:
+'none'` — from wherever the antenna was already parked, exactly the 2026-08-20
+loss this file already warns against.
+
+`is_rotator` already deferred to mesh-gw's live install object once it reported
+one (2026-09-03); `directional` never got the same treatment. Fixed via a new
+`device-config.js` export, `getLiveDirectional(mac)` — returns mesh-gw's
+`antenna.directional` when it is a boolean, `null` when mesh-gw has not said
+either way. `resolveRadio()` now computes `directional = getLiveDirectional(mac)
+?? (beam_deg < 360)`, so the local beam_deg computation is a **fallback**, not the
+answer, the moment mesh-gw has an opinion.
+
+Verified live after the fix: a fresh YAGI traceroute to the same target recorded
+`aim_mode: 'relay'`, `aim_target` the known relay, `aim_az_req`/`rotator_az` both
+212° — properly aimed. (The traceroute itself still timed out that run — a
+separate, now-isolated signal question, not an aiming defect; flagged to
+mesh-gw as `yagi-traceroute-transmitted-unaimed-beam-deg-360` along with their
+own related gap: the rotator's own status already reports a real beamwidth
+(`beam: 28.0`) that never reaches `/devices`.)
 
 ## Purpose
 

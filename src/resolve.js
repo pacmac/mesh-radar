@@ -31,7 +31,7 @@
 // src/aim.js is the only thing that points it.
 
 import { getDeviceCfg, getAllDeviceCfgs, getPrimaryMac, getRotatorAddress,
-         macToNodeId } from './device-config.js';
+         macToNodeId, getLiveDirectional } from './device-config.js';
 import { dashMode, modeName, transmitterForMode } from './dash-mode.js';
 // No channel import — a radio record no longer carries channel indices.
 
@@ -112,7 +112,15 @@ export function resolveRadio(spec, ctx = {}) {
   // radio needs aiming on the strength of a missing number.
   const beamRaw  = Number(cfg?.beam_deg);
   const beam_deg = Number.isFinite(beamRaw) && beamRaw > 0 ? beamRaw : null;
-  const directional = beam_deg != null && beam_deg < 360;
+
+  // mesh-gw's LIVE antenna.directional wins the moment it has reported one —
+  // same SSOT rule as is_rotator (2026-09-03). Added 2026-09-10: a stale/unset
+  // local beam_deg (360, the omnidirectional default) made a real 9-element
+  // mast-mounted Yagi read as non-directional here, so traceroute.js skipped
+  // aiming before transmitting. Falls back to the beam_deg computation only
+  // when mesh-gw has not said either way.
+  const liveDirectional = getLiveDirectional(mac);
+  const directional = liveDirectional ?? (beam_deg != null && beam_deg < 360);
 
   // STEERABLE IS A DIFFERENT QUESTION FROM DIRECTIONAL, and the old code could
   // not express the difference — it answered "directional?" with beam_deg for
@@ -129,11 +137,11 @@ export function resolveRadio(spec, ctx = {}) {
     beam_deg,
     directional,
     steerable,
-    // WHICH rotator, not WHERE it is. rotator.js:18-19 already owns the
-    // connection (ROTATOR_WS_URL / ROTATOR_V5_WS_URL, v4 and v5 targets, env
-    // only and never in source). Peter's sketch asked for host/port here;
-    // duplicating the URL would create a second place to be wrong about where
-    // the rotator lives, and the rotator module is the one that reconnects.
+    // WHICH rotator, not WHERE it is. mesh-gw's aim plugin owns the connection
+    // now (aim-client.js — the old direct-WS rotator module was retired 2026-09-03,
+    // task rotator-command-via-meshgw-aim). Peter's sketch asked for host/port
+    // here; duplicating that would create a second place to be wrong about
+    // where the rotator lives, and mesh-gw is the one that reconnects.
     rotatorId: steerable ? rotatorMac : null,
     // NO `channels` FIELD. A radio record used to carry
     // `{ pub: <index>, pri: <index> }`, which is exactly the knowledge this repo

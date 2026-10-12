@@ -1,0 +1,17 @@
+$ node tests/test_ws_relay_seen_pkt_cap.mjs
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: _seenLivePktIds has a capped-insert helper (no such export existed before this fix)
+    at ok (file:///usr/share/pac/dev/projects/mt-radar/node-dash/tests/test_ws_relay_seen_pkt_cap.mjs:13:31)
+    at file:///usr/share/pac/dev/projects/mt-radar/node-dash/tests/test_ws_relay_seen_pkt_cap.mjs:15:1 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v22.23.2

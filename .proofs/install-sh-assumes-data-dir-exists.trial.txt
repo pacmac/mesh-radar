@@ -1,0 +1,102 @@
+$ node tests/test_deploy_install.mjs
+npm warn reify Removing non-directory /tmp/node-dash-fresh-clone-bDSEqI/node_modules
+npm warn deprecated prebuild-install@7.1.3: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.
+REFUSED: node-dash did not come up within 10s (above). Nothing has been enabled — a unit
+         that cannot start is worse than no unit: systemd would retry it forever and the
+         real cause would be buried in the journal.
+node:internal/errors:983
+  const err = new Error(message);
+              ^
+
+Error: Command failed: bash /tmp/node-dash-fresh-clone-bDSEqI/deploy/install.sh --smoke-only
+npm warn reify Removing non-directory /tmp/node-dash-fresh-clone-bDSEqI/node_modules
+npm warn deprecated prebuild-install@7.1.3: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.
+REFUSED: node-dash did not come up within 10s (above). Nothing has been enabled — a unit
+         that cannot start is worse than no unit: systemd would retry it forever and the
+         real cause would be buried in the journal.
+
+    at genericNodeError (node:internal/errors:983:15)
+    at wrappedFn (node:internal/errors:537:14)
+    at checkExecSyncError (node:child_process:916:11)
+    at execFileSync (node:child_process:952:15)
+    at file:///usr/share/pac/dev/projects/mt-radar/node-dash/tests/test_deploy_install.mjs:50:3
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5) {
+  status: 1,
+  signal: null,
+  output: [
+    null,
+    '\n' +
+      '=== preflight\n' +
+      '  repo root   : /tmp/node-dash-fresh-clone-bDSEqI\n' +
+      '  mode        : install\n' +
+      '  node        : v22.23.2 (/usr/local/bin/node)\n' +
+      '  npm         : 10.9.8 (/usr/local/bin/npm)\n' +
+      '  unit        : /tmp/node-dash-fresh-clone-bDSEqI/deploy/node-dash.service.in -> /etc/systemd/system/node-dash.service\n' +
+      "  port        : 8003 (not the code's default of 8000 — see docs/modules/deploy_install.md)\n" +
+      '  deps        : npm install (no package-lock.json in this repo, so not npm ci)\n' +
+      '\n' +
+      '=== npm dependencies\n' +
+      '\n' +
+      'added 151 packages in 1s\n' +
+      '  installed via npm install\n' +
+      '\n' +
+      '=== does it run\n' +
+      '  --- smoke log ---\n' +
+      '  /tmp/node-dash-fresh-clone-bDSEqI/node_modules/better-sqlite3/lib/database.js:65\n' +
+      "  \t\tthrow new TypeError('Cannot open database because the directory does not exist');\n" +
+      '  \t\t      ^\n' +
+      '  \n' +
+      '  TypeError: Cannot open database because the directory does not exist\n' +
+      '      at new Database (/tmp/node-dash-fresh-clone-bDSEqI/node_modules/better-sqlite3/lib/database.js:65:9)\n' +
+      '      at file:///tmp/node-dash-fresh-clone-bDSEqI/src/db.js:30:12\n' +
+      '      at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\n' +
+      '      at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\n' +
+      '      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\n' +
+      '  \n' +
+      '  Node.js v22.23.2\n',
+    'npm warn reify Removing non-directory /tmp/node-dash-fresh-clone-bDSEqI/node_modules\n' +
+      'npm warn deprecated prebuild-install@7.1.3: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.\n' +
+      'REFUSED: node-dash did not come up within 10s (above). Nothing has been enabled — a unit\n' +
+      '         that cannot start is worse than no unit: systemd would retry it forever and the\n' +
+      '         real cause would be buried in the journal.\n'
+  ],
+  pid: 613057,
+  stdout: '\n' +
+    '=== preflight\n' +
+    '  repo root   : /tmp/node-dash-fresh-clone-bDSEqI\n' +
+    '  mode        : install\n' +
+    '  node        : v22.23.2 (/usr/local/bin/node)\n' +
+    '  npm         : 10.9.8 (/usr/local/bin/npm)\n' +
+    '  unit        : /tmp/node-dash-fresh-clone-bDSEqI/deploy/node-dash.service.in -> /etc/systemd/system/node-dash.service\n' +
+    "  port        : 8003 (not the code's default of 8000 — see docs/modules/deploy_install.md)\n" +
+    '  deps        : npm install (no package-lock.json in this repo, so not npm ci)\n' +
+    '\n' +
+    '=== npm dependencies\n' +
+    '\n' +
+    'added 151 packages in 1s\n' +
+    '  installed via npm install\n' +
+    '\n' +
+    '=== does it run\n' +
+    '  --- smoke log ---\n' +
+    '  /tmp/node-dash-fresh-clone-bDSEqI/node_modules/better-sqlite3/lib/database.js:65\n' +
+    "  \t\tthrow new TypeError('Cannot open database because the directory does not exist');\n" +
+    '  \t\t      ^\n' +
+    '  \n' +
+    '  TypeError: Cannot open database because the directory does not exist\n' +
+    '      at new Database (/tmp/node-dash-fresh-clone-bDSEqI/node_modules/better-sqlite3/lib/database.js:65:9)\n' +
+    '      at file:///tmp/node-dash-fresh-clone-bDSEqI/src/db.js:30:12\n' +
+    '      at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\n' +
+    '      at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\n' +
+    '      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\n' +
+    '  \n' +
+    '  Node.js v22.23.2\n',
+  stderr: 'npm warn reify Removing non-directory /tmp/node-dash-fresh-clone-bDSEqI/node_modules\n' +
+    'npm warn deprecated prebuild-install@7.1.3: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.\n' +
+    'REFUSED: node-dash did not come up within 10s (above). Nothing has been enabled — a unit\n' +
+    '         that cannot start is worse than no unit: systemd would retry it forever and the\n' +
+    '         real cause would be buried in the journal.\n'
+}
+
+Node.js v22.23.2

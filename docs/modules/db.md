@@ -1,8 +1,8 @@
 ---
 module: db
 source: src/db.js
-source_hash: 222e767499c77829cfd00cefe712db76efea0e7624ee6139ff1abe1dfdab4f79
-updated: 2026-08-13
+source_hash: 7de2142a8ddd188e075c464c0585219cdde950d7d137f515c1bb5da02b4f1a4f
+updated: 2026-10-11
 ---
 
 # Module: db
@@ -119,6 +119,17 @@ getCachedGeocode(num)               // → string | null
 setCachedGeocode(num, address)      // → void
 ```
 
+**The one-time `nodeinfo.address` carry-across is column-guarded (2026-10-11).**
+It used to run unconditionally (`INSERT OR IGNORE INTO geocode_cache ... SELECT
+num, address FROM nodeinfo ...`), assuming `nodeinfo.address` exists — true only
+on a database that pre-dates this table split. `nodeinfo`'s own `CREATE TABLE`
+(above) never had that column, so a genuinely fresh database threw `SqliteError:
+no such column: address` and node-dash never started at all. Found via
+`deploy/install.sh`'s smoke test against a brand-new install on a Pi — confirmed
+nobody had started node-dash against a truly empty database file before. Fixed
+with the same `PRAGMA table_xinfo` guard every other migration in this file
+uses. idiot entry `geocode-cache-backfill-breaks-fresh-database`.
+
 ### Node MAC mapping
 
 ```js
@@ -226,7 +237,8 @@ migration, plus partial unique index `idx_env_dedup`. The index is partial so th
 | from_num | INTEGER | sender node num |
 | to_num | INTEGER | 0xFFFFFFFF = broadcast |
 | text | TEXT | |
-| channel | INTEGER | 0–7 |
+| channel | INTEGER or TEXT | legacy, mixed by direction — index (0–7) for received rows, the word 'public'/'private' for sent rows (`channels.md`, 2026-09-03). Kept unchanged for history; use `channel_role` instead |
+| channel_role | TEXT | 'public'/'private'/NULL, consistently typed both directions. Added 2026-10-11, `channels.md` |
 | is_dm | INTEGER | 1 if to_num ≠ broadcast |
 | hop_limit | INTEGER | |
 | snr | REAL | |
@@ -394,7 +406,11 @@ exists to avoid.
 Task `packet-provenance-capture`. Full rationale: `docs/modules/relay-observation.md`.
 
 Append-only record of `(ts, from_num, relay_byte, rx_device, hop_start, hop_limit,
-transport, decoded)`, written for **every** received packet including encrypted ones.
+transport, decoded, portnum_name, packet_id, rx_snr)`, written for **every** received
+packet including encrypted ones. The last three added 2026-10-11 — see
+`relay-observation.md`'s "No packet type, no packet id, no signal" section;
+`portnum_name` and `rx_snr` stay NULL for an undecoded/encrypted packet, `rx_snr`
+is captured unconditionally (not direct-only gated, unlike `signal_history`).
 
 **Deliberately not part of `signal_history`.** That table is direct-only by design — its
 own comment makes the rule auditable ("any row with hops != 0 is a bug") — because relayed

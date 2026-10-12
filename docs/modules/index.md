@@ -1,7 +1,7 @@
 ---
 module: index
 source: src/index.js
-source_hash: b8f4811a9cef51e417732af654c8131f6359346488cdce73d4eb895e0ecd965b
+source_hash: 10c7ae412371a131ab723ff1ae04a78e2432e38d123a986404c4b3cc74c1a382
 updated: 2026-09-03
 ---
 
@@ -187,3 +187,16 @@ once the rotator reports status). After the listener: `registerBridgeEvents(brid
 - mesh-gw semantics — `bridge.js` and `docs/gw/`.
 - Known stale wiring (`startImapReceiver`, auto-purge) belongs to the
   `remove-legacy-mesh-features` task, not here.
+
+## `proxyToBridge()` needed the same mesh-gw auth-key fix as `bridge.js` (2026-10-11)
+
+It does its own raw `fetch()` to mesh-gw rather than going through `bridge.js` — a
+second, independent HTTP implementation, so the `x-mesh-gw-key` fix made there
+(`wire-mesh-gw-send-auth-key`, 2026-09-10) never reached it. mesh-gw's send_auth
+broadened the same day this was found (item `radio-writes-now-need-a-key`) to also
+gate `PUT /bridge_config`, `/mqtt_publish`, and even the read `GET /bridge_config` —
+so every `BRIDGE_PREFIXES` route and every `!hex`/MAC-prefixed passthrough started
+401ing through this proxy. Fixed the same way: attach
+`getConfig('mesh_gw.send_key')` as `x-mesh-gw-key` unconditionally. `idiot` entry
+`proxy-to-bridge-missing-x-mesh-gw-key`; verified live via `GET /bridge_config`
+through our own proxy, 401 before, 200 after.

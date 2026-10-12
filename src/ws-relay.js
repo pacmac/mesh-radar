@@ -244,7 +244,18 @@ export function getLiveMacByNodeId(nodeId) {
 // Session-level seen packet IDs for live TEXT_MESSAGE_APP events.
 // Cleared on bridge reconnect. Prevents duplicate live events reaching the browser
 // when the same packet is heard by multiple gateway radios.
+//
+// CAPPED — a stable connection runs for hours to days, and this grows by one
+// entry per packet id with no other eviction. _seenTiltPktIds (below) already
+// capped at 500 with FIFO eviction; this just hadn't had the same pattern
+// applied (idiot entry ws-relay-seenlivepktids-unbounded).
 const _seenLivePktIds = new Set();
+const SEEN_LIVE_PKT_CAP = 500;
+export function _addSeenLivePktId(id) {
+  _seenLivePktIds.add(id);
+  if (_seenLivePktIds.size > SEEN_LIVE_PKT_CAP) _seenLivePktIds.delete(_seenLivePktIds.values().next().value);
+}
+export function _seenLivePktIdsSize() { return _seenLivePktIds.size; }
 
 // node_status_update carries ONLY a num — never a value. The browser re-requests
 // the RPC, so there is exactly one code path producing displayed values and no
@@ -356,6 +367,32 @@ function _handleTiltPayload(b64, devKey, fromNum, handleAlertEvent, broadcast) {
 // _ownNums()/_enrichMessages() removed 2026-09-03, task
 // messages-frontend-and-browser-route-removed — thread/direction enrichment
 // for a message feed that is no longer served to any consumer.
+
+// DEAD-PEER DETECTION. Neither WS server here ever had a ping/pong heartbeat.
+// A half-open client (laptop sleep, flaky wifi, a NAT dropping the session
+// without a clean FIN) leaves ws.readyState stuck at 1 (OPEN) forever
+// server-side: broadcast() keeps sending into a socket nothing on the wire
+// will ever drain, and attachDeviceClient's 8 listeners on shared singleton
+// emitters (bridge/aimEvents/dashMode/scanner/nodeList) are never removed,
+// because removal is wired only to 'close' and 'close' never fires. Root-
+// caused as the leading suspect for node-dash RSS growing ~100MB -> 777MB
+// over ~15h on the Pi deployment, which then livelocked the whole process
+// under SQLite WAL-lock contention (idiot entry
+// ws-relay-no-dead-peer-detection; docs/modules/ws-relay.md).
+//
+// The standard fix: ping every client each interval, require a pong before
+// the NEXT interval, terminate() anyone who missed one. terminate() forces a
+// real 'close' event — the cleanup code below already does the right thing
+// with it, it just never used to run for a silent peer.
+const HEARTBEAT_MS = 30000;
+
+export function pruneDeadConnections(clients) {
+  for (const ws of clients) {
+    if (ws.isAlive === false) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}
 
 export function attachWsRelay(server, getRangeTimer = () => ({ active: false, endsAt: null, nodeId: null })) {
   const wss = new WebSocketServer({ noServer: true });
@@ -741,12 +778,16 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
       return;
     }
 
-    // Tilt — V2 shape: raw packet event, decoded.portnum is the STRING
-    // 'PRIVATE_APP'. Gating only on the V1 shape above is what silently
-    // killed ingest 2026-06-30 → 07-03. Do NOT consume the event — the raw
-    // packet still falls through to the browser packet log. Both radios
-    // deliver the same broadcast: decode once per packet id.
-    if (ev.type === 'packet' && ev.data?.packet?.decoded?.portnum === 'PRIVATE_APP') {
+    // Tilt — V2 shape: raw packet event, decoded.portnum_name is the STRING
+    // 'PRIVATE_APP' (decoded.portnum itself is an INTEGER — mesh-gw sends
+    // both; comparing the bare portnum against this string is the SAME CLASS
+    // OF BUG that silently killed ingest 2026-06-30 → 07-03, rediscovered
+    // 2026-09-10 for TEXT_MESSAGE_APP in persist.js after mesh-gw switched
+    // portnum from a string to an int — idiot entry
+    // portnum-string-compare-broken-by-meshgw-int-change). Do NOT consume the
+    // event — the raw packet still falls through to the browser packet log.
+    // Both radios deliver the same broadcast: decode once per packet id.
+    if (ev.type === 'packet' && ev.data?.packet?.decoded?.portnum_name === 'PRIVATE_APP') {
       const pkt = ev.data.packet;
       if (pkt.id == null || !_seenTiltPktIds.has(pkt.id)) {
         if (pkt.id != null) {
@@ -790,7 +831,7 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     }
 
     if (ev.type === 'message_status' && ev.packet_id != null) {
-      if (ev.status === 'queued' || ev.status === 'sent') _seenLivePktIds.add(ev.packet_id);
+      if (ev.status === 'queued' || ev.status === 'sent') _addSeenLivePktId(ev.packet_id);
       try { stmts.updateMessageStatus.run({ packet_id: ev.packet_id, status: ev.status }); }
       catch (e) { console.error('[message_status] db update failed:', e.message); }
       // Append the event WITH its identity. `relayed` carries from_num — the node
@@ -817,11 +858,13 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     // receives exactly one event per logical message regardless of how many gateway
     // radios heard it. The second reception is persisted to SQLite and visible in
     // the next message_history replay.
-    if (ev.type === 'packet' && ev.data?.packet?.decoded?.portnum === 'TEXT_MESSAGE_APP') {
+    // decoded.portnum is an INTEGER; the name is decoded.portnum_name — see
+    // portnum-string-compare-broken-by-meshgw-int-change.
+    if (ev.type === 'packet' && ev.data?.packet?.decoded?.portnum_name === 'TEXT_MESSAGE_APP') {
       const pktId = ev.data.packet.id;
       if (pktId) {
         if (_seenLivePktIds.has(pktId)) return;
-        _seenLivePktIds.add(pktId);
+        _addSeenLivePktId(pktId);
       }
     }
 
@@ -1001,6 +1044,9 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   // ─────────────────────────────────────────────────────────────────────────
 
   wss.on('connection', (ws) => {
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+
     // A quiet node emits no ingest hint, but its server-formatted relative age
     // still changes with wall time. Retain only the last successful status
     // reply's clock state; never rebuild histories merely to advance "ago".
@@ -1262,6 +1308,9 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
   const wssDevice = new WebSocketServer({ noServer: true });
 
   function attachDeviceClient(ws, nodeId) {
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+
     // nodeId from URL is !hexid; lastDeviceState is keyed by BLE MAC (ev.addr).
     // Resolve the MAC by scanning for a matching node_id in existing state entries.
     const addr = Object.keys(lastDeviceState).find(k =>
@@ -1366,6 +1415,12 @@ export function attachWsRelay(server, getRangeTimer = () => ({ active: false, en
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
   });
+
+  const heartbeat = setInterval(() => {
+    pruneDeadConnections(wss.clients);
+    pruneDeadConnections(wssDevice.clients);
+  }, HEARTBEAT_MS);
+  wss.on('close', () => clearInterval(heartbeat));
 
   return wss;
 }

@@ -1,0 +1,2 @@
+$ node tests/test_ws_relay_heartbeat.mjs
+ws-relay heartbeat: 11 checks passed

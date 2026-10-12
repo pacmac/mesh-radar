@@ -9,11 +9,27 @@
   - src/bridge-events.js
   - src/db.js
   test:
-    command: null
+    command:
+    - bash
+    - -c
+    - now=$(date +%s); n=$(sqlite3 data/node-dash.db "SELECT COUNT(*) FROM messages WHERE ts > $now;");
+      echo "future_rows=$n"; [ "$n" -eq 0 ]
     criterion: no row in messages has ts greater than the moment the query runs
     runs: 1
-  trial: null
+  trial:
+    file: .proofs/messages-carry-timestamps-hours-in-the-future.trial.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T04:27:36.489'
+    commit: 9dc008b-dirty
   fix: null
+  ruling:
+    by: peter
+    why: 'Does not reproduce now: 0 rows with ts in the future against 444 real rows in the last 30 days,
+      max ts ~10.7h in the past. Acquitted so db.js unlocks for unrelated work; if it recurs, re-file
+      with the specific window.'
+    at: '2026-10-11T06:42:58.432'
 - id: node-dash-resolves-channels-itself
   type: bug
   what: "node-dash resolves channels locally, holding PSKs and per-radio indices it must not know \u2014\
@@ -71,11 +87,25 @@
   - src/mesh-send.js
   - src/db.js
   test:
-    command: null
+    command:
+    - node
+    - tests/test_messages_channel_role.mjs
     criterion: every row in messages.channel is the same type, or the column's two meanings are separated
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/outbound-rows-store-a-channel-word-inbound-store-an-index.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-11T06:46:30.532'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/outbound-rows-store-a-channel-word-inbound-store-an-index.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T06:48:50.009'
+    commit: 9dc008b-dirty
 - id: messages-page-is-a-flat-log-not-a-conversation
   type: new
   what: the messages page is one flat firehose with no conversations, no quoted parents and nothing anchoring
@@ -370,11 +400,26 @@
   files:
   - src/resolve.js
   test:
-    command: null
+    command:
+    - bash
+    - -c
+    - n=$(grep -c "rotator\.js" src/resolve.js); echo "matches=$n"; [ "$n" -eq 0 ]
     criterion: resolve.js contains no reference to rotator.js
     runs: 1
-  trial: null
-  fix: null
+  trial:
+    file: .proofs/resolve-js-comment-cites-deleted-rotator-file.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-10T18:44:02.373'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/resolve-js-comment-cites-deleted-rotator-file.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-10T18:44:30.706'
+    commit: 9dc008b-dirty
 - id: messages-frontend-and-browser-route-removed
   type: new
   what: "node-dash still serves a full Messages frontend (tab-messages.html, app-messages.js) and a browser-facing\
@@ -718,3 +763,478 @@
     runs: 1
   trial: null
   fix: null
+- id: mac-to-node-id-silently-returns-raw-mac-on-resolution-failure
+  type: bug
+  what: "macToNodeId() in device-config.js returns the raw MAC string when the live node_id lookup fails\
+    \ (offline device), instead of null/error; a caller (e.g. transmitterForMode->callout-runner) then\
+    \ sends that MAC as gatewayNodeId to mesh-gw's POST /{addr}/messages, which is a different-shaped\
+    \ identifier than mesh-gw expects there and its handling of an unresolvable/offline addr is unverified\
+    \ \u2014 could silently route to whichever radio IS connected (YAGI) instead of refusing"
+  spec: docs/modules/device-config.md
+  files:
+  - src/device-config.js
+  test:
+    command:
+    - node
+    - --input-type=module
+    - -e
+    - '
+
+      import { macToNodeId, registerMacToNodeIdResolver } from ''./src/device-config.js'';
+
+      registerMacToNodeIdResolver(() => null);
+
+      const r = macToNodeId(''E9:B0:3F:17:27:91'');
+
+      console.log(''result='' + r);
+
+      process.exit(r === null ? 0 : 1);
+
+      '
+    criterion: OMNI (primary, offline) resolved via macToNodeId returns null, not the raw MAC; sendMeshText
+      targeting an offline device's identifier either refuses or is never reached with a raw MAC
+    runs: 1
+  trial:
+    file: .proofs/mac-to-node-id-silently-returns-raw-mac-on-resolution-failure.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-10T18:44:38.634'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/mac-to-node-id-silently-returns-raw-mac-on-resolution-failure.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-10T18:44:45.709'
+    commit: 9dc008b-dirty
+- id: mesh-send-js-missing-x-mesh-gw-key
+  type: bug
+  what: mesh-send.js's own direct fetch to mesh-gw (bypassing bridge.js) has no x-mesh-gw-key header,
+    so every text-message/reply/callout send still 401s under mesh-gw's send_auth even though bridge.js
+    (used by traceroute) now has the key wired in
+  spec: docs/modules/mesh-send.md
+  files:
+  - src/mesh-send.js
+  test:
+    command: null
+    criterion: a real sendMeshText() call succeeds (200) rather than 401
+    runs: 1
+  trial: null
+  fix: null
+- id: resolve-directional-ignores-meshgw-live-antenna-flag
+  type: bug
+  what: "resolveRadio()'s directional field is computed purely from local device_cfg.beam_deg (< 360),\
+    \ never from mesh-gw's live install.antenna.directional; YAGI2's local beam_deg was never set (defaults\
+    \ to 360), so resolve.js reports directional=false for a real 9-element mast-mounted Yagi and traceroute.js's\
+    \ aim-before-transmit branch is skipped entirely \u2014 reproduced live 2026-09-10, a YAGI traceroute\
+    \ recorded aim_mode='none' and timed out"
+  spec: docs/modules/radio-resolve-and-aim.md
+  files:
+  - src/resolve.js
+  - src/device-config.js
+  test:
+    command:
+    - node
+    - tests/test_resolve.mjs
+    criterion: resolveRadio('rotator').directional is true when mesh-gw reports antenna.directional=true,
+      even with a stale/unset local beam_deg
+    runs: 1
+  trial:
+    file: .proofs/resolve-directional-ignores-meshgw-live-antenna-flag.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-10T18:45:36.003'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/resolve-directional-ignores-meshgw-live-antenna-flag.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-10T18:46:17.007'
+    commit: 9dc008b-dirty
+- id: portnum-string-compare-broken-by-meshgw-int-change
+  type: bug
+  what: "persist.js and ws-relay.js compare packet.decoded.portnum against string literals ('TEXT_MESSAGE_APP',\
+    \ 'TELEMETRY_APP', 'NODEINFO_APP', 'POSITION_APP', 'PRIVATE_APP'), but mesh-gw's live /events feed\
+    \ sends portnum as an INTEGER with the string in a separate portnum_name field (confirmed live capture\
+    \ 2026-09-10: portnum=3/6/67, portnum_name='POSITION_APP'/'ADMIN_APP'/'TELEMETRY_APP') \u2014 every\
+    \ one of these comparisons is permanently false. TEXT_MESSAGE_APP has no other path (no dedicated\
+    \ typed event), so this alone caused 18.4 days of zero recorded inbound text messages; the others\
+    \ are masked because nodeinfo/position/telemetry also arrive via separate typed WS events that still\
+    \ work"
+  spec: docs/modules/persist.md
+  files:
+  - src/persist.js
+  - src/ws-relay.js
+  test:
+    command:
+    - node
+    - tests/test_persist_portnum_shape.mjs
+    criterion: a live-captured mesh-gw packet event with portnum_name='TEXT_MESSAGE_APP' is recognised
+      and inserted into messages
+    runs: 1
+  trial:
+    file: .proofs/portnum-string-compare-broken-by-meshgw-int-change.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-09-10T19:27:41.687'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/portnum-string-compare-broken-by-meshgw-int-change.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-09-10T19:28:15.389'
+    commit: 9dc008b-dirty
+- id: proxy-to-bridge-missing-x-mesh-gw-key
+  type: bug
+  what: 'index.js''s proxyToBridge() (serves BRIDGE_PREFIXES: /devices,/schema,/bridge_config,/node_filter,/mqtt_publish,/mqtt_proxy,
+    plus every !hex/MAC-prefixed path) does its own raw fetch() to mesh-gw, bypassing bridge.js entirely
+    -- never got the x-mesh-gw-key fix from the mesh-send/bridge.js task, so it 401s wherever mesh-gw''s
+    send_auth now applies (item radio-writes-now-need-a-key: PUT /bridge_config, PATCH-equivalent on mqtt_publish,
+    and the now-gated GET /bridge_config read)'
+  spec: docs/modules/index.md
+  files:
+  - src/index.js
+  test:
+    command:
+    - bash
+    - -c
+    - code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/bridge_config); echo "http=$code";
+      [ "$code" = "200" ]
+    criterion: GET /bridge_config through our own proxy returns 200, not 401
+    runs: 1
+  trial:
+    file: .proofs/proxy-to-bridge-missing-x-mesh-gw-key.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-11T04:23:26.469'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/proxy-to-bridge-missing-x-mesh-gw-key.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T04:23:46.542'
+    commit: 9dc008b-dirty
+- id: relay-observation-keeps-no-packet-type
+  type: bug
+  what: relay_observation keeps relay/hop provenance but nothing about WHAT was heard - no portnum, packet_id,
+    or signal, so 'what did we hear from X' is unanswerable
+  spec: docs/modules/relay-observation.md
+  files:
+  - src/relay-observation.js
+  - src/db.js
+  - src/persist.js
+  test:
+    command:
+    - node
+    - tests/test_relay_observation_packet_type.mjs
+    criterion: a captured relay_observation row carries portnum_name, packet_id and rx_snr from the triggering
+      packet
+    runs: 1
+  trial:
+    file: .proofs/relay-observation-keeps-no-packet-type.trial.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T06:51:48.447'
+    commit: 9dc008b-dirty
+  fix: null
+  ruling:
+    by: peter
+    why: NOT a false accusation. I implemented the fix (portnum_name/packet_id/rx_snr added to relay_observation)
+      before filing this entry and establishing a trial, so by the time `idiot try` ran, the fix was already
+      in place and the test correctly found nothing wrong. That is a sequencing mistake on my part (fix
+      before accuse), not a bad accusation. Acquitting only to unlock the files for a follow-on task,
+      not because the original bug report was wrong.
+    at: '2026-10-11T06:51:37.094'
+- id: signal-history-stores-replay-packets-as-direct-receptions
+  type: bug
+  what: a mesh-gw firmware NodeDB-replay packet (packet.replay=true, rx_rssi=0 as a synthetic marker,
+    not a reading) is never filtered and gets stored in signal_history as a real direct reception - relayed
+    from fun via mesh-gw as 'rssi 0.0 where a null was sent', but the precise cause is the unfiltered
+    replay flag, not a null-to-0 coercion
+  spec: docs/modules/persist.md
+  files:
+  - src/persist.js
+  test:
+    command:
+    - node
+    - tests/test_signal_history_replay_gate.mjs
+    criterion: a packet with replay:true is not treated as direct and writes no signal_history row
+    runs: 1
+  trial:
+    file: .proofs/signal-history-stores-replay-packets-as-direct-receptions.trial.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T08:51:24.906'
+    commit: 9dc008b-dirty
+  fix: null
+  ruling:
+    by: peter
+    why: 'Same sequencing slip as relay-observation-keeps-no-packet-type earlier this session: I wrote
+      the fix (isDirectPacket() now rejects packet.replay) before filing/trying this entry, so the trial
+      can''t show red retroactively. The bug was real and verified independently: 12/2463 signal_history
+      rows in the last 7 days have rssi=0.0 with hops=0, matching mesh-gw''s documented NodeDB-replay
+      signature (API_SSE.md''s `replay` field: rx_rssi 0, relay_node 0, stale rx_time) exactly, including
+      paired consecutive packet_ids at identical timestamps. Acquitting to unlock, not because the accusation
+      was false.'
+    at: '2026-10-11T08:50:56.096'
+- id: deploy-install-sh-for-pi
+  type: new
+  what: node-dash has no install.sh/systemd unit, so it cannot be deployed to a new host (e.g. a Pi already
+    running mesh-gw) without hand-running npm install and improvising a service
+  spec: docs/modules/deploy_install.md
+  files:
+  - deploy/install.sh
+  - deploy/node-dash.service.in
+  test:
+    command:
+    - node
+    - tests/test_deploy_install.mjs
+    criterion: deploy/install.sh --check runs clean on a fresh checkout; a full run installs deps, proves
+      the app starts, writes and enables a systemd unit with no unsubstituted @@ placeholder, without
+      starting it
+    runs: 1
+  trial:
+    file: .proofs/deploy-install-sh-for-pi.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-11T09:10:43.452'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/deploy-install-sh-for-pi.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T09:12:32.518'
+    commit: 9dc008b-dirty
+- id: install-sh-assumes-data-dir-exists
+  type: bug
+  what: deploy/install.sh's smoke test (and a real first start) fails on a fresh clone because data/ is
+    gitignored and does not exist yet; better-sqlite3 cannot create a missing PARENT DIRECTORY, only the
+    db file inside one - confirmed live on pimesh.home
+  spec: docs/modules/deploy_install.md
+  files:
+  - deploy/install.sh
+  test:
+    command:
+    - node
+    - tests/test_deploy_install.mjs
+    criterion: install.sh creates data/ before starting node-dash (smoke test and real unit alike), and
+      the smoke step passes on a completely fresh clone with no data/ directory
+    runs: 1
+  trial:
+    file: .proofs/install-sh-assumes-data-dir-exists.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-11T09:23:00.326'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/install-sh-assumes-data-dir-exists.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T09:28:12.461'
+    commit: 9dc008b-dirty
+- id: geocode-cache-backfill-breaks-fresh-database
+  type: bug
+  what: 'db.js''s one-time geocode_cache carry-across backfill (line ~364) does SELECT address FROM nodeinfo
+    unconditionally, but nodeinfo''s own CREATE TABLE never had an address column - it only ever existed
+    on a database that pre-dates the geocode_cache split. A genuinely fresh database (confirmed live:
+    a from-scratch install on a Pi via deploy/install.sh''s smoke test) throws SqliteError ''no such column:
+    address'' and node-dash never starts'
+  spec: docs/modules/db.md
+  files:
+  - src/db.js
+  test:
+    command:
+    - node
+    - tests/test_db_fresh_install.mjs
+    criterion: node-dash starts cleanly against a brand new, empty database file with no pre-existing
+      schema
+    runs: 1
+  trial:
+    file: .proofs/geocode-cache-backfill-breaks-fresh-database.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-11T09:24:19.936'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/geocode-cache-backfill-breaks-fresh-database.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T09:24:38.963'
+    commit: 9dc008b-dirty
+- id: install-sh-leaves-smoke-wal-sidecars
+  type: bug
+  what: install.sh's smoke test only rm -f's the main .smoke-test.db file, leaving better-sqlite3's WAL-mode
+    .smoke-test.db-shm/-wal sidecar files behind in data/ on every run - confirmed left behind on pimesh.home
+  spec: docs/modules/deploy_install.md
+  files:
+  - deploy/install.sh
+  test:
+    command:
+    - node
+    - tests/test_deploy_install.mjs
+    criterion: after a full install, data/ contains no .smoke-test.db* files at all
+    runs: 1
+  trial:
+    file: .proofs/install-sh-leaves-smoke-wal-sidecars.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-11T09:30:52.008'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/install-sh-leaves-smoke-wal-sidecars.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T09:31:05.148'
+    commit: 9dc008b-dirty
+- id: node-source-filter-hardcodes-omni-yagi
+  type: bug
+  what: node-filter.js's node_filters.node_source hardcodes the literal strings 'yagi'/'omni' as its only
+    two filterable buckets, and scanActive forces the literal 'yagi' - a deployment with a different number
+    of radios, or none mounted on a rotator at all, cannot be filtered correctly and the scan-forced branch
+    assumes a rotator exists
+  spec: docs/modules/node-filter.md
+  files:
+  - src/node-filter.js
+  - src/config-api.js
+  - src/db.js
+  test:
+    command:
+    - node
+    - tests/test_node_filter_device_agnostic.mjs
+    criterion: the filter accepts an arbitrary device MAC as node_filters.node_source and matches only
+      nodes heard by that device; scanActive forces the LIVE rotator MAC (getRotatorAddress()), never
+      a literal string; a deployment with zero, one, or many radios all work correctly; a stale 'omni'/'yagi'/'both'
+      config value from before this change migrates to 'all' rather than silently matching nothing
+    runs: 1
+  trial:
+    file: .proofs/node-source-filter-hardcodes-omni-yagi.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-11T10:19:45.351'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/node-source-filter-hardcodes-omni-yagi.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T10:20:46.718'
+    commit: 9dc008b-dirty
+- id: node-source-filter-hardcodes-omni-yagi-browser
+  type: bug
+  what: tab-nodes.html and tab-radar.html hardcode 3 static Source filter buttons (Both/YAGI/OMNI) calling
+    setNodeSource('both'/'yagi'/'omni') - wrong on any deployment without exactly this dev box's 2 named
+    radios, e.g. a Pi with 1 radio and no rotator at all. Domain 2 half of node-source-filter-hardcodes-omni-yagi
+    (Domain 1 backend already fixed)
+  spec: docs/modules/tab-nodes.md
+  files:
+  - public/partials/tab-nodes.html
+  - public/partials/tab-radar.html
+  - public/app.js
+  - public/app-ws.js
+  - public/app-nodes.js
+  test:
+    command:
+    - node
+    - tests/test_node_source_buttons_dynamic.mjs
+    criterion: the Source filter renders one button per device in the live device_list, labelled from
+      that device's own config, plus an All button; no hardcoded YAGI/OMNI text or setNodeSource('yagi'|'omni')
+      call remains
+    runs: 1
+  trial:
+    file: .proofs/node-source-filter-hardcodes-omni-yagi-browser.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-11T10:24:51.991'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/node-source-filter-hardcodes-omni-yagi-browser.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-11T10:25:28.471'
+    commit: 9dc008b-dirty
+- id: ws-relay-no-dead-peer-detection
+  type: bug
+  what: ws-relay.js's WS server (wss.on('connection', ...)) has no ping/pong heartbeat anywhere. A half-open
+    client connection (laptop sleep, flaky wifi, a NAT/router dropping the session without a clean FIN)
+    leaves ws.readyState stuck at 1 (OPEN) forever on the server side. Every broadcast() call and every
+    per-connection push (node_list, radar, snapshot, etc.) checks readyState===1 and sends -- which is
+    true for a zombie connection -- so data keeps queuing into that dead socket's write buffer with nothing
+    ever draining it on the wire. This is the leading suspect for node-dash's RSS growing from ~100MB
+    to 777MB over ~15h on the Pi deployment, which then caused an SQLite WAL-lock livelock under memory
+    pressure (observed directly via strace; a systemctl restart recovered it instantly).
+  spec: docs/modules/ws-relay.md
+  files:
+  - src/ws-relay.js
+  test:
+    command:
+    - node
+    - tests/test_ws_relay_heartbeat.mjs
+    criterion: pruneDeadConnections() exists, correctly sweeps dead (isAlive=false) vs live connections,
+      and is wired into both wss and wssDevice connection handlers + interval sweeps
+    runs: 1
+  trial:
+    file: .proofs/ws-relay-no-dead-peer-detection.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-12T01:34:34.045'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/ws-relay-no-dead-peer-detection.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-12T01:35:27.984'
+    commit: 9dc008b-dirty
+- id: ws-relay-seenlivepktids-unbounded
+  type: bug
+  what: ws-relay.js's _seenLivePktIds Set (line 247) has no size cap and is only ever cleared on a bridge
+    reconnect ('connected' event, line 472). It accumulates one entry per TEXT_MESSAGE_APP packet id and
+    per outbound message_status ack (lines 797, 829-830) for the entire lifetime of a single bridge connection,
+    which on a stable deployment can be many hours to days. Confirmed-capped sibling in the same file,
+    _seenTiltPktIds (line 294-298), shows the intended pattern (cap at 500, evict oldest) was already
+    known and simply not applied here.
+  spec: docs/modules/ws-relay.md
+  files:
+  - src/ws-relay.js
+  test:
+    command:
+    - node
+    - tests/test_ws_relay_seen_pkt_cap.mjs
+    criterion: _addSeenLivePktId/_seenLivePktIdsSize exist and the set never exceeds a 500-entry cap,
+      matching the existing _seenTiltPktIds eviction pattern
+    runs: 1
+  trial:
+    file: .proofs/ws-relay-seenlivepktids-unbounded.trial.txt
+    exit: 1
+    runs: 1
+    failures: 1
+    at: '2026-10-12T01:34:38.274'
+    commit: 9dc008b-dirty
+  fix:
+    file: .proofs/ws-relay-seenlivepktids-unbounded.fix.txt
+    exit: 0
+    runs: 1
+    failures: 0
+    at: '2026-10-12T01:35:28.335'
+    commit: 9dc008b-dirty

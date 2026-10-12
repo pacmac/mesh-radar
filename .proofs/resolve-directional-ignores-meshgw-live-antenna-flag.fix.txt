@@ -1,0 +1,2 @@
+$ node tests/test_resolve.mjs
+test_resolve: 30 checks passed

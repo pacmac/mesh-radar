@@ -3,9 +3,13 @@ module: last-heard-is-king
 source:
   - src/db.js
   - src/bridge-events.js
-source_hash: 5629eae3c1ba312e4b140da6c4d9a80448888872e059b40ab9e9641b47e5c296
-updated: 2026-08-18
+source_hash: ca36a274d6ff936f968498480291d4f90bffc66563652f3302438c0c6ce0a894
+updated: 2026-10-11
 ---
+
+_Hash resynced 2026-10-11: `src/db.js` changed for an unrelated reason
+(`messages.channel_role`, `relay_observation` columns — see `channels.md`,
+`relay-observation.md`); nothing in this document changed._
 
 # `last_heard` is king, and it must never be stale
 

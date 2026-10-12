@@ -7,11 +7,15 @@ source:
   - src/lifecycle.js
   - src/index.js
   - src/db.js
-source_hash: 17040ca2f82560d8f3e180d0f49763a94a1dc562a4237daaaf260783f60cc6c8
-updated: 2026-09-03
+source_hash: c1dc518e0d79c56848ec24e3021897da5e1f9a4bd299a6128e436eb195a599f9
+updated: 2026-10-11
 ---
 
 # Removal spec: the rest of the traceroute surface in `src/`
+
+_Hash resynced 2026-10-11: `src/db.js` changed for an unrelated reason
+(`messages.channel_role`, `relay_observation` columns — see `channels.md`,
+`relay-observation.md`); nothing in this document changed._
 
 ## Purpose
 

@@ -119,6 +119,14 @@ export function captureRelayObservation(packet, device, ts) {
     hop_limit:  packet.hop_limit ?? 0,
     transport:  normaliseTransport(packet.transport_mechanism),
     decoded:    packet.decoded ? 1 : 0,
+    // ABOVE THE DECODED GATE, same as everything else here — `packet.decoded`
+    // may be absent entirely (15% of live packets are encrypted-only), so
+    // portnum_name is optional-chained rather than assumed. packet.id and
+    // rx_snr are header-level, present regardless of decode status.
+    // Relayed from fun via mesh-gw, item relay-observation-keeps-no-packet-type.
+    portnum_name: packet.decoded?.portnum_name ?? null,
+    packet_id:    packet.id ?? null,
+    rx_snr:       packet.rx_snr ?? null,
   });
   _maybePrune();
 }

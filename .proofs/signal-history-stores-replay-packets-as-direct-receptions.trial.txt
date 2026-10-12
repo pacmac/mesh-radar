@@ -1,0 +1,2 @@
+$ node tests/test_signal_history_replay_gate.mjs
+test_signal_history_replay_gate: 1 checks passed

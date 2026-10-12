@@ -1,0 +1,2 @@
+$ node tests/test_db_fresh_install.mjs
+test_db_fresh_install: 1 checks passed

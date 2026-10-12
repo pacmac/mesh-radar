@@ -34,9 +34,10 @@
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-display font-semibold uppercase tracking-wider text-base-content/50">Source</span>
                     <div class="join">
-                      <button class="join-item btn btn-xs" :class="nodeSource==='both' ? 'btn-primary' : 'btn-ghost opacity-50'" @click="setNodeSource('both')">Both</button>
-                      <button class="join-item btn btn-xs" :class="nodeSource==='yagi' ? 'btn-warning' : 'btn-ghost opacity-50'" @click="setNodeSource('yagi')">YAGI</button>
-                      <button class="join-item btn btn-xs" :class="nodeSource==='omni' ? 'btn-info' : 'btn-ghost opacity-50'" @click="setNodeSource('omni')">OMNI</button>
+                      <button class="join-item btn btn-xs" :class="nodeSource==='all' ? 'btn-primary' : 'btn-ghost opacity-50'" @click="setNodeSource('all')">All</button>
+                      <template x-for="dev in availableDevices.filter(d => d.addr)" :key="dev.addr">
+                        <button class="join-item btn btn-xs" :class="nodeSource===dev.addr ? 'btn-info' : 'btn-ghost opacity-50'" @click="setNodeSource(dev.addr)" x-text="deviceConfigs[dev.node_id]?.label || deviceLabel(dev.addr) || dev.addr.slice(-5)"></button>
+                      </template>
                     </div>
                   </div>
                   <div class="divider my-0"></div>

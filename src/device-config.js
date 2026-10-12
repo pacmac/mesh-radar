@@ -33,12 +33,15 @@ export function resolvePrimaryNodeId() {
   return macToNodeId(getPrimaryMac());
 }
 
-// Resolve a BLE MAC to its live node_id, falling through to the MAC itself when
-// the live pair is unknown. Shared by resolvePrimaryNodeId and dash-mode's
-// per-mode transmitter resolution.
+// Resolve a BLE MAC to its live node_id, or null when the device is offline
+// and the live pair is unknown. NEVER falls back to the raw MAC: a caller
+// that gets one back and hands it to mesh-gw as a node_id is a malformed
+// request, not a graceful degradation — the caller must be able to tell "no
+// live node_id" apart from "here is one". Shared by resolvePrimaryNodeId and
+// dash-mode's per-mode transmitter resolution.
 export function macToNodeId(mac) {
   if (!mac) return null;
-  return _macToNodeId?.(mac) || mac;
+  return _macToNodeId?.(mac) ?? null;
 }
 
 const DEFAULT = {
@@ -101,6 +104,21 @@ export function getPrimaryMac() {
     if (cfg?.is_primary) return mac;
   }
   return null;
+}
+
+// Is this radio directional, per mesh-gw's LIVE install data? Returns null
+// (unknown) when mesh-gw has reported no install object, or its antenna block
+// carries no boolean `directional` — the caller falls back to its own
+// beam_deg-based computation in that case, never guesses.
+//
+// mesh-gw is SSOT here the moment it has an opinion, same as is_rotator above
+// (2026-09-03) — added 2026-09-10 after a stale/unset local beam_deg (360,
+// the omnidirectional default) made a real 9-element mast-mounted Yagi read as
+// non-directional, and traceroute.js skipped aiming before transmitting.
+export function getLiveDirectional(address) {
+  const install = _installFor?.(address.toUpperCase()) ?? null;
+  const d = install?.antenna?.directional;
+  return typeof d === 'boolean' ? d : null;
 }
 
 // Returns MAC address of the rotator device (for device identity comparisons).

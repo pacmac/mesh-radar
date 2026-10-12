@@ -3,11 +3,15 @@ module: node-recency-ssot
 source:
   - src/ws-relay.js
   - src/db.js
-source_hash: 4aef59a9f490b96b35e04602c8f25332d6e0f414386ee7ac95256c21ee4d1239
-updated: 2026-09-03
+source_hash: dfeb50c4971837272621e38278978cd28dbae272a707c9a97be6aec294c1c201
+updated: 2026-10-11
 ---
 
 # Last trace is recorded and never published
+
+_Hash resynced 2026-10-11: `src/db.js` changed for an unrelated reason
+(`messages.channel_role`, `relay_observation` columns — see `channels.md`,
+`relay-observation.md`); nothing in this document changed._
 
 ## What Peter asked, and what was actually wrong
 

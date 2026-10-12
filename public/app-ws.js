@@ -108,7 +108,7 @@ export const wsMixin = {
         msgOnly:   cfg['node_filters.msg_only']   ?? false,
         nodeRoles: cfg['node_filters.roles']      ?? [],
       };
-      this.nodeSource     = cfg['node_filters.node_source'] ?? 'both';
+      this.nodeSource     = cfg['node_filters.node_source'] ?? 'all';
       this.radarRange     = String(cfg['radar.max_range_km'] ?? 50);
       this.radarLogScale  = cfg['radar.log_scale']  ?? false;
       this.radarCrosshair = cfg['radar.crosshair']  ?? true;

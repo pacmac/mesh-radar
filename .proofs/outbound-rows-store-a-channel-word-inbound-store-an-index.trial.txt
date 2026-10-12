@@ -1,0 +1,17 @@
+$ node tests/test_messages_channel_role.mjs
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: messages.channel_role column exists
+    at ok (file:///usr/share/pac/dev/projects/mt-radar/node-dash/tests/test_messages_channel_role.mjs:17:31)
+    at file:///usr/share/pac/dev/projects/mt-radar/node-dash/tests/test_messages_channel_role.mjs:23:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v22.23.2

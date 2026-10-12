@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
+import { getConfig } from './db.js';
 
 const BRIDGE_URL = process.env.BRIDGE_URL || 'http://localhost:8001';
 const BRIDGE_WS_URL = process.env.BRIDGE_WS_URL || 'ws://localhost:8001';
@@ -114,7 +115,15 @@ class BridgeClient extends EventEmitter {
 
   async fetch(path, options = {}) {
     const url = `${BRIDGE_URL}${path}`;
-    const res = await fetch(url, options);
+    // mesh-gw's send_auth (docs/gw/modules/send_auth.md, shipped 2026-08-23):
+    // every transmit-capable route refuses a request with no x-mesh-gw-key
+    // header. Attached unconditionally rather than only on POST/PUT — mesh-gw
+    // also gates GET /{node}/radio_backup (it returns every credential the
+    // radio holds) and a caller here should not have to know which verbs
+    // that applies to. A GET that does not need it ignores an extra header.
+    const key = getConfig('mesh_gw.send_key', '');
+    const headers = key ? { ...options.headers, 'x-mesh-gw-key': key } : options.headers;
+    const res = await fetch(url, { ...options, headers });
     if (!res.ok) {
       const text = await res.text();
       throw Object.assign(new Error(`Bridge ${res.status}: ${text}`), { status: res.status });

@@ -1,7 +1,7 @@
 ---
 module: config-api
 source: src/config-api.js
-source_hash: 72c793ccf4db33fad05c4099d7c0e7c112dfc8beb1bec5e1a94b702bf5e21c37
+source_hash: ff96ac291787cfdf441c73c4955dd105ead0467d630e3fd894d277b1722ba1f4
 updated: 2026-09-03
 ---
 
@@ -50,7 +50,7 @@ export default router  // Express Router — mounted at /config by index.js
 | `node_filters.has_signal` | `false` | Require SNR reading |
 | `node_filters.has_telem` | `false` | Require battery telemetry |
 | `node_filters.roles` | `[]` | Allowlist of roles (empty = all) |
-| `node_filters.node_source` | `'both'` | `'ble'`, `'mesh'`, or `'both'` |
+| `node_filters.node_source` | `'all'` | `'all'`, or a device MAC — never a role name (`'ble'`/`'mesh'`/`'both'`/`'yagi'`/`'omni'` are all stale; this entry already documented a value the code never actually used, found 2026-10-11 while fixing `node-source-filter-hardcodes-omni-yagi` — see `docs/modules/node-filter.md`) |
 | `node_sort.field` | `'last_heard'` | Sort field |
 | `node_sort.dir` | `-1` | Sort direction: -1 = DESC, ≥0 = ASC |
 | `radar.max_range_km` | `50` | Radar display range in km |

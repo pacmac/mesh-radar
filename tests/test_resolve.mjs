@@ -22,6 +22,7 @@ import assert from 'node:assert/strict';
 const { resolveRadio, isDirectional, rotatorFor, RADIO_SPECS }
   = await import('../src/resolve.js');
 const { setConfig, getConfig } = await import('../src/db.js');
+const { registerInstallLookup } = await import('../src/device-config.js');
 
 const OMNI = 'E9:B0:3F:17:27:91';
 const YAGI = 'F4:12:FA:39:F7:B6';
@@ -115,6 +116,22 @@ try {
   eq(isDirectional('non-rotator'), false, 'isDirectional agrees for the omni');
   eq(rotatorFor('rotator'), YAGI,         'rotatorFor names the rotator');
   eq(rotatorFor('non-rotator'), null,     'rotatorFor is null for an unsteerable radio');
+
+  // ── mesh-gw's LIVE directional flag wins over a stale local beam_deg ──────
+  // Reproduced live 2026-09-10: YAGI2's local device_cfg had never had
+  // beam_deg set (defaulted to 360, "omnidirectional"), so resolve.js believed
+  // a real 9-element mast-mounted Yagi was not directional and traceroute.js
+  // skipped aiming entirely — a directional-antenna transmit went out unaimed.
+  // is_rotator already defers to mesh-gw's install object once it has reported
+  // one; directional never got the same treatment until now.
+  registerInstallLookup(mac => mac === YAGI
+    ? { antenna: { directional: true, rotator: { host: '192.168.10.185' } } } : null);
+  setConfig(PREFIX + YAGI, { label: 'YAGI', is_rotator: true, is_primary: false, beam_deg: 360 });
+  const liveDirectional = resolveRadio('rotator');
+  eq(liveDirectional.directional, true,
+     "mesh-gw's live antenna.directional overrides a stale/unset local beam_deg");
+  registerInstallLookup(() => null);
+  setConfig(PREFIX + YAGI, { label: 'YAGI', is_rotator: true, is_primary: false, beam_deg: 35 });
 
   // ── the vocabulary is shared, not a fourth one ────────────────────────────
   // 'omni' and 'yagi' were traceroute's private words for radios that dash-mode

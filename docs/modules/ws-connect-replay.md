@@ -3,11 +3,15 @@ module: ws-connect-replay
 source:
   - src/db.js
   - src/ws-relay.js
-source_hash: 9e2019096259c01bd42f0ce87ac0b25067225bfd0afe2e54fb0637d4e2d100f0
-updated: 2026-09-03
+source_hash: 16b2c081c25b1fbe05aedf226440a39b32c4be7f99604e894de791d62d0da822
+updated: 2026-10-11
 ---
 
 # Module: ws-connect-replay
+
+_Hash resynced 2026-10-11: `src/db.js` changed for an unrelated reason
+(`messages.channel_role`, `relay_observation` columns — see `channels.md`,
+`relay-observation.md`); nothing in this document changed._
 
 ## Purpose
 

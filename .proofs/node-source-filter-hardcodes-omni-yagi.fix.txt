@@ -1,0 +1,2 @@
+$ node tests/test_node_filter_device_agnostic.mjs
+test_node_filter_device_agnostic: 8 checks passed

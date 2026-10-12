@@ -1,0 +1,9 @@
+$ node tests/test_resolve.mjs
+file:///usr/share/pac/dev/projects/mt-radar/node-dash/tests/test_resolve.mjs:130
+  eq(liveDirectional.directional, true,
+                     ^
+
+TypeError: Cannot read properties of null (reading 'directional')
+    at file:///usr/share/pac/dev/projects/mt-radar/node-dash/tests/test_resolve.mjs:130:22
+
+Node.js v22.23.2

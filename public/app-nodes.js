@@ -140,7 +140,7 @@ export const nodesMixin = {
   activeFilterCount() {
     const f = this.nodeFilters;
     return [
-      this.nodeSource !== 'both',
+      this.nodeSource !== 'all',
       f.maxHops !== 99,
       f.maxAge  !== 0,
       f.namedOnly, f.hasPos, f.hideMqtt, f.hasSignal, f.hasTelem,
@@ -149,7 +149,7 @@ export const nodesMixin = {
   },
 
   resetNodeFilters() {
-    this.nodeSource = 'both';
+    this.nodeSource = 'all';
     this.nodeFilters = {
       maxHops: 99, maxAge: 0, namedOnly: false, hasPos: false,
       hideMqtt: false, hasSignal: false, hasTelem: false, msgOnly: false, nodeRoles: [],

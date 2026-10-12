@@ -1,7 +1,7 @@
 ---
 module: tab-radar
 source: public/partials/tab-radar.html
-source_hash: a8ba002a774a8e4511be9d195bc9cc2c44306ce2217e16e9bdc08e5370ba5516
+source_hash: ac1286e6269d3ca65def0af4ab56b89ea19f7a43e9bfede9a0027615cb5fa0b9
 updated: 2026-07-08
 ---
 
@@ -57,11 +57,22 @@ document overflow.
   it. The verified border uses `1px solid rgba(0,255,80,0.55)`; the reported
   state uses a transparent border of equal width so the row does not shift.
 
+## Source filter renders one button per live device — 2026-10-11
+
+Same fix, same reasoning, as `docs/modules/tab-nodes.md`'s identically-named
+section — this page had the exact same 3 hardcoded `Both`/`YAGI`/`OMNI`
+buttons in its own Filters dropdown, now the same `All` + per-device
+`x-for`. idiot entry `node-source-filter-hardcodes-omni-yagi-browser`.
+
 ## Test notes
 
 - Static: grep the RADAR NODES block for the α values above.
-- Visual: Playwright screenshot both themes — DEFERRED while Playwright MCP
-  is disconnected.
+- Visual: Playwright screenshot both themes, 1600×1000 and 1280×800 — the
+  MCP tool was disconnected (still is, as of 2026-10-11), but the
+  `playwright` Python package driving a real Chromium is installed and
+  works directly via `python3 -m playwright`/`playwright.async_api`; used
+  that instead to verify the Source filter fix above. Not yet re-run for
+  this page's other, older DEFERRED items.
 
 ## Radar SVG groups are `x-ignore` (task radar-arm-xeffects-fix, 2026-07-07)
 

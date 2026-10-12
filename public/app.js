@@ -72,7 +72,7 @@ function dashboard() {
     nodeTotal:   0,
     nodeCount:   0,
     nodeSort:    { key: 'last_heard', dir: -1 },
-    nodeSource:  'both',
+    nodeSource:  'all',
     nodeFilters: {
       maxHops: 99, namedOnly: false, hasPos: false, hasSignal: false,
       hasTelem: false, msgOnly: false, maxAge: 0, hideMqtt: false, nodeRoles: [],

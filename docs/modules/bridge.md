@@ -1,8 +1,8 @@
 ---
 module: bridge
 source: src/bridge.js
-source_hash: 729728549dedbb3ff8f07ed97ba091be7d86abebcbfc9b22b9ef0ebee07e5518
-updated: 2026-06-30
+source_hash: 6a15b4cef753587d4e9fc7f95edbf64085922ae4def4eee321058ac67e4ffd9e
+updated: 2026-09-10
 ---
 
 # Module: bridge
@@ -31,6 +31,7 @@ parses, emits, and forwards — nothing more.
 - `ws` — WebSocket client
 - `node:events` — EventEmitter base
 - Environment: `BRIDGE_URL`, `BRIDGE_WS_URL`
+- `db.js` (`getConfig`) — reads `mesh_gw.send_key` for the send-auth header below
 
 ## Public interface
 
@@ -131,3 +132,24 @@ a mock WS server is sufficient.
 ## V2 field alignment (2026-07-02, task `v2-backend-alignment`)
 
 BLE state log line labels devices by `node_id`/`addr` (V2 removed `device`).
+
+## send_auth key (2026-09-10, task `wire-mesh-gw-send-auth-key`)
+
+mesh-gw shipped `send_auth` (their `docs/gw/modules/send_auth.md`, 2026-08-23):
+every transmit-capable route refuses a request with no `x-mesh-gw-key` header.
+node-dash was never issued one, so every send through this module — including
+every traceroute — had been failing with a 401 since that date, undiagnosed
+until reproduced live on 2026-09-10.
+
+`fetch()` now attaches `x-mesh-gw-key: <getConfig('mesh_gw.send_key')>` to
+**every** request, not just POST/PUT: mesh-gw also gates `GET
+/{node}/radio_backup` (it returns every credential the radio holds), and a
+caller here should not have to know which verbs that applies to. The key
+lives in the `config` table (same pattern as `alerts.smtp_pass`), not an
+environment variable — no pm2 env plumbing needed to rotate it.
+
+**`mesh-send.js` still has NO key** — it does its own direct `fetch()` rather
+than routing through `bridge.post()`, so this fix does not reach it. Filed as
+`mesh-send-js-missing-x-mesh-gw-key`, blocked from editing right now by the
+pre-existing untried `outbound-rows-store-a-channel-word-inbound-store-an-index`
+entry naming the same file.

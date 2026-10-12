@@ -1,0 +1,3 @@
+$ node tests/test_persist_portnum_shape.mjs
+[relay-obs] pruned 18 rows older than 30d
+test_persist_portnum_shape: 2 checks passed

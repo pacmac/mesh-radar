@@ -4,7 +4,7 @@ source:
   - public/app-radar.js
   - public/app-ws.js
   - public/app.js
-source_hash: 1653b217028d98e9c97bce7a27d8e1f8e69f9be6e4c3c239aeb5bf776d7d96c2
+source_hash: 0167056efd29d63c79e4b9c1c5c16716b091c62694a2b8c1016c6f2677f9c8ea
 updated: 2026-09-04
 ---
 

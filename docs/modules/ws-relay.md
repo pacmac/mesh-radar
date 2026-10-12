@@ -1,11 +1,50 @@
 ---
 module: ws-relay
 source: src/ws-relay.js
-source_hash: 51ed8370c885178086aec701114733e9396e0fa886e80d1700704e57d2f40fa6
-updated: 2026-09-03
+source_hash: 9f9936bd42927afa69756875e3fbfe5cb025a12f03559b68667c18682bdda5b8
+updated: 2026-10-12
 ---
 
 # Module: ws-relay
+
+## Dead-peer detection — 2026-10-12 (idiot entries ws-relay-no-dead-peer-detection, ws-relay-seenlivepktids-unbounded)
+
+Root cause of node-dash RSS growing ~100MB → 777MB over ~15h on the Pi
+deployment, which then livelocked the whole process under SQLite WAL-lock
+contention (confirmed live via strace; `systemctl restart` recovered
+instantly). Peter had just set home coordinates when he noticed the hang, but
+a direct repeat of that same PUT afterward did not reproduce it — the leak was
+an hours-long accumulation, not a per-request fault in that handler.
+
+Neither `wss` (the main `/events` server) nor `wssDevice` (per-device
+`/!{nodeId}/events`) had a ping/pong heartbeat. A half-open client — laptop
+sleep, flaky wifi, a NAT dropping the session without a clean FIN — leaves
+`ws.readyState` stuck at `1` (OPEN) forever server-side:
+
+- `broadcast()` keeps sending into a socket nothing on the wire will ever
+  drain (unbounded internal send buffer).
+- `attachDeviceClient`'s 8 listeners on shared singleton emitters
+  (`bridge`/`aimEvents`/`dashMode`/`scanner`/`nodeList`) are never removed,
+  because removal is wired only to `'close'`, and `'close'` never fires for a
+  silent peer.
+
+Fix: `pruneDeadConnections(clients)` — exported, pure, duck-typed — runs every
+`HEARTBEAT_MS` (30s) against both `wss.clients` and `wssDevice.clients`. Each
+connection sets `ws.isAlive = true` on connect and on every `'pong'`; the sweep
+pings anyone still alive and `terminate()`s anyone who missed the previous
+ping. `terminate()` forces a real `'close'` event, which the existing cleanup
+code (both the `nodeStatusAge` timer and `attachDeviceClient`'s 8 listener
+removals) already handles correctly — it just never used to run for a zombie.
+
+Secondary, smaller leak fixed alongside: `_seenLivePktIds` (live
+`TEXT_MESSAGE_APP` dedup) had no cap, only cleared on bridge reconnect — grows
+by one entry per packet/ack for the life of a connection. Its sibling
+`_seenTiltPktIds` already capped at 500 with FIFO eviction; `_addSeenLivePktId`
+now applies the same pattern.
+
+Tested at the level of our own sweep/cap logic (duck-typed fakes), not the
+`ws` package's wire protocol — `tests/test_ws_relay_heartbeat.mjs`,
+`tests/test_ws_relay_seen_pkt_cap.mjs`.
 
 > **2026-08-17 — the traceroute feeds are GONE.** See
 > `traceroute-removal-backend.md`. Removed: `route_discovered`,
@@ -949,3 +988,21 @@ registerInstallLookup(mac => lastDeviceState[mac]?.install ?? null);
 Same registration-callback pattern as `registerMacToNodeIdResolver` — `device-config.js`
 cannot import this module (this module already imports `getDeviceCfg`/`ensureDeviceCfgMac`
 from it), so the live lookup is handed over rather than imported.
+
+## `portnum` string comparisons fixed — mesh-gw sends an integer (2026-09-10)
+
+Two spots compared `ev.data?.packet?.decoded?.portnum` against a string literal
+(`'PRIVATE_APP'` for tilt, `'TEXT_MESSAGE_APP'` for the live-dedup suppressor).
+mesh-gw's live `/events` feed sends `portnum` as an integer with the name in a
+sibling `portnum_name` field (live-captured 2026-09-10: `portnum=3/6/67`,
+`portnum_name='POSITION_APP'/'ADMIN_APP'/'TELEMETRY_APP'`) — both comparisons were
+permanently false. Fixed to compare `portnum_name` instead. Full account, including
+the 18.4-day text-message outage this caused in `persist.js` (no other symptom here,
+since the raw packet still falls through to the browser packet log regardless), is in
+`docs/modules/persist.md`. `idiot` entry
+`portnum-string-compare-broken-by-meshgw-int-change`.
+
+This module's OWN prior incident ("### Tilt ingest — PRIVATE_APP (task tilt-ingest-v2,
+2026-07-03)", above) was a different defect in the same neighbourhood: gating only on
+a V1 event shape and never matching the V2
+`packet.decoded.portnum` shape at all. Worth reading together, not conflating.

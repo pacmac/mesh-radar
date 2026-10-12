@@ -1,0 +1,2 @@
+$ node tests/test_messages_channel_role.mjs
+test_messages_channel_role: 7 checks passed

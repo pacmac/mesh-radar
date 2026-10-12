@@ -1,0 +1,2 @@
+$ bash -c now=$(date +%s); n=$(sqlite3 data/node-dash.db "SELECT COUNT(*) FROM messages WHERE ts > $now;"); echo "future_rows=$n"; [ "$n" -eq 0 ]
+future_rows=0

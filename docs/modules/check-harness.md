@@ -4,8 +4,8 @@ source:
   - scripts/ws-ask.mjs
   - scripts/check_snapshot.mjs
   - scripts/check_contract.mjs
-source_hash: 04d80b726bad411ada99ec5807e290cc2d0eb2ba0fc06c39e07c74326e693603
-updated: 2026-08-17
+source_hash: b956bb4b9592446332dc289ab5a03df9a23b34e74510049b1a8c43fc6e7f5a9b
+updated: 2026-08-23
 ---
 
 # Module: check-harness
@@ -172,6 +172,30 @@ route served its own band. Verified live against `days=7`:
 `new_ground.new_doors 1`, `new_ground.first_contacts 24`,
 `productivity.attempts 7374`, `productivity.answered 1344`,
 `distribution.doors_total 10`, `distribution.bands` 5 entries.
+
+### The two door SQL strings were wrong, and passing — 2026-08-23
+
+`new_doors` (line 53) and `doors_total` (line 61) both counted `0xFFFFFFFF` as a
+door. So did `snapshot-api.js`. **Every one of the 54 assertions passed
+throughout**, because the check repeated the board's mistake — two wrongs agreeing
+are indistinguishable from correct, and no amount of re-running finds it. It went
+red only when the board was fixed:
+
+```
+MISMATCH  7d   doors_total  live=10  sql=11
+MISMATCH  14d  doors_total  live=12  sql=13
+MISMATCH  30d  doors_total  live=15  sql=16
+MISMATCH  all  doors_total  live=19  sql=20
+```
+
+Both SQL strings now carry `!= 4294967295`, written as the literal `BCAST` and
+**not imported from `src/reach.js`**, which is the point of this file: a check
+that imports the code it checks asserts only that the code equals itself. It
+restates the rule; `reach.js` implements it. Now 54 checks, 0 mismatches.
+
+This is the harness's own failure mode, and it is worth naming: independent SQL is
+only independent if it is written from the requirement. Both of these were written
+from the board.
 
 The `s.error` guard is new and load-bearing: `board()` returns
 `{error, frontier:null, …}` on failure (`src/ws-relay.js:1207-1213`), and

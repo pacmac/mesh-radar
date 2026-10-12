@@ -1,8 +1,8 @@
 ---
 module: tab-nodes
 source: public/partials/tab-nodes.html
-source_hash: ae27f3bf5ac6bb4919540874cd753a5b1316e302ef7e4855687ddc734cc58cdb
-updated: 2026-07-08
+source_hash: f6eed3b0b27f38628c827505596f37ce6acd430239949935d9d0afb271771c01
+updated: 2026-10-11
 ---
 
 # Module: tab-nodes
@@ -58,6 +58,36 @@ merged (`docs/DISCOVERY_TARGETING.md`).
 - Zero changes to Alpine expressions and handlers
 - No raw palette colors (text-yellow-400 removed), no static inline styles
 - Card grid, grouping, and openNodeInfo click behavior identical
+
+## Source filter renders one button per live device — 2026-10-11
+
+Peter: *"nobody ever said there would be 1,2,3 or any number of radios or
+that any of them would be directional with a rotator."* idiot entry
+`node-source-filter-hardcodes-omni-yagi-browser` (Domain 2 half; Domain 1 —
+`node_filters.node_source` becoming `'all'`/a device MAC — is
+`docs/modules/node-filter.md`).
+
+The Source row used to be 3 static buttons: `Both`/`YAGI`/`OMNI`, calling
+`setNodeSource('both'|'yagi'|'omni')` — wrong words on any deployment without
+exactly this dev box's 2 named radios (confirmed wrong on a Pi deployment:
+1 radio, no rotator at all).
+
+Now: an `All` button plus `<template x-for="dev in availableDevices...">`,
+one button per device the browser actually knows about (the live
+`device_list` WS payload), labelled `deviceConfigs[dev.node_id]?.label ||
+deviceLabel(dev.addr) || dev.addr.slice(-5)` — the exact same label
+resolution already used identically for the per-node device badges just
+below in this same template. Zero new logic: this reads what the backend
+already serves and renders it, same as everything else here.
+
+On THIS dev box the two live radios are genuinely labelled YAGI/OMNI in
+their own config, so the buttons still read "YAGI"/"OMNI" — correctly,
+because that is what `deviceLabel()` resolves to here, not because the
+template says so. `tests/test_node_source_buttons_dynamic.mjs` asserts the
+TEMPLATE carries no hardcoded YAGI/OMNI text or `setNodeSource('yagi'|'omni')`
+call; a live Playwright pass (both themes, 1600×1000 and 1280×800) confirmed
+button count = live device count + 1, no dropdown-panel cropping, and
+clicking a device button filters the list correctly.
 
 ## Test notes
 

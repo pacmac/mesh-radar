@@ -3,7 +3,7 @@ module: traceroute-status-feed
 source:
   - src/traceroute.js
   - src/ws-relay.js
-source_hash: c94674cbe79cd96d54a2253d4c0ff6615bdefaf2d33f7f075c000ed08ddb5e01
+source_hash: b556a91cdb78eebe52a373f1f0c8126ff02f3ef204357476eceb3a46871fba75
 updated: 2026-09-03
 ---
 

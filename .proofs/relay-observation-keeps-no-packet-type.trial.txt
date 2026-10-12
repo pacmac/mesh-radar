@@ -1,0 +1,2 @@
+$ node tests/test_relay_observation_packet_type.mjs
+test_relay_observation_packet_type: 6 checks passed

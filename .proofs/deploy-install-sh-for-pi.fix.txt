@@ -1,0 +1,2 @@
+$ node tests/test_deploy_install.mjs
+test_deploy_install: 7 checks passed

@@ -8,6 +8,7 @@ import { captureRelayObservation } from './relay-observation.js';
 import { noteInboundText } from './callout.js';
 import { defineHook } from './hooks.js';
 import { haversine } from './utils.js';
+import { isPrivateChannel, getChannelNameByMac } from './ws-relay.js';
 // Roles arrive unvalidated — the gw sends the number 200 for three of our own
 // radios, which became the string '200.0' in a TEXT column and matched no role.
 import { normaliseRole } from './node-kind.js';
@@ -112,6 +113,18 @@ function _upsertCache(num, nodeId, u, pos, lastHeard) {
 
 const BROADCAST_NUM = 0xffffffff;
 
+// messages.channel held 'public'/'private' for outbound rows (mesh-send.js
+// already knows the word) and a raw per-gateway INDEX for inbound ones —
+// idiot entry outbound-rows-store-a-channel-word-inbound-store-an-index.
+// channel_role resolves the inbound index to the SAME word, via the live
+// cache ws-relay.js already maintains (isPrivateChannel / getChannelNameByMac
+// — no network call, no guessing). Unresolved stays null: unknown, never a
+// default. docs/modules/channels.md.
+export function inboundChannelRole(device, index) {
+  if (isPrivateChannel(device, index)) return 'private';
+  return getChannelNameByMac(device, index) === 'Primary' ? 'public' : null;
+}
+
 // A device that has no sensor sends NaN, and better-sqlite3 stores JS NaN as
 // the TEXT string 'NaN' in a REAL column — silent type pollution that reads as
 // a present value to any consumer not checking typeof. An absent reading is
@@ -181,6 +194,14 @@ function deviceTime(t, arrivalTs) {
 // and the -100.1 evidence above says treat that as not-direct.
 function isDirectPacket(pkt) {
   if (!pkt) return false;
+  // pkt.replay (docs/gw/API_SSE.md) is mesh-gw's firmware NodeDB-replay flag —
+  // a BLE-reconnect synthesises one packet per known node carrying a STALE
+  // rx_rssi of 0 and relay_node of 0, which satisfies every other check below
+  // and was being stored as a real direct reception. NOT the same `replay` as
+  // this file's own REST-seed-on-boot flag a few lines up (different source,
+  // different meaning) — never conflate the two.
+  // idiot entry signal-history-stores-replay-packets-as-direct-receptions.
+  if (pkt.replay) return false;
   if ((pkt.relay_node ?? 0) !== 0) return false;
   if (pkt.hop_start == null) return false;
   return pkt.hop_start - (pkt.hop_limit ?? 0) === 0;
@@ -421,9 +442,18 @@ function handlePacket(packet, device, ts, replay) {
   const pktRssi = pktDirect ? (packet.rx_rssi ?? null) : null;
   const pktSnr  = pktDirect ? (packet.rx_snr  ?? null) : null;
 
-  const { portnum } = packet.decoded;
+  // mesh-gw sends `portnum` as an INTEGER with the human name in a sibling
+  // `portnum_name` field (live-captured 2026-09-10: portnum=3/6/67,
+  // portnum_name='POSITION_APP'/'ADMIN_APP'/'TELEMETRY_APP') — this used to
+  // destructure `portnum` and compare it against string literals below, which
+  // can never match an integer. TEXT_MESSAGE_APP has no other event path (no
+  // dedicated typed WS event, unlike telemetry/position/nodeinfo), so that
+  // alone cost 18.4 days of unrecorded inbound text before this was found.
+  // idiot entry portnum-string-compare-broken-by-meshgw-int-change.
+  const { portnum_name: portnum } = packet.decoded;
 
   if (portnum === 'TEXT_MESSAGE_APP') {
+    const channelRole = inboundChannelRole(device, packet.channel ?? 0);
     const text = packet.decoded.payload
       ? Buffer.from(packet.decoded.payload, 'base64').toString('utf8')
       : '';
@@ -435,7 +465,8 @@ function handlePacket(packet, device, ts, replay) {
       from_num:    packet.from  || 0,
       to_num:      packet.to    || BROADCAST_NUM,
       text,
-      channel:     packet.channel  ?? 0,
+      channel:      packet.channel  ?? 0,
+      channel_role: channelRole,
       is_dm:       packet.to !== BROADCAST_NUM ? 1 : 0,
       hop_limit:   packet.hop_limit ?? null,
       snr:         packet.rx_snr   ?? null,

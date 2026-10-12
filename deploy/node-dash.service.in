@@ -1,0 +1,20 @@
+[Unit]
+Description=node-dash — Meshtastic mesh dashboard (Node.js)
+After=network.target
+# Best-effort: this host may run mesh-gw locally (the usual case this was written
+# for), in which case node-dash should come up after it. A host where mesh-gw lives
+# elsewhere has neither unit, and systemd ignores an After= on a unit it never finds.
+After=mesh-gw.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=@@REPO@@
+Environment=NODE_ENV=production
+Environment=PORT=@@PORT@@
+ExecStart=/usr/bin/env node @@REPO@@/src/index.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

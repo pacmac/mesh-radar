@@ -33,7 +33,10 @@ export function ownDeviceNums() {
 
 // Returns true if node passes all current user-configured filters.
 // Options:
-//   scanActive  – when true, applies scan-contact check and forces yagi source
+//   scanActive  – when true, applies scan-contact check and forces the filter
+//                 onto whichever LIVE device is sweeping (getRotatorAddress()),
+//                 never a hardcoded role name — a deployment with no rotator
+//                 configured simply gets no device filtering during a scan
 //   ownNums     – pre-computed Set to avoid re-reading config on every call
 export function passesFilter(node, { scanActive = false, ownNums = null, rfHeard = null } = {}) {
   const nums = ownNums ?? ownDeviceNums();
@@ -69,8 +72,12 @@ export function passesFilter(node, { scanActive = false, ownNums = null, rfHeard
   const hasTelem  = getConfig('node_filters.has_telem',  false);
   const msgOnly   = getConfig('node_filters.msg_only',   false);
   const roles     = getConfig('node_filters.roles',      []);
-  const source    = scanActive ? 'yagi' : getConfig('node_filters.node_source', 'both');
-  const rotatorId = getRotatorAddress();
+  // 'all' means no device filtering. Any other value is a device MAC, taken
+  // literally — never a role name like 'yagi'/'omni'. Peter, 2026-10-11:
+  // "nobody ever said there would be 1,2,3 or any number of radios or that
+  // any of them would be directional with a rotator." idiot entry
+  // node-source-filter-hardcodes-omni-yagi.
+  const source    = scanActive ? getRotatorAddress() : getConfig('node_filters.node_source', 'all');
 
   if (maxAge > 0 && node.last_heard && (now - node.last_heard) > maxAge) return false;
 
@@ -92,10 +99,9 @@ export function passesFilter(node, { scanActive = false, ownNums = null, rfHeard
   const role = node.user?.role ?? node.role ?? 'CLIENT';
   if (roles.length > 0 && !roles.includes(role)) return false;
 
-  if (rotatorId && source !== 'both') {
+  if (source && source !== 'all') {
     const devs = node._devices ?? (node._device ? [node._device] : []);
-    if (source === 'yagi' && !devs.includes(rotatorId)) return false;
-    if (source === 'omni' && devs.length > 0 && devs.every(d => d === rotatorId)) return false;
+    if (!devs.includes(source)) return false;
   }
 
   if (scanActive && node._scanAz == null && node._scanSnr == null) return false;

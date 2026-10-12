@@ -361,11 +361,21 @@ db.exec(`
 `);
 // One-time carry-across of the 194 addresses already stored on nodeinfo, so the
 // backfill does not re-request work already paid for.
-db.exec(`
-  INSERT OR IGNORE INTO geocode_cache (num, address)
-  SELECT num, address FROM nodeinfo
-  WHERE num IS NOT NULL AND address IS NOT NULL AND address <> ''
-`);
+//
+// nodeinfo.address is NOT in its CREATE TABLE above — it only ever existed on a
+// database that pre-dates this split, carried forward by old ALTER TABLE runs.
+// A genuinely fresh database has no such column, and this INSERT OR IGNORE threw
+// "no such column: address" unconditionally, so node-dash never started at all —
+// confirmed live via deploy/install.sh's smoke test on a brand-new Pi install.
+// idiot entry geocode-cache-backfill-breaks-fresh-database. Guarded the same way
+// every other migration in this file checks for a column before assuming it.
+if (db.prepare(`PRAGMA table_xinfo(nodeinfo)`).all().some(c => c.name === 'address')) {
+  db.exec(`
+    INSERT OR IGNORE INTO geocode_cache (num, address)
+    SELECT num, address FROM nodeinfo
+    WHERE num IS NOT NULL AND address IS NOT NULL AND address <> ''
+  `);
+}
 
 // ONE-TIME BACKFILL of positions we already hold. Bug B67, 2026-08-03.
 //
@@ -454,6 +464,25 @@ db.exec(`
   if (!thCols.includes('rtt_ms'))       db.exec(`ALTER TABLE traceroute_history ADD COLUMN rtt_ms INTEGER`);
   if (!thCols.includes('channel_util')) db.exec(`ALTER TABLE traceroute_history ADD COLUMN channel_util REAL`);
   if (!thCols.includes('air_util_tx'))  db.exec(`ALTER TABLE traceroute_history ADD COLUMN air_util_tx REAL`);
+
+  // relay_observation kept relay/hop provenance but nothing about WHAT was
+  // heard — no portnum, no packet_id, so aerials could never be paired on one
+  // reception and a NodeDB replay burst looked identical to a real one.
+  // Relayed from fun via mesh-gw, item relay-observation-keeps-no-packet-type.
+  // Historic rows stay NULL — genuinely unknown, not a default.
+  const roCols = db.prepare(`PRAGMA table_xinfo(relay_observation)`).all().map(r => r.name);
+  if (!roCols.includes('portnum_name')) db.exec(`ALTER TABLE relay_observation ADD COLUMN portnum_name TEXT`);
+  if (!roCols.includes('packet_id'))    db.exec(`ALTER TABLE relay_observation ADD COLUMN packet_id INTEGER`);
+  if (!roCols.includes('rx_snr'))       db.exec(`ALTER TABLE relay_observation ADD COLUMN rx_snr REAL`);
+
+  // messages.channel held 'public'/'private' for rows WE sent and an integer
+  // index for rows we RECEIVED — two incompatible types in one column. idiot
+  // entry outbound-rows-store-a-channel-word-inbound-store-an-index. Rather
+  // than risk changing `channel`'s type/NOT NULL contract for whatever already
+  // reads it, the semantic meaning gets its OWN column, consistently typed
+  // both directions. `channel` itself is kept, unchanged, as a legacy field.
+  const msgCols = db.prepare(`PRAGMA table_xinfo(messages)`).all().map(r => r.name);
+  if (!msgCols.includes('channel_role')) db.exec(`ALTER TABLE messages ADD COLUMN channel_role TEXT`);
 }
 // environment_history predates the (num, packet_id) dedup rule. The index is
 // PARTIAL, so the ~86k existing rows (packet_id NULL) are untouched and the
@@ -683,6 +712,27 @@ if (!nodeCols.includes('rf_last_heard')) {
   }
 }
 
+// node_filters.node_source stopped being 'both'/'omni'/'yagi' and became 'all'
+// or a device MAC — idiot entry node-source-filter-hardcodes-omni-yagi,
+// docs/modules/node-filter.md. None of the three old tokens is a real device
+// MAC, so leaving one in place would silently filter the node list to nothing
+// rather than "no filter", which is what every one of them meant before.
+{
+  const KEY = 'migrations.node_source_device_agnostic_v1';
+  const done = db.prepare('SELECT value FROM config WHERE key = ?').get(KEY);
+  if (!done) {
+    const row = db.prepare(`SELECT value FROM config WHERE key = 'node_filters.node_source'`).get();
+    const current = row ? JSON.parse(row.value) : null;
+    if (current === 'both' || current === 'omni' || current === 'yagi') {
+      db.prepare(`INSERT OR REPLACE INTO config (key, value) VALUES ('node_filters.node_source', ?)`)
+        .run(JSON.stringify('all'));
+      console.log(`[migrate] node_filters.node_source: '${current}' -> 'all'`);
+    }
+    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)')
+      .run(KEY, JSON.stringify(true));
+  }
+}
+
 // Seed default alert rules (INSERT OR IGNORE preserves user customisations)
 const _seedRules = db.prepare(
   `INSERT OR IGNORE INTO alert_rules (type, enabled, threshold, cooldown_minutes) VALUES (?, ?, ?, ?)`
@@ -718,16 +768,16 @@ const HISTORY_ROWS_PER_NODE = 2000;
 
 export const stmts = {
   insertMessage: db.prepare(`
-    INSERT OR IGNORE INTO messages (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi, packet_id, reply_id, device, replay, hops, short_name, long_name)
-    VALUES (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name)
+    INSERT OR IGNORE INTO messages (ts, from_num, to_num, text, channel, channel_role, is_dm, hop_limit, snr, rssi, packet_id, reply_id, device, replay, hops, short_name, long_name)
+    VALUES (@ts, @from_num, @to_num, @text, @channel, @channel_role, @is_dm, @hop_limit, @snr, @rssi, @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name)
   `),
 
   insertRxMessage: db.prepare(`
     INSERT INTO messages
-      (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi,
+      (ts, from_num, to_num, text, channel, channel_role, is_dm, hop_limit, snr, rssi,
        packet_id, reply_id, device, replay, hops, short_name, long_name, message_key, rx_devices)
     VALUES
-      (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi,
+      (@ts, @from_num, @to_num, @text, @channel, @channel_role, @is_dm, @hop_limit, @snr, @rssi,
        @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name, @message_key, @device)
     ON CONFLICT(message_key) WHERE message_key IS NOT NULL DO UPDATE SET
       snr        = CASE WHEN excluded.snr  IS NOT NULL AND (snr  IS NULL OR excluded.snr  > snr)  THEN excluded.snr  ELSE snr  END,
@@ -742,10 +792,10 @@ export const stmts = {
 
   insertTxMessage: db.prepare(`
     INSERT OR IGNORE INTO messages
-      (ts, from_num, to_num, text, channel, is_dm, hop_limit, snr, rssi,
+      (ts, from_num, to_num, text, channel, channel_role, is_dm, hop_limit, snr, rssi,
        packet_id, reply_id, device, replay, hops, short_name, long_name, message_key, category)
     VALUES
-      (@ts, @from_num, @to_num, @text, @channel, @is_dm, @hop_limit, @snr, @rssi,
+      (@ts, @from_num, @to_num, @text, @channel, @channel_role, @is_dm, @hop_limit, @snr, @rssi,
        @packet_id, @reply_id, @device, @replay, @hops, @short_name, @long_name, @message_key, @category)
   `),
 
@@ -2189,9 +2239,11 @@ export function listFavouriteNodes() {
 // same reasoning that made signal_history key on (num, packet_id, rx_device).
 const _insertRelayObservation = db.prepare(`
   INSERT INTO relay_observation
-    (ts, from_num, relay_byte, rx_device, hop_start, hop_limit, transport, decoded)
+    (ts, from_num, relay_byte, rx_device, hop_start, hop_limit, transport, decoded,
+     portnum_name, packet_id, rx_snr)
   VALUES
-    (@ts, @from_num, @relay_byte, @rx_device, @hop_start, @hop_limit, @transport, @decoded)
+    (@ts, @from_num, @relay_byte, @rx_device, @hop_start, @hop_limit, @transport, @decoded,
+     @portnum_name, @packet_id, @rx_snr)
 `);
 const _pruneRelayObservations = db.prepare(`DELETE FROM relay_observation WHERE ts < ?`);
 

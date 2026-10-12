@@ -4,11 +4,15 @@ source:
   - src/db.js
   - src/aim.js
   - src/traceroute.js
-source_hash: ec1f9c3f0ab4ac88f0bc91dfa40e0081f951156bedb32d7b697f9303c4210bc8
-updated: 2026-09-03
+source_hash: b79b58183558d03e809972ddfab76a6fca813c0aa1126247afa8087698cce0b7
+updated: 2026-10-11
 ---
 
 # `known_route` — the feed carries the path it is working from
+
+_Hash resynced 2026-10-11: `src/db.js` changed for an unrelated reason
+(`messages.channel_role`, `relay_observation` columns — see `channels.md`,
+`relay-observation.md`); nothing in this document changed._
 
 ## His words, 2026-08-18
 

@@ -1,8 +1,8 @@
 ---
 module: app-nodes
 source: public/app-nodes.js
-source_hash: 6ee143960c953b4bdf7162d100f4c5303db3301150f272878a11ea5e4ed9ec0f
-updated: 2026-09-03
+source_hash: 5ffcc8d2f37c754963ed3fa9468e8242fe1d03c9196287da9e55ad273f16592e
+updated: 2026-10-11
 ---
 
 # Module: app-nodes
@@ -12,6 +12,11 @@ updated: 2026-09-03
 Nodes mixin: sorting, filter persistence (backend-owned filtering — the
 browser only PUTs config and renders the pushed list), node lookup/label
 helpers, hop/signal display helpers.
+
+`nodeSource`'s default/reset value changed from `'both'` to `'all'`
+(2026-10-11, idiot entry `node-source-filter-hardcodes-omni-yagi-browser`) —
+`activeFilterCount()` and `resetNodeFilters()` updated to match. Full
+explanation: `docs/modules/node-filter.md`, `docs/modules/tab-nodes.md`.
 
 ## Contract: nodeHops — pure accessor of backend hops_display (task radar-hops-verified-vs-reported)
 

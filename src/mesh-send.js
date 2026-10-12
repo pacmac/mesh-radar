@@ -3,7 +3,7 @@
 // Every sender routes through sendMeshText() so no send can bypass the message
 // log. See docs/modules/mesh-send.md.
 
-import { stmts, syncAlertedAt } from './db.js';
+import { stmts, syncAlertedAt, getConfig } from './db.js';
 import { nodeList } from './node-list.js';
 import { getLiveNodeIdByMac, getLiveMacByNodeId } from './ws-relay.js';
 
@@ -25,9 +25,18 @@ function recordOutbound({ gatewayNodeId, text, channel, to, reply_id, category, 
     from_num:    fromNum,
     to_num:      toNum,
     text:        text ?? '',
-    // No `?? 0` — sendMeshText refuses an unstated channel before it gets here,
-    // so by this point it is always an integer the caller chose on purpose.
+    // No `?? 0` — sendMeshText refuses an unstated channel before it gets
+    // here, so by this point it is always one of the two words 'public'/
+    // 'private' the caller chose on purpose (NOT an integer — that claim was
+    // wrong; see channel_role below for why it matters).
     channel,
+    // channel_role carries the SAME word, under its own, consistently-typed
+    // name — messages.channel holds this word for outbound rows and a raw
+    // index for inbound ones (idiot entry
+    // outbound-rows-store-a-channel-word-inbound-store-an-index). `channel`
+    // itself is kept unchanged rather than risk a type/NOT NULL change for
+    // whatever already reads it.
+    channel_role: channel,
     is_dm:       toNum !== BROADCAST_NUM ? 1 : 0,
     hop_limit:   null,
     snr:         null,
@@ -78,9 +87,17 @@ export async function sendMeshText({ gatewayNodeId, text, channel, to = null, re
   if (to != null)       body.to = to;
   if (reply_id != null) body.reply_id = reply_id;
 
+  // mesh-gw's send_auth (docs/gw/modules/send_auth.md) refuses a transmit with
+  // no x-mesh-gw-key header. This function does its own fetch rather than
+  // bridge.js's, so it never got the fix made there (wire-mesh-gw-send-auth-key,
+  // 2026-09-10) — it was blocked from being fixed at the time by this same
+  // idiot entry naming this file for an unrelated reason (channel_role, above).
+  const meshGwKey = getConfig('mesh_gw.send_key', '');
+  const headers = { 'Content-Type': 'application/json' };
+  if (meshGwKey) headers['x-mesh-gw-key'] = meshGwKey;
   const r = await fetch(`${BRIDGE_URL}/${gatewayNodeId}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(`gateway ${r.status}`);

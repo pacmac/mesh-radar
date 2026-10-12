@@ -1,8 +1,8 @@
 ---
 module: device-config
 source: src/device-config.js
-source_hash: 05b9bd4a2b0df1fe7b9411b9ff59304546ebcf75448fa9513185cd7df3dbf057
-updated: 2026-09-03
+source_hash: 0a2989e0a709d07f239ae2eef9ad4853ac8329058ef020d5228010c94dd41590
+updated: 2026-09-10
 ---
 
 # Module: device-config
@@ -43,7 +43,7 @@ export function registerMacToNodeIdResolver(fn)     // fn(MAC) → !hexid|null �
 
 // Primary device helpers
 export function resolvePrimaryNodeId()              // → !hexid|MAC|null — live node ID of primary device
-export function macToNodeId(mac)                    // → !hexid|MAC|null — resolve any MAC to its live node ID (falls through to MAC)
+export function macToNodeId(mac)                    // → !hexid|null — resolve any MAC to its live node ID, or null if offline (2026-09-10: no longer falls through to the raw MAC)
 
 // Config read helpers
 export function getDeviceCfg(address)               // → {...DEFAULT, ...stored, ...meshGwOwnedFields} — by MAC (normalised to uppercase)
@@ -53,6 +53,7 @@ export function getRotatorAddress()                  // → MAC|null — first d
 
 // mesh-gw SSOT wiring (call once at startup, from ws-relay.js)
 export function registerInstallLookup(fn)           // fn(MAC) → mesh-gw install object|null — live, from lastDeviceState
+export function getLiveDirectional(address)         // → true|false|null — mesh-gw's live antenna.directional, or null if unreported (2026-09-10)
 
 // Migration helper
 export function ensureDeviceCfgMac(addr, nodeId)    // migrate legacy !hexid key → MAC or bootstrap empty
@@ -377,7 +378,10 @@ Registration, right after `lastDeviceState` is declared (line 447):
   they already call. No edits.
 - `is_primary`, `load_nodes_on_boot`, `antenna_type`, `beam_deg`, `gain_dbi`,
   `cable_loss_db`, `antenna_height_m`, `fixed_lat`, `fixed_lon`, `color`, `ble_pin` — no
-  mesh-gw equivalent exists yet; stay local, unchanged.
+  mesh-gw equivalent exists yet; stay local, unchanged. **`beam_deg` itself
+  still has no mesh-gw equivalent as of 2026-09-10 — see `getLiveDirectional`
+  below, which reads a DIFFERENT, boolean field mesh-gw already reports
+  (`antenna.directional`), not this one.**
 - Rotator connection endpoint (`ROTATOR_WS_URL`/`ROTATOR_V5_WS_URL`/`rotator_targets`) and
   whether rotator commands should route through mesh-gw's `/plugins/aim/point` — real,
   larger questions, deliberately left for a separate task.
@@ -386,6 +390,27 @@ Registration, right after `lastDeviceState` is declared (line 447):
   op (the local write this bullet described) no longer exist at all; see
   "The REST router... are gone" below. The overridden-not-rejected concern never
   needed its follow-up because there is no local write left to override.
+
+### Two bugs found and fixed 2026-09-10 (task `resolve-directional-defers-to-meshgw`)
+
+**`macToNodeId(mac)` no longer falls back to the raw MAC.** It used to return
+`_macToNodeId?.(mac) || mac` — the MAC string itself when the live resolver
+returned nothing (an offline device). A caller (`transmitterForMode` via
+`callout-runner.js`) then handed that MAC to mesh-gw as if it were a node_id.
+Now returns `null`, honestly, matching this file's own `NULL MEANS UNKNOWN`
+rule elsewhere. `idiot` entry
+`mac-to-node-id-silently-returns-raw-mac-on-resolution-failure`.
+
+**New: `getLiveDirectional(address)`.** mesh-gw is SSOT for whether a radio's
+antenna is directional the moment it has reported an install object — the
+same rule `is_rotator` already followed (2026-09-03), now applied to
+`directional` too. Added because `resolve.js`'s own `directional` computation
+read only the local `beam_deg` (defaulting to 360, "omnidirectional," when
+never set), which made a real 9-element mast-mounted Yagi (YAGI2, local
+`beam_deg` never set) resolve as non-directional — `traceroute.js` skipped
+aiming entirely and a live traceroute transmitted unaimed. `idiot` entry
+`resolve-directional-ignores-meshgw-live-antenna-flag`; consumed by
+`resolve.js`, see `docs/modules/radio-resolve-and-aim.md`.
 
 ### Restored 2026-08-05
 

@@ -1,0 +1,8 @@
+$ node --input-type=module -e 
+import { macToNodeId, registerMacToNodeIdResolver } from './src/device-config.js';
+registerMacToNodeIdResolver(() => null);
+const r = macToNodeId('E9:B0:3F:17:27:91');
+console.log('result=' + r);
+process.exit(r === null ? 0 : 1);
+
+result=E9:B0:3F:17:27:91

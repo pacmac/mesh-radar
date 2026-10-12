@@ -86,7 +86,9 @@ export const DEFAULTS = {
   'node_filters.has_signal':  false,
   'node_filters.has_telem':   false,
   'node_filters.roles':       [],
-  'node_filters.node_source': 'both',
+  // 'all', or a device MAC — never a role name. idiot entry
+  // node-source-filter-hardcodes-omni-yagi, docs/modules/node-filter.md.
+  'node_filters.node_source': 'all',
   'node_sort.field':          'last_heard',
   'node_sort.dir':            -1,
   'radar.max_range_km':       50,

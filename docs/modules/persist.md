@@ -1,8 +1,8 @@
 ---
 module: persist
 source: src/persist.js
-source_hash: 84d17f9e6b38e432f3756d31b33d8bbc4521ab3c440180fce5b8e65e5e50b621
-updated: 2026-08-03
+source_hash: 5a970c98713da062cbe3af6fed98b2c9fa5d7174df9274ef1c452c54f14c9ab1
+updated: 2026-10-11
 ---
 
 # Module: persist
@@ -191,6 +191,40 @@ All tests use an in-memory SQLite DB (`:memory:`) with the same schema as `db.js
 - Event delivery / bridge listener wiring — `index.js` / future `event-handler.js`
 - Browser WebSocket broadcast — `ws-relay.js`
 
+## `portnum` is an integer, not a string — 18.4 days of lost text (2026-09-10)
+
+`handlePacket()` used to destructure `const { portnum } = packet.decoded` and compare
+it against string literals (`'TEXT_MESSAGE_APP'`, `'TELEMETRY_APP'`, `'NODEINFO_APP'`,
+`'POSITION_APP'`). mesh-gw's live `/events` feed sends `portnum` as an **integer**, with
+the human name in a sibling `portnum_name` field — live-captured 2026-09-10 straight off
+the WS feed: `portnum=3/6/67`, `portnum_name='POSITION_APP'/'ADMIN_APP'/'TELEMETRY_APP'`.
+Every one of those four comparisons was therefore permanently false.
+
+**TEXT_MESSAGE_APP has no other path** — unlike telemetry/position/nodeinfo, which also
+arrive via their own dedicated typed WS events (`'telemetry'`/`'position'`/`'user'`,
+handled entirely separately in `handleEvent()` and never touching this comparison at
+all), a text message is recognised ONLY through this one `packet`+`portnum` branch. So
+this one bug produced **zero recorded inbound text messages for 18.4 days**
+(2026-08-23 07:20 UTC onward) while every other packet type kept working normally
+through its own path — exactly the shape that made it invisible to anything watching
+node/signal/position volume.
+
+Fixed by destructuring `portnum_name` (aliased to the local name `portnum`, so the four
+comparison sites below are unchanged) instead of `portnum`. `idiot` entry
+`portnum-string-compare-broken-by-meshgw-int-change`; regression test
+`tests/test_persist_portnum_shape.mjs` constructs a packet event in the exact live shape
+and asserts it lands in `messages`.
+
+**The same FAMILY of defect already happened once before, in a sibling file** — not
+identical, but close enough to have been the warning. `ws-relay.js`'s tilt/PRIVATE_APP
+handling silently lost ingest 2026-06-30 → 07-03 because it gated only on a V1 event
+shape and never matched the V2 `packet.decoded.portnum` shape at all (an omission, not
+a type mismatch) — its own in-file comment records that incident precisely to warn the
+next reader off "gate on the wrong shape and lose a whole packet class silently."
+`ws-relay.js`'s two portnum comparisons (`PRIVATE_APP`, `TEXT_MESSAGE_APP` live-dedup)
+had the SAME string-vs-integer bug as this file and were fixed in the same task —
+see `docs/modules/ws-relay.md`.
+
 ## Signal capture carries the receiving radio (task `signal-provenance-mixed-source`)
 
 `_captureSignal` wrote `signal_history` with no record of WHICH gateway radio
@@ -263,6 +297,42 @@ once; the relayed packets seen were already rejected by arithmetic. A separate,
 still-open defect — `nodes.rssi/snr` freezing at the last direct value with no
 staleness bound (bug ledger #34) — remains a likelier explanation for a stale
 strong value persisting on a panel.
+
+### `isDirectPacket` also gates on `packet.replay` — 2026-10-11
+
+Relayed from fun via mesh-gw as "`signal_history.rssi` holds 0.0 where
+mesh-gw's `signal_update` carried `rssi: null`" — idiot entry
+`signal-history-stores-replay-packets-as-direct-receptions`. The precise cause
+turned out sharper than the report: not a null-to-0 coercion anywhere in this
+file (`fin()`/db.js's `_fin()` already null-guard correctly on every path
+checked), but `packet.replay` — mesh-gw's documented firmware NodeDB-replay
+flag (`docs/gw/API_SSE.md`) — never being read at all.
+
+On a BLE reconnect the radio synthesises one packet per known node carrying a
+**synthetic** `rx_rssi` of `0` and `relay_node` of `0` — not a reading, a
+marker. That satisfies every existing `isDirectPacket` check unchanged, so a
+replay was stored in `signal_history` as a genuine 0 dBm direct reception.
+
+Verified live before the fix: 12 of 2463 `signal_history` rows in the
+preceding 7 days had `rssi = 0.0` with `hops = 0`, several as paired
+consecutive `packet_id`s at an identical timestamp — exactly the synthesis
+signature, not independent receptions.
+
+**Not the same `replay` as this file's own flag a few lines above
+`isDirectPacket`** (the REST-seed-on-boot dedup concept, `handlePacket`'s
+`replay` parameter / `event._replay`) — two real, unrelated concepts that
+happen to share a name. `pkt.replay` here is mesh-gw's firmware field, read
+straight off the packet object, never conflated with the other.
+
+Fix: `isDirectPacket` returns `false` immediately when `pkt.replay` is
+truthy, before any other check — a replay was never received at all, so it is
+not merely "not direct", it fails every consumer of this predicate the same
+way (currently only the `signal_history`/`nodes.rssi`/`nodes.snr` capture in
+`handlePacket`).
+
+Test: `tests/test_signal_history_replay_gate.mjs` — a synthetic packet with
+`replay: true`, `rx_rssi: 0`, `relay_node: 0`, and otherwise-direct hop
+arithmetic writes no `signal_history` row.
 
 ## handleNodeInfo no longer writes rssi/snr (task `signal-ssot-header`, 2026-07-29)
 
@@ -401,3 +471,27 @@ analysis.
 the reference sits inside a function body — it would have thrown only when a rare
 sender actually spoke, which is worse than a load-time failure. Import tests prove
 a module loads, not that its code paths resolve.
+
+## `inboundChannelRole` — 2026-10-11
+
+`messages.channel` held `'public'`/`'private'` for outbound rows and a raw
+per-gateway index for inbound ones — idiot entry
+`outbound-rows-store-a-channel-word-inbound-store-an-index`. `docs/modules/channels.md`
+has the full writeup; the piece that lives here is the inbound half.
+
+`inboundChannelRole(device, index)`, exported, resolves an inbound packet's
+channel index to the same word `mesh-send.js` already uses for outbound,
+using the live cache `ws-relay.js` already maintains for its inbound privacy
+gate (`isPrivateChannel`, `getChannelNameByMac`) — no network call, no new
+resolution logic:
+
+```js
+export function inboundChannelRole(device, index) {
+  if (isPrivateChannel(device, index)) return 'private';
+  return getChannelNameByMac(device, index) === 'Primary' ? 'public' : null;
+}
+```
+
+Called from the `TEXT_MESSAGE_APP` branch of `handlePacket`, writing
+`channel_role` alongside the unchanged `channel` field. Unresolved stays
+`null` — never guessed.

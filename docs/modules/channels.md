@@ -6,11 +6,40 @@ source:
   - src/callout.js
   - src/resolve.js
   - src/ws-relay.js
-source_hash: 70b935fd1204c38c0fc2c2701c7860bb0eee647115b81bf7aab0ae3bb6742ddd
-updated: 2026-09-03
+  - src/db.js
+  - src/persist.js
+source_hash: 3a67e9f81ab78907eebc3c0284fed55ed422ac08e48d31f65e94e0312619c642
+updated: 2026-10-11
 ---
 
 # node-dash knows two words: `public` and `private`
+
+## `messages.channel_role` added (2026-10-11)
+
+Relayed from fun via mesh-gw, idiot entry
+`outbound-rows-store-a-channel-word-inbound-store-an-index`: `messages.channel`
+had drifted into holding the WORD (`'public'`/`'private'`) for rows we sent and
+the per-gateway INTEGER INDEX for rows we received — one column, two
+incompatible types, because `mesh-send.js`'s `recordOutbound` started passing
+the word straight through once this spec's rewrite shipped.
+
+**`channel` itself is unchanged**, per "Explicitly NOT changed" below — it is
+still history, still per-gateway, and rewriting it would destroy exactly the
+evidence this spec's divergence section relies on. Instead a new column,
+`channel_role` (TEXT: `'public'` | `'private'` | `NULL`), carries the semantic
+role consistently for BOTH directions:
+
+- outbound (`mesh-send.js`'s `recordOutbound`): the word it already has, verbatim.
+- inbound (`persist.js`'s `inboundChannelRole(device, index)`): resolved from
+  the SAME live cache `ws-relay.js`'s `isPrivateChannel`/`getChannelNameByMac`
+  already maintain (`private` if `isPrivateChannel`; `public` if the index
+  names the device's `Primary`; otherwise `NULL` — never guessed).
+
+Historic rows keep `channel_role = NULL`: genuinely unknown, not backfilled.
+
+_Hash resynced 2026-10-11: `src/persist.js` changed again for an unrelated
+reason (`isDirectPacket`'s `packet.replay` gate — see `persist.md`); nothing
+in this document changed further._
 
 ## `src/messages-api.js` removed from this spec's sources (2026-09-03)
 

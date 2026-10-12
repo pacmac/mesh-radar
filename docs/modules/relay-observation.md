@@ -1,8 +1,11 @@
 ---
 module: relay-observation
-source: src/relay-observation.js
-source_hash: e9ee129f174dfaeb1dc8dd1ea7f59290c82541702f86e053512bb7459a62f888
-updated: 2026-08-03
+source:
+  - src/relay-observation.js
+  - src/db.js
+  - src/persist.js
+source_hash: 28c5ec78fb5f1fe9467830dfb45352fe3cdeb2cd57f33581ef0e920c1a0887c2
+updated: 2026-10-11
 ---
 
 # Module: relay-observation
@@ -47,6 +50,9 @@ costs no airtime to collect.
 | `hop_limit` | `packet.hop_limit ?? 0` | remaining on arrival |
 | `transport` | `normaliseTransport(packet.transport_mechanism)` | how it reached us — **normalised**, never the wire value; see the 2026-08-23 section |
 | `decoded` | `packet.decoded != null` | did we have the key |
+| `portnum_name` | `packet.decoded?.portnum_name ?? null` | what kind of packet, if we could decode it; **added 2026-10-11, see below** |
+| `packet_id` | `packet.id ?? null` | header-level, present regardless of decode; **added 2026-10-11** |
+| `rx_snr` | `packet.rx_snr ?? null` | header-level; **added 2026-10-11, NOT gated direct-only — see below** |
 
 ### proto3 zero-omission — the trap this file must not fall into
 
@@ -120,11 +126,13 @@ whose meaning is currently unambiguous.
 
 ### `src/db.js`
 
-- `CREATE TABLE IF NOT EXISTS relay_observation` with the columns above.
+- `CREATE TABLE IF NOT EXISTS relay_observation` with the original columns above.
 - Indexes: `(from_num, ts DESC)`, `(relay_byte, ts DESC)`, `(ts)`.
 - `insertRelayObservation(entry)` and `pruneRelayObservations(days)`.
-- **No migration guard needed** — new table, `CREATE TABLE IF NOT EXISTS` only. Nothing
-  here uses `PRAGMA table_info`, which omits generated columns and re-`ALTER`s every boot.
+- At creation time, **no migration guard was needed** — new table,
+  `CREATE TABLE IF NOT EXISTS` only. The 2026-10-11 column addition (above) DOES
+  use one: `PRAGMA table_xinfo` (never `table_info`, which omits generated
+  columns and re-`ALTER`s every boot), matching the repo-wide pattern.
 
 ### `src/relay-observation.js` (new)
 
@@ -269,8 +277,65 @@ passed through.
 
 ### Backfill
 
-The 18,178 numeric rows are rewritten to their names. The mapping is bijective, so
-nothing is lost and the change is reversible.
+The 18,178 numeric rows are rewritten to their names.
+
+**I first wrote here that "the mapping is bijective, so nothing is lost and the
+change is reversible". That is true of the VALUE and false of the PROVENANCE, and
+the distinction matters more than the sentence did.**
+
+The bijection means no *meaning* was lost: `0` and `TRANSPORT_INTERNAL` denote the
+same thing, and either can be recovered from the other. What was lost is the
+record of **which rows arrived in which encoding**. There is no column holding the
+raw wire value — `PRAGMA table_xinfo` gives `id, ts, from_num, relay_byte,
+rx_device, hop_start, hop_limit, transport, decoded` — so after the rewrite the
+table reads:
+
+```
+TRANSPORT_INTERNAL  505754  2026-08-03 07:39:39 -> 2026-08-23 09:45:03
+TRANSPORT_LORA      268824  2026-08-03 07:39:43 -> 2026-08-23 09:44:34
+```
+
+Two clean rows, continuous ranges, **no seam**. The instant mesh-gw changed
+encoding is no longer answerable from the data. It survives only in this
+paragraph.
+
+The backfill was still the right call and is **not** being reverted: six consuming
+queries compare this column to string literals, and consistency in a working
+column is what they depend on. The defect was the claim, not the change.
+
+### A tape and a working table are two artefacts
+
+Found by **device**, on 2026-08-23, by applying our own enum warning back at us.
+We told them never to store a peer's enum verbatim; they checked their tree, found
+it clean, and volunteered a caveat about their own `meshgw-tap.py`, which writes
+our events verbatim on purpose — because a witness log that normalises has
+destroyed the evidence it exists to hold.
+
+Which is the opposite requirement to this table's. So they are two artefacts:
+
+> **Never store a peer's enum verbatim in a table you QUERY.**
+> **Never rewrite it in a log you keep as EVIDENCE.**
+> **If you hold only one of those, you are missing the other.**
+
+**node-dash holds only the first, and that is an open gap** — recorded here rather
+than closed over. Do not reach for device's tap as the general record either: it
+runs `--only !987ab80f`, so it witnesses one node, not mesh-gw's surface, and it
+writes into **tmpfs**, so it does not survive a reboot. It does cover the 17:06
+instant (running continuously since 2026-08-10), but for one node only.
+
+Two errors worth keeping, because they are the same error twice:
+
+- device warned the tape might be at a path that does not survive. I checked that
+  the file **existed**, found it was not at the default path, and reported that the
+  worry did not apply. The specific path was wrong; the **class** of problem was
+  right — it is in tmpfs. Answering a narrower question than the one asked, then
+  reporting the reassuring conclusion.
+- I then called that tape "the authority on our peer surface" without checking its
+  **filter**. Verify a witness's scope, not merely its existence.
+
+Whether node-dash should keep its own verbatim tape of the gw surface is a real
+question and is **not decided here** — mcpp task
+`backfill-claimed-lossless-but-destroyed-provenance`, step "Decide".
 
 ### Test notes
 
@@ -282,3 +347,41 @@ nothing is lost and the change is reversible.
   `hop_limit ?? 0`; `hop_start` stays `null` because absent there is genuinely no
   information
 - the row count for `'TRANSPORT_LORA'` after backfill exceeds the pre-fix count
+
+## No packet type, no packet id, no signal — 2026-10-11
+
+Relayed from fun via mesh-gw, idiot entry `relay-observation-keeps-no-packet-type`:
+this table recorded relay/hop provenance but nothing about **what** was heard,
+so "what did we hear from X" was unanswerable from it alone — a NodeDB-replay
+burst and a real reception looked identical.
+
+`captureRelayObservation` now also captures `portnum_name`, `packet_id` and
+`rx_snr`, via `ALTER TABLE` (guarded by `PRAGMA table_xinfo`, never
+`table_info` — the generated-column trap). Historic rows stay `NULL`:
+genuinely unknown, not backfilled.
+
+**`portnum_name` is optional-chained, not assumed**: `packet.decoded` can be
+absent entirely for the 15% of live traffic this module already captures
+above the decoded gate (encrypted-only packets). `packet.id` and `packet.rx_snr`
+are header-level — present regardless of decode status.
+
+**`rx_snr` is deliberately NOT gated direct-only**, unlike `signal_history`'s
+`pktSnr` (`persist.js`'s `isDirectPacket` rule). `signal_history` exists
+specifically for the trustworthy-direct-signal use case and must stay
+unambiguous; this table's whole purpose is "how did this packet reach us",
+relayed hops included, and a consumer that wants direct-only signal can
+already filter on the already-present `relay_byte = 0`. Storing it raw here
+rather than re-deriving directness keeps the two tables' responsibilities
+separate instead of duplicating `signal_history`'s rule with a second, looser
+copy of it.
+
+`via_mqtt` was asked for too but was NOT added as a separate field — it is
+already derivable from `transport === 'TRANSPORT_MQTT'`.
+
+Test: `tests/test_relay_observation_packet_type.mjs` — a decoded packet
+carries all three fields; an encrypted-only packet (no `decoded` at all) is
+still captured, with `portnum_name` staying `null` rather than throwing.
+
+_Hash resynced 2026-10-11: `src/persist.js` changed again for an unrelated
+reason (`isDirectPacket`'s `packet.replay` gate — see `persist.md`); nothing
+in this document changed further._

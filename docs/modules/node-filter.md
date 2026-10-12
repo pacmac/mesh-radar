@@ -1,8 +1,8 @@
 ---
 module: node-filter
 source: src/node-filter.js
-source_hash: 5ab6f3aeae0abe5e53f621aaa29de53bec0ca462974dc023e0ea3a189c55187b
-updated: 2026-07-03
+source_hash: 4c25bb75c326eb17a247bb048ff494ba1b8ebb26e628608996d28769fb737b12
+updated: 2026-10-11
 ---
 
 # Module: node-filter
@@ -69,7 +69,7 @@ All keys are read from the `config` table on every call via `getConfig`.
 | `node_filters.has_telem` | `false` | Require `device_metrics` to be present |
 | `node_filters.msg_only` | `false` | Exclude `user.is_unmessagable === true` nodes |
 | `node_filters.roles` | `[]` | Role whitelist; empty = all roles pass |
-| `node_filters.node_source` | `'both'` | `'both'` / `'yagi'` / `'omni'` — filter by receiving radio |
+| `node_filters.node_source` | `'all'` | `'all'`, or a device MAC — filter to nodes heard by that one device. **No hardcoded role names** — see the dated section below |
 
 ## Filter evaluation order
 
@@ -85,9 +85,9 @@ All keys are read from the `config` table on every call via `getConfig`.
 8. **has_telem** — no `device_metrics`
 9. **msg_only** — `user.is_unmessagable` is truthy
 10. **roles** — `(node.user?.role ?? node.role ?? 'CLIENT')` not in whitelist (skipped if roles is empty). A null role means protobuf-default `CLIENT` — the firmware omits default enum values on the wire, so unknown-role nodes are CLIENTs and are filtered as such.
-11. **node_source** — when rotatorId is known and source ≠ 'both':
-    - `'yagi'`: node must have rotator MAC in `_devices`
-    - `'omni'`: node must have at least one non-rotator MAC in `_devices`
+11. **node_source** — when `source` is set and ≠ `'all'`: node must have `source`
+    (a device MAC) in `_devices`. `source` is the live rotator MAC during a
+    scan, or the stored config value otherwise — see the dated section below.
 12. **scan active contact check** — when `scanActive`: node must have `_scanAz` or `_scanSnr` set
 
 ## Invariants
@@ -95,7 +95,10 @@ All keys are read from the `config` table on every call via `getConfig`.
 - Own-device nodes are always excluded from the public list, regardless of all other filters. This check runs first.
 - `ownDeviceNums` returns an empty `Set` when the resolver has not been registered. This is safe because no bridge events arrive before `registerMacToNumResolver` is called at startup.
 - No MAC-to-num identity inference from MAC suffix arithmetic is permitted. `ownDeviceNums` resolves only through the live resolver.
-- When `scanActive` is true, `node_source` is forced to `'yagi'` regardless of the `node_filters.node_source` config value.
+- When `scanActive` is true, `node_source` is forced to the LIVE rotator MAC
+  (`getRotatorAddress()`), regardless of the `node_filters.node_source` config
+  value — `null` when no device is configured as the rotator, which correctly
+  imposes no device filtering during a scan rather than matching nothing.
 - Config is read fresh on every `passesFilter` call — no caching. This ensures filter changes take effect immediately on the next `refilter()` cycle without requiring a restart.
 - `passesFilter` is pure with respect to its inputs plus the config table. It has no other side effects.
 
@@ -110,10 +113,10 @@ All keys are read from the `config` table on every call via `getConfig`.
 - **has_signal**: both `snr` and `rssi` null → `false`; either present → passes
 - **roles whitelist**: roles = `['ROUTER']`, node.role = `'CLIENT'` → `false`; roles = [] → passes
 - **roles null = CLIENT**: roles = `['ROUTER']`, role absent → `false`; roles = `['CLIENT']`, role absent → passes
-- **node_source yagi**: rotatorId set, source = `'yagi'`, `_devices` does not include rotatorId → `false`
-- **node_source omni**: all `_devices` entries are rotatorId → `false`
+- **node_source by MAC**: `node_source = RADIO_B`, `_devices` does not include `RADIO_B` → `false`; does include it → passes
+- **node_source stale token**: `node_source = 'yagi'` (a pre-2026-10-11 value) matches no real device MAC → excludes everything, same as any other non-matching MAC would. db.js's migration is what prevents this from ever being the live value; the filter itself does not special-case the string.
 - **scan active gate**: `scanActive = true`, `_scanAz = null`, `_scanSnr = null` → `false`
-- **scan forces yagi**: `scanActive = true`, config `node_source = 'omni'` is ignored → yagi check applied
+- **scan forces the live rotator**: `scanActive = true` overrides the stored `node_source` with `getRotatorAddress()`; with no rotator configured, imposes no device filtering at all
 - **ownDeviceNums before registration**: resolver not set → returns `new Set()` (empty)
 - **ownDeviceNums after registration**: resolver returns num for each device MAC → Set contains those nums
 
@@ -131,7 +134,38 @@ records carry role inside `user` (DB-enriched) rather than top-level, and a
 missing role is the protobuf default `CLIENT`, not "unknown". Nodes with no
 role field are therefore included/excluded exactly as CLIENTs.
 
-The `node_source` filter compares rotator identity by **BLE MAC only**
-(`getRotatorAddress()` returns a MAC; `_devices` entries are MACs stamped
-from `__ble_addr`). `_devices` must contain only radios that actually HEARD
-the node — see node-list.md "Device attribution invariant".
+The `node_source` filter compares device identity by **BLE MAC only**
+(`_devices` entries are MACs stamped from `__ble_addr`). `_devices` must
+contain only radios that actually HEARD the node — see node-list.md "Device
+attribution invariant".
+
+## `node_source` stopped hardcoding `'yagi'`/`'omni'` — 2026-10-11
+
+Peter: *"nobody ever said there would be 1,2,3 or any number of radios or
+that any of them would be directional with a rotator."* idiot entry
+`node-source-filter-hardcodes-omni-yagi`.
+
+Before: `node_filters.node_source` was `'both'`/`'yagi'`/`'omni'`, and
+`scanActive` hardcoded the literal string `'yagi'`. This assumed exactly two
+radios, one of them always on a rotator — wrong for a single-radio
+deployment (e.g. a Pi running one BLE gateway) and wrong for any deployment
+with a different radio count.
+
+After: `node_filters.node_source` is `'all'` (no device filtering) or a
+**device MAC**, taken literally. `scanActive` forces the filter onto
+`getRotatorAddress()` — the LIVE rotator device, if one is configured — never
+a role name. With no rotator configured, `getRotatorAddress()` returns
+`null` and a scan imposes no device filtering at all, which is correct: there
+is nothing to force the filter onto.
+
+A stale `'both'`/`'omni'`/`'yagi'` value left over from before this change is
+migrated to `'all'` once, at boot (`db.js`, `migrations.node_source_device_agnostic_v1`)
+— none of those three tokens is a real device MAC, so leaving one in place
+would silently filter the node list to nothing rather than "no filter",
+which is what every one of them meant under the old scheme.
+
+This is Domain 1 only. The Nodes/Radar page buttons that write this config
+key still show hardcoded "YAGI"/"OMNI"/"Both" text and call
+`setNodeSource('yagi'|'omni'|'both')` — tracked separately as a Domain 2 task
+(one button per live device, labelled from its own config, plus "All") once
+this contract is proven.

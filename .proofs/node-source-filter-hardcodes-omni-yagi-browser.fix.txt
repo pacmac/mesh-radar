@@ -1,0 +1,2 @@
+$ node tests/test_node_source_buttons_dynamic.mjs
+test_node_source_buttons_dynamic: 11 checks passed

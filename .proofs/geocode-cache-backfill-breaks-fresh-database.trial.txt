@@ -1,0 +1,82 @@
+$ node tests/test_db_fresh_install.mjs
+
+/usr/share/pac/dev/projects/mt-radar/node-dash/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/methods/wrappers.js:9
+	this[cppdb].exec(sql);
+	            ^
+SqliteError: no such column: address
+    at Database.exec (/usr/share/pac/dev/projects/mt-radar/node-dash/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/methods/wrappers.js:9:14)
+    at file:///usr/share/pac/dev/projects/mt-radar/node-dash/src/db.js:364:4
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)
+    at async importModuleDynamicallyWrapper (node:internal/vm/module:484:15) {
+  code: 'SQLITE_ERROR'
+}
+
+Node.js v22.23.2
+node:internal/errors:983
+  const err = new Error(message);
+              ^
+
+Error: Command failed: node -e import('./src/db.js').then(() => process.exit(0))
+
+/usr/share/pac/dev/projects/mt-radar/node-dash/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/methods/wrappers.js:9
+	this[cppdb].exec(sql);
+	            ^
+SqliteError: no such column: address
+    at Database.exec (/usr/share/pac/dev/projects/mt-radar/node-dash/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/methods/wrappers.js:9:14)
+    at file:///usr/share/pac/dev/projects/mt-radar/node-dash/src/db.js:364:4
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)
+    at async importModuleDynamicallyWrapper (node:internal/vm/module:484:15) {
+  code: 'SQLITE_ERROR'
+}
+
+Node.js v22.23.2
+
+    at genericNodeError (node:internal/errors:983:15)
+    at wrappedFn (node:internal/errors:537:14)
+    at checkExecSyncError (node:child_process:916:11)
+    at execFileSync (node:child_process:952:15)
+    at file:///usr/share/pac/dev/projects/mt-radar/node-dash/tests/test_db_fresh_install.mjs:21:3
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5) {
+  status: 1,
+  signal: null,
+  output: [
+    null,
+    '',
+    '\n' +
+      '/usr/share/pac/dev/projects/mt-radar/node-dash/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/methods/wrappers.js:9\n' +
+      '\tthis[cppdb].exec(sql);\n' +
+      '\t            ^\n' +
+      'SqliteError: no such column: address\n' +
+      '    at Database.exec (/usr/share/pac/dev/projects/mt-radar/node-dash/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/methods/wrappers.js:9:14)\n' +
+      '    at file:///usr/share/pac/dev/projects/mt-radar/node-dash/src/db.js:364:4\n' +
+      '    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\n' +
+      '    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\n' +
+      '    at async importModuleDynamicallyWrapper (node:internal/vm/module:484:15) {\n' +
+      "  code: 'SQLITE_ERROR'\n" +
+      '}\n' +
+      '\n' +
+      'Node.js v22.23.2\n'
+  ],
+  pid: 613339,
+  stdout: '',
+  stderr: '\n' +
+    '/usr/share/pac/dev/projects/mt-radar/node-dash/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/methods/wrappers.js:9\n' +
+    '\tthis[cppdb].exec(sql);\n' +
+    '\t            ^\n' +
+    'SqliteError: no such column: address\n' +
+    '    at Database.exec (/usr/share/pac/dev/projects/mt-radar/node-dash/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/methods/wrappers.js:9:14)\n' +
+    '    at file:///usr/share/pac/dev/projects/mt-radar/node-dash/src/db.js:364:4\n' +
+    '    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\n' +
+    '    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\n' +
+    '    at async importModuleDynamicallyWrapper (node:internal/vm/module:484:15) {\n' +
+    "  code: 'SQLITE_ERROR'\n" +
+    '}\n' +
+    '\n' +
+    'Node.js v22.23.2\n'
+}
+
+Node.js v22.23.2
